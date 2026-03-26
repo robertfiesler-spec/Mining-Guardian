@@ -3,9 +3,12 @@ import json
 import time
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 logging.basicConfig(
@@ -77,6 +80,25 @@ class GuardianConfig:
     rules: List[ParameterRule] = field(default_factory=list)
 
     @staticmethod
+    def _resolve_secret(value: str) -> str:
+        """If value starts with 'env:', resolve it from the environment.
+
+        Example in config.json:
+            "ams_api_key": "env:AMS_API_KEY"
+
+        This keeps secrets out of config files on disk.
+        """
+        if isinstance(value, str) and value.startswith("env:"):
+            env_var = value[4:]
+            resolved = os.environ.get(env_var)
+            if not resolved:
+                raise EnvironmentError(
+                    f"Secret '{env_var}' referenced in config but not set in environment."
+                )
+            return resolved
+        return value
+
+    @staticmethod
     def from_file(path: str) -> "GuardianConfig":
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
@@ -84,7 +106,7 @@ class GuardianConfig:
         rules = [ParameterRule(**item) for item in raw.get("rules", [])]
         return GuardianConfig(
             ams_base_url=raw["ams_base_url"],
-            ams_api_key=raw["ams_api_key"],
+            ams_api_key=GuardianConfig._resolve_secret(raw["ams_api_key"]),
             openclaw_webhook_url=raw.get("openclaw_webhook_url"),
             dry_run=raw.get("dry_run", True),
             scan_interval_seconds=raw.get("scan_interval_seconds", 300),
@@ -100,10 +122,25 @@ class GuardianConfig:
 # ------------------------------------------------------------
 
 class AMSClient:
+    # Retry on transient server errors and network timeouts.
+    # total=3 means up to 3 retries (4 attempts total).
+    # backoff_factor=1 gives delays of 1s, 2s, 4s between retries.
+    # status_forcelist retries on 429 (rate limit), 500, 502, 503, 504.
+    _RETRY_POLICY = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist={429, 500, 502, 503, 504},
+        allowed_methods={"GET", "POST", "PATCH"},
+        raise_on_status=False,
+    )
+
     def __init__(self, base_url: str, api_key: str, timeout: int = 15):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = requests.Session()
+        adapter = HTTPAdapter(max_retries=self._RETRY_POLICY)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -212,21 +249,52 @@ class ApprovalInterface:
         self.config = config
 
     def request_approval(self, finding: MinerFinding) -> bool:
-        # Replace this with an OpenClaw interactive approval step:
-        # 1. Send summary to OpenClaw channel/webhook
-        # 2. Wait for user reply: APPROVE / DENY
-        # 3. Return result
-        if self.config.approval_mode == "auto-low-risk":
-            return False
-        logger.info(
-            "Approval required for miner=%s ip=%s key=%s actual=%s recommended_fix=%s",
-            finding.miner_id,
-            finding.ip,
-            finding.key,
-            finding.actual,
-            finding.recommended_fix,
+        """Request approval for a remediation action.
+
+        Approval flow by mode
+        ---------------------
+        auto-low-risk : Low-risk findings are approved automatically by the
+                        caller (MiningGuardian.remediate) before this method
+                        is invoked.  Only high-severity or non-whitelisted
+                        keys reach here — fall through to interactive prompt.
+
+        manual        : Always prompts interactively.  In a headless/daemon
+                        context swap this out for the OpenClaw webhook flow
+                        described below.
+
+        OpenClaw integration (TODO)
+        ---------------------------
+        1. POST finding summary to config.openclaw_webhook_url with an
+           action_id (e.g. UUID).
+        2. Poll or receive a callback at an /approve endpoint.
+        3. Return True if the operator replied APPROVE within a timeout,
+           False otherwise.
+        """
+        summary = (
+            f"  Miner : {finding.miner_id} ({finding.ip})\n"
+            f"  Key   : {finding.key}\n"
+            f"  Actual: {finding.actual}  →  Fix: {finding.recommended_fix}\n"
+            f"  Note  : {finding.note or '—'}"
         )
-        return False
+        logger.info("Approval required:\n%s", summary)
+
+        # ── Interactive CLI prompt (interim until OpenClaw is wired) ──────
+        # If stdin is not a TTY (e.g. running as a systemd service) this
+        # safely returns False so the finding is logged but not applied.
+        if not os.isatty(0):
+            logger.warning(
+                "Non-interactive environment — auto-denying approval for miner=%s key=%s",
+                finding.miner_id,
+                finding.key,
+            )
+            return False
+
+        try:
+            answer = input(f"\nApprove patch for {finding.miner_id} [{finding.key}]? [y/N]: ")
+            return answer.strip().lower() == "y"
+        except (EOFError, KeyboardInterrupt):
+            logger.warning("Approval prompt interrupted — denying.")
+            return False
 
 
 # ------------------------------------------------------------
@@ -265,6 +333,41 @@ class OpenClawNotifier:
 
 
 # ------------------------------------------------------------
+# Remediation cooldown cache
+# ------------------------------------------------------------
+
+class RemediationCooldown:
+    """Prevents hammering the same (miner, key) pair on every scan cycle.
+
+    How it works
+    ------------
+    After a successful patch (or dry-run), we record a timestamp for the
+    (miner_id, key) pair.  Subsequent calls to is_cooling_down() return True
+    until cooldown_minutes has elapsed, causing the orchestrator to skip that
+    finding.
+
+    Why this matters
+    ----------------
+    Without it, a persistently non-compliant miner generates a finding every
+    scan cycle and triggers repeated patch attempts or repeated approval
+    prompts — noisy and potentially harmful to miner stability.
+    """
+
+    def __init__(self, cooldown_minutes: int = 30):
+        self.cooldown = timedelta(minutes=cooldown_minutes)
+        self._last_remediated: Dict[Tuple[str, str], datetime] = {}
+
+    def is_cooling_down(self, miner_id: str, key: str) -> bool:
+        last = self._last_remediated.get((miner_id, key))
+        if last is None:
+            return False
+        return datetime.utcnow() - last < self.cooldown
+
+    def record(self, miner_id: str, key: str) -> None:
+        self._last_remediated[(miner_id, key)] = datetime.utcnow()
+
+
+# ------------------------------------------------------------
 # Orchestrator
 # ------------------------------------------------------------
 
@@ -276,13 +379,33 @@ class MiningGuardian:
         self.planner = RemediationPlanner()
         self.approval = ApprovalInterface(config)
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
+        self.cooldown = RemediationCooldown(cooldown_minutes=30)
 
     def scan(self) -> List[MinerFinding]:
+        """Fetch miner list, then re-fetch fresh per-miner state before evaluating rules.
+
+        Why re-fetch per miner?
+        -----------------------
+        The list endpoint (/api/miners) typically returns a summary snapshot —
+        often cached or aggregated.  The individual state endpoint returns live
+        telemetry.  Evaluating rules against stale list data produces false
+        positives and missed violations.  We degrade gracefully: if the
+        per-miner fetch fails, we fall back to the list snapshot with a warning.
+        """
         miners = self.ams.get_miners(self.config.miner_filters)
         findings: List[MinerFinding] = []
 
         for miner in miners:
-            findings.extend(self.engine.evaluate_miner(miner))
+            miner_id = str(miner.get("id", "unknown"))
+            try:
+                fresh_state = self.ams.get_miner_state(miner_id)
+            except Exception:
+                logger.warning(
+                    "Could not fetch fresh state for miner %s — using list snapshot",
+                    miner_id,
+                )
+                fresh_state = miner
+            findings.extend(self.engine.evaluate_miner(fresh_state))
 
         return findings
 
@@ -290,6 +413,15 @@ class MiningGuardian:
         results: List[Tuple[MinerFinding, str]] = []
 
         for finding in findings:
+            if self.cooldown.is_cooling_down(finding.miner_id, finding.key):
+                logger.debug(
+                    "Cooldown active — skipping miner=%s key=%s",
+                    finding.miner_id,
+                    finding.key,
+                )
+                results.append((finding, "cooldown"))
+                continue
+
             try:
                 auto_ok = (
                     self.config.approval_mode == "auto-low-risk"
@@ -304,10 +436,12 @@ class MiningGuardian:
                 patch = self.planner.build_patch(finding)
                 if self.config.dry_run:
                     logger.info("DRY RUN patch for miner %s: %s", finding.miner_id, patch)
+                    self.cooldown.record(finding.miner_id, finding.key)
                     results.append((finding, "dry-run only"))
                     continue
 
                 self.ams.patch_miner_settings(finding.miner_id, patch)
+                self.cooldown.record(finding.miner_id, finding.key)
                 results.append((finding, "patched"))
             except Exception as exc:
                 logger.exception("Failed remediation for miner %s", finding.miner_id)
@@ -349,7 +483,10 @@ class MiningGuardian:
 # ------------------------------------------------------------
 EXAMPLE_CONFIG = {
     "ams_base_url": "https://ams.internal.example",
-    "ams_api_key": "replace-me",
+    # Use "env:VAR_NAME" to source secrets from the environment instead of
+    # storing them in this file.  Example: set AMS_API_KEY in your shell or
+    # systemd service unit, then reference it as "env:AMS_API_KEY" here.
+    "ams_api_key": "env:AMS_API_KEY",
     "openclaw_webhook_url": "https://openclaw.internal/webhook/mining-guardian",
     "dry_run": True,
     "scan_interval_seconds": 300,
@@ -363,16 +500,16 @@ EXAMPLE_CONFIG = {
             "operator": "gte",
             "expected": 130,
             "severity": "critical",
-            "recommended_fix": 140,
-            "note": "Hashrate below expected floor"
+            "recommended_fix": None,
+            "note": "Hashrate below expected floor — no automatic fix; requires operator review"
         },
         {
             "key": "telemetry.chip_temp_c",
             "operator": "between",
             "expected": [40, 75],
             "severity": "critical",
-            "recommended_fix": 130,
-            "note": "Temperature outside normal envelope; example fix should instead map to a safer power profile"
+            "recommended_fix": "efficiency",
+            "note": "Temperature outside normal envelope — drop to efficiency power profile"
         },
         {
             "key": "config.power.profile",
@@ -380,7 +517,7 @@ EXAMPLE_CONFIG = {
             "expected": ["balanced", "efficiency", "immersion-140th"],
             "severity": "warning",
             "recommended_fix": "balanced",
-            "note": "Unexpected power profile"
+            "note": "Unexpected power profile detected"
         }
     ]
 }
