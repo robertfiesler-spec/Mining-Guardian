@@ -1,0 +1,358 @@
+{
+  "version": "1.1",
+  "description": "Mining Guardian policy rules for warehouse pilot environment",
+  "defaults": {
+    "approval_required": true,
+    "auto_fix_allowed": false,
+    "verify_after_action_seconds": 300,
+    "cooldown_after_action_seconds": 600,
+    "max_actions_per_scan": 5,
+    "max_actions_per_rack_per_scan": 2,
+    "maintenance_mode_skip": true
+  },
+  "environments": {
+    "immersion": {
+      "temperature_unit": "c",
+      "safe_chip_temp_max": 80,
+      "warning_chip_temp_max": 75,
+      "safe_board_temp_max": 70,
+      "warning_board_temp_max": 65,
+      "inlet_temp_max": 45,
+      "outlet_temp_max": 55
+    },
+    "hydro": {
+      "temperature_unit": "c",
+      "safe_chip_temp_max": 85,
+      "warning_chip_temp_max": 78,
+      "coolant_inlet_temp_max": 42,
+      "coolant_outlet_temp_max": 52,
+      "flow_min_lpm_per_machine": 20.3
+    }
+  },
+  "models": {
+    "antminer_s19_class": {
+      "expected_hashrate_min_th": 85,
+      "expected_hashrate_target_th": 95,
+      "expected_hashrate_max_th": 150,
+      "max_hw_error_rate_pct": 0.10,
+      "max_restart_count_24h": 3,
+      "approved_firmware_versions": [
+        "bixbit-s19-stable"
+      ],
+      "approved_profiles": [
+        "safe",
+        "balanced",
+        "efficiency",
+        "immersion-140th",
+        "hydro-balanced"
+      ]
+    },
+    "auradine_default": {
+      "expected_hashrate_min_th": 200,
+      "expected_hashrate_target_th": 220,
+      "expected_hashrate_max_th": 260,
+      "max_hw_error_rate_pct": 0.10,
+      "max_restart_count_24h": 3,
+      "approved_firmware_versions": [
+        "auradine-stable"
+      ],
+      "approved_profiles": [
+        "safe",
+        "balanced",
+        "efficiency",
+        "hydro-balanced"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "id": "miner_offline",
+      "name": "Miner must be online",
+      "scope": "miner",
+      "parameter": "status.online",
+      "operator": "eq",
+      "expected": true,
+      "severity": "critical",
+      "recommended_action": "investigate_connectivity",
+      "secondary_action": "flag_for_operator_review",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Immediately notify operator via flag_for_operator_review. Do not auto-restart offline miners until connectivity and power state are confirmed manually."
+    },
+    {
+      "id": "hashrate_low_warning",
+      "name": "Hashrate below warning threshold",
+      "scope": "miner",
+      "parameter": "telemetry.hashrate_ths",
+      "operator": "gte_model_min",
+      "expected_source": "models.expected_hashrate_min_th",
+      "severity": "warning",
+      "recommended_action": "reapply_last_stable_profile",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Passing condition: hashrate must be >= model minimum. Violation fires when hashrate falls below model-specific minimum floor."
+    },
+    {
+      "id": "hashrate_critical_drop",
+      "name": "Hashrate critically low",
+      "scope": "miner",
+      "parameter": "telemetry.hashrate_ths",
+      "operator": "gte_percent_of_model_target",
+      "expected": 0.80,
+      "expected_source": "models.expected_hashrate_target_th",
+      "severity": "critical",
+      "recommended_action": "restart_miner",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Passing condition: hashrate must be >= 80% of model target. Violation fires when hashrate falls below that threshold. Restart is allowed only after checking maintenance mode and recent reboot history."
+    },
+    {
+      "id": "chip_temp_warning",
+      "name": "Chip temperature warning",
+      "scope": "environment",
+      "parameter": "telemetry.chip_temp_c",
+      "operator": "lte_environment_warning_max",
+      "expected_source": "environments.warning_chip_temp_max",
+      "severity": "warning",
+      "recommended_action": "switch_to_balanced_profile",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Passing condition: chip_temp must be <= environment warning max. Violation fires when chip_temp exceeds that threshold. Profile reduction is preferred before restart."
+    },
+    {
+      "id": "chip_temp_critical",
+      "name": "Chip temperature critical",
+      "scope": "environment",
+      "parameter": "telemetry.chip_temp_c",
+      "operator": "lte_environment_safe_max",
+      "expected_source": "environments.safe_chip_temp_max",
+      "severity": "critical",
+      "recommended_action": "switch_to_safe_profile",
+      "approval_required": true,
+      "auto_fix_allowed": true,
+      "note": "Passing condition: chip_temp must be <= environment safe max. Violation fires when chip_temp exceeds that threshold. Low-risk automatic thermal protection action."
+    },
+    {
+      "id": "board_temp_warning",
+      "name": "Board temperature warning",
+      "scope": "environment",
+      "parameter": "telemetry.board_temp_c",
+      "operator": "lte_environment_warning_max",
+      "expected_source": "environments.warning_board_temp_max",
+      "severity": "warning",
+      "recommended_action": "switch_to_balanced_profile",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Passing condition: board_temp must be <= environment warning max. Violation fires when board_temp exceeds that threshold. Only applies to environments that expose board temperature thresholds (immersion)."
+    },
+    {
+      "id": "immersion_inlet_temp_warning",
+      "name": "Immersion inlet temperature exceeded",
+      "scope": "environment",
+      "parameter": "telemetry.inlet_temp_c",
+      "operator": "lte_environment_inlet_max",
+      "expected_source": "environments.inlet_temp_max",
+      "severity": "warning",
+      "recommended_action": "flag_for_operator_review",
+      "approval_required": false,
+      "auto_fix_allowed": false,
+      "note": "Passing condition: inlet_temp must be <= environment inlet max. Elevated inlet temperature indicates a cooling infrastructure issue upstream of the miner. Miner-level action cannot resolve this — operator must investigate chiller or fluid supply."
+    },
+    {
+      "id": "immersion_outlet_temp_critical",
+      "name": "Immersion outlet temperature exceeded",
+      "scope": "environment",
+      "parameter": "telemetry.outlet_temp_c",
+      "operator": "lte_environment_outlet_max",
+      "expected_source": "environments.outlet_temp_max",
+      "severity": "critical",
+      "recommended_action": "switch_to_safe_profile",
+      "approval_required": true,
+      "auto_fix_allowed": true,
+      "note": "Passing condition: outlet_temp must be <= environment outlet max. High outlet temperature indicates insufficient cooling capacity or overloaded miner. Switch to safe profile to reduce heat output. Cooling infrastructure should be investigated in parallel."
+    },
+    {
+      "id": "hydro_coolant_inlet_temp_warning",
+      "name": "Hydro coolant inlet temperature exceeded",
+      "scope": "environment",
+      "parameter": "telemetry.coolant_inlet_temp_c",
+      "operator": "lte_environment_coolant_inlet_max",
+      "expected_source": "environments.coolant_inlet_temp_max",
+      "severity": "warning",
+      "recommended_action": "flag_for_operator_review",
+      "approval_required": false,
+      "auto_fix_allowed": false,
+      "note": "Passing condition: coolant_inlet_temp must be <= environment coolant inlet max. Indicates chiller or coolant supply side issue. Cannot be resolved by miner-level action — operator must investigate cooling loop."
+    },
+    {
+      "id": "hydro_coolant_outlet_temp_critical",
+      "name": "Hydro coolant outlet temperature exceeded",
+      "scope": "environment",
+      "parameter": "telemetry.coolant_outlet_temp_c",
+      "operator": "lte_environment_coolant_outlet_max",
+      "expected_source": "environments.coolant_outlet_temp_max",
+      "severity": "critical",
+      "recommended_action": "switch_to_safe_profile",
+      "approval_required": true,
+      "auto_fix_allowed": true,
+      "note": "Passing condition: coolant_outlet_temp must be <= environment coolant outlet max. High outlet temperature indicates excessive heat rejection from the miner. Switch to safe profile to reduce load. Investigate coolant flow rate and chiller capacity."
+    },
+    {
+      "id": "pool_config_approved",
+      "name": "Primary pool must match approved list",
+      "scope": "miner",
+      "parameter": "config.pools.primary.url",
+      "operator": "in",
+      "expected": [
+        "stratum+tcp://approved-pool-1.example.com",
+        "stratum+tcp://approved-pool-2.example.com"
+      ],
+      "severity": "critical",
+      "recommended_action": "restore_approved_pool_config",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Never auto-change wallet or pool destination without explicit approval."
+    },
+    {
+      "id": "backup_pool_enabled",
+      "name": "Backup pool must be enabled",
+      "scope": "miner",
+      "parameter": "config.pools.backup_enabled",
+      "operator": "eq",
+      "expected": true,
+      "severity": "warning",
+      "recommended_action": "enable_backup_pool",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Any pool configuration change requires operator approval for consistency with pool_config_approved protection. Low-risk but kept under the same approval gate as all pool-related changes."
+    },
+    {
+      "id": "profile_approved",
+      "name": "Active profile must be approved for model",
+      "scope": "model",
+      "parameter": "config.power.profile",
+      "operator": "in_model_list",
+      "expected_source": "models.approved_profiles",
+      "severity": "warning",
+      "recommended_action": "switch_to_balanced_profile",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Profile should be one of the approved profiles for the miner model."
+    },
+    {
+      "id": "firmware_approved",
+      "name": "Firmware version must be approved",
+      "scope": "model",
+      "parameter": "firmware.version",
+      "operator": "in_model_list",
+      "expected_source": "models.approved_firmware_versions",
+      "severity": "critical",
+      "recommended_action": "schedule_firmware_review",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Detect drift first. Do not auto-upgrade firmware in pilot phase."
+    },
+    {
+      "id": "restart_frequency",
+      "name": "Restart count in last 24 hours",
+      "scope": "model",
+      "parameter": "telemetry.restart_count_24h",
+      "operator": "lte_model_max",
+      "expected_source": "models.max_restart_count_24h",
+      "severity": "warning",
+      "recommended_action": "flag_for_operator_review",
+      "approval_required": false,
+      "auto_fix_allowed": false,
+      "note": "approval_required is intentionally false — this rule only raises a notification, it does not trigger a remediating action. Frequent restarts often indicate instability, power issues, or cooling issues and require human judgment."
+    },
+    {
+      "id": "hardware_error_rate",
+      "name": "Hardware error rate threshold",
+      "scope": "model",
+      "parameter": "telemetry.hw_error_rate_pct",
+      "operator": "lte_model_max",
+      "expected_source": "models.max_hw_error_rate_pct",
+      "severity": "warning",
+      "recommended_action": "reapply_last_stable_profile",
+      "approval_required": true,
+      "auto_fix_allowed": false,
+      "note": "Avoid aggressive clocks if hardware errors rise."
+    },
+    {
+      "id": "hydro_flow_minimum",
+      "name": "Hydro flow minimum per machine",
+      "scope": "environment",
+      "parameter": "telemetry.flow_lpm",
+      "operator": "gte_environment_min",
+      "expected_source": "environments.flow_min_lpm_per_machine",
+      "severity": "critical",
+      "recommended_action": "switch_to_safe_profile",
+      "approval_required": true,
+      "auto_fix_allowed": true,
+      "note": "Particularly important for Auradine hydro deployments where flow requirement is unusually high. Flow threshold is defined at the environment level (environments.hydro.flow_min_lpm_per_machine)."
+    },
+    {
+      "id": "maintenance_mode_block",
+      "name": "Do not remediate during maintenance mode",
+      "scope": "miner",
+      "parameter": "status.maintenance_mode",
+      "operator": "eq",
+      "expected": false,
+      "severity": "info",
+      "recommended_action": "skip_actions",
+      "approval_required": false,
+      "auto_fix_allowed": false,
+      "note": "All corrective actions should be skipped when maintenance mode is active."
+    }
+  ],
+  "actions": {
+    "investigate_connectivity": {
+      "type": "manual_only",
+      "description": "Check power, switch port, IP reachability, AMS connectivity, and miner responsiveness before any restart."
+    },
+    "reapply_last_stable_profile": {
+      "type": "ams_command",
+      "description": "Reapply most recent known-good profile from AMS history.",
+      "rollback": "switch_to_safe_profile"
+    },
+    "restart_miner": {
+      "type": "ams_command",
+      "description": "Restart miner through AMS.",
+      "guardrails": {
+        "max_restarts_per_24h": 2,
+        "block_if_recent_restart_within_seconds": 1800
+      },
+      "rollback": "flag_for_operator_review"
+    },
+    "switch_to_balanced_profile": {
+      "type": "ams_command",
+      "description": "Move miner to balanced operating profile.",
+      "rollback": "switch_to_safe_profile"
+    },
+    "switch_to_safe_profile": {
+      "type": "ams_command",
+      "description": "Move miner to conservative thermal-safe profile."
+    },
+    "restore_approved_pool_config": {
+      "type": "ams_command",
+      "description": "Restore approved primary and backup pool configuration from policy baseline.",
+      "requires_explicit_operator_confirmation": true
+    },
+    "enable_backup_pool": {
+      "type": "ams_command",
+      "description": "Enable configured backup pool in miner settings."
+    },
+    "schedule_firmware_review": {
+      "type": "manual_only",
+      "description": "Create an operator task to review firmware version drift and schedule maintenance window if needed."
+    },
+    "flag_for_operator_review": {
+      "type": "notification",
+      "description": "Raise alert in OpenClaw or operations dashboard for human review."
+    },
+    "skip_actions": {
+      "type": "control",
+      "description": "Do not apply remediation while maintenance mode is active."
+    }
+  }
+}
