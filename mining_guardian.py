@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import sqlite3
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -551,6 +552,120 @@ class RemediationCooldown:
 # Orchestrator — updated to use new AMSClient interface
 # ------------------------------------------------------------
 
+# ------------------------------------------------------------
+# Local SQLite database — scan history and miner telemetry
+# ------------------------------------------------------------
+# Every scan writes:
+#   scans          — one row per scan run (summary)
+#   miner_readings — one row per miner per scan (full telemetry)
+#
+# This enables trending, historical analysis, and eventually
+# predictive failure detection via the local LLM.
+# ------------------------------------------------------------
+
+class GuardianDB:
+
+    def __init__(self, db_path: str = "guardian.db"):
+        self.db_path = db_path
+        self._init_db()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self) -> None:
+        """Create tables if they don't exist."""
+        with self._connect() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS scans (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scanned_at    TEXT    NOT NULL,
+                    total_miners  INTEGER NOT NULL,
+                    online        INTEGER NOT NULL,
+                    offline       INTEGER NOT NULL,
+                    issues        INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS miner_readings (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id       INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at    TEXT    NOT NULL,
+                    miner_id      TEXT    NOT NULL,
+                    ip            TEXT,
+                    model         TEXT,
+                    status        TEXT,
+                    hashrate      REAL,
+                    max_hashrate  REAL,
+                    hashrate_pct  REAL,
+                    temp_chip     REAL,
+                    issue         TEXT,
+                    action        TEXT,
+                    pdu_id        INTEGER,
+                    outlet        INTEGER
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_readings_miner
+                    ON miner_readings(miner_id, scanned_at);
+            """)
+        logger.info("Database ready at %s", self.db_path)
+
+    def save_scan(self, miners: List[Dict], issues: List[Dict]) -> int:
+        """Write scan summary and all miner readings. Returns scan_id."""
+        now      = datetime.now().isoformat()
+        online   = sum(1 for m in miners if m.get("status") == "online")
+        offline  = len(miners) - online
+
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO scans (scanned_at, total_miners, online, offline, issues) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (now, len(miners), online, offline, len(issues))
+            )
+            scan_id = cur.lastrowid
+
+            # Build a quick lookup of issues by miner id
+            issue_map = {i["id"]: i for i in issues}
+
+            rows = []
+            for m in miners:
+                miner_id  = str(m.get("id", ""))
+                max_hr    = m.get("maxHashrate") or 0
+                hashrate  = m.get("hashrate") or 0
+                pct       = round((hashrate / max_hr) * 100, 1) if max_hr > 0 else 0.0
+                temp_raw  = m.get("tempChip") or 0
+                temp      = temp_raw if temp_raw >= 0 else None
+                issue     = issue_map.get(miner_id)
+
+                rows.append((
+                    scan_id,
+                    now,
+                    miner_id,
+                    m.get("ip"),
+                    m.get("shortModel", m.get("name")),
+                    m.get("status"),
+                    hashrate,
+                    max_hr,
+                    pct,
+                    temp,
+                    " | ".join(issue["issues"]) if issue else None,
+                    issue["action"] if issue else None,
+                    issue.get("pdu_id") if issue else None,
+                    issue.get("outlet") if issue else None,
+                ))
+
+            conn.executemany(
+                "INSERT INTO miner_readings "
+                "(scan_id, scanned_at, miner_id, ip, model, status, hashrate, "
+                " max_hashrate, hashrate_pct, temp_chip, issue, action, pdu_id, outlet) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                rows
+            )
+
+        logger.info("Scan #%s saved to database (%s miners)", scan_id, len(miners))
+        return scan_id
+
+
 class MiningGuardian:
     HASHRATE_THRESHOLD = 0.90   # flag if below 90% of maxHashrate
 
@@ -558,6 +673,7 @@ class MiningGuardian:
         self.config   = config
         self.ams      = AMSClient(config)
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
+        self.db       = GuardianDB()
 
     # ── Per-miner analysis ────────────────────────────────────
 
@@ -710,14 +826,15 @@ class MiningGuardian:
     # ── Main entry ────────────────────────────────────────────
 
     def run_once(self) -> Dict[str, Any]:
-        miners = self.ams.get_miners(self.config.miner_filters)
-        issues = [r for r in (self._analyze_miner(m) for m in miners) if r]
+        miners   = self.ams.get_miners(self.config.miner_filters)
+        issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues)
-        self.notifier.send_findings([])   # placeholder — findings now use new format
+        self.db.save_scan(miners, issues)
+        self.notifier.send_findings([])
         return {
             "scanned": len(miners),
             "issues":  len(issues),
-            "restart_recommended": [i["id"] for i in issues if i["action"] == "RESTART"],
+            "restart_recommended": [i["id"] for i in issues if i["action"] in ("RESTART", "PDU_CYCLE")],
         }
 
     def loop(self) -> None:
