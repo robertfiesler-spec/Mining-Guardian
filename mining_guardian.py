@@ -517,31 +517,96 @@ class ApprovalInterface:
 
 
 # ------------------------------------------------------------
-# OpenClaw notifier — unchanged
+# ------------------------------------------------------------
+# OpenClaw notifier
+# ------------------------------------------------------------
+# Sends a structured JSON payload to the local OpenClaw webhook
+# after every scan. OpenClaw's local LLM interprets the findings
+# and posts a plain-English summary to Slack for operator review.
+#
+# Webhook URL format: http://127.0.0.1:<port>/webhook/<token>
+# Set openclaw_webhook_url in config.json when OpenClaw is ready.
+# Leave it null to disable silently — no errors will be thrown.
 # ------------------------------------------------------------
 
 class OpenClawNotifier:
     def __init__(self, webhook_url: Optional[str]):
         self.webhook_url = webhook_url
 
-    def send_findings(self, findings: List[MinerFinding]) -> None:
-        if not self.webhook_url or not findings:
+    def send_scan(self, miners: List[Dict], issues: List[Dict]) -> None:
+        """POST scan results to OpenClaw webhook.
+
+        OpenClaw receives this payload, passes it to the local LLM,
+        and the LLM posts a plain-English summary + recommendations
+        to Slack for operator review and approval.
+        """
+        if not self.webhook_url:
+            logger.debug("OpenClaw webhook not configured — skipping notification")
             return
+
+        now    = datetime.now().strftime("%Y-%m-%d %H:%M")
+        online = sum(1 for m in miners if m.get("status") == "online")
+
+        # Build a plain-English summary line for the LLM to work with
+        pdu_cycles  = [i for i in issues if i["action"] == "PDU_CYCLE"]
+        fw_restarts = [i for i in issues if i["action"] == "RESTART"]
+        monitors    = [i for i in issues if i["action"] == "MONITOR"]
+        temp_action = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
+
+        parts = []
+        if pdu_cycles:
+            parts.append(f"{len(pdu_cycles)} offline miner(s) need PDU power cycle")
+        if fw_restarts:
+            parts.append(f"{len(fw_restarts)} miner(s) need firmware restart")
+        if temp_action:
+            parts.append(f"{len(temp_action)} miner(s) have critical chip temps (86°C+)")
+        if monitors:
+            parts.append(f"{len(monitors)} miner(s) running warm (76–85°C), monitoring")
+        summary = ". ".join(parts) + "." if parts else "All miners operating normally."
+
         payload = {
-            "type": "mining_guardian.findings",
-            "count": len(findings),
-            "findings": [
-                {"miner_id": f.miner_id, "ip": f.ip, "key": f.key,
-                 "actual": f.actual, "expected": f.expected,
-                 "severity": f.severity, "recommended_fix": f.recommended_fix,
-                 "note": f.note}
-                for f in findings
+            "source":     "mining_guardian",
+            "scanned_at": now,
+            "fleet": {
+                "total":   len(miners),
+                "online":  online,
+                "offline": len(miners) - online,
+                "issues":  len(issues),
+            },
+            "summary": summary,
+            "issues": [
+                {
+                    "miner_id":   i["id"],
+                    "ip":         i["ip"],
+                    "model":      i["model"],
+                    "status":     i["status"],
+                    "hashrate":   i["hashrate_pct"],
+                    "temp_chip":  i["temp_chip"],
+                    "action":     i["action"],
+                    "pdu_action": i.get("pdu_action"),
+                    "detail":     " | ".join(i["issues"]),
+                }
+                for i in issues
             ],
+            # Instruction for the LLM — tells it what to do with this data
+            "instructions": (
+                "You are Mining Guardian's AI analyst for BiXBiT USA. "
+                "Review the fleet scan below and post a concise Slack message to the #mining-ops channel. "
+                "Include: fleet status summary, list of miners needing action with their recommended fix, "
+                "and ask the operator to confirm before any actions are taken. "
+                "Keep it professional and brief."
+            ),
         }
+
         try:
-            requests.post(self.webhook_url, json=payload, timeout=10)
+            resp = requests.post(self.webhook_url, json=payload, timeout=10)
+            if resp.status_code == 200:
+                logger.info("OpenClaw notified — scan summary sent")
+            else:
+                logger.warning("OpenClaw webhook returned %s", resp.status_code)
         except Exception as exc:
             logger.warning("OpenClaw notification failed: %s", exc)
+
 
 
 # ------------------------------------------------------------
@@ -846,7 +911,7 @@ class MiningGuardian:
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues)
         self.db.save_scan(miners, issues)
-        self.notifier.send_findings([])
+        self.notifier.send_scan(miners, issues)
         return {
             "scanned": len(miners),
             "issues":  len(issues),
