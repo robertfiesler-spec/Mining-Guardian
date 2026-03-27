@@ -96,7 +96,81 @@ Mining Guardian is designed to run as a persistent daemon on a **local Mac Mini*
 
 ---
 
-## Installation
+## Mac Mini Deployment (Production)
+
+This is the intended production setup — Mining Guardian running headlessly on a local Mac Mini inside the mining facility.
+
+### Prerequisites
+- Mac Mini connected to the mining network
+- Python 3.9+ installed
+- Git installed
+- `.env` file with credentials in the repo folder
+
+### Step 1 — Clone the repo
+```bash
+git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
+cd "Mining Gaurdian"
+```
+
+### Step 2 — Create and activate the virtual environment
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install requests websocket-client
+```
+
+### Step 3 — Create your credentials file
+```bash
+cp .env.example .env
+```
+Edit `.env` and fill in your AMS email, password, and workspace ID.
+
+### Step 4 — Create your config file
+```bash
+cp config.example.json config.json
+```
+Edit `config.json` if needed (base URL, dry_run setting, scan interval, etc.).
+
+### Step 5 — Test a single scan first
+```bash
+source venv/bin/activate
+export $(grep -v '^#' .env | xargs) && python mining_guardian.py
+```
+Verify the report looks correct before enabling the watchdog.
+
+### Step 6 — Install the launchd watchdog
+```bash
+cp com.bixbit.mining-guardian.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+```
+
+### Step 7 — Verify it's running
+```bash
+launchctl list | grep mining-guardian
+```
+You should see a line with `com.bixbit.mining-guardian`. If the second column shows `0` it's running clean. Any other number is an exit code — check the error log.
+
+### Checking logs
+```bash
+# Today's scan log
+cat "/Users/BigBobby/Documents/GitHub/Mining Gaurdian/logs/guardian_$(date +%Y-%m-%d).log"
+
+# launchd startup errors
+cat "/Users/BigBobby/Documents/GitHub/Mining Gaurdian/logs/launchd_stderr.log"
+```
+
+### Stopping the watchdog
+```bash
+launchctl unload ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+```
+
+### Removing it completely
+```bash
+launchctl unload ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+rm ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+```
+
+---
 
 ```bash
 git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
