@@ -1,159 +1,179 @@
 # Mining Guardian
 
-Automated monitoring and remediation system for bitcoin mining fleets.
+**Autonomous fleet monitoring and remediation system for bitcoin mining operations.**
 
-Mining Guardian connects to your AMS (Miner Management System) via API, evaluates live miner telemetry against a configurable policy ruleset, and either automatically applies safe fixes or routes violations to an operator for approval before any action is taken.
+Mining Guardian runs on a local Mac Mini connected directly to the mining network. It connects to the BiXBiT AMS via authenticated WebSocket and REST API, scans every miner in the fleet for performance and temperature issues, and delivers actionable recommendations to the operator via Slack — with a local LLM (OpenClaw) providing plain-English interpretation and decision support.
+
+Humans stay in the loop on all remediation actions. Mining Guardian detects, explains, and recommends — operators approve.
+
+---
+
+## System Architecture
+
+```
+BiXBiT AMS (cloud)
+        │
+        │  WebSocket + REST (cookie-based JWT auth)
+        ▼
+┌─────────────────────────────────────┐
+│         Mac Mini (local network)    │
+│                                     │
+│  Mining Guardian (Python daemon)    │
+│  ├── Scans all miners every N min   │
+│  ├── Evaluates hashrate & temps     │
+│  ├── Recommends PDU cycle or reboot │
+│  ├── Logs every scan to disk        │
+│  └── Sends findings to OpenClaw     │
+│                                     │
+│  OpenClaw (local LLM)               │
+│  └── Interprets findings            │
+│      Drafts plain-English summaries │
+│      Routes recommendations → Slack │
+└─────────────────────────────────────┘
+        │
+        │  Slack notifications
+        ▼
+   Operator (Rob) — approves or denies actions
+        │
+        ▼
+   AMS executes approved command
+```
 
 ---
 
 ## How It Works
 
-1. **Scan** — fetches the miner list from AMS, then pulls fresh per-miner telemetry for accurate rule evaluation
-2. **Evaluate** — runs each miner's state through the policy engine; any parameter outside defined bounds generates a `MinerFinding`
-3. **Notify** — sends findings to the OpenClaw webhook for operator visibility
-4. **Remediate** — approved fixes are patched back to AMS; a 30-minute cooldown prevents repeat actions on the same miner
-
-
----
-
-## Key Features
-
-- Policy-based miner parameter validation (hashrate, temperature, power profile, and more)
-- Configurable rules via `config.json` — no code changes needed to add new checks
-- Three approval modes: `manual`, `auto-low-risk`, and headless daemon (auto-deny with logging)
-- HTTP retry with exponential backoff on all AMS API calls (handles transient 5xx and rate limits)
-- Remediation cooldown cache — prevents hammering the same miner/key pair every scan cycle
-- Secret management via `env:` prefix — keeps API keys out of config files on disk
-- OpenClaw webhook integration for operator notifications and approval routing
-- `dry_run` mode enabled by default — safe to deploy before AMS endpoints are finalized
+1. **Auth** — Cookie-based JWT login to BiXBiT AMS. User token → workspace-scoped token → auto-refreshed before expiry
+2. **Scan** — Fetches full miner list via WebSocket (`miners/list_ws`) with automatic pagination across all pages
+3. **Evaluate** — Each miner is analyzed for hashrate % of max and chip temperature zone
+4. **Report** — Clean terminal report groups miners into: PDU power cycle needed, firmware restart needed, temp monitor, and healthy
+5. **Notify** — Findings sent to OpenClaw webhook; local LLM interprets and posts to Slack
+6. **Remediate** — Operator approves action via Slack; Mining Guardian executes via AMS API
 
 ---
 
-## Approval Modes
+## Performance & Temperature Logic
 
-| Mode | Behavior |
+### Hashrate
+- **Below 90% of `maxHashrate`** → flagged, firmware restart recommended
+- **0% (offline)** → flagged as critical
+
+### Chip Temperature
+| Zone | Range | Action |
+|------|-------|--------|
+| 🟢 Green | Below 76°C | Healthy — no action |
+| 🟡 Yellow | 76–85°C | Monitor |
+| 🔴 Red | 86°C+ | Operator chooses: restart / lower power / raise cooling |
+
+### Sensor Errors
+- Negative temp readings (e.g. `-64°C`) are flagged as **sensor error** — not treated as real values
+
+---
+
+## Remediation Actions
+
+Mining Guardian distinguishes between two types of restart based on miner state:
+
+| Situation | Recommended Action |
 |---|---|
-| `manual` | Prompts operator via CLI (TTY) or auto-denies in headless environments |
-| `auto-low-risk` | Automatically approves low-risk keys (fans, DNS, power profile); escalates critical findings |
+| Miner **offline** + PDU assigned | **PDU power cycle** — cut outlet power, wait 5s, restore |
+| Miner **offline**, no PDU assigned | **Firmware restart** via AMS |
+| Miner **online but underperforming** | **Firmware restart** via AMS |
+| Chip temp **86°C+** | Operator chooses: restart / lower power profile / raise cooling |
 
-OpenClaw interactive approval (webhook → operator reply → APPROVE/DENY) is stubbed and ready to wire in `ApprovalInterface.request_approval()`.
+PDU outlet control uses `POST /pdus/dcs/set_control_outlet` with the miner's `pduOutlet.pduID` and `pduOutlet.outletIndex` pulled directly from live miner data.
 
+---
+
+## Deployment Target
+
+Mining Guardian is designed to run as a persistent daemon on a **local Mac Mini** inside the mining facility:
+
+- Direct local network access to miners — no cloud dependency for core operations
+- Paired with **OpenClaw** (local LLM) for intelligent finding interpretation
+- Slack integration for remote operator visibility and approval
+- Scan results logged to disk for historical trending
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/mining-guardian.git
-cd mining-guardian
-pip install requests
+git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
+cd "Mining Gaurdian"
+python3 -m venv venv
+source venv/bin/activate
+pip install requests websocket-client
 ```
 
 ---
 
 ## Configuration
 
-Copy the example config and edit for your environment:
+On first run, `config.example.json` is generated. Copy and edit it:
 
 ```bash
-python mining_guardian.py  # auto-generates config.example.json on first run
 cp config.example.json config.json
 ```
 
-Key fields in `config.json`:
+Key fields:
 
 ```json
 {
-  "ams_base_url": "https://ams.internal.example",
-  "ams_api_key": "env:AMS_API_KEY",
+  "ams_base_url": "https://api-staging.dev.bixbit.io/api/v1",
+  "ams_email":        "env:AMS_EMAIL",
+  "ams_password":     "env:AMS_PASSWORD",
+  "ams_workspace_id": "env:AMS_WORKSPACE_ID",
   "dry_run": true,
-  "approval_mode": "manual",
-  "scan_interval_seconds": 300
+  "scan_interval_seconds": 300,
+  "approval_mode": "manual"
 }
 ```
 
-
-**Secret management** — prefix any config value with `env:` to source it from the environment instead of storing it in the file:
-
-```json
-"ams_api_key": "env:AMS_API_KEY"
-```
-
-Then set the variable in your shell or systemd unit:
+**Secret management** — prefix any value with `env:` to pull it from the environment:
 
 ```bash
-export AMS_API_KEY=your-key-here
+export AMS_EMAIL=your@email.com
+export AMS_PASSWORD=yourpassword
+export AMS_WORKSPACE_ID=119
+```
+
+Or store in a `.env` file (gitignored) and load with:
+
+```bash
+export $(grep -v '^#' .env | xargs) && python mining_guardian.py
 ```
 
 ---
 
 ## Running
 
-Single scan:
+Single scan (prints report to terminal):
 
 ```bash
 python mining_guardian.py
 ```
 
-Continuous loop (runs every `scan_interval_seconds`):
+Continuous loop:
 
 ```python
 from mining_guardian import GuardianConfig, MiningGuardian
-
 config = GuardianConfig.from_file("config.json")
 MiningGuardian(config).loop()
 ```
-
-
----
-
-## Policy Rules
-
-Rules are defined in `config.json` under the `rules` array. Each rule specifies a telemetry key, an operator, an expected value, a severity, and an optional recommended fix.
-
-Supported operators: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`, `between`, `in`
-
-Example rules:
-
-```json
-[
-  {
-    "key": "telemetry.hashrate_ths",
-    "operator": "gte",
-    "expected": 130,
-    "severity": "critical",
-    "recommended_fix": null,
-    "note": "Hashrate below expected floor — requires operator review"
-  },
-  {
-    "key": "telemetry.chip_temp_c",
-    "operator": "between",
-    "expected": [40, 75],
-    "severity": "critical",
-    "recommended_fix": "efficiency",
-    "note": "Temperature outside normal envelope — drop to efficiency power profile"
-  },
-  {
-    "key": "config.power.profile",
-    "operator": "in",
-    "expected": ["balanced", "efficiency", "immersion-140th"],
-    "severity": "warning",
-    "recommended_fix": "balanced",
-    "note": "Unexpected power profile detected"
-  }
-]
-```
-
 
 ---
 
 ## Repository Structure
 
 ```
-Mining Guardian/
-├── mining_guardian.py      # Core daemon — policy engine, AMS client, orchestrator
-├── config.json             # Your live config (gitignored)
+Mining Gaurdian/
+├── mining_guardian.py      # Core daemon — AMS client, analysis engine, report printer
+├── ams_auth_test.py        # Standalone auth + WebSocket proof-of-concept
+├── config.json             # Live config (gitignored)
 ├── config.example.json     # Auto-generated reference config
+├── .env                    # Credentials (gitignored)
+├── .env.example            # Credential template
 ├── .gitignore
 └── README.md
 ```
@@ -162,17 +182,22 @@ Mining Guardian/
 
 ## Safety Model
 
-Mining Guardian uses a human-in-the-loop design by default. `dry_run: true` is set out of the box — no changes are applied to miners until you explicitly disable it and approve actions. Critical findings never auto-remediate regardless of approval mode.
+- `dry_run: true` is the default — no changes are sent to miners until explicitly disabled
+- All remediation actions require operator approval via Slack before execution
+- PDU power cycling is a destructive action — always confirmed before execution
+- The local LLM provides recommendations only — it does not execute actions autonomously
 
 ---
 
 ## Roadmap
 
-- OpenClaw interactive approval (webhook → operator reply)
-- Smart PDU telemetry integration
-- Predictive miner failure detection
-- Fleet-level analytics and reporting
-- Firmware version drift detection
+- [ ] Scan results logged to local SQLite database for trend analysis
+- [ ] OpenClaw webhook — structured findings payload to local LLM
+- [ ] Slack integration — fleet summary and approval workflow
+- [ ] Watchdog process — auto-restarts Mining Guardian if it crashes
+- [ ] `morning.sh` integration — fleet status in daily 7am briefing
+- [ ] Predictive failure detection using historical temp and hashrate trends
+- [ ] Firmware version drift detection across fleet
 
 ---
 
