@@ -904,6 +904,7 @@ def write_example_config(path: str = "config.example.json") -> None:
 
 
 if __name__ == "__main__":
+    import sys
     config_path = os.environ.get("GUARDIAN_CONFIG", "config.json")
     if not os.path.exists(config_path):
         write_example_config()
@@ -911,5 +912,10 @@ if __name__ == "__main__":
 
     config   = GuardianConfig.from_file(config_path)
     guardian = MiningGuardian(config)
-    result   = guardian.run_once()
-    print(json.dumps(result, indent=2))
+
+    if "--loop" in sys.argv:
+        logger.info("Starting Mining Guardian in loop mode (interval=%ss)", config.scan_interval_seconds)
+        guardian.loop()
+    else:
+        result = guardian.run_once()
+        print(json.dumps(result, indent=2))
