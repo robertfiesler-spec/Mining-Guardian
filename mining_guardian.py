@@ -83,6 +83,7 @@ class GuardianConfig:
     ams_password: str
     ams_workspace_id: int
     openclaw_webhook_url: Optional[str] = None
+    slack_webhook_url: Optional[str] = None
     dry_run: bool = True
     scan_interval_seconds: int = 300
     approval_mode: str = "manual"
@@ -111,6 +112,7 @@ class GuardianConfig:
             ams_password=GuardianConfig._resolve(raw["ams_password"]),
             ams_workspace_id=int(GuardianConfig._resolve(raw["ams_workspace_id"])),
             openclaw_webhook_url=raw.get("openclaw_webhook_url"),
+            slack_webhook_url=raw.get("slack_webhook_url"),
             dry_run=raw.get("dry_run", True),
             scan_interval_seconds=raw.get("scan_interval_seconds", 300),
             approval_mode=raw.get("approval_mode", "manual"),
@@ -744,6 +746,79 @@ class GuardianDB:
         return scan_id
 
 
+# ------------------------------------------------------------
+# Slack notifier — direct fleet alerts to #mining-guardian
+# ------------------------------------------------------------
+
+class SlackNotifier:
+
+    def __init__(self, webhook_url: Optional[str], channel_id: Optional[str] = None):
+        self.webhook_url = webhook_url  # Slack incoming webhook URL
+        self.channel_id  = channel_id  # for future direct API use
+
+    def send_scan(self, miners: List[Dict], issues: List[Dict]) -> None:
+        """POST a formatted scan summary to Slack via incoming webhook."""
+        if not self.webhook_url:
+            logger.debug("Slack webhook not configured — skipping Slack notification")
+            return
+
+        now     = datetime.now().strftime("%Y-%m-%d %H:%M")
+        online  = sum(1 for m in miners if m.get("status") == "online")
+        offline = len(miners) - online
+
+        pdu_cycles  = [i for i in issues if i["action"] == "PDU_CYCLE"]
+        fw_restarts = [i for i in issues if i["action"] == "RESTART"]
+        monitors    = [i for i in issues if i["action"] == "MONITOR"]
+        temp_action = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
+
+        # Header
+        if not issues:
+            status_line = "✅ All miners operating normally."
+        else:
+            status_line = f"⚠️ {len(issues)} miner(s) need attention."
+
+        lines = [
+            f"*🤖 Mining Guardian Scan — {now}*",
+            f"Fleet: *{len(miners)} miners* | 🟢 {online} online | 🔴 {offline} offline",
+            status_line,
+        ]
+
+        if pdu_cycles:
+            lines.append(f"\n*🔴 PDU Power Cycle Recommended ({len(pdu_cycles)} miners)*")
+            for i in pdu_cycles:
+                lines.append(f"  • `{i['ip']}` {i['model']} — {i.get('pdu_action', 'No PDU info')}")
+
+        if fw_restarts:
+            lines.append(f"\n*🔴 Firmware Restart Recommended ({len(fw_restarts)} miners)*")
+            for i in fw_restarts:
+                lines.append(f"  • `{i['ip']}` {i['model']} — Hashrate: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
+
+        if temp_action:
+            lines.append(f"\n*🔴 High Temp — Action Required ({len(temp_action)} miners)*")
+            for i in temp_action:
+                lines.append(f"  • `{i['ip']}` {i['model']} — {i['temp_chip']}")
+            lines.append("  Options: [1] Restart  [2] Lower power  [3] Raise cooling")
+
+        if monitors:
+            lines.append(f"\n*🟡 Monitor — Running Warm ({len(monitors)} miners)*")
+            for i in monitors:
+                lines.append(f"  • `{i['ip']}` {i['model']} — {i['temp_chip']}")
+
+        if issues:
+            lines.append("\n_DRY RUN — no actions taken. Reply to approve actions._")
+
+        payload = {"text": "\n".join(lines)}
+
+        try:
+            resp = requests.post(self.webhook_url, json=payload, timeout=10)
+            if resp.status_code == 200:
+                logger.info("Slack notified — scan summary posted to #mining-guardian")
+            else:
+                logger.warning("Slack webhook returned %s: %s", resp.status_code, resp.text)
+        except Exception as exc:
+            logger.warning("Slack notification failed: %s", exc)
+
+
 class MiningGuardian:
     HASHRATE_THRESHOLD = 0.90   # flag if below 90% of maxHashrate
 
@@ -751,6 +826,7 @@ class MiningGuardian:
         self.config   = config
         self.ams      = AMSClient(config)
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
+        self.slack    = SlackNotifier(config.slack_webhook_url)
         self.db       = GuardianDB()
 
     # ── Per-miner analysis ────────────────────────────────────
@@ -912,6 +988,7 @@ class MiningGuardian:
         self._print_report(miners, issues)
         self.db.save_scan(miners, issues)
         self.notifier.send_scan(miners, issues)
+        self.slack.send_scan(miners, issues)
         return {
             "scanned": len(miners),
             "issues":  len(issues),
