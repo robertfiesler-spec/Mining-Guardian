@@ -47,6 +47,8 @@ divider
 step "STEP 1 — Customer Information"
 echo ""
 read "CUSTOMER_NAME?  Customer / Site name (e.g. AltaVista Mine II): "
+read "AMS_URL?  AMS base URL (default: https://api.bixbit.io/api/v1): "
+AMS_URL=${AMS_URL:-"https://api.bixbit.io/api/v1"}
 read "AMS_EMAIL?  AMS email address: "
 read "AMS_PASSWORD?  AMS password: "
 read "AMS_WORKSPACE_ID?  AMS workspace ID (number): "
@@ -92,7 +94,7 @@ ok "Credentials saved to .env (chmod 600 — private)"
 step "STEP 5 — Writing configuration"
 cat > "$CONFIG_FILE" << EOF
 {
-  "ams_base_url": "https://api-staging.dev.bixbit.io/api/v1",
+  "ams_base_url": "$AMS_URL",
   "ams_email": "env:AMS_EMAIL",
   "ams_password": "env:AMS_PASSWORD",
   "ams_workspace_id": "env:AMS_WORKSPACE_ID",
