@@ -5,7 +5,8 @@ import sqlite3
 import logging
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -13,11 +14,23 @@ import websocket
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("mining_guardian")
+def _setup_logging() -> logging.Logger:
+    """Configure logging to both terminal and a daily rotating log file."""
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / f"guardian_{datetime.now().strftime('%Y-%m-%d')}.log"
+
+    fmt = "%(asctime)s %(levelname)s %(message)s"
+    logging.basicConfig(level=logging.INFO, format=fmt)
+
+    # Add file handler alongside the terminal handler
+    fh = logging.FileHandler(log_file, encoding="utf-8")
+    fh.setFormatter(logging.Formatter(fmt))
+    logging.getLogger().addHandler(fh)
+
+    return logging.getLogger("mining_guardian")
+
+logger = _setup_logging()
 
 
 # ------------------------------------------------------------
@@ -183,7 +196,7 @@ class AMSClient:
         Tokens expire after ~30 minutes (observed from JWT payload).
         We re-auth 60 seconds before expiry to avoid mid-scan failures.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if self._ws_token and self._token_expiry and now < self._token_expiry:
             return self._ws_token
 
@@ -198,7 +211,7 @@ class AMSClient:
             payload = json.loads(base64.b64decode(payload_b64))
             exp = payload.get("exp")
             if exp:
-                self._token_expiry = datetime.utcfromtimestamp(exp) - timedelta(seconds=60)
+                self._token_expiry = datetime.fromtimestamp(exp, tz=timezone.utc) - timedelta(seconds=60)
         except Exception:
             # If we can't parse expiry, refresh every 25 minutes to be safe
             self._token_expiry = now + timedelta(minutes=25)
@@ -542,10 +555,10 @@ class RemediationCooldown:
 
     def is_cooling_down(self, miner_id: str, key: str) -> bool:
         last = self._last_remediated.get((miner_id, key))
-        return False if last is None else datetime.utcnow() - last < self.cooldown
+        return False if last is None else datetime.now(timezone.utc) - last < self.cooldown
 
     def record(self, miner_id: str, key: str) -> None:
-        self._last_remediated[(miner_id, key)] = datetime.utcnow()
+        self._last_remediated[(miner_id, key)] = datetime.now(timezone.utc)
 
 
 # ------------------------------------------------------------
@@ -822,6 +835,9 @@ class MiningGuardian:
         print(f"\n  ✅ Healthy: {healthy} miners within normal parameters")
         print(f"  {'[DRY RUN — no actions taken]' if True else ''}")
         print(f"{divider}\n")
+        # Mirror the report to the log file
+        logger.info("Scan complete — %s miners | %s online | %s offline | %s issues",
+                    len(miners), online, offline, len(issues))
 
     # ── Main entry ────────────────────────────────────────────
 
