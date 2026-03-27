@@ -257,46 +257,37 @@ class AMSClient:
             raise RuntimeError("Dashboard WebSocket returned no data.")
         return data
 
-    def get_miners(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Fetch per-miner list via WebSocket (miners/list_ws).
-
-        Protocol discovery:
-        - Send {'page': 1, 'perPage': N} after connecting
-        - First response contains totalCount and empty devices[]
-        - Subsequent responses stream device data in pages
-        - Collect all messages until we have all devices or timeout
-
-        Note: On staging environments, totalCount may be non-zero but
-        devices[] stays empty because no live agents are connected.
-        In production with live miners this will return full telemetry.
-        """
-        token    = self._ensure_token()
-        ws_url   = f"{self.ws_base}/miners/list_ws"
-        per_page = 50
-        all_miners: List[Dict[str, Any]] = []
-        total_count = 0
-        event    = threading.Event()
+    def _fetch_miner_page(self, page: int, per_page: int = 50) -> Dict[str, Any]:
+        """Fetch a single page of miners via WebSocket. Returns raw response dict."""
+        token  = self._ensure_token()
+        ws_url = f"{self.ws_base}/miners/list_ws"
+        result: Dict[str, Any] = {}
+        event  = threading.Event()
 
         def on_open(ws):
-            ws.send(json.dumps({"page": 1, "perPage": per_page}))
+            ws.send(json.dumps({
+                "limit": per_page,
+                "page": page,
+                "filter": {
+                    "category": "All",
+                    "searchWord": "",
+                    "workers": [],
+                    "models": [],
+                    "errors": []
+                },
+                "sort": {"field": "id", "order": "asc"}
+            }))
 
         def on_message(ws, message):
-            nonlocal total_count
             try:
-                data    = json.loads(message)
-                devices = data.get("devices", [])
-                total_count = data.get("totalCount", total_count)
-                all_miners.extend(devices)
-                # Close once we have all miners or got a non-empty page
-                if devices or len(all_miners) >= total_count:
-                    event.set()
-                    ws.close()
+                result.update(json.loads(message))
             except Exception as e:
                 logger.warning("Miner list WS parse error: %s", e)
-                event.set()
+            event.set()
+            ws.close()
 
         def on_error(ws, error):
-            logger.warning("Miner list WS error: %s", error)
+            logger.warning("Miner list WS error on page %s: %s", page, error)
             event.set()
 
         def on_close(ws, *_):
@@ -311,15 +302,31 @@ class AMSClient:
         thread.start()
         event.wait(timeout=15)
         ws.close()
+        return result
 
-        if not all_miners:
-            logger.warning(
-                "Miner list WS returned 0 devices (totalCount=%s). "
-                "This is expected on staging — live miners not connected.",
-                total_count
+    def get_miners(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Fetch all miners across all pages via WebSocket (miners/list_ws)."""
+        per_page   = 50
+        all_miners: List[Dict[str, Any]] = []
+        page       = 1
+
+        while True:
+            data        = self._fetch_miner_page(page, per_page)
+            devices     = data.get("devices", [])
+            total_count = data.get("totalCount", 0)
+            all_miners.extend(devices)
+
+            logger.info(
+                "Fetched page %s — %s miners (total %s / %s)",
+                page, len(devices), len(all_miners), total_count
             )
-        else:
-            logger.info("Fetched %s miners (totalCount=%s)", len(all_miners), total_count)
+
+            # Stop if we have everything or the page came back empty
+            if not devices or len(all_miners) >= total_count:
+                break
+            page += 1
+
+        logger.info("Fetched %s miners total (totalCount=%s)", len(all_miners), total_count)
         return all_miners
 
     def get_miner_state(self, miner_id: str) -> Dict[str, Any]:
@@ -515,74 +522,153 @@ class RemediationCooldown:
 # ------------------------------------------------------------
 
 class MiningGuardian:
+    HASHRATE_THRESHOLD = 0.90   # flag if below 90% of maxHashrate
+
     def __init__(self, config: GuardianConfig):
         self.config   = config
         self.ams      = AMSClient(config)
-        self.engine   = PolicyEngine(config.rules)
-        self.planner  = RemediationPlanner()
-        self.approval = ApprovalInterface(config)
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
-        self.cooldown = RemediationCooldown(cooldown_minutes=30)
 
-    def scan(self) -> List[MinerFinding]:
-        miners   = self.ams.get_miners(self.config.miner_filters)
-        findings: List[MinerFinding] = []
-        for miner in miners:
-            miner_id = str(miner.get("id", "unknown"))
-            try:
-                fresh = self.ams.get_miner_state(miner_id)
-                state = fresh if fresh else miner
-            except Exception:
-                logger.warning("Could not fetch fresh state for miner %s — using list data", miner_id)
-                state = miner
-            findings.extend(self.engine.evaluate_miner(state))
-        return findings
+    # ── Per-miner analysis ────────────────────────────────────
 
-    def remediate(self, findings: List[MinerFinding]) -> List[Tuple[MinerFinding, str]]:
-        results: List[Tuple[MinerFinding, str]] = []
-        for finding in findings:
-            if self.cooldown.is_cooling_down(finding.miner_id, finding.key):
-                results.append((finding, "cooldown"))
-                continue
-            try:
-                auto_ok  = (self.config.approval_mode == "auto-low-risk"
-                            and self.planner.is_low_risk(finding))
-                approved = auto_ok or self.approval.request_approval(finding)
-                if not approved:
-                    results.append((finding, "not approved"))
-                    continue
-                patch = self.planner.build_patch(finding)
-                if self.config.dry_run:
-                    logger.info("DRY RUN — miner=%s patch=%s", finding.miner_id, patch)
-                    self.cooldown.record(finding.miner_id, finding.key)
-                    results.append((finding, "dry-run"))
-                    continue
-                self.ams.change_settings([finding.miner_id], patch)
-                self.cooldown.record(finding.miner_id, finding.key)
-                results.append((finding, "patched"))
-            except Exception as exc:
-                logger.exception("Remediation failed for miner %s", finding.miner_id)
-                results.append((finding, f"error: {exc}"))
-        return results
+    def _analyze_miner(self, miner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Return an issue dict if the miner has a problem, else None."""
+        miner_id   = str(miner.get("id", "unknown"))
+        ip         = miner.get("ip", "unknown")
+        name       = miner.get("shortModel", miner.get("name", "unknown"))
+        status     = miner.get("status", "unknown")
+        hashrate   = miner.get("hashrate", 0) or 0
+        max_hr     = miner.get("maxHashrate", 0) or 0
+        temp_chip_raw = miner.get("tempChip", 0) or 0
+        temp_chip     = temp_chip_raw if temp_chip_raw >= 0 else None  # negative = bad sensor
+        temp_low   = miner.get("tempChipLow", 86)
+        temp_med   = miner.get("tempChipMedium", 95)
+        temp_max   = miner.get("maxTempChip", 100)
+
+        issues = []
+        action = None
+
+        # ── Hashrate check ──────────────────────────────────
+        if status == "offline":
+            pct = 0.0
+            issues.append("OFFLINE")
+            action = "RESTART"
+        elif max_hr > 0:
+            pct = (hashrate / max_hr) * 100
+            if pct < self.HASHRATE_THRESHOLD * 100:
+                issues.append(f"Hashrate {pct:.1f}% of max ({hashrate:,} / {max_hr:,} GH/s)")
+                action = "RESTART"
+        else:
+            pct = None
+
+        # ── Temp check ──────────────────────────────────────
+        # Green:  < 76°C  — healthy, no action
+        # Yellow: 76–85°C — monitor
+        # Red:    86°C+   — operator chooses action
+        temp_issue = None
+        if temp_chip is None:
+            temp_issue = "⚠️ Sensor error — temp reading invalid"
+        elif temp_chip >= 86:
+            temp_issue = f"🔴 RED — chip {temp_chip}°C (86°C+ threshold)"
+            action = "TEMP_ACTION_REQUIRED"
+        elif temp_chip >= 76:
+            temp_issue = f"🟡 YELLOW — chip {temp_chip}°C (76–85°C range)"
+            if not action:
+                action = "MONITOR"
+        # below 76 is green — no issue logged
+
+        if temp_issue:
+            issues.append(temp_issue)
+
+        if not issues:
+            return None
+
+        return {
+            "id":       miner_id,
+            "ip":       ip,
+            "model":    name,
+            "status":   status,
+            "hashrate_pct": f"{pct:.1f}%" if pct is not None else "N/A",
+            "temp_chip": f"{temp_chip}°C" if temp_chip is not None else "sensor error",
+            "issues":   issues,
+            "action":   action,
+        }
+
+    # ── Report printer ────────────────────────────────────────
+
+    @staticmethod
+    def _print_report(miners: List[Dict], issues: List[Dict]) -> None:
+        now      = datetime.now().strftime("%Y-%m-%d %H:%M")
+        online   = sum(1 for m in miners if m.get("status") == "online")
+        offline  = len(miners) - online
+        divider  = "━" * 60
+
+        print(f"\n{divider}")
+        print(f"  MINING GUARDIAN SCAN — {now}")
+        print(divider)
+        print(f"  Fleet:   {len(miners)} miners  |  {online} online  |  {offline} offline")
+        print(divider)
+
+        if not issues:
+            print("  ✅ All miners operating within normal parameters.")
+        else:
+            # Group by action
+            restarts = [i for i in issues if i["action"] == "RESTART"]
+            monitors = [i for i in issues if i["action"] == "MONITOR"]
+
+            if restarts:
+                print(f"\n  🔴 RESTART RECOMMENDED ({len(restarts)} miners)\n")
+                print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'Hashrate':<10} {'ChipTemp':<10} Issue")
+                print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*10} {'-'*10} {'-'*30}")
+                for i in restarts:
+                    issue_str = " | ".join(i["issues"])
+                    print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['hashrate_pct']:<10} {i['temp_chip']:<10} {issue_str}")
+
+            # Miners with high temp — show action menu
+            temp_action = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
+            if temp_action:
+                print(f"\n  🔴 HIGH TEMP — ACTION REQUIRED ({len(temp_action)} miners)\n")
+                print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'ChipTemp':<10} Issue")
+                print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*10} {'-'*30}")
+                for i in temp_action:
+                    issue_str = " | ".join(i["issues"])
+                    print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['temp_chip']:<10} {issue_str}")
+                print(f"\n  Recommended actions for each miner above:")
+                print(f"    [1] Restart the miner")
+                print(f"    [2] Lower the power level (reduce hashrate to cut heat)")
+                print(f"    [3] Raise cooling — increase fan speed or coolant flow rate")
+
+            if monitors:
+                monitor_word = "miner" if len(monitors) == 1 else "miners"
+                print(f"\n  🟡 MONITOR ({len(monitors)} {monitor_word})\n")
+                print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'ChipTemp':<10} Issue")
+                print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*10} {'-'*30}")
+                for i in monitors:
+                    issue_str = " | ".join(i["issues"])
+                    print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['temp_chip']:<10} {issue_str}")
+
+        healthy = len(miners) - len(issues)
+        print(f"\n  ✅ Healthy: {healthy} miners within normal parameters")
+        print(f"  {'[DRY RUN — no actions taken]' if True else ''}")
+        print(f"{divider}\n")
+
+    # ── Main entry ────────────────────────────────────────────
 
     def run_once(self) -> Dict[str, Any]:
-        findings     = self.scan()
-        self.notifier.send_findings(findings)
-        remediation  = self.remediate(findings)
+        miners = self.ams.get_miners(self.config.miner_filters)
+        issues = [r for r in (self._analyze_miner(m) for m in miners) if r]
+        self._print_report(miners, issues)
+        self.notifier.send_findings([])   # placeholder — findings now use new format
         return {
-            "finding_count":     len(findings),
-            "remediation_count": len(remediation),
-            "results": [
-                {"miner_id": f.miner_id, "ip": f.ip, "key": f.key, "status": s}
-                for f, s in remediation
-            ],
+            "scanned": len(miners),
+            "issues":  len(issues),
+            "restart_recommended": [i["id"] for i in issues if i["action"] == "RESTART"],
         }
 
     def loop(self) -> None:
         while True:
             try:
-                summary = self.run_once()
-                logger.info("Scan complete: %s", json.dumps(summary))
+                self.run_once()
             except Exception:
                 logger.exception("Guardian loop error")
             time.sleep(self.config.scan_interval_seconds)
