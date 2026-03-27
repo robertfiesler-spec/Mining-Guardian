@@ -20,3 +20,5 @@ config.json
 
 # Logs
 *.log
+
+logs/
