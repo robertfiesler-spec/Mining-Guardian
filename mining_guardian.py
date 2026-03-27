@@ -370,6 +370,36 @@ class AMSClient:
         resp.raise_for_status()
         return resp.json()
 
+    def pdu_power_cycle(self, pdu_id: int, outlet_index: int, off_delay: int = 5) -> Dict:
+        """Power cycle a PDU outlet — turns it off, waits, turns it back on.
+
+        Args:
+            pdu_id:       PDU ID (from miner's pduOutlet.pduID field)
+            outlet_index: Outlet number (from miner's pduOutlet.outletIndex field)
+            off_delay:    Seconds to wait between off and on (default 5)
+        """
+        token = self._ensure_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{self.base_url}/pdus/dcs/set_control_outlet"
+
+        # Turn OFF
+        resp = self.session.post(url, json=[{
+            "id": pdu_id, "open": False, "outlet": [outlet_index]
+        }], headers=headers, timeout=self.timeout)
+        resp.raise_for_status()
+        logger.info("PDU %s outlet %s — turned OFF", pdu_id, outlet_index)
+
+        time.sleep(off_delay)
+
+        # Turn ON
+        resp = self.session.post(url, json=[{
+            "id": pdu_id, "open": True, "outlet": [outlet_index]
+        }], headers=headers, timeout=self.timeout)
+        resp.raise_for_status()
+        logger.info("PDU %s outlet %s — turned ON (power cycle complete)", pdu_id, outlet_index)
+
+        return {"pdu_id": pdu_id, "outlet": outlet_index, "action": "power_cycled"}
+
     def change_pools(self, miner_ids: List[str], pools: List[Dict]) -> Dict:
         """POST /miners/dcs/change_pools — update pool config on miners."""
         token = self._ensure_token()
@@ -545,14 +575,23 @@ class MiningGuardian:
         temp_med   = miner.get("tempChipMedium", 95)
         temp_max   = miner.get("maxTempChip", 100)
 
+        pdu_id       = miner.get("pduOutlet", {}).get("pduID") or 0
+        outlet_index = miner.get("pduOutlet", {}).get("outletIndex") or 0
+        has_pdu      = pdu_id > 0 and outlet_index > 0
+
         issues = []
         action = None
+        pdu_action = None
 
         # ── Hashrate check ──────────────────────────────────
         if status == "offline":
             pct = 0.0
             issues.append("OFFLINE")
-            action = "RESTART"
+            if has_pdu:
+                action = "PDU_CYCLE"
+                pdu_action = f"PDU {pdu_id} → Outlet {outlet_index}"
+            else:
+                action = "RESTART"
         elif max_hr > 0:
             pct = (hashrate / max_hr) * 100
             if pct < self.HASHRATE_THRESHOLD * 100:
@@ -592,6 +631,9 @@ class MiningGuardian:
             "temp_chip": f"{temp_chip}°C" if temp_chip is not None else "sensor error",
             "issues":   issues,
             "action":   action,
+            "pdu_id":   pdu_id,
+            "outlet":   outlet_index,
+            "pdu_action": pdu_action,
         }
 
     # ── Report printer ────────────────────────────────────────
@@ -613,16 +655,29 @@ class MiningGuardian:
             print("  ✅ All miners operating within normal parameters.")
         else:
             # Group by action
-            restarts = [i for i in issues if i["action"] == "RESTART"]
-            monitors = [i for i in issues if i["action"] == "MONITOR"]
+            pdu_cycles  = [i for i in issues if i["action"] == "PDU_CYCLE"]
+            fw_restarts = [i for i in issues if i["action"] == "RESTART"]
+            monitors    = [i for i in issues if i["action"] == "MONITOR"]
+            restarts    = pdu_cycles + fw_restarts
 
             if restarts:
-                print(f"\n  🔴 RESTART RECOMMENDED ({len(restarts)} miners)\n")
-                print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'Hashrate':<10} {'ChipTemp':<10} Issue")
-                print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*10} {'-'*10} {'-'*30}")
-                for i in restarts:
-                    issue_str = " | ".join(i["issues"])
-                    print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['hashrate_pct']:<10} {i['temp_chip']:<10} {issue_str}")
+
+                if pdu_cycles:
+                    print(f"\n  🔴 OFFLINE — PDU POWER CYCLE RECOMMENDED ({len(pdu_cycles)} miners)\n")
+                    print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'Hashrate':<10} {'PDU Action':<25} Issue")
+                    print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*10} {'-'*25} {'-'*20}")
+                    for i in pdu_cycles:
+                        issue_str = " | ".join(i["issues"])
+                        pdu_str = i["pdu_action"] or "—"
+                        print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['hashrate_pct']:<10} {pdu_str:<25} {issue_str}")
+
+                if fw_restarts:
+                    print(f"\n  🔴 UNDERPERFORMING — FIRMWARE RESTART RECOMMENDED ({len(fw_restarts)} miners)\n")
+                    print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'Hashrate':<10} {'ChipTemp':<10} Issue")
+                    print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*10} {'-'*10} {'-'*30}")
+                    for i in fw_restarts:
+                        issue_str = " | ".join(i["issues"])
+                        print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['hashrate_pct']:<10} {i['temp_chip']:<10} {issue_str}")
 
             # Miners with high temp — show action menu
             temp_action = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
