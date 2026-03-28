@@ -85,6 +85,7 @@ class GuardianConfig:
     openclaw_webhook_url: Optional[str] = None
     slack_webhook_url: Optional[str] = None
     dry_run: bool = True
+    collect_logs: bool = False  # enable log collection independently of dry_run
     scan_interval_seconds: int = 300
     approval_mode: str = "manual"
     miner_filters: Dict[str, Any] = field(default_factory=dict)
@@ -114,6 +115,7 @@ class GuardianConfig:
             openclaw_webhook_url=raw.get("openclaw_webhook_url"),
             slack_webhook_url=raw.get("slack_webhook_url"),
             dry_run=raw.get("dry_run", True),
+            collect_logs=raw.get("collect_logs", False),
             scan_interval_seconds=raw.get("scan_interval_seconds", 300),
             approval_mode=raw.get("approval_mode", "manual"),
             miner_filters=raw.get("miner_filters", {}),
@@ -807,6 +809,19 @@ class GuardianDB:
 
                 CREATE INDEX IF NOT EXISTS idx_logs_miner
                     ON miner_logs(miner_id, collected_at);
+
+                CREATE TABLE IF NOT EXISTS miner_restarts (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    restarted_at    TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    model           TEXT,
+                    restart_type    TEXT,
+                    elevated_until  TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_restarts_miner
+                    ON miner_restarts(miner_id, restarted_at);
             """)
         logger.info("Database ready at %s", self.db_path)
 
@@ -882,7 +897,32 @@ class GuardianDB:
             )
         logger.info("Saved %s log files for miner %s (%s)", len(rows), miner_id, health_status)
 
-    def last_log_collected(self, miner_id: str) -> Optional[datetime]:
+    def record_restart(self, miner_id: str, ip: str, model: str,
+                       restart_type: str, elevated_hours: int = 3) -> None:
+        """Record a restart event and set elevated monitoring window."""
+        now           = datetime.now()
+        elevated_until = (now + timedelta(hours=elevated_hours)).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO miner_restarts "
+                "(restarted_at, miner_id, ip, model, restart_type, elevated_until) "
+                "VALUES (?,?,?,?,?,?)",
+                (now.isoformat(), miner_id, ip, model, restart_type, elevated_until)
+            )
+        logger.info("Restart recorded for miner %s (%s) — elevated monitoring for %sh",
+                    miner_id, restart_type, elevated_hours)
+
+    def is_elevated_monitoring(self, miner_id: str) -> bool:
+        """Return True if this miner is within its post-restart elevated monitoring window."""
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT elevated_until FROM miner_restarts "
+                "WHERE miner_id=? AND elevated_until > ? "
+                "ORDER BY id DESC LIMIT 1",
+                (miner_id, now)
+            ).fetchone()
+        return row is not None
         """Return datetime of last log collection for this miner, or None."""
         with self._connect() as conn:
             row = conn.execute(
@@ -940,6 +980,7 @@ class SlackNotifier:
             lines.append(f"\n*🔴 PDU Power Cycle Recommended ({len(pdu_cycles)} miners)*")
             for i in pdu_cycles:
                 lines.append(f"  • `{i['ip']}` {i['model']} — {i.get('pdu_action', 'No PDU info')}")
+            lines.append("  _After power cycle: logs collected immediately on boot. Elevated monitoring active for 3 hours._")
 
         if fw_restarts:
             lines.append(f"\n*🔴 Firmware Restart Recommended ({len(fw_restarts)} miners)*")
@@ -1137,6 +1178,10 @@ class MiningGuardian:
 
     def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
         """Download logs for flagged miners every scan, healthy miners every 6 hours."""
+        if not self.config.collect_logs:
+            logger.debug("Log collection disabled — set collect_logs: true in config to enable")
+            return
+
         issue_ids = {i["id"] for i in issues}
         now = datetime.now()
         collected = 0
@@ -1147,12 +1192,17 @@ class MiningGuardian:
             status    = miner.get("status", "unknown")
             flagged   = miner_id in issue_ids
 
-            # Determine if we should collect logs for this miner
-            last = self.db.last_log_collected(miner_id)
-            if flagged:
-                # Always collect for flagged miners
+            # Determine collection priority
+            elevated  = self.db.is_elevated_monitoring(miner_id)
+            last      = self.db.last_log_collected(miner_id)
+
+            if flagged or elevated:
+                # Flagged or post-restart elevated — always collect
                 should_collect = True
-                health_status = "flagged"
+                if elevated:
+                    health_status = "post-restart"
+                else:
+                    health_status = "flagged"
             elif status == "online":
                 # Healthy miners — collect every 6 hours
                 should_collect = last is None or (now - last).total_seconds() > 21600
@@ -1163,10 +1213,6 @@ class MiningGuardian:
                 health_status = "offline"
 
             if not should_collect:
-                continue
-
-            if self.config.dry_run:
-                logger.debug("DRY RUN — skipping log collection for miner %s", miner_id)
                 continue
 
             try:
