@@ -265,11 +265,19 @@ Mining Gaurdian/
 
 ## Roadmap
 
-- [ ] Scan results logged to local SQLite database for trend analysis
-- [ ] OpenClaw webhook — structured findings payload to local LLM
-- [ ] Slack integration — fleet summary and approval workflow
-- [ ] Watchdog process — auto-restarts Mining Guardian if it crashes
-- [ ] `morning.sh` integration — fleet status in daily 7am briefing
+- [ ] **Mining Guardian Dashboard** — full web UI for fleet management
+  - Live fleet status with professional charts and visualizations
+  - Per-miner historical data — hashrate trends, temp history, uptime
+  - Settings management — change scan rules, thresholds, config from the UI
+  - AI predictions — local LLM learns patterns and predicts failures before they happen
+  - Multi-customer support — switch between sites from one interface
+- [x] SQLite database — scan history and per-miner telemetry logging
+- [x] Daily log file — headless operation ready
+- [x] Deprecation warnings fixed
+- [x] launchd watchdog — auto-start and crash recovery on Mac Mini
+- [ ] OpenClaw webhook — structured findings to local LLM (built, pending OpenClaw setup)
+- [x] Slack integration — live fleet alerts to #mining-guardian
+- [x] Morning briefing — 7am fleet summary to Slack
 - [ ] Predictive failure detection using historical temp and hashrate trends
 - [ ] Firmware version drift detection across fleet
 
