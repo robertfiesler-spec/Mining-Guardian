@@ -454,6 +454,256 @@ class AMSClient:
 
     # ── Public write methods ──────────────────────────────────
 
+    def get_pdu_detail(self, pdu_id: int) -> Optional[Dict]:
+        """WebSocket pdus/ws — get per-outlet detail for a specific PDU.
+
+        Returns per-outlet: voltage, current, power (watts), counter (MWh),
+        on/off status, and assigned miner ID.
+        PDU power is the authoritative source — always prefer over miner-reported.
+        """
+        token  = self._ensure_token()
+        ws_url = f"{self.ws_base}/pdus/ws"
+        result: Dict = {}
+        event  = threading.Event()
+
+        def on_open(ws):
+            ws.send(json.dumps({"id": pdu_id}))
+
+        def on_message(ws, message):
+            try:
+                result.update(json.loads(message))
+            except Exception as e:
+                logger.warning("pdus/ws parse error: %s", e)
+            event.set()
+            ws.close()
+
+        def on_error(ws, error):
+            logger.warning("pdus/ws error for PDU %s: %s", pdu_id, error)
+            event.set()
+
+        def on_close(ws, *_):
+            event.set()
+
+        ws = websocket.WebSocketApp(ws_url,
+            header={"Authorization": f"Bearer {token}"},
+            subprotocols=[token],
+            on_open=on_open, on_message=on_message,
+            on_error=on_error, on_close=on_close)
+        threading.Thread(target=ws.run_forever, daemon=True).start()
+        event.wait(timeout=10)
+        ws.close()
+        return result if result else None
+
+    def get_pdu_stats(self) -> Optional[Dict]:
+        """WebSocket pdus/statistic — get real-time PDU power stats.
+
+        POWER DATA PRIORITY RULE:
+        Always prefer PDU power numbers over miner-reported numbers.
+        Smart PDUs measure at the outlet level and are more accurate.
+        Only fall back to miner-reported consumption if no PDU is assigned.
+
+        Returns totalDevices, enabledOuts, totalOuts, voltage, current,
+        power (watts), and counter (total energy MWh) for all PDUs.
+        """
+        token  = self._ensure_token()
+        ws_url = f"{self.ws_base}/pdus/statistic"
+        result: Dict = {}
+        event  = threading.Event()
+
+        def on_message(ws, message):
+            try:
+                result.update(json.loads(message))
+            except Exception as e:
+                logger.warning("pdus/statistic parse error: %s", e)
+            event.set()
+            ws.close()
+
+        def on_error(ws, error):
+            logger.warning("pdus/statistic error: %s", error)
+            event.set()
+
+        def on_close(ws, *_):
+            event.set()
+
+        ws = websocket.WebSocketApp(ws_url,
+            header={"Authorization": f"Bearer {token}"},
+            subprotocols=[token],
+            on_message=on_message, on_error=on_error, on_close=on_close)
+        threading.Thread(target=ws.run_forever, daemon=True).start()
+        event.wait(timeout=10)
+        ws.close()
+        return result if result else None
+
+    def get_miner_boards(self, miner_id: int) -> Optional[Dict]:
+        """WebSocket miners/chips_ws — get per-chip frequency, temp, and voltage data.
+
+        Returns per-hashboard, per-chip data — critical for diagnosing
+        which specific chips are failing or underperforming.
+        """
+        token  = self._ensure_token()
+        ws_url = f"{self.ws_base}/miners/chips_ws"
+        result: Dict = {}
+        event  = threading.Event()
+
+        def on_open(ws):
+            ws.send(json.dumps({"id": miner_id}))
+
+        def on_message(ws, message):
+            try:
+                result.update(json.loads(message))
+            except Exception as e:
+                logger.warning("chips_ws parse error: %s", e)
+            event.set()
+            ws.close()
+
+        def on_error(ws, error):
+            logger.warning("chips_ws error for miner %s: %s", miner_id, error)
+            event.set()
+
+        def on_close(ws, *_):
+            event.set()
+
+        ws = websocket.WebSocketApp(ws_url,
+            header={"Authorization": f"Bearer {token}"},
+            subprotocols=[token],
+            on_open=on_open, on_message=on_message,
+            on_error=on_error, on_close=on_close)
+        threading.Thread(target=ws.run_forever, daemon=True).start()
+        event.wait(timeout=10)
+        ws.close()
+        return result if result else None
+
+    def get_miner_stats(self, miner_id: int, range: str = "today") -> Dict:
+        """POST /miner_stats/device_charts — get hashrate, consumption, temp history.
+
+        Args:
+            miner_id: The miner ID
+            range: "today", "week", or "month"
+
+        Returns hashrate, power consumption, and temperature charts over time.
+        Critical for trending and AI pattern analysis.
+        """
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miner_stats/device_charts",
+            json={"id": miner_id, "range": range},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning("get_miner_stats returned %s for miner %s", resp.status_code, miner_id)
+        return {}
+
+    def led_on(self, miner_ids: List[str]) -> Dict:
+        """POST /miners/dcs/led_on — flash LED to physically locate a miner."""
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miners/dcs/led_on",
+            json={"ids": [int(i) for i in miner_ids]},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        logger.info("LED on for miners %s", miner_ids)
+        return resp.json()
+
+    def led_off(self, miner_ids: List[str]) -> Dict:
+        """POST /miners/dcs/led_off — turn off LED locator on miners."""
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miners/dcs/led_off",
+            json={"ids": [int(i) for i in miner_ids]},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        logger.info("LED off for miners %s", miner_ids)
+        return resp.json()
+
+    def get_notifications_count(self) -> int:
+        """GET /notifications/count — returns unread notification count."""
+        token = self._ensure_token()
+        resp  = self.session.get(
+            f"{self.base_url}/notifications/count",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("count", 0)
+        return 0
+
+    def reboot_miner(self, miner_ids: List[str]) -> Dict:
+        """POST /miners/dcs/reboot — firmware reboot one or more miners."""
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miners/dcs/reboot",
+            json={"ids": [int(i) for i in miner_ids]},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        logger.info("Reboot command sent to miners %s", miner_ids)
+        return resp.json()
+
+    def get_miner_reboot_history(self, miner_id: int, limit: int = 20) -> List[Dict]:
+        """POST /miners/request_list — get reboot/request history for a miner."""
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miners/request_list",
+            json={"id": miner_id, "start": "", "end": "", "from": "", "limit": limit},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return []
+
+    def start_miner(self, miner_ids: List[str]) -> Dict:
+        """POST /miners/dcs/start — start one or more miners."""
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miners/dcs/start",
+            json={"ids": [int(i) for i in miner_ids]},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        logger.info("Start command sent to miners %s", miner_ids)
+        return resp.json()
+
+    def stop_miner(self, miner_ids: List[str]) -> Dict:
+        """POST /miners/dcs/stop — stop one or more miners."""
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miners/dcs/stop",
+            json={"ids": [int(i) for i in miner_ids]},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        logger.info("Stop command sent to miners %s", miner_ids)
+        return resp.json()
+
+    def change_power_profile(self, miner_ids: List[str], profile_name: str) -> Dict:
+        """POST /miners/dcs/change_overclock_config — change power profile on miners.
+
+        profile_name is the profile ID string (e.g. "21") from x-autotune-profiles.json
+        Use get_miner_profiles() to list available profiles for a miner model.
+        """
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/miners/dcs/change_overclock_config",
+            json={"ids": [int(i) for i in miner_ids],
+                  "config": {"command": "set_profile",
+                             "data": {"profile_name": profile_name}}},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        logger.info("Power profile changed to %s for miners %s", profile_name, miner_ids)
+        return resp.json()
+
     def change_settings(self, miner_ids: List[str], settings: Dict[str, Any]) -> Dict:
         """POST /miners/change_settings — apply settings to one or more miners."""
         token = self._ensure_token()
@@ -1163,10 +1413,15 @@ class MiningGuardian:
         hashrate   = miner.get("hashrate", 0) or 0
         max_hr     = miner.get("maxHashrate", 0) or 0
         temp_chip_raw = miner.get("tempChip", 0) or 0
-        temp_chip     = temp_chip_raw if temp_chip_raw >= 0 else None  # negative = bad sensor
+        temp_chip     = temp_chip_raw if temp_chip_raw >= 0 else None
         temp_low   = miner.get("tempChipLow", 86)
         temp_med   = miner.get("tempChipMedium", 95)
         temp_max   = miner.get("maxTempChip", 100)
+        # Power — prefer PDU outlet reading (more accurate), fall back to miner-reported
+        pdu_power    = miner.get("pduOutlet", {}).get("power", 0) or 0
+        miner_power  = miner.get("consumption", 0) or 0
+        power_watts  = pdu_power if pdu_power > 0 else miner_power
+        power_source = "PDU" if pdu_power > 0 else "miner"
 
         pdu_id       = miner.get("pduOutlet", {}).get("pduID") or 0
         outlet_index = miner.get("pduOutlet", {}).get("outletIndex") or 0
@@ -1228,6 +1483,8 @@ class MiningGuardian:
             "pdu_id":   pdu_id,
             "outlet":   outlet_index,
             "pdu_action": pdu_action,
+            "power_watts":  power_watts,
+            "power_source": power_source,
         }
 
     # ── Report printer ────────────────────────────────────────
