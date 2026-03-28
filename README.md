@@ -172,16 +172,6 @@ rm ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
 
 ---
 
-```bash
-git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
-cd "Mining Gaurdian"
-python3 -m venv venv
-source venv/bin/activate
-pip install requests websocket-client
-```
-
----
-
 ## Configuration
 
 On first run, `config.example.json` is generated. Copy and edit it:
@@ -265,20 +255,26 @@ Mining Gaurdian/
 
 ## Roadmap
 
-- [ ] **Mining Guardian Dashboard** — full web UI for fleet management
-  - Live fleet status with professional charts and visualizations
-  - Per-miner historical data — hashrate trends, temp history, uptime
-  - Settings management — change scan rules, thresholds, config from the UI
-  - AI predictions — local LLM learns patterns and predicts failures before they happen
-  - Multi-customer support — switch between sites from one interface
+- [ ] **Mining Guardian Dashboard — Phase 1 (Retool)**
+  - Fast, professional internal dashboard — no heavy frontend build required
+  - Live fleet status with charts and color-coded miner health
+  - Per-miner historical data — hashrate trends, temp history, uptime over time
+  - Settings management — change rules, thresholds, dry run toggle from the UI
+  - Alert history — full log of everything flagged and what action was taken
+- [ ] **Mining Guardian Dashboard — Phase 2 (Custom React app)**
+  - Fully owned by BiXBiT — no monthly fees, white-label ready for customers
+  - Multi-customer support — switch between customer sites from one interface
+  - AI predictions panel — local LLM learns fleet patterns, surfaces failure warnings
+  - Professional branded UI deployable per customer
 - [x] SQLite database — scan history and per-miner telemetry logging
-- [x] Daily log file — headless operation ready
-- [x] Deprecation warnings fixed
-- [x] launchd watchdog — auto-start and crash recovery on Mac Mini
+- [x] Daily log file — headless Mac Mini operation ready
+- [x] Deprecation warnings fixed — timezone-aware datetime throughout
+- [x] launchd watchdog — auto-start and crash recovery on Mac Mini boot
+- [x] Customer setup script — one command (`zsh setup.sh`) deploys to any new Mac Mini
 - [ ] OpenClaw webhook — structured findings to local LLM (built, pending OpenClaw setup)
-- [x] Slack integration — live fleet alerts to #mining-guardian
-- [x] Morning briefing — 7am fleet summary to Slack
-- [ ] Predictive failure detection using historical temp and hashrate trends
+- [x] Slack integration — live fleet alerts posted to #mining-guardian after every scan
+- [x] Morning briefing — 7am fleet summary posted to Slack automatically via cron
+- [ ] Predictive failure detection — trending historical temp and hashrate data
 - [ ] Firmware version drift detection across fleet
 
 ---
