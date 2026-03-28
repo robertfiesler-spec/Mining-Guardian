@@ -621,25 +621,27 @@ class AMSClient:
         logger.info("LED off for miners %s", miner_ids)
         return resp.json()
 
-    def get_notifications(self, category: str = "miner") -> List[Dict]:
-        """GET /notifications/channels — get notification list by category.
+    def get_notifications(self, type: str = "miner", limit: int = 40) -> List[Dict]:
+        """POST /notifications/channels — get notifications by type.
 
         Args:
-            category: "miner", "pdu", "system", or "container"
+            type: "miner", "pdu", "system", or "container"
+            limit: max notifications to return (default 40)
 
-        Returns list of notifications with miner ID, IP, type, and severity.
-        Mining Guardian uses these to detect AMS-generated alerts like
-        consumption changes, offline events, and temperature warnings.
+        Returns AMS-generated alerts like consumption changes, offline events,
+        temperature warnings. Mining Guardian pulls these each scan to catch
+        issues AMS detected that our rules may not cover.
         """
         token = self._ensure_token()
-        resp  = self.session.get(
+        resp  = self.session.post(
             f"{self.base_url}/notifications/channels",
-            params={"category": category},
+            json={"page": 1, "limit": limit, "type": type},
             headers={"Authorization": f"Bearer {token}"},
             timeout=self.timeout,
         )
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+            return data.get("notificationListResponse", {}).get("listNotifications", [])
         logger.warning("get_notifications returned %s", resp.status_code)
         return []
 
@@ -1174,6 +1176,18 @@ class GuardianDB:
                 CREATE INDEX IF NOT EXISTS idx_readings_miner
                     ON miner_readings(miner_id, scanned_at);
 
+                CREATE TABLE IF NOT EXISTS ams_notifications (
+                    row_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorded_at     TEXT    NOT NULL,
+                    notification_id INTEGER,
+                    device_id       TEXT,
+                    type            TEXT,
+                    key             TEXT,
+                    alert_level     TEXT,
+                    miner_ip        TEXT,
+                    raw             TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS weather_readings (
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
                     recorded_at     TEXT    NOT NULL,
@@ -1213,6 +1227,33 @@ class GuardianDB:
                     ON miner_restarts(miner_id, restarted_at);
             """)
         logger.info("Database ready at %s", self.db_path)
+
+    def save_notifications(self, notifications: List[Dict]) -> None:
+        """Store AMS notifications in the database."""
+        if not notifications:
+            return
+        now = datetime.now().isoformat()
+        rows = []
+        for n in notifications:
+            params = n.get("params", {})
+            rows.append((
+                now,
+                n.get("id"),
+                str(n.get("deviceID", "")),
+                n.get("type"),
+                n.get("key"),
+                params.get("alertLevel"),
+                params.get("minerIp"),
+                json.dumps(n),
+            ))
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT INTO ams_notifications "
+                "(recorded_at, notification_id, device_id, type, key, "
+                " alert_level, miner_ip, raw) VALUES (?,?,?,?,?,?,?,?)",
+                rows
+            )
+        logger.info("Saved %s AMS notifications", len(rows))
 
     def save_weather(self, weather: Dict[str, Any]) -> None:
         """Store a weather reading alongside scan data."""
@@ -1402,7 +1443,8 @@ class SlackNotifier:
         self.channel_id  = channel_id  # for future direct API use
 
     def send_scan(self, miners: List[Dict], issues: List[Dict],
-                  wx: Optional[Dict] = None) -> None:
+                  wx: Optional[Dict] = None,
+                  ams_notifs: Optional[List[Dict]] = None) -> None:
         """POST a formatted scan summary to Slack via incoming webhook."""
         if not self.webhook_url:
             logger.debug("Slack webhook not configured — skipping Slack notification")
@@ -1468,6 +1510,25 @@ class SlackNotifier:
 
         if issues:
             lines.append("\n_DRY RUN — no actions taken. Reply to approve actions._")
+
+        # AMS notifications section
+        if ams_notifs:
+            critical = [n for n in ams_notifs if n.get("params", {}).get("alertLevel") == "Critical"]
+            warnings = [n for n in ams_notifs if n.get("params", {}).get("alertLevel") == "Warning"]
+            if critical or warnings:
+                lines.append(f"\n*⚠️ AMS Notifications ({len(ams_notifs)} total)*")
+                if critical:
+                    lines.append(f"  🔴 Critical: {len(critical)}")
+                    for n in critical[:5]:
+                        ip  = n.get("params", {}).get("minerIp", "unknown")
+                        key = n.get("key", "unknown")
+                        lines.append(f"    • `{ip}` — {key}")
+                if warnings:
+                    lines.append(f"  🟡 Warning: {len(warnings)}")
+                    for n in warnings[:3]:
+                        ip  = n.get("params", {}).get("minerIp", "unknown")
+                        key = n.get("key", "unknown")
+                        lines.append(f"    • `{ip}` — {key}")
 
         payload = {"text": "\n".join(lines)}
 
@@ -1580,7 +1641,9 @@ class MiningGuardian:
     # ── Report printer ────────────────────────────────────────
 
     @staticmethod
-    def _print_report(miners: List[Dict], issues: List[Dict], wx: Optional[Dict] = None) -> None:
+    def _print_report(miners: List[Dict], issues: List[Dict],
+                      wx: Optional[Dict] = None,
+                      ams_notifs: Optional[List[Dict]] = None) -> None:
         now      = datetime.now().strftime("%Y-%m-%d %H:%M")
         online   = sum(1 for m in miners if m.get("status") == "online")
         offline  = len(miners) - online
@@ -1664,6 +1727,12 @@ class MiningGuardian:
         print(f"\n  ✅ Healthy: {healthy} miners within normal parameters")
         print(f"  {'[DRY RUN — no actions taken]' if True else ''}")
         print(f"{divider}\n")
+        # AMS notifications section
+        if ams_notifs:
+            critical = [n for n in ams_notifs if n.get("params", {}).get("alertLevel") == "Critical"]
+            warnings = [n for n in ams_notifs if n.get("params", {}).get("alertLevel") == "Warning"]
+            logger.info("AMS notifications — %s critical, %s warning",
+                        len(critical), len(warnings))
         # Mirror the report to the log file
         logger.info("Scan complete — %s miners | %s online | %s offline | %s issues",
                     len(miners), online, offline, len(issues))
@@ -1725,19 +1794,24 @@ class MiningGuardian:
             logger.info("Log collection complete — %s miners logged", collected)
 
     def run_once(self) -> Dict[str, Any]:
-        # Fetch weather first — used in report and stored alongside scan
+        # Fetch weather and AMS notifications first
         wx = self.weather.fetch()
         if wx:
             self.db.save_weather(wx)
 
+        ams_notifs = self.ams.get_notifications("miner")
+        if ams_notifs:
+            self.db.save_notifications(ams_notifs)
+            logger.info("Pulled %s AMS notifications", len(ams_notifs))
+
         miners   = self.ams.get_miners(self.config.miner_filters)
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
-        self._print_report(miners, issues, wx)
+        self._print_report(miners, issues, wx, ams_notifs)
         self.db.save_scan(miners, issues)
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
-        self.slack.send_scan(miners, issues, wx)
+        self.slack.send_scan(miners, issues, wx, ams_notifs)
         return {
             "scanned": len(miners),
             "issues":  len(issues),
