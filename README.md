@@ -1,10 +1,32 @@
 # Mining Guardian
 
-**Autonomous fleet monitoring and remediation system for bitcoin mining operations.**
+**Autonomous fleet monitoring and remediation system for Bitcoin mining operations.**
 
-Mining Guardian runs on a local Mac Mini connected directly to the mining network. It connects to the BiXBiT AMS via authenticated WebSocket and REST API, scans every miner in the fleet for performance and temperature issues, and delivers actionable recommendations to the operator via Slack — with a local LLM (OpenClaw) providing plain-English interpretation and decision support.
+Mining Guardian runs on a local Mac Mini connected directly to the mining network. It connects to the BiXBiT AMS platform via authenticated WebSocket and REST API, scans every miner in the fleet every 5 minutes, and delivers actionable alerts to the operator via Slack. A local LLM (OpenClaw) provides plain-English diagnosis and decision support.
 
 Humans stay in the loop on all remediation actions. Mining Guardian detects, explains, and recommends — operators approve.
+
+---
+
+## Current Status — March 2026
+
+| Component | Status |
+|---|---|
+| AMS authentication (cookie JWT) | ✅ Live |
+| Full fleet scan via WebSocket | ✅ Live |
+| Hashrate + temperature analysis | ✅ Live |
+| PDU power cycle | ✅ Built |
+| Firmware restart | ✅ Built |
+| SQLite database (all scans) | ✅ Live |
+| Miner log collection | ✅ Live |
+| Weather data per scan | ✅ Live |
+| AMS notifications (40/scan) | ✅ Live |
+| Slack reporting | ✅ Live |
+| Dashboard API (FastAPI :8585) | ✅ Live |
+| OpenClaw / local LLM | 🔜 Mac Mini setup |
+| Retool dashboard | 🔧 In progress |
+| Automations | 🔜 Pending AMS access |
+| Facility map integration | 🔜 Monday setup |
 
 ---
 
@@ -13,27 +35,42 @@ Humans stay in the loop on all remediation actions. Mining Guardian detects, exp
 ```
 BiXBiT AMS (cloud)
         │
-        │  WebSocket + REST (cookie-based JWT auth)
+        │  WebSocket + REST (cookie-based JWT)
         ▼
-┌─────────────────────────────────────┐
-│         Mac Mini (local network)    │
-│                                     │
-│  Mining Guardian (Python daemon)    │
-│  ├── Scans all miners every N min   │
-│  ├── Evaluates hashrate & temps     │
-│  ├── Recommends PDU cycle or reboot │
-│  ├── Logs every scan to disk        │
-│  └── Sends findings to OpenClaw     │
-│                                     │
-│  OpenClaw (local LLM)               │
-│  └── Interprets findings            │
-│      Drafts plain-English summaries │
-│      Routes recommendations → Slack │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│              Mac Mini (local network)            │
+│                                                  │
+│  mining_guardian.py  (Python daemon)             │
+│  ├── Scans 53 miners every 5 min                 │
+│  ├── Hashrate % + chip temp analysis             │
+│  ├── PDU cycle / firmware restart logic          │
+│  ├── Miner log collection + 7-day purge          │
+│  ├── AMS notification polling (40/scan)          │
+│  ├── Weather data (Open-Meteo, Fort Worth TX)    │
+│  ├── SQLite DB — all scan + telemetry history    │
+│  └── Sends findings to OpenClaw + Slack          │
+│                                                  │
+│  dashboard_api.py  (FastAPI :8585)               │
+│  ├── /fleet/latest — current scan status         │
+│  ├── /fleet/history — scan history               │
+│  ├── /miners/flagged — flagged miners            │
+│  ├── /miners/most_flagged — trouble list         │
+│  ├── /miners/{id}/history — miner telemetry      │
+│  ├── /miners/{id}/logs — collected log files     │
+│  ├── /temps/hot_miners — warm/hot miners         │
+│  ├── /temps/history — fleet temp trends          │
+│  ├── /weather/history — ambient conditions       │
+│  ├── /notifications/recent — AMS alerts          │
+│  ├── /notifications/summary — alert counts       │
+│  └── /restarts/recent — restart events           │
+│                                                  │
+│  OpenClaw  (local LLM — pending Mac Mini)        │
+│  └── Interprets logs + recommends actions        │
+└──────────────────────────────────────────────────┘
         │
-        │  Slack notifications
+        │  Slack → #mining-guardian
         ▼
-   Operator (Rob) — approves or denies actions
+   Operator approves or denies action
         │
         ▼
    AMS executes approved command
@@ -43,16 +80,17 @@ BiXBiT AMS (cloud)
 
 ## How It Works
 
-1. **Auth** — Cookie-based JWT login to BiXBiT AMS. User token → workspace-scoped token → auto-refreshed before expiry
-2. **Scan** — Fetches full miner list via WebSocket (`miners/list_ws`) with automatic pagination across all pages
-3. **Evaluate** — Each miner is analyzed for hashrate % of max and chip temperature zone
-4. **Report** — Clean terminal report groups miners into: PDU power cycle needed, firmware restart needed, temp monitor, and healthy
-5. **Notify** — Findings sent to OpenClaw webhook; local LLM interprets and posts to Slack
-6. **Remediate** — Operator approves action via Slack; Mining Guardian executes via AMS API
+1. **Auth** — Cookie-based JWT login. User token → workspace-scoped token → auto-refreshed before expiry
+2. **Scan** — Fetches full miner list via `miners/list_ws` WebSocket with automatic pagination
+3. **Evaluate** — Each miner analyzed for hashrate % of max and chip temperature zone
+4. **Notify AMS** — Pulls 40 AMS-generated alerts per scan; deduped against own findings
+5. **Log** — Downloads log files from flagged miners; stores in SQLite with 7-day rolling purge
+6. **Report** — Clean terminal output + grouped Slack message with human-readable alerts
+7. **API** — Dashboard API serves all data as JSON for Retool and future React dashboard
 
 ---
 
-## Performance & Temperature Logic
+## Analysis Logic
 
 ### Hashrate
 - **Below 90% of `maxHashrate`** → flagged, firmware restart recommended
@@ -60,403 +98,252 @@ BiXBiT AMS (cloud)
 
 ### Chip Temperature
 | Zone | Range | Action |
-|------|-------|--------|
-| 🟢 Green | Below 76°C | Healthy — no action |
+|---|---|---|
+| 🟢 Green | Below 76°C | Healthy |
 | 🟡 Yellow | 76–85°C | Monitor |
-| 🔴 Red | 86°C+ | Operator chooses: restart / lower power / raise cooling |
+| 🔴 Red | 86°C+ | Action required |
 
 ### Sensor Errors
-- Negative temp readings (e.g. `-64°C`) are flagged as **sensor error** — not treated as real values
+- Negative temp readings flagged as **sensor error** — not treated as real values
+
+### Power Data Priority Rule
+**Always prefer PDU outlet readings over miner-reported consumption.**
+Smart PDUs measure actual AC power at the wall. Miner-reported numbers are estimates.
+Fall back to miner-reported only if no PDU is assigned.
 
 ---
 
 ## Remediation Actions
 
-Mining Guardian distinguishes between two types of restart based on miner state:
-
-| Situation | Recommended Action |
+| Situation | Action |
 |---|---|
-| Miner **offline** + PDU assigned | **PDU power cycle** — cut outlet power, wait 5s, restore |
-| Miner **offline**, no PDU assigned | **Firmware restart** via AMS |
-| Miner **online but underperforming** | **Firmware restart** via AMS |
-| Chip temp **86°C+** | Operator chooses: restart / lower power profile / raise cooling |
+| Miner offline + PDU assigned | PDU power cycle — cut outlet, wait 5s, restore |
+| Miner offline, no PDU | Physical visit required — flagged in Slack |
+| Miner online but underperforming | Firmware restart via AMS |
+| Chip temp 86°C+ | Operator chooses: restart / lower profile / raise cooling |
 
-PDU outlet control uses `POST /pdus/dcs/set_control_outlet` with the miner's `pduOutlet.pduID` and `pduOutlet.outletIndex` pulled directly from live miner data.
-
----
-
-## Deployment Target
-
-Mining Guardian is designed to run as a persistent daemon on a **local Mac Mini** inside the mining facility:
-
-- Direct local network access to miners — no cloud dependency for core operations
-- Paired with **OpenClaw** (local LLM) for intelligent finding interpretation
-- Slack integration for remote operator visibility and approval
-- Scan results logged to disk for historical trending
+After any restart: logs collected immediately on boot, elevated monitoring for 3 hours.
 
 ---
 
-## Mac Mini Deployment (Production)
+## AMS Endpoint Library
 
-This is the intended production setup — Mining Guardian running headlessly on a local Mac Mini inside the mining facility.
+All methods live on `AMSClient` in `mining_guardian.py`.
 
-### Prerequisites
-- Mac Mini connected to the mining network
-- Python 3.9+ installed
-- Git installed
-- `.env` file with credentials in the repo folder
+### Miner Control
+| Method | Endpoint | Description |
+|---|---|---|
+| `change_power_profile(ids, profile)` | `POST /miners/dcs/change_overclock_config` | Change power/overclock profile |
+| `start_miner(ids)` | `POST /miners/dcs/start` | Start miners |
+| `stop_miner(ids)` | `POST /miners/dcs/stop` | Stop miners |
+| `reboot_miner(ids)` | `POST /miners/dcs/reboot` | Firmware reboot |
+| `led_on(ids)` / `led_off(ids)` | `POST /miners/dcs/led_on` / `led_off` | Flash LED to locate miner |
+| `pdu_power_cycle(pdu_id, outlet)` | `POST /pdus/dcs/set_control_outlet` | Cut + restore outlet power |
 
-### Step 1 — Clone the repo
+### Miner Data
+| Method | Endpoint | Description |
+|---|---|---|
+| `get_miners()` | `WSS miners/list_ws` | Full fleet list with telemetry |
+| `get_miner_stats(id, range)` | `POST /miner_stats/device_charts` | Hashrate/power/temp history |
+| `get_miner_boards(id)` | `WSS miners/chips_ws` | Per-chip frequency (126 chips/board) |
+| `get_event_history(id)` | `POST /miners/request_list` | Event history (miners AND PDUs) |
+| `get_notifications(type, limit)` | `POST /notifications/channels` | AMS alerts |
+| `get_notifications_count()` | `GET /notifications/count` | Unread count |
+| `delete_notification(id)` | `DELETE /notifications/channels/{id}` | Dismiss alert |
+
+### Logs
+| Method | Endpoint | Description |
+|---|---|---|
+| `trigger_log_export(id)` | `POST /log/export` | Generate log zip on miner |
+| `get_log_list(id)` | `POST /log/get_log_list` | List available logs |
+| `download_log(id, filename)` | `POST /log/download` | Download log zip |
+| `collect_miner_logs(id)` | — | Download + extract 3 key log files |
+
+### PDU
+| Method | Endpoint | Description |
+|---|---|---|
+| `get_pdu_detail(pdu_id)` | `WSS pdus/ws` | Per-outlet voltage, current, power |
+| `get_pdu_stats()` | `WSS pdus/statistic` | Fleet-wide PDU power summary |
+
+### Facility & Tickets
+| Method | Endpoint | Description |
+|---|---|---|
+| `get_map_groups()` | `GET /map/groups` | Facility rows, racks, sections |
+| `get_map_layout()` | `WSS map/ws` | Full spatial miner layout |
+| `get_tickets()` | `GET /ticket` | Maintenance ticket list |
+| `create_ticket(title, desc, priority)` | `POST /ticket` | Create maintenance ticket |
+| `get_ticket_statuses()` | `GET /ticket/status` | Available ticket statuses |
+
+### Deliberately Out of Scope
+- **Pool management** — security risk, not touched by Mining Guardian
+- **Miner settings** — naming/config left to AMS UI
+
+
+---
+
+## Dashboard API
+
+FastAPI server on `http://localhost:8585`. Start it:
 ```bash
-git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
-cd "Mining Gaurdian"
-```
-
-### Step 2 — Create and activate the virtual environment
-```bash
-python3 -m venv venv
 source venv/bin/activate
-pip install requests websocket-client
+python dashboard_api.py
 ```
+Interactive docs: `http://localhost:8585/docs`
 
-### Step 3 — Create your credentials file
-```bash
-cp .env.example .env
-```
-Edit `.env` and fill in your AMS email, password, and workspace ID.
+---
 
-### Step 4 — Create your config file
-```bash
-cp config.example.json config.json
-```
-Edit `config.json` if needed (base URL, dry_run setting, scan interval, etc.).
+## Database
 
-### Step 5 — Test a single scan first
-```bash
-source venv/bin/activate
-export $(grep -v '^#' .env | xargs) && python mining_guardian.py
-```
-Verify the report looks correct before enabling the watchdog.
+SQLite at `guardian.db` in the repo folder.
 
-### Step 6 — Install the launchd watchdog
-```bash
-cp com.bixbit.mining-guardian.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
-```
+| Table | Contents | Retention |
+|---|---|---|
+| `scans` | Scan summaries | Permanent |
+| `miner_readings` | Per-miner telemetry per scan | Permanent |
+| `miner_logs` | Raw log file content | 7-day rolling purge |
+| `miner_restarts` | Restart events + elevated monitoring | Permanent |
+| `ams_notifications` | AMS-generated alerts | Permanent |
+| `weather_readings` | Ambient temp/humidity per scan | Permanent |
 
-### Step 7 — Verify it's running
-```bash
-launchctl list | grep mining-guardian
-```
-You should see a line with `com.bixbit.mining-guardian`. If the second column shows `0` it's running clean. Any other number is an exit code — check the error log.
+### Useful Queries
 
-### Checking logs
-```bash
-# Today's scan log
-cat "/Users/BigBobby/Documents/GitHub/Mining Gaurdian/logs/guardian_$(date +%Y-%m-%d).log"
+```sql
+-- Scan history
+SELECT scanned_at, total_miners, online, offline, issues
+FROM scans ORDER BY id DESC;
 
-# launchd startup errors
-cat "/Users/BigBobby/Documents/GitHub/Mining Gaurdian/logs/launchd_stderr.log"
-```
+-- Most flagged miners
+SELECT miner_id, ip, model, action, COUNT(*) as times_flagged
+FROM miner_readings WHERE action IS NOT NULL
+GROUP BY miner_id ORDER BY times_flagged DESC;
 
-### Stopping the watchdog
-```bash
-launchctl unload ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
-```
+-- AMS notification breakdown
+SELECT key, alert_level, COUNT(*) as count
+FROM ams_notifications
+GROUP BY key, alert_level ORDER BY count DESC;
 
-### Removing it completely
-```bash
-launchctl unload ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
-rm ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+-- Miners in elevated monitoring
+SELECT miner_id, ip, model, restarted_at, elevated_until
+FROM miner_restarts WHERE elevated_until > datetime('now');
 ```
 
 ---
 
 ## Configuration
 
-On first run, `config.example.json` is generated. Copy and edit it:
-
-```bash
-cp config.example.json config.json
-```
-
-Key fields:
-
+`config.json` (gitignored):
 ```json
 {
-  "ams_base_url": "https://api-staging.dev.bixbit.io/api/v1",
-  "ams_email":        "env:AMS_EMAIL",
-  "ams_password":     "env:AMS_PASSWORD",
-  "ams_workspace_id": "env:AMS_WORKSPACE_ID",
-  "dry_run": true,
+  "ams_base_url":      "https://api-staging.dev.bixbit.io/api/v1",
+  "ams_email":         "env:AMS_EMAIL",
+  "ams_password":      "env:AMS_PASSWORD",
+  "ams_workspace_id":  "env:AMS_WORKSPACE_ID",
+  "slack_webhook_url": "env:SLACK_WEBHOOK_URL",
+  "dry_run":           true,
   "scan_interval_seconds": 300,
-  "approval_mode": "manual"
+  "approval_mode":     "manual"
 }
-```
-
-**Secret management** — prefix any value with `env:` to pull it from the environment:
-
-```bash
-export AMS_EMAIL=your@email.com
-export AMS_PASSWORD=yourpassword
-export AMS_WORKSPACE_ID=119
-```
-
-Or store in a `.env` file (gitignored) and load with:
-
-```bash
-export $(grep -v '^#' .env | xargs) && python mining_guardian.py
 ```
 
 ---
 
 ## Running
 
-Single scan (prints report to terminal):
+```bash
+# Single scan
+source venv/bin/activate
+export $(grep -v '^#' .env | xargs) && python mining_guardian.py
+
+# Dashboard API
+source venv/bin/activate
+python dashboard_api.py
+```
+
+---
+
+## Mac Mini Deployment
 
 ```bash
-python mining_guardian.py
-```
+git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
+cd "Mining Gaurdian"
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env        # fill in credentials
+export $(grep -v '^#' .env | xargs) && python mining_guardian.py
 
-Continuous loop:
-
-```python
-from mining_guardian import GuardianConfig, MiningGuardian
-config = GuardianConfig.from_file("config.json")
-MiningGuardian(config).loop()
-```
-
----
-
-## Repository Structure
-
-```
-Mining Gaurdian/
-├── mining_guardian.py      # Core daemon — AMS client, analysis engine, report printer
-├── ams_auth_test.py        # Standalone auth + WebSocket proof-of-concept
-├── config.json             # Live config (gitignored)
-├── config.example.json     # Auto-generated reference config
-├── .env                    # Credentials (gitignored)
-├── .env.example            # Credential template
-├── .gitignore
-└── README.md
+# Install watchdog
+cp com.bixbit.mining-guardian.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+launchctl list | grep mining-guardian
 ```
 
 ---
 
-## Safety Model
+## Monday Action Items (2026-03-30)
 
-- `dry_run: true` is the default — no changes are sent to miners until explicitly disabled
-- All remediation actions require operator approval via Slack before execution
-- PDU power cycling is a destructive action — always confirmed before execution
-- The local LLM provides recommendations only — it does not execute actions autonomously
+**At the facility:**
+- [ ] Physically verify PDU connections for 25 offline miners
+- [ ] Update AMS PDU assignments for all verified connections
+- [ ] Set up facility map in AMS (miners get location data automatically)
+- [ ] Investigate miner 53475 — S21EXPHyd, online but only 1–3% hashrate
+- [ ] Re-run Mining Guardian after PDU + map setup
 
----
+**Mac Mini setup:**
+- [ ] Install OpenClaw + local LLM
+- [ ] Configure OpenClaw webhook in `config.json`
+- [ ] Deploy Mining Guardian via `setup.sh`
+- [ ] Install launchd watchdog
 
-## Full AMS API Capability Map
-
-Mining Guardian has owner-level access to the full BiXBiT AMS API. Below is everything available — current usage noted.
-
-### Miners
-| Permission | Description | Status |
-|---|---|---|
-| `minerShow` | Read miner list and telemetry | ✅ In use |
-| `minerStart` / `minerStop` | Start and stop miners | 🔜 Planned |
-| `minerReboot` | Firmware restart | 🔜 Planned |
-| `minerChangeSettings` | Change power profile, overclocking, config | 🔜 Planned |
-| `minerOverclock` | Overclocking controls | 🔜 Planned |
-| `minerChangePool` | Switch mining pool | 🔜 Planned |
-| `minerChangeFee` | Change fee settings | 🔜 Planned |
-| `minerChangePassword` | Change miner password | 🔜 Planned |
-| `minerChangeNetwork` | Change network config | 🔜 Planned |
-| `minerLed` | Flash LED to physically locate a miner | 🔜 Planned |
-| `minerLogsShow` / `minerExportLogs` | Pull and download miner logs | 🔜 Critical — AI diagnosis |
-| `minerEventsShow` | Per-miner event history | 🔜 Critical — AI diagnosis |
-| `minerExport` | Export miner data | 🔜 Planned |
-| `minerStartGenerateProfile` / `minerStopGenerateProfile` | Auto power profile generation | 🔜 Planned |
-| `minerStatsShow` | Per-miner stats | 🔜 Planned |
-
-### PDUs
-| Permission | Description | Status |
-|---|---|---|
-| `pduShow` | Read PDU list and outlet status | 🔜 Planned |
-| `pduStatsShow` | PDU power consumption stats | 🔜 Planned |
-| `pduEventShow` | PDU event history | 🔜 Planned |
-| `pduCmdToggleOutlets` | Power cycle outlets | ✅ In use |
-| `pduAttachMiner` / `pduDetachMiner` | Manage PDU-miner assignments | 🔜 Planned |
-
-### Pools
-| Permission | Description | Status |
-|---|---|---|
-| `poolShow` / `poolCreate` / `poolEdit` / `poolDelete` | Full pool management | 🔜 Dashboard |
-
-### Automations
-| Permission | Description | Status |
-|---|---|---|
-| `automatizationShow/Create/Edit/Delete` | Create and manage AMS automation rules | 🔜 Dashboard |
-
-### Maps
-| Permission | Description | Status |
-|---|---|---|
-| `mapShow` | View facility map | 🔜 Dashboard |
-| `mapAssignMiner` / `mapUnassignMiner` | Assign miners to physical map locations | 🔜 Dashboard |
-| `mapImport/ExportLayout` | Import/export facility layouts | 🔜 Dashboard |
-
-### Tickets
-| Permission | Description | Status |
-|---|---|---|
-| `ticketShow/Create/Edit/Delete` | Full maintenance ticket system | 🔜 Dashboard |
-| `ticketCommentCreate/Edit/Delete` | Ticket comments | 🔜 Dashboard |
-
-### Teams & Notifications
-| Permission | Description | Status |
-|---|---|---|
-| `teamShow/Invite/Detach` | Manage team members | 🔜 Dashboard |
-| `notificationShow/Delete` | Fleet notifications | 🔜 Dashboard |
-
-### Containers
-| Permission | Description | Status |
-|---|---|---|
-| `containerShow/StatsShow/EventsShow` | Immersion/hydro container monitoring | 🔜 Planned |
-| `containerChangeSettings/ExecuteCmd` | Container control commands | 🔜 Planned |
-
----
-
-## AI Diagnosis & Predictive Failure Detection
-
-This is the core intelligence layer of Mining Guardian — the feature that separates it from a simple monitoring tool.
-
-### How It Works
-
-Mining Guardian continuously downloads miner logs from the AMS API and feeds them to the local LLM (OpenClaw). Over time the LLM builds a pattern library:
-
-```
-Phase 1 — Data Collection
-Every scan cycle:
-  ├── Download logs for every miner (healthy + unhealthy)
-  ├── Store raw logs in SQLite with miner ID, timestamp, status
-  └── Tag logs: healthy / underperforming / failed / recovered
-
-Phase 2 — Pattern Learning
-Local LLM analyzes the log database:
-  ├── "What do healthy S19JPro logs look like?"
-  ├── "What patterns appear in logs 24-48 hours before a failure?"
-  ├── "Which chip error codes correlate with hashrate drops?"
-  └── Builds a model per miner type (S19, S21, AH3880, etc.)
-
-Phase 3 — Active Diagnosis
-When a miner underperforms:
-  ├── Mining Guardian pulls that miner's recent logs
-  ├── Sends logs + pattern library context to LLM
-  ├── LLM compares against known failure signatures
-  └── Returns: root cause assessment + recommended action
-
-Phase 4 — Predictive Alerts
-For every online miner each scan:
-  ├── LLM scores current log patterns against failure signatures
-  ├── Flags miners showing early warning signs
-  └── Posts to Slack: "Miner 53483 showing chip error pattern
-      consistent with pre-failure state on 3 other S19JPros.
-      Recommend inspection within 48 hours."
-```
-
-### What Miner Logs Contain
-- Per-chip error rates and error codes
-- Temperature readings at chip level (not just board averages)
-- Pool connection events — drops, latency, reconnects
-- Fan speed history and anomalies
-- Restart and crash events with timestamps
-- Power fluctuation records
-- Firmware error codes
-
-### Log Collection Strategy
-- **Download frequency:** Every scan cycle for flagged miners, every 6 hours for healthy miners
-- **Storage:** Raw logs in SQLite `miner_logs` table, tagged by miner ID, model, and health status
-- **Retention:** 90 days rolling window — enough history to train on without unbounded disk growth
-- **LLM context:** Logs sent to OpenClaw in structured batches, not raw dumps
-
-### Diagnosis Workflow
-```
-Miner flagged as underperforming
-        ↓
-Mining Guardian pulls last 24h of logs
-        ↓
-Sends to OpenClaw: "Diagnose this miner.
-Here are its logs. Here are examples of
-healthy logs from same model. What's wrong
-and what should we do?"
-        ↓
-LLM returns structured diagnosis:
-  - Likely root cause
-  - Confidence level
-  - Recommended action (restart / profile change / physical inspection)
-  - Urgency (immediate / 24h / 7 days)
-        ↓
-Posted to #mining-guardian in Slack
-Operator approves recommended action
-```
 
 ---
 
 ## Roadmap
 
-### Phase 1 — Core Monitoring (✅ Complete)
-- [x] Cookie-based AMS authentication with auto token refresh
-- [x] Full fleet scan via WebSocket with automatic pagination
-- [x] Hashrate % of max threshold monitoring (90% floor)
-- [x] Chip temperature zone monitoring (green/yellow/red)
-- [x] PDU power cycle for offline miners
-- [x] Firmware restart for underperforming online miners
-- [x] SQLite database — scan history and per-miner telemetry
-- [x] Daily rotating log file — headless Mac Mini ready
-- [x] Slack integration — live fleet alerts to #mining-guardian
-- [x] Morning briefing — 7am fleet summary posted to Slack via cron
-- [x] launchd watchdog — auto-start and crash recovery on boot
-- [x] Customer setup script — one command deploys to any Mac Mini
+### ✅ Phase 1 — Core Monitoring (Complete)
+- AMS auth with auto token refresh
+- Full fleet scan via WebSocket, paginated
+- Hashrate % + chip temperature zone analysis
+- PDU power cycle for offline miners
+- Firmware restart for underperforming miners
+- SQLite database — permanent scan + telemetry history
+- Miner log collection with 7-day rolling purge
+- AMS notification polling — 40 alerts per scan, human-readable
+- Weather integration (Open-Meteo, Fort Worth TX)
+- Slack reporting — grouped by model, deduped, no repetition
+- Post-restart elevated monitoring (3 hours)
+- Dashboard API — FastAPI server on :8585 with 13 endpoints
+- DB Browser for SQLite — visual database inspection
+- launchd watchdog + customer setup script
 
-### Phase 2 — AI Diagnosis (🔜 Next)
-- [ ] Miner log downloader — pull and store logs per miner per cycle
-- [ ] Log tagging system — healthy / underperforming / failed / recovered
-- [ ] OpenClaw integration — send logs to local LLM for analysis
-- [ ] Active diagnosis — LLM diagnoses underperforming miners from logs
-- [ ] Pattern library — LLM builds failure signatures per miner model
-- [ ] Predictive alerts — early warning before miners fail
+### 🔧 Phase 2 — Dashboard (In Progress)
+- [ ] Retool dashboard — Phase 2a (fast, internal)
+  - Live fleet status panel
+  - Historical hashrate + temp charts
+  - Flagged miner list with action breakdown
+  - AMS alert summary
+- [ ] Facility map integration (Monday after AMS map setup)
+- [ ] React dashboard — Phase 2b (white-label, customer-facing)
 
-### Phase 3 — Dashboard (🔜 Planned)
-- [ ] **Retool dashboard** (Phase 3a — fast, internal)
-  - Live fleet status with color-coded miner health
-  - Historical hashrate and temperature charts per miner
-  - Settings management — rules, thresholds, dry run toggle
-  - Alert history and action log
-- [ ] **Custom React dashboard** (Phase 3b — white-label, customer-facing)
-  - Fully owned by BiXBiT, no monthly fees
-  - Multi-customer support — switch between sites
-  - AI predictions panel — LLM insights and trend analysis
-  - Professional branded UI per customer
+### 🔜 Phase 3 — AI Diagnosis
+- [ ] OpenClaw webhook integration (pending Mac Mini)
+- [ ] Log tagging — healthy / underperforming / failed / recovered
+- [ ] Active LLM diagnosis for flagged miners
+- [ ] Predictive failure detection — early warning patterns per model
+- [ ] Plain-English Slack summaries from LLM
 
-### Phase 4 — Full Fleet Control (🔜 Planned)
-- [ ] Pool management — switch, create, edit pools from dashboard
-- [ ] Overclocking controls — profile management per miner model
-- [ ] Automation rules — create AMS automations from Mining Guardian
-- [ ] Facility map — visual miner layout with status overlay
-- [ ] Maintenance tickets — create and track issues per miner
-- [ ] Container monitoring — immersion and hydro unit support
-- [ ] Firmware version drift detection across fleet
-- [ ] LED locator — flash miner LED from dashboard for physical identification
+### 🔜 Phase 4 — Full Fleet Control
+- [ ] Automations (pending AMS access)
+- [ ] Ticket auto-creation for physical intervention miners
+- [ ] Overclocking profile management per model
+- [ ] Container monitoring (immersion + hydro)
+- [ ] Firmware version drift detection
 
-### Phase 5 — Multi-Customer Platform (🔜 Planned)
-- [ ] Packaged Mac Mini installer — one script sets up everything
-  - Mining Guardian daemon
-  - OpenClaw + local LLM
-  - Slack workspace integration
-  - Customer-specific config
-  - Guided setup wizard (no technical knowledge required)
-- [ ] Central management console — BiXBiT sees all customer sites
+### 🔜 Phase 5 — Multi-Customer Platform
+- [ ] Packaged Mac Mini installer — one script, guided setup
+- [ ] Central management console — all customer sites
 - [ ] White-labeled customer portal
-- [ ] Automated onboarding flow
 
 ---
 
----
-
-*Built by Rob Fiesler — BiXBiT USA*
+*Built by Rob Fiesler — BiXBiT USA CTO*
