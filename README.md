@@ -24,7 +24,7 @@ Humans stay in the loop on all remediation actions. Mining Guardian detects, exp
 | Slack reporting | ✅ Live |
 | Dashboard API (FastAPI :8585) | ✅ Live |
 | OpenClaw / local LLM | 🔜 Mac Mini setup |
-| Retool dashboard | 🔧 In progress |
+| Retool dashboard | ✅ Phase 1 live |
 | Automations | 🔜 Pending AMS access |
 | Facility map integration | 🔜 Monday setup |
 
@@ -317,13 +317,22 @@ launchctl list | grep mining-guardian
 - launchd watchdog + customer setup script
 
 ### 🔧 Phase 2 — Dashboard (In Progress)
-- [ ] Retool dashboard — Phase 2a (fast, internal)
-  - Live fleet status panel
-  - Historical hashrate + temp charts
-  - Flagged miner list with action breakdown
-  - AMS alert summary
+
+**Retool Dashboard — Phase 2a (live, internal)**
+- [x] Connected to live guardian.db via FastAPI + cloudflared tunnel
+- [x] 4 stat tiles — Total Miners, Online, Offline, Issues
+- [x] Currently Flagged Miners table — 31 results, live
+- [x] Most Flagged Miners (All Time) trouble list
+- [x] AMS Alert Summary — 5 alert types with counts
+- [x] Outside Temperature history chart
 - [ ] Facility map integration (Monday after AMS map setup)
-- [ ] React dashboard — Phase 2b (white-label, customer-facing)
+- [ ] Permanent tunnel solution (cloudflared named tunnel or Mac Mini local hosting)
+- [ ] Scan history chart — online/offline trend over time
+
+**React Dashboard — Phase 2b (white-label, customer-facing)**
+- [ ] Fully owned by BiXBiT, no Retool dependency
+- [ ] Multi-customer support
+- [ ] AI predictions panel
 
 ### 🔜 Phase 3 — AI Diagnosis
 - [ ] OpenClaw webhook integration (pending Mac Mini)
