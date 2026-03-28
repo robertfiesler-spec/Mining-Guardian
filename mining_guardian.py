@@ -360,6 +360,113 @@ class AMSClient:
         logger.debug("get_miner_state REST returned %s for %s", resp.status_code, miner_id)
         return {}
 
+    # ── Log collection ────────────────────────────────────────
+
+    def trigger_log_export(self, miner_id: int) -> bool:
+        """POST /log/export — tells AMS to generate a fresh log zip for this miner."""
+        token = self._ensure_token()
+        resp = self.session.post(
+            f"{self.base_url}/log/export",
+            json={"deviceID": miner_id},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        return resp.status_code == 200
+
+    def get_log_list(self, miner_id: int) -> List[Dict]:
+        """POST /log/get_log_list — returns list of available log files for this miner."""
+        token = self._ensure_token()
+        resp = self.session.post(
+            f"{self.base_url}/log/get_log_list",
+            json={"deviceID": miner_id},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("logList", [])
+        return []
+
+    def download_log(self, miner_id: int, filename: str) -> Optional[bytes]:
+        """POST /log/download — download a log zip file by miner ID and filename."""
+        token = self._ensure_token()
+        resp = self.session.post(
+            f"{self.base_url}/log/download",
+            json={"deviceID": miner_id, "fileName": filename},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,  # larger file, longer timeout
+        )
+        if resp.status_code == 200 and len(resp.content) > 100:
+            return resp.content
+        return None
+
+    def collect_miner_logs(self, miner_id: int) -> Optional[Dict[str, str]]:
+        """Collect logs for a miner — uses existing logs if available, triggers export if not.
+
+        Flow:
+        1. Check existing log list
+        2. If logs exist → download the most recent one immediately
+        3. If no logs exist → trigger export, poll, then download
+        4. Extract and return key log files from the zip
+        """
+        import zipfile, io, time as _time
+
+        # Step 1 — Check existing logs first
+        logs = self.get_log_list(miner_id)
+
+        if not logs:
+            # No existing logs — trigger a new export
+            if not self.trigger_log_export(miner_id):
+                logger.warning("Log export trigger failed for miner %s", miner_id)
+                return None
+            # Poll up to 60 seconds for completion
+            for attempt in range(12):
+                _time.sleep(5)
+                logs = self.get_log_list(miner_id)
+                if logs and logs[0].get("status") == 2:
+                    break
+            if not logs:
+                logger.warning("Log export did not complete within 60s for miner %s", miner_id)
+                return None
+
+        # Step 2 — Download the most recent completed log
+        ready_logs = [l for l in logs if l.get("status") == 2]
+        if not ready_logs:
+            logger.warning("No completed logs available for miner %s", miner_id)
+            return None
+
+        latest = ready_logs[0]
+        filename = latest["fileName"]
+        zip_bytes = self.download_log(miner_id, filename)
+        if not zip_bytes:
+            logger.warning("Log download failed for miner %s", miner_id)
+            return None
+
+        # Step 3 — Extract key files from the zip
+        extracted = {}
+        key_files = {
+            "cgminer.conf",
+            "x-autotune-profiles.json",
+            "x-autotune-results.json",
+            "x-power-calibrate-result.json",
+            "allowed_pools",
+        }
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+                for name in zf.namelist():
+                    basename = name.split("/")[-1]
+                    if basename in key_files or "cglog" in name:
+                        try:
+                            content = zf.read(name).decode("utf-8", errors="replace")
+                            extracted[name] = content
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.warning("Log zip extraction failed for miner %s: %s", miner_id, e)
+            return None
+
+        logger.info("Collected %s log files for miner %s (from %s)", len(extracted), miner_id, filename)
+        return extracted
+
     # ── Public write methods ──────────────────────────────────
 
     def change_settings(self, miner_ids: List[str], settings: Dict[str, Any]) -> Dict:
@@ -687,6 +794,19 @@ class GuardianDB:
 
                 CREATE INDEX IF NOT EXISTS idx_readings_miner
                     ON miner_readings(miner_id, scanned_at);
+
+                CREATE TABLE IF NOT EXISTS miner_logs (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    collected_at  TEXT    NOT NULL,
+                    miner_id      TEXT    NOT NULL,
+                    model         TEXT,
+                    health_status TEXT,
+                    log_file      TEXT    NOT NULL,
+                    content       TEXT    NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_logs_miner
+                    ON miner_logs(miner_id, collected_at);
             """)
         logger.info("Database ready at %s", self.db_path)
 
@@ -743,6 +863,39 @@ class GuardianDB:
             )
 
         logger.info("Scan #%s saved to database (%s miners)", scan_id, len(miners))
+        return scan_id
+
+    def save_logs(self, miner_id: str, model: str, health_status: str,
+                  log_files: Dict[str, str]) -> None:
+        """Store extracted log file contents for a miner."""
+        now = datetime.now().isoformat()
+        rows = [
+            (now, miner_id, model, health_status, filename, content)
+            for filename, content in log_files.items()
+        ]
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT INTO miner_logs "
+                "(collected_at, miner_id, model, health_status, log_file, content) "
+                "VALUES (?,?,?,?,?,?)",
+                rows
+            )
+        logger.info("Saved %s log files for miner %s (%s)", len(rows), miner_id, health_status)
+
+    def last_log_collected(self, miner_id: str) -> Optional[datetime]:
+        """Return datetime of last log collection for this miner, or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT collected_at FROM miner_logs WHERE miner_id=? "
+                "ORDER BY id DESC LIMIT 1",
+                (miner_id,)
+            ).fetchone()
+        if row:
+            try:
+                return datetime.fromisoformat(row[0])
+            except Exception:
+                return None
+        return None
         return scan_id
 
 
@@ -982,11 +1135,57 @@ class MiningGuardian:
 
     # ── Main entry ────────────────────────────────────────────
 
+    def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
+        """Download logs for flagged miners every scan, healthy miners every 6 hours."""
+        issue_ids = {i["id"] for i in issues}
+        now = datetime.now()
+        collected = 0
+
+        for miner in miners:
+            miner_id  = str(miner.get("id", ""))
+            model     = miner.get("shortModel", miner.get("name", "unknown"))
+            status    = miner.get("status", "unknown")
+            flagged   = miner_id in issue_ids
+
+            # Determine if we should collect logs for this miner
+            last = self.db.last_log_collected(miner_id)
+            if flagged:
+                # Always collect for flagged miners
+                should_collect = True
+                health_status = "flagged"
+            elif status == "online":
+                # Healthy miners — collect every 6 hours
+                should_collect = last is None or (now - last).total_seconds() > 21600
+                health_status = "healthy"
+            else:
+                # Offline miners with no PDU — skip log collection
+                should_collect = False
+                health_status = "offline"
+
+            if not should_collect:
+                continue
+
+            if self.config.dry_run:
+                logger.debug("DRY RUN — skipping log collection for miner %s", miner_id)
+                continue
+
+            try:
+                log_files = self.ams.collect_miner_logs(int(miner_id))
+                if log_files:
+                    self.db.save_logs(miner_id, model, health_status, log_files)
+                    collected += 1
+            except Exception as e:
+                logger.warning("Log collection failed for miner %s: %s", miner_id, e)
+
+        if collected:
+            logger.info("Log collection complete — %s miners logged", collected)
+
     def run_once(self) -> Dict[str, Any]:
         miners   = self.ams.get_miners(self.config.miner_filters)
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues)
         self.db.save_scan(miners, issues)
+        self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
         self.slack.send_scan(miners, issues)
         return {
