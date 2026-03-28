@@ -742,6 +742,53 @@ class RemediationCooldown:
 # predictive failure detection via the local LLM.
 # ------------------------------------------------------------
 
+# ------------------------------------------------------------
+# Weather collector — ambient temp and humidity for Fort Worth
+# ------------------------------------------------------------
+# Uses Open-Meteo API (free, no API key required).
+# Data stored per scan and correlated with miner telemetry
+# so the LLM can factor ambient conditions into predictions.
+# Hot humid days stress cooling — cold dry days are ideal.
+# ------------------------------------------------------------
+
+class WeatherCollector:
+    API_URL = "https://api.open-meteo.com/v1/forecast"
+
+    def __init__(self, latitude: float = 32.7555, longitude: float = -97.3308):
+        self.latitude  = latitude
+        self.longitude = longitude
+
+    def fetch(self) -> Optional[Dict[str, Any]]:
+        """Fetch current conditions and today's forecast from Open-Meteo."""
+        try:
+            resp = requests.get(self.API_URL, params={
+                "latitude":         self.latitude,
+                "longitude":        self.longitude,
+                "current":          ["temperature_2m", "relative_humidity_2m", "apparent_temperature"],
+                "daily":            ["temperature_2m_max", "temperature_2m_min",
+                                     "relative_humidity_2m_max", "relative_humidity_2m_min"],
+                "temperature_unit": "fahrenheit",
+                "timezone":         "America/Chicago",
+                "forecast_days":    1,
+            }, timeout=10)
+            resp.raise_for_status()
+            data    = resp.json()
+            current = data.get("current", {})
+            daily   = data.get("daily", {})
+            return {
+                "temp_f":       current.get("temperature_2m"),
+                "humidity_pct": current.get("relative_humidity_2m"),
+                "feels_like_f": current.get("apparent_temperature"),
+                "temp_high_f":  daily.get("temperature_2m_max", [None])[0],
+                "temp_low_f":   daily.get("temperature_2m_min", [None])[0],
+                "humidity_max": daily.get("relative_humidity_2m_max", [None])[0],
+                "humidity_min": daily.get("relative_humidity_2m_min", [None])[0],
+            }
+        except Exception as e:
+            logger.warning("Weather fetch failed: %s", e)
+            return None
+
+
 class GuardianDB:
 
     def __init__(self, db_path: str = "guardian.db"):
@@ -787,6 +834,18 @@ class GuardianDB:
                 CREATE INDEX IF NOT EXISTS idx_readings_miner
                     ON miner_readings(miner_id, scanned_at);
 
+                CREATE TABLE IF NOT EXISTS weather_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorded_at     TEXT    NOT NULL,
+                    temp_f          REAL,
+                    humidity_pct    REAL,
+                    feels_like_f    REAL,
+                    temp_high_f     REAL,
+                    temp_low_f      REAL,
+                    humidity_max    REAL,
+                    humidity_min    REAL
+                );
+
                 CREATE TABLE IF NOT EXISTS miner_logs (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     collected_at  TEXT    NOT NULL,
@@ -814,6 +873,25 @@ class GuardianDB:
                     ON miner_restarts(miner_id, restarted_at);
             """)
         logger.info("Database ready at %s", self.db_path)
+
+    def save_weather(self, weather: Dict[str, Any]) -> None:
+        """Store a weather reading alongside scan data."""
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO weather_readings "
+                "(recorded_at, temp_f, humidity_pct, feels_like_f, "
+                " temp_high_f, temp_low_f, humidity_max, humidity_min) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (now,
+                 weather.get("temp_f"),
+                 weather.get("humidity_pct"),
+                 weather.get("feels_like_f"),
+                 weather.get("temp_high_f"),
+                 weather.get("temp_low_f"),
+                 weather.get("humidity_max"),
+                 weather.get("humidity_min"))
+            )
 
     def save_scan(self, miners: List[Dict], issues: List[Dict]) -> int:
         """Write scan summary and all miner readings. Returns scan_id."""
@@ -916,6 +994,21 @@ class GuardianDB:
                 return None
         return None
 
+    def last_log_collected(self, miner_id: str) -> Optional[datetime]:
+        """Return datetime of last log collection for this miner, or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT collected_at FROM miner_logs WHERE miner_id=? "
+                "ORDER BY id DESC LIMIT 1",
+                (miner_id,)
+            ).fetchone()
+        if row:
+            try:
+                return datetime.fromisoformat(row[0])
+            except Exception:
+                return None
+        return None
+
     def record_restart(self, miner_id: str, ip: str, model: str,
                        restart_type: str, elevated_hours: int = 3) -> None:
         """Record a restart event and set elevated monitoring window."""
@@ -968,7 +1061,8 @@ class SlackNotifier:
         self.webhook_url = webhook_url  # Slack incoming webhook URL
         self.channel_id  = channel_id  # for future direct API use
 
-    def send_scan(self, miners: List[Dict], issues: List[Dict]) -> None:
+    def send_scan(self, miners: List[Dict], issues: List[Dict],
+                  wx: Optional[Dict] = None) -> None:
         """POST a formatted scan summary to Slack via incoming webhook."""
         if not self.webhook_url:
             logger.debug("Slack webhook not configured — skipping Slack notification")
@@ -993,8 +1087,16 @@ class SlackNotifier:
         lines = [
             f"*🤖 Mining Guardian Scan — {now}*",
             f"Fleet: *{len(miners)} miners* | 🟢 {online} online | 🔴 {offline} offline",
-            status_line,
         ]
+
+        # Add weather line if available
+        if wx:
+            lines.append(
+                f"🌡️ Outside: *{wx['temp_f']}°F* | Humidity: *{wx['humidity_pct']}%* | "
+                f"Feels like: {wx['feels_like_f']}°F | Today: {wx['temp_low_f']}–{wx['temp_high_f']}°F"
+            )
+
+        lines.append(status_line)
 
         if pdu_cycles:
             lines.append(f"\n*🔴 PDU Power Cycle Recommended ({len(pdu_cycles)} miners)*")
@@ -1048,6 +1150,7 @@ class MiningGuardian:
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
         self.slack    = SlackNotifier(GuardianConfig._resolve(config.slack_webhook_url) if config.slack_webhook_url else None)
         self.db       = GuardianDB()
+        self.weather  = WeatherCollector()
 
     # ── Per-miner analysis ────────────────────────────────────
 
@@ -1130,7 +1233,7 @@ class MiningGuardian:
     # ── Report printer ────────────────────────────────────────
 
     @staticmethod
-    def _print_report(miners: List[Dict], issues: List[Dict]) -> None:
+    def _print_report(miners: List[Dict], issues: List[Dict], wx: Optional[Dict] = None) -> None:
         now      = datetime.now().strftime("%Y-%m-%d %H:%M")
         online   = sum(1 for m in miners if m.get("status") == "online")
         offline  = len(miners) - online
@@ -1140,6 +1243,12 @@ class MiningGuardian:
         print(f"  MINING GUARDIAN SCAN — {now}")
         print(divider)
         print(f"  Fleet:   {len(miners)} miners  |  {online} online  |  {offline} offline")
+
+        # Weather line
+        if wx:
+            print(f"  Weather: {wx['temp_f']}°F  |  Humidity: {wx['humidity_pct']}%  "
+                  f"|  Feels like: {wx['feels_like_f']}°F  "
+                  f"|  Today: {wx['temp_low_f']}–{wx['temp_high_f']}°F")
         print(divider)
 
         if not issues:
@@ -1269,14 +1378,19 @@ class MiningGuardian:
             logger.info("Log collection complete — %s miners logged", collected)
 
     def run_once(self) -> Dict[str, Any]:
+        # Fetch weather first — used in report and stored alongside scan
+        wx = self.weather.fetch()
+        if wx:
+            self.db.save_weather(wx)
+
         miners   = self.ams.get_miners(self.config.miner_filters)
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
-        self._print_report(miners, issues)
+        self._print_report(miners, issues, wx)
         self.db.save_scan(miners, issues)
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
-        self.slack.send_scan(miners, issues)
+        self.slack.send_scan(miners, issues, wx)
         return {
             "scanned": len(miners),
             "issues":  len(issues),
