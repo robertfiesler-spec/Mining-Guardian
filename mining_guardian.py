@@ -621,6 +621,38 @@ class AMSClient:
         logger.info("LED off for miners %s", miner_ids)
         return resp.json()
 
+    def get_notifications(self, category: str = "miner") -> List[Dict]:
+        """GET /notifications/channels — get notification list by category.
+
+        Args:
+            category: "miner", "pdu", "system", or "container"
+
+        Returns list of notifications with miner ID, IP, type, and severity.
+        Mining Guardian uses these to detect AMS-generated alerts like
+        consumption changes, offline events, and temperature warnings.
+        """
+        token = self._ensure_token()
+        resp  = self.session.get(
+            f"{self.base_url}/notifications/channels",
+            params={"category": category},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning("get_notifications returned %s", resp.status_code)
+        return []
+
+    def delete_notification(self, notification_id: int) -> bool:
+        """DELETE /notifications/channels/{id} — dismiss a notification."""
+        token = self._ensure_token()
+        resp  = self.session.delete(
+            f"{self.base_url}/notifications/channels/{notification_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        return resp.status_code == 200
+
     def get_notifications_count(self) -> int:
         """GET /notifications/count — returns unread notification count."""
         token = self._ensure_token()
@@ -646,12 +678,70 @@ class AMSClient:
         logger.info("Reboot command sent to miners %s", miner_ids)
         return resp.json()
 
-    def get_miner_reboot_history(self, miner_id: int, limit: int = 20) -> List[Dict]:
-        """POST /miners/request_list — get reboot/request history for a miner."""
+    def get_map_groups(self) -> List[Dict]:
+        """GET /map/groups — get facility map groups (rows, racks, sections).
+
+        Returns physical location groups used to identify where a miner
+        is located in the facility. When a miner needs attention, Mining
+        Guardian uses this to tell the operator exactly where to find it.
+        """
+        token = self._ensure_token()
+        resp  = self.session.get(
+            f"{self.base_url}/map/groups",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning("get_map_groups returned %s", resp.status_code)
+        return []
+
+    def get_map_layout(self) -> Optional[Dict]:
+        """WebSocket map/ws — get full facility map with miner positions.
+
+        Returns the spatial layout of all miners on the facility map.
+        Used to show physical location (row, rack, position) alongside
+        alerts so operators know exactly where to go.
+        """
+        token  = self._ensure_token()
+        ws_url = f"{self.ws_base}/map/ws"
+        result: Dict = {}
+        event  = threading.Event()
+
+        def on_message(ws, message):
+            try:
+                result.update(json.loads(message))
+            except Exception as e:
+                logger.warning("map/ws parse error: %s", e)
+            event.set()
+            ws.close()
+
+        def on_error(ws, error):
+            logger.warning("map/ws error: %s", error)
+            event.set()
+
+        def on_close(ws, *_):
+            event.set()
+
+        ws = websocket.WebSocketApp(ws_url,
+            header={"Authorization": f"Bearer {token}"},
+            subprotocols=[token],
+            on_message=on_message, on_error=on_error, on_close=on_close)
+        threading.Thread(target=ws.run_forever, daemon=True).start()
+        event.wait(timeout=10)
+        ws.close()
+        return result if result else None
+
+    def get_event_history(self, device_id: int, limit: int = 20) -> List[Dict]:
+        """POST /miners/request_list — get event/action history for a miner or PDU.
+
+        Works for both miners and PDUs — pass the device ID (miner ID or PDU ID).
+        Returns control outlet events, reboots, profile changes, etc.
+        """
         token = self._ensure_token()
         resp  = self.session.post(
             f"{self.base_url}/miners/request_list",
-            json={"id": miner_id, "start": "", "end": "", "from": "", "limit": limit},
+            json={"id": device_id, "start": "", "end": "", "from": "", "limit": limit},
             headers={"Authorization": f"Bearer {token}"},
             timeout=self.timeout,
         )
