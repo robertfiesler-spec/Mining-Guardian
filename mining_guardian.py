@@ -887,7 +887,21 @@ class GuardianDB:
             )
         logger.info("Saved %s log files for miner %s (%s)", len(rows), miner_id, health_status)
 
-    def last_log_collected(self, miner_id: str) -> Optional[datetime]:
+    def purge_old_logs(self, days: int = 7) -> int:
+        """Delete miner log entries older than N days. Returns count deleted.
+
+        Only purges the miner_logs table (raw log content).
+        Scan history and miner_readings are kept permanently for trending.
+        """
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM miner_logs WHERE collected_at < ?", (cutoff,)
+            )
+            deleted = cur.rowcount
+        if deleted:
+            logger.info("Purged %s log entries older than %s days", deleted, days)
+        return deleted
         """Return datetime of last log collection for this miner, or None."""
         with self._connect() as conn:
             row = conn.execute(
@@ -1259,6 +1273,7 @@ class MiningGuardian:
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues)
         self.db.save_scan(miners, issues)
+        self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
         self.slack.send_scan(miners, issues)
