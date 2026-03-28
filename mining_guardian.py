@@ -1032,7 +1032,7 @@ class MiningGuardian:
         self.config   = config
         self.ams      = AMSClient(config)
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
-        self.slack    = SlackNotifier(config.slack_webhook_url)
+        self.slack    = SlackNotifier(GuardianConfig._resolve(config.slack_webhook_url) if config.slack_webhook_url else None)
         self.db       = GuardianDB()
 
     # ── Per-miner analysis ────────────────────────────────────
@@ -1265,7 +1265,10 @@ class MiningGuardian:
         return {
             "scanned": len(miners),
             "issues":  len(issues),
-            "restart_recommended": [i["id"] for i in issues if i["action"] in ("RESTART", "PDU_CYCLE")],
+            "pdu_cycle":       [i["id"] for i in issues if i["action"] == "PDU_CYCLE"],
+            "firmware_restart":[i["id"] for i in issues if i["action"] == "RESTART"],
+            "physical_cycle":  [i["id"] for i in issues if i["action"] == "PHYSICAL_CYCLE"],
+            "monitor":         [i["id"] for i in issues if i["action"] == "MONITOR"],
         }
 
     def loop(self) -> None:
