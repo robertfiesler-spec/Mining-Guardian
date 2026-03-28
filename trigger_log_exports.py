@@ -61,22 +61,29 @@ def main():
         print(f"{DIVIDER}\n")
         return
 
-    # Step 3 — Trigger exports
-    print(f"  Triggering log exports for {len(needs_export)} miners...")
+    # Step 3 — Trigger exports in batches of 5 to avoid overwhelming AMS
+    print(f"  Triggering log exports for {len(needs_export)} miners (batches of 5)...")
     triggered = []
     failed    = []
+    BATCH_SIZE = 5
 
-    for miner in needs_export:
-        miner_id = miner["id"]
-        ip       = miner.get("ip", "unknown")
-        model    = miner.get("shortModel", "unknown")
-        success  = client.trigger_log_export(miner_id)
-        if success:
-            triggered.append(miner)
-            print(f"  ✅ Triggered export for {ip} ({model})")
-        else:
-            failed.append(miner)
-            print(f"  ⚠️  Export trigger failed for {ip} ({model}) — may have too many logs already")
+    for i in range(0, len(needs_export), BATCH_SIZE):
+        batch = needs_export[i:i+BATCH_SIZE]
+        for miner in batch:
+            miner_id = miner["id"]
+            ip       = miner.get("ip", "unknown")
+            model    = miner.get("shortModel", "unknown")
+            success  = client.trigger_log_export(miner_id)
+            if success:
+                triggered.append(miner)
+                print(f"  ✅ Triggered export for {ip} ({model})")
+            else:
+                failed.append(miner)
+                print(f"  ⚠️  Export trigger failed for {ip} ({model}) — may have too many logs already")
+        # Pause between batches to avoid rate limiting
+        if i + BATCH_SIZE < len(needs_export):
+            print(f"  Pausing 10s between batches...")
+            time.sleep(10)
 
     print(f"\n  Triggered: {len(triggered)} | Failed: {len(failed)}\n")
 
@@ -85,12 +92,12 @@ def main():
         print(f"{DIVIDER}\n")
         return
 
-    # Step 4 — Wait for exports to complete
-    print(f"  Waiting up to 90 seconds for exports to complete...")
+    # Step 4 — Wait for exports to complete (up to 5 minutes)
+    print(f"  Waiting up to 5 minutes for exports to complete...")
     completed = []
     start = time.time()
 
-    while time.time() - start < 90:
+    while time.time() - start < 300:
         time.sleep(10)
         elapsed = int(time.time() - start)
         still_pending = []
