@@ -402,59 +402,41 @@ class AMSClient:
         return None
 
     def collect_miner_logs(self, miner_id: int) -> Optional[Dict[str, str]]:
-        """Collect logs for a miner — uses existing logs if available, triggers export if not.
+        """Collect logs for a miner — only downloads if existing logs are available.
 
-        Flow:
-        1. Check existing log list
-        2. If logs exist → download the most recent one immediately
-        3. If no logs exist → trigger export, poll, then download
-        4. Extract and return key log files from the zip
+        Does NOT trigger new exports (slow, 60s wait). That is handled separately.
+        If no existing logs are found, returns None immediately.
         """
-        import zipfile, io, time as _time
+        import zipfile, io
 
-        # Step 1 — Check existing logs first
+        # Check existing logs only — no export trigger
         logs = self.get_log_list(miner_id)
-
-        if not logs:
-            # No existing logs — trigger a new export
-            if not self.trigger_log_export(miner_id):
-                logger.warning("Log export trigger failed for miner %s", miner_id)
-                return None
-            # Poll up to 60 seconds for completion
-            for attempt in range(12):
-                _time.sleep(5)
-                logs = self.get_log_list(miner_id)
-                if logs and logs[0].get("status") == 2:
-                    break
-            if not logs:
-                logger.warning("Log export did not complete within 60s for miner %s", miner_id)
-                return None
-
-        # Step 2 — Download the most recent completed log
         ready_logs = [l for l in logs if l.get("status") == 2]
-        if not ready_logs:
-            logger.warning("No completed logs available for miner %s", miner_id)
-            return None
 
-        latest = ready_logs[0]
+        if not ready_logs:
+            return None  # No logs available — skip silently
+
+        # Download the most recent completed log
+        latest   = ready_logs[0]
         filename = latest["fileName"]
         zip_bytes = self.download_log(miner_id, filename)
         if not zip_bytes:
             logger.warning("Log download failed for miner %s", miner_id)
             return None
 
-        # Step 3 — Extract key files from the zip
+        # Extract up to 3 key files from the zip
         extracted = {}
         key_files = {
             "cgminer.conf",
-            "x-autotune-profiles.json",
             "x-autotune-results.json",
-            "x-power-calibrate-result.json",
             "allowed_pools",
         }
+        MAX_FILES = 3
         try:
             with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
                 for name in zf.namelist():
+                    if len(extracted) >= MAX_FILES:
+                        break
                     basename = name.split("/")[-1]
                     if basename in key_files or "cglog" in name:
                         try:
@@ -466,7 +448,8 @@ class AMSClient:
             logger.warning("Log zip extraction failed for miner %s: %s", miner_id, e)
             return None
 
-        logger.info("Collected %s log files for miner %s (from %s)", len(extracted), miner_id, filename)
+        logger.info("Collected %s log files for miner %s (from %s)",
+                    len(extracted), miner_id, filename)
         return extracted
 
     # ── Public write methods ──────────────────────────────────
@@ -664,17 +647,24 @@ class OpenClawNotifier:
         monitors    = [i for i in issues if i["action"] == "MONITOR"]
         temp_action = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
 
-        parts = []
-        if pdu_cycles:
-            parts.append(f"{len(pdu_cycles)} offline miner(s) need PDU power cycle")
-        if fw_restarts:
-            parts.append(f"{len(fw_restarts)} miner(s) need firmware restart")
-        if temp_action:
-            parts.append(f"{len(temp_action)} miner(s) have critical chip temps (86°C+)")
-        if monitors:
-            parts.append(f"{len(monitors)} miner(s) running warm (76–85°C), monitoring")
-        summary = ". ".join(parts) + "." if parts else "All miners operating normally."
+        pdu_cycles_oc  = [i for i in issues if i["action"] == "PDU_CYCLE"]
+        fw_restarts_oc = [i for i in issues if i["action"] == "RESTART"]
+        phys_oc        = [i for i in issues if i["action"] == "PHYSICAL_CYCLE"]
+        monitors_oc    = [i for i in issues if i["action"] == "MONITOR"]
+        temp_oc        = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
 
+        parts = []
+        if pdu_cycles_oc:
+            parts.append(f"{len(pdu_cycles_oc)} offline miner(s) need PDU power cycle")
+        if fw_restarts_oc:
+            parts.append(f"{len(fw_restarts_oc)} miner(s) need firmware restart")
+        if phys_oc:
+            parts.append(f"{len(phys_oc)} offline miner(s) need physical power cycle at facility")
+        if temp_oc:
+            parts.append(f"{len(temp_oc)} miner(s) have critical chip temps (86°C+)")
+        if monitors_oc:
+            parts.append(f"{len(monitors_oc)} miner(s) running warm (76–85°C), monitoring")
+        summary = ". ".join(parts) + "." if parts else "All miners operating normally."
         payload = {
             "source":     "mining_guardian",
             "scanned_at": now,
@@ -897,6 +887,21 @@ class GuardianDB:
             )
         logger.info("Saved %s log files for miner %s (%s)", len(rows), miner_id, health_status)
 
+    def last_log_collected(self, miner_id: str) -> Optional[datetime]:
+        """Return datetime of last log collection for this miner, or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT collected_at FROM miner_logs WHERE miner_id=? "
+                "ORDER BY id DESC LIMIT 1",
+                (miner_id,)
+            ).fetchone()
+        if row:
+            try:
+                return datetime.fromisoformat(row[0])
+            except Exception:
+                return None
+        return None
+
     def record_restart(self, miner_id: str, ip: str, model: str,
                        restart_type: str, elevated_hours: int = 3) -> None:
         """Record a restart event and set elevated monitoring window."""
@@ -959,10 +964,11 @@ class SlackNotifier:
         online  = sum(1 for m in miners if m.get("status") == "online")
         offline = len(miners) - online
 
-        pdu_cycles  = [i for i in issues if i["action"] == "PDU_CYCLE"]
-        fw_restarts = [i for i in issues if i["action"] == "RESTART"]
-        monitors    = [i for i in issues if i["action"] == "MONITOR"]
-        temp_action = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
+        pdu_cycles   = [i for i in issues if i["action"] == "PDU_CYCLE"]
+        fw_restarts  = [i for i in issues if i["action"] == "RESTART"]
+        phys_cycles  = [i for i in issues if i["action"] == "PHYSICAL_CYCLE"]
+        monitors     = [i for i in issues if i["action"] == "MONITOR"]
+        temp_action  = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
 
         # Header
         if not issues:
@@ -986,6 +992,12 @@ class SlackNotifier:
             lines.append(f"\n*🔴 Firmware Restart Recommended ({len(fw_restarts)} miners)*")
             for i in fw_restarts:
                 lines.append(f"  • `{i['ip']}` {i['model']} — Hashrate: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
+
+        if phys_cycles:
+            lines.append(f"\n*🔴 Physical Power Cycle Required ({len(phys_cycles)} miners)*")
+            lines.append("  ⚠️ No PDU assigned — cannot remote restart. Must be done manually at the facility.")
+            for i in phys_cycles:
+                lines.append(f"  • `{i['ip']}` {i['model']} — OFFLINE, no PDU")
 
         if temp_action:
             lines.append(f"\n*🔴 High Temp — Action Required ({len(temp_action)} miners)*")
@@ -1055,7 +1067,8 @@ class MiningGuardian:
                 action = "PDU_CYCLE"
                 pdu_action = f"PDU {pdu_id} → Outlet {outlet_index}"
             else:
-                action = "RESTART"
+                # No PDU assigned — can't remote restart, must physically power cycle
+                action = "PHYSICAL_CYCLE"
         elif max_hr > 0:
             pct = (hashrate / max_hr) * 100
             if pct < self.HASHRATE_THRESHOLD * 100:
@@ -1119,10 +1132,11 @@ class MiningGuardian:
             print("  ✅ All miners operating within normal parameters.")
         else:
             # Group by action
-            pdu_cycles  = [i for i in issues if i["action"] == "PDU_CYCLE"]
-            fw_restarts = [i for i in issues if i["action"] == "RESTART"]
-            monitors    = [i for i in issues if i["action"] == "MONITOR"]
-            restarts    = pdu_cycles + fw_restarts
+            pdu_cycles    = [i for i in issues if i["action"] == "PDU_CYCLE"]
+            fw_restarts   = [i for i in issues if i["action"] == "RESTART"]
+            phys_cycles   = [i for i in issues if i["action"] == "PHYSICAL_CYCLE"]
+            monitors      = [i for i in issues if i["action"] == "MONITOR"]
+            restarts      = pdu_cycles + fw_restarts + phys_cycles
 
             if restarts:
 
@@ -1142,6 +1156,16 @@ class MiningGuardian:
                     for i in fw_restarts:
                         issue_str = " | ".join(i["issues"])
                         print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['hashrate_pct']:<10} {i['temp_chip']:<10} {issue_str}")
+
+                if phys_cycles:
+                    print(f"\n  🔴 OFFLINE — PHYSICAL POWER CYCLE REQUIRED ({len(phys_cycles)} miners)\n")
+                    print(f"  ⚠️  No PDU assigned — cannot remote restart. Must be power cycled manually.\n")
+                    print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'Hashrate':<10} Issue")
+                    print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*10} {'-'*30}")
+                    for i in phys_cycles:
+                        issue_str = " | ".join(i["issues"])
+                        print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['hashrate_pct']:<10} {issue_str}")
+                    print(f"\n  Action: Go to the facility and manually power cycle these miners.")
 
             # Miners with high temp — show action menu
             temp_action = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
@@ -1191,6 +1215,10 @@ class MiningGuardian:
             model     = miner.get("shortModel", miner.get("name", "unknown"))
             status    = miner.get("status", "unknown")
             flagged   = miner_id in issue_ids
+
+            # Skip offline miners — no connection means no logs available
+            if status == "offline":
+                continue
 
             # Determine collection priority
             elevated  = self.db.is_elevated_monitoring(miner_id)
