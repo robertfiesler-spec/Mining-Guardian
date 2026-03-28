@@ -1538,19 +1538,38 @@ class SlackNotifier:
         if pdu_cycles:
             lines.append(f"\n*🔴 PDU Power Cycle Recommended ({len(pdu_cycles)} miners)*")
             for i in pdu_cycles:
-                lines.append(f"  • `{i['ip']}` {i['model']} — {i.get('pdu_action', 'No PDU info')}")
-            lines.append("  _After power cycle: logs collected immediately on boot. Elevated monitoring active for 3 hours._")
+                location = i.get("map_location", "—")
+                lines.append(f"  • `{i['ip']}` {i['model']} — {i.get('pdu_action', 'No PDU info')} | Location: {location}")
+            lines.append("  _After power cycle: logs collected on boot, elevated monitoring for 3hrs._")
 
         if fw_restarts:
-            lines.append(f"\n*🔴 Firmware Restart Recommended ({len(fw_restarts)} miners)*")
+            # Group by model
+            from collections import defaultdict
+            by_model: dict = defaultdict(list)
             for i in fw_restarts:
-                lines.append(f"  • `{i['ip']}` {i['model']} — Hashrate: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
+                by_model[i["model"]].append(i)
+            lines.append(f"\n*🔴 Firmware Restart Recommended ({len(fw_restarts)} miners)*")
+            for model, group in by_model.items():
+                if len(group) == 1:
+                    i = group[0]
+                    lines.append(f"  • `{i['ip']}` {model} — Hashrate: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
+                else:
+                    # Show all IPs with a shared issue summary
+                    ips = ", ".join(f"`{i['ip']}`" for i in group)
+                    issue_str = " | ".join(set(" | ".join(i["issues"]) for i in group))
+                    lines.append(f"  • *{len(group)}x {model}:* {ips}")
+                    lines.append(f"    _{issue_str}_")
 
         if phys_cycles:
-            lines.append(f"\n*🔴 Physical Power Cycle Required ({len(phys_cycles)} miners)*")
-            lines.append("  ⚠️ No PDU assigned — cannot remote restart. Must be done manually at the facility.")
+            from collections import defaultdict
+            by_model2: dict = defaultdict(list)
             for i in phys_cycles:
-                lines.append(f"  • `{i['ip']}` {i['model']} — OFFLINE, no PDU")
+                by_model2[i["model"]].append(i)
+            lines.append(f"\n*🔴 Physical Power Cycle Required ({len(phys_cycles)} miners)*")
+            lines.append("  ⚠️ No PDU assigned — must be done manually at the facility.")
+            for model, group in by_model2.items():
+                ips = ", ".join(f"`{i['ip']}`" for i in group)
+                lines.append(f"  • *{len(group)}x {model}:* {ips}")
 
         if temp_action:
             lines.append(f"\n*🔴 High Temp — Action Required ({len(temp_action)} miners)*")
@@ -1559,31 +1578,60 @@ class SlackNotifier:
             lines.append("  Options: [1] Restart  [2] Lower power  [3] Raise cooling")
 
         if monitors:
-            lines.append(f"\n*🟡 Monitor — Running Warm ({len(monitors)} miners)*")
+            by_model3: dict = defaultdict(list)
             for i in monitors:
-                lines.append(f"  • `{i['ip']}` {i['model']} — {i['temp_chip']}")
+                by_model3[i["model"]].append(i)
+            lines.append(f"\n*🟡 Monitor — Running Warm ({len(monitors)} miners)*")
+            for model, group in by_model3.items():
+                temps = ", ".join(f"`{i['ip']}` {i['temp_chip']}" for i in group)
+                lines.append(f"  • {temps}")
 
         if issues:
             lines.append("\n_DRY RUN — no actions taken. Reply to approve actions._")
 
-        # AMS notifications section
+        # AMS notifications section — exclude miners already flagged in main report
         if ams_notifs:
-            critical = [n for n in ams_notifs if n.get("params", {}).get("alertLevel") == "Critical"]
-            warnings = [n for n in ams_notifs if n.get("params", {}).get("alertLevel") == "Warning"]
+            from collections import defaultdict
+            # Human-readable names for AMS notification keys
+            key_labels = {
+                "consumptionChangeLevel": "Power consumption change",
+                "hotBoard":               "Hashboard overheating",
+                "workerOffline":          "Miner went offline",
+                "workerOnline":           "Miner came back online",
+                "hashrateDropped":        "Hashrate dropped",
+                "highTemp":               "High temperature",
+                "lowHashrate":            "Low hashrate",
+            }
+            # IPs already covered in the main report
+            flagged_ips = {i["ip"] for i in issues}
+
+            critical = [n for n in ams_notifs
+                        if n.get("params", {}).get("alertLevel") == "Critical"
+                        and n.get("params", {}).get("minerIp") not in flagged_ips]
+            warnings = [n for n in ams_notifs
+                        if n.get("params", {}).get("alertLevel") == "Warning"
+                        and n.get("params", {}).get("minerIp") not in flagged_ips]
+
             if critical or warnings:
-                lines.append(f"\n*⚠️ AMS Notifications ({len(ams_notifs)} total)*")
+                lines.append(f"\n*⚠️ Additional AMS Alerts*")
                 if critical:
-                    lines.append(f"  🔴 Critical: {len(critical)}")
-                    for n in critical[:5]:
-                        ip  = n.get("params", {}).get("minerIp", "unknown")
-                        key = n.get("key", "unknown")
-                        lines.append(f"    • `{ip}` — {key}")
+                    by_key: dict = defaultdict(list)
+                    for n in critical:
+                        by_key[n.get("key", "unknown")].append(n.get("params", {}).get("minerIp", "unknown"))
+                    lines.append(f"  🔴 Critical ({len(critical)})")
+                    for key, ips in by_key.items():
+                        label = key_labels.get(key, key)
+                        ip_list = ", ".join(f"`{ip}`" for ip in ips)
+                        lines.append(f"    • *{label}:* {ip_list}")
                 if warnings:
-                    lines.append(f"  🟡 Warning: {len(warnings)}")
-                    for n in warnings[:3]:
-                        ip  = n.get("params", {}).get("minerIp", "unknown")
-                        key = n.get("key", "unknown")
-                        lines.append(f"    • `{ip}` — {key}")
+                    by_key2: dict = defaultdict(list)
+                    for n in warnings:
+                        by_key2[n.get("key", "unknown")].append(n.get("params", {}).get("minerIp", "unknown"))
+                    lines.append(f"  🟡 Warning ({len(warnings)})")
+                    for key, ips in by_key2.items():
+                        label = key_labels.get(key, key)
+                        ip_list = ", ".join(f"`{ip}`" for ip in ips)
+                        lines.append(f"    • *{label}:* {ip_list}")
 
         payload = {"text": "\n".join(lines)}
 
@@ -1691,6 +1739,7 @@ class MiningGuardian:
             "pdu_action": pdu_action,
             "power_watts":  power_watts,
             "power_source": power_source,
+            "map_location": miner.get("mapLocation", {}).get("title") or "not mapped",
         }
 
     # ── Report printer ────────────────────────────────────────
