@@ -680,6 +680,61 @@ class AMSClient:
         logger.info("Reboot command sent to miners %s", miner_ids)
         return resp.json()
 
+    def get_tickets(self) -> List[Dict]:
+        """GET /ticket — get all maintenance tickets.
+
+        Returns tickets with status (backlog, in_progress, done),
+        title, priority, and timestamps. Used to track maintenance
+        work on miners and correlate with performance issues.
+        """
+        token = self._ensure_token()
+        resp  = self.session.get(
+            f"{self.base_url}/ticket",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning("get_tickets returned %s", resp.status_code)
+        return []
+
+    def create_ticket(self, title: str, description: str = "",
+                      priority: str = "normal") -> Dict:
+        """POST /ticket — create a new maintenance ticket.
+
+        Args:
+            title: Short description of the issue
+            description: Full details
+            priority: "low", "normal", "high", or "critical"
+
+        Mining Guardian can auto-create tickets when miners are flagged
+        for physical intervention (no PDU assigned, needs manual visit).
+        """
+        token = self._ensure_token()
+        resp  = self.session.post(
+            f"{self.base_url}/ticket",
+            json={"title": title, "description": description, "priority": priority},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            logger.info("Ticket created: %s", title)
+            return resp.json()
+        logger.warning("create_ticket returned %s: %s", resp.status_code, resp.text[:100])
+        return {}
+
+    def get_ticket_statuses(self) -> List[Dict]:
+        """GET /ticket/status — get available ticket status types."""
+        token = self._ensure_token()
+        resp  = self.session.get(
+            f"{self.base_url}/ticket/status",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return []
+
     def get_map_groups(self) -> List[Dict]:
         """GET /map/groups — get facility map groups (rows, racks, sections).
 
