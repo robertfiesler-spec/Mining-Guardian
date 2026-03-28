@@ -253,29 +253,209 @@ Mining Gaurdian/
 
 ---
 
+## Full AMS API Capability Map
+
+Mining Guardian has owner-level access to the full BiXBiT AMS API. Below is everything available — current usage noted.
+
+### Miners
+| Permission | Description | Status |
+|---|---|---|
+| `minerShow` | Read miner list and telemetry | ✅ In use |
+| `minerStart` / `minerStop` | Start and stop miners | 🔜 Planned |
+| `minerReboot` | Firmware restart | 🔜 Planned |
+| `minerChangeSettings` | Change power profile, overclocking, config | 🔜 Planned |
+| `minerOverclock` | Overclocking controls | 🔜 Planned |
+| `minerChangePool` | Switch mining pool | 🔜 Planned |
+| `minerChangeFee` | Change fee settings | 🔜 Planned |
+| `minerChangePassword` | Change miner password | 🔜 Planned |
+| `minerChangeNetwork` | Change network config | 🔜 Planned |
+| `minerLed` | Flash LED to physically locate a miner | 🔜 Planned |
+| `minerLogsShow` / `minerExportLogs` | Pull and download miner logs | 🔜 Critical — AI diagnosis |
+| `minerEventsShow` | Per-miner event history | 🔜 Critical — AI diagnosis |
+| `minerExport` | Export miner data | 🔜 Planned |
+| `minerStartGenerateProfile` / `minerStopGenerateProfile` | Auto power profile generation | 🔜 Planned |
+| `minerStatsShow` | Per-miner stats | 🔜 Planned |
+
+### PDUs
+| Permission | Description | Status |
+|---|---|---|
+| `pduShow` | Read PDU list and outlet status | 🔜 Planned |
+| `pduStatsShow` | PDU power consumption stats | 🔜 Planned |
+| `pduEventShow` | PDU event history | 🔜 Planned |
+| `pduCmdToggleOutlets` | Power cycle outlets | ✅ In use |
+| `pduAttachMiner` / `pduDetachMiner` | Manage PDU-miner assignments | 🔜 Planned |
+
+### Pools
+| Permission | Description | Status |
+|---|---|---|
+| `poolShow` / `poolCreate` / `poolEdit` / `poolDelete` | Full pool management | 🔜 Dashboard |
+
+### Automations
+| Permission | Description | Status |
+|---|---|---|
+| `automatizationShow/Create/Edit/Delete` | Create and manage AMS automation rules | 🔜 Dashboard |
+
+### Maps
+| Permission | Description | Status |
+|---|---|---|
+| `mapShow` | View facility map | 🔜 Dashboard |
+| `mapAssignMiner` / `mapUnassignMiner` | Assign miners to physical map locations | 🔜 Dashboard |
+| `mapImport/ExportLayout` | Import/export facility layouts | 🔜 Dashboard |
+
+### Tickets
+| Permission | Description | Status |
+|---|---|---|
+| `ticketShow/Create/Edit/Delete` | Full maintenance ticket system | 🔜 Dashboard |
+| `ticketCommentCreate/Edit/Delete` | Ticket comments | 🔜 Dashboard |
+
+### Teams & Notifications
+| Permission | Description | Status |
+|---|---|---|
+| `teamShow/Invite/Detach` | Manage team members | 🔜 Dashboard |
+| `notificationShow/Delete` | Fleet notifications | 🔜 Dashboard |
+
+### Containers
+| Permission | Description | Status |
+|---|---|---|
+| `containerShow/StatsShow/EventsShow` | Immersion/hydro container monitoring | 🔜 Planned |
+| `containerChangeSettings/ExecuteCmd` | Container control commands | 🔜 Planned |
+
+---
+
+## AI Diagnosis & Predictive Failure Detection
+
+This is the core intelligence layer of Mining Guardian — the feature that separates it from a simple monitoring tool.
+
+### How It Works
+
+Mining Guardian continuously downloads miner logs from the AMS API and feeds them to the local LLM (OpenClaw). Over time the LLM builds a pattern library:
+
+```
+Phase 1 — Data Collection
+Every scan cycle:
+  ├── Download logs for every miner (healthy + unhealthy)
+  ├── Store raw logs in SQLite with miner ID, timestamp, status
+  └── Tag logs: healthy / underperforming / failed / recovered
+
+Phase 2 — Pattern Learning
+Local LLM analyzes the log database:
+  ├── "What do healthy S19JPro logs look like?"
+  ├── "What patterns appear in logs 24-48 hours before a failure?"
+  ├── "Which chip error codes correlate with hashrate drops?"
+  └── Builds a model per miner type (S19, S21, AH3880, etc.)
+
+Phase 3 — Active Diagnosis
+When a miner underperforms:
+  ├── Mining Guardian pulls that miner's recent logs
+  ├── Sends logs + pattern library context to LLM
+  ├── LLM compares against known failure signatures
+  └── Returns: root cause assessment + recommended action
+
+Phase 4 — Predictive Alerts
+For every online miner each scan:
+  ├── LLM scores current log patterns against failure signatures
+  ├── Flags miners showing early warning signs
+  └── Posts to Slack: "Miner 53483 showing chip error pattern
+      consistent with pre-failure state on 3 other S19JPros.
+      Recommend inspection within 48 hours."
+```
+
+### What Miner Logs Contain
+- Per-chip error rates and error codes
+- Temperature readings at chip level (not just board averages)
+- Pool connection events — drops, latency, reconnects
+- Fan speed history and anomalies
+- Restart and crash events with timestamps
+- Power fluctuation records
+- Firmware error codes
+
+### Log Collection Strategy
+- **Download frequency:** Every scan cycle for flagged miners, every 6 hours for healthy miners
+- **Storage:** Raw logs in SQLite `miner_logs` table, tagged by miner ID, model, and health status
+- **Retention:** 90 days rolling window — enough history to train on without unbounded disk growth
+- **LLM context:** Logs sent to OpenClaw in structured batches, not raw dumps
+
+### Diagnosis Workflow
+```
+Miner flagged as underperforming
+        ↓
+Mining Guardian pulls last 24h of logs
+        ↓
+Sends to OpenClaw: "Diagnose this miner.
+Here are its logs. Here are examples of
+healthy logs from same model. What's wrong
+and what should we do?"
+        ↓
+LLM returns structured diagnosis:
+  - Likely root cause
+  - Confidence level
+  - Recommended action (restart / profile change / physical inspection)
+  - Urgency (immediate / 24h / 7 days)
+        ↓
+Posted to #mining-guardian in Slack
+Operator approves recommended action
+```
+
+---
+
 ## Roadmap
 
-- [ ] **Mining Guardian Dashboard — Phase 1 (Retool)**
-  - Fast, professional internal dashboard — no heavy frontend build required
-  - Live fleet status with charts and color-coded miner health
-  - Per-miner historical data — hashrate trends, temp history, uptime over time
-  - Settings management — change rules, thresholds, dry run toggle from the UI
-  - Alert history — full log of everything flagged and what action was taken
-- [ ] **Mining Guardian Dashboard — Phase 2 (Custom React app)**
-  - Fully owned by BiXBiT — no monthly fees, white-label ready for customers
-  - Multi-customer support — switch between customer sites from one interface
-  - AI predictions panel — local LLM learns fleet patterns, surfaces failure warnings
-  - Professional branded UI deployable per customer
-- [x] SQLite database — scan history and per-miner telemetry logging
-- [x] Daily log file — headless Mac Mini operation ready
-- [x] Deprecation warnings fixed — timezone-aware datetime throughout
-- [x] launchd watchdog — auto-start and crash recovery on Mac Mini boot
-- [x] Customer setup script — one command (`zsh setup.sh`) deploys to any new Mac Mini
-- [ ] OpenClaw webhook — structured findings to local LLM (built, pending OpenClaw setup)
-- [x] Slack integration — live fleet alerts posted to #mining-guardian after every scan
-- [x] Morning briefing — 7am fleet summary posted to Slack automatically via cron
-- [ ] Predictive failure detection — trending historical temp and hashrate data
+### Phase 1 — Core Monitoring (✅ Complete)
+- [x] Cookie-based AMS authentication with auto token refresh
+- [x] Full fleet scan via WebSocket with automatic pagination
+- [x] Hashrate % of max threshold monitoring (90% floor)
+- [x] Chip temperature zone monitoring (green/yellow/red)
+- [x] PDU power cycle for offline miners
+- [x] Firmware restart for underperforming online miners
+- [x] SQLite database — scan history and per-miner telemetry
+- [x] Daily rotating log file — headless Mac Mini ready
+- [x] Slack integration — live fleet alerts to #mining-guardian
+- [x] Morning briefing — 7am fleet summary posted to Slack via cron
+- [x] launchd watchdog — auto-start and crash recovery on boot
+- [x] Customer setup script — one command deploys to any Mac Mini
+
+### Phase 2 — AI Diagnosis (🔜 Next)
+- [ ] Miner log downloader — pull and store logs per miner per cycle
+- [ ] Log tagging system — healthy / underperforming / failed / recovered
+- [ ] OpenClaw integration — send logs to local LLM for analysis
+- [ ] Active diagnosis — LLM diagnoses underperforming miners from logs
+- [ ] Pattern library — LLM builds failure signatures per miner model
+- [ ] Predictive alerts — early warning before miners fail
+
+### Phase 3 — Dashboard (🔜 Planned)
+- [ ] **Retool dashboard** (Phase 3a — fast, internal)
+  - Live fleet status with color-coded miner health
+  - Historical hashrate and temperature charts per miner
+  - Settings management — rules, thresholds, dry run toggle
+  - Alert history and action log
+- [ ] **Custom React dashboard** (Phase 3b — white-label, customer-facing)
+  - Fully owned by BiXBiT, no monthly fees
+  - Multi-customer support — switch between sites
+  - AI predictions panel — LLM insights and trend analysis
+  - Professional branded UI per customer
+
+### Phase 4 — Full Fleet Control (🔜 Planned)
+- [ ] Pool management — switch, create, edit pools from dashboard
+- [ ] Overclocking controls — profile management per miner model
+- [ ] Automation rules — create AMS automations from Mining Guardian
+- [ ] Facility map — visual miner layout with status overlay
+- [ ] Maintenance tickets — create and track issues per miner
+- [ ] Container monitoring — immersion and hydro unit support
 - [ ] Firmware version drift detection across fleet
+- [ ] LED locator — flash miner LED from dashboard for physical identification
+
+### Phase 5 — Multi-Customer Platform (🔜 Planned)
+- [ ] Packaged Mac Mini installer — one script sets up everything
+  - Mining Guardian daemon
+  - OpenClaw + local LLM
+  - Slack workspace integration
+  - Customer-specific config
+  - Guided setup wizard (no technical knowledge required)
+- [ ] Central management console — BiXBiT sees all customer sites
+- [ ] White-labeled customer portal
+- [ ] Automated onboarding flow
+
+---
 
 ---
 
