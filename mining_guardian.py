@@ -84,6 +84,7 @@ class GuardianConfig:
     ams_workspace_id: int
     openclaw_webhook_url: Optional[str] = None
     slack_webhook_url: Optional[str] = None
+    slack_bot_token:   Optional[str] = None
     dry_run: bool = True
     collect_logs: bool = False  # enable log collection independently of dry_run
     scan_interval_seconds: int = 300
@@ -114,6 +115,7 @@ class GuardianConfig:
             ams_workspace_id=int(GuardianConfig._resolve(raw["ams_workspace_id"])),
             openclaw_webhook_url=raw.get("openclaw_webhook_url"),
             slack_webhook_url=raw.get("slack_webhook_url"),
+            slack_bot_token=raw.get("slack_bot_token"),
             dry_run=raw.get("dry_run", True),
             collect_logs=raw.get("collect_logs", False),
             scan_interval_seconds=raw.get("scan_interval_seconds", 300),
@@ -1231,6 +1233,25 @@ class GuardianDB:
                 CREATE INDEX IF NOT EXISTS idx_readings_miner
                     ON miner_readings(miner_id, scanned_at);
 
+                CREATE TABLE IF NOT EXISTS pending_approvals (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at    TEXT    NOT NULL,
+                    scan_id       INTEGER,
+                    thread_ts     TEXT    NOT NULL,
+                    miner_id      TEXT    NOT NULL,
+                    ip            TEXT    NOT NULL,
+                    model         TEXT,
+                    action_type   TEXT    NOT NULL,
+                    problem       TEXT,
+                    pdu_id        INTEGER,
+                    outlet        INTEGER,
+                    status        TEXT    DEFAULT 'PENDING',
+                    responded_at  TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pending_thread
+                    ON pending_approvals(thread_ts, status);
+
                 CREATE TABLE IF NOT EXISTS action_audit_log (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp     TEXT    NOT NULL,
@@ -1304,6 +1325,31 @@ class GuardianDB:
                     ON miner_restarts(miner_id, restarted_at);
             """)
         logger.info("Database ready at %s", self.db_path)
+
+    def save_pending_approvals(self, thread_ts: str, scan_id: int,
+                               issues: List[Dict]) -> None:
+        """Save actionable issues as pending approvals linked to a Slack thread."""
+        now  = datetime.now().isoformat()
+        rows = []
+        for i in issues:
+            if i["action"] not in ("PDU_CYCLE", "RESTART"):
+                continue  # PHYSICAL_CYCLE requires manual visit, skip
+            rows.append((
+                now, scan_id, thread_ts,
+                i["miner_id"], i["ip"], i["model"],
+                i["action"], i.get("issues", ""),
+                i.get("pdu_id"), i.get("outlet"),
+            ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            conn.executemany("""
+                INSERT INTO pending_approvals
+                (created_at, scan_id, thread_ts, miner_id, ip, model,
+                 action_type, problem, pdu_id, outlet)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
+            """, rows)
+        logger.info("Saved %s pending approvals for thread %s", len(rows), thread_ts)
 
     def log_action(self, miner_id: str, ip: str, model: str,
                    problem: str, action_taken: str, decision: str,
@@ -1558,11 +1604,13 @@ class GuardianDB:
 
 class SlackNotifier:
 
+    CHANNEL_ID = "C0AQ8SE1448"  # #mining-guardian
+
     def __init__(self, webhook_url: Optional[str], channel_id: Optional[str] = None,
                  bot_token: Optional[str] = None):
-        self.webhook_url = webhook_url  # Slack incoming webhook URL
-        self.channel_id  = channel_id  # for future direct API use
-        self.bot_token   = bot_token   # Slack bot token for user lookups
+        self.webhook_url = webhook_url
+        self.channel_id  = channel_id or self.CHANNEL_ID
+        self.bot_token   = bot_token
 
     def get_user_display_name(self, slack_user_id: str) -> Optional[str]:
         """Look up a Slack user's display name from their user ID.
@@ -1726,14 +1774,29 @@ class SlackNotifier:
 
         payload = {"text": "\n".join(lines)}
 
+        thread_ts = None
         try:
-            resp = requests.post(self.webhook_url, json=payload, timeout=10)
-            if resp.status_code == 200:
-                logger.info("Slack notified — scan summary posted to #mining-guardian")
+            # Prefer bot token (returns message ts for threading)
+            if self.bot_token:
+                from slack_sdk import WebClient
+                client = WebClient(token=self.bot_token)
+                resp   = client.chat_postMessage(
+                    channel=CHANNEL_ID,
+                    text="\n".join(lines)
+                )
+                thread_ts = resp["ts"]
+                logger.info("Slack notified — scan posted (ts=%s)", thread_ts)
             else:
-                logger.warning("Slack webhook returned %s: %s", resp.status_code, resp.text)
+                resp = requests.post(self.webhook_url, json=payload, timeout=10)
+                if resp.status_code == 200:
+                    logger.info("Slack notified — scan summary posted to #mining-guardian")
+                else:
+                    logger.warning("Slack webhook returned %s: %s",
+                                   resp.status_code, resp.text)
         except Exception as exc:
             logger.warning("Slack notification failed: %s", exc)
+
+        return thread_ts
 
 
 class MiningGuardian:
@@ -1743,7 +1806,10 @@ class MiningGuardian:
         self.config   = config
         self.ams      = AMSClient(config)
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
-        self.slack    = SlackNotifier(GuardianConfig._resolve(config.slack_webhook_url) if config.slack_webhook_url else None)
+        self.slack    = SlackNotifier(
+            webhook_url=GuardianConfig._resolve(config.slack_webhook_url) if config.slack_webhook_url else None,
+            bot_token=GuardianConfig._resolve(config.slack_bot_token) if hasattr(config, "slack_bot_token") and config.slack_bot_token else None
+        )
         self.db       = GuardianDB()
         self.weather  = WeatherCollector()
 
@@ -2006,7 +2072,9 @@ class MiningGuardian:
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
-        self.slack.send_scan(miners, issues, wx, ams_notifs)
+        thread_ts = self.slack.send_scan(miners, issues, wx, ams_notifs)
+        if thread_ts and issues:
+            self.db.save_pending_approvals(thread_ts, scan_id, issues)
         return {
             "scanned": len(miners),
             "issues":  len(issues),
