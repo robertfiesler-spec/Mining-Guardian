@@ -1,6 +1,8 @@
 # macOS
 .DS_Store
 guardian.db
+knowledge.json
+master_knowledge.json
 .AppleDouble
 .LSOverride
 

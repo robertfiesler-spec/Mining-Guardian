@@ -23,6 +23,8 @@ Humans stay in the loop on all remediation actions. Mining Guardian detects, exp
 | AMS notifications (40/scan) | ✅ Live |
 | Slack reporting | ✅ Live |
 | Dashboard API (FastAPI :8585) | ✅ Live |
+| Action audit log | ✅ Live |
+| Knowledge export / combine | ✅ Built |
 | OpenClaw / local LLM | 🔜 Mac Mini setup |
 | Retool dashboard | ✅ Phase 1 live |
 | Automations | 🔜 Pending AMS access |
@@ -315,6 +317,16 @@ launchctl list | grep mining-guardian
 - Dashboard API — FastAPI server on :8585 with 13 endpoints
 - DB Browser for SQLite — visual database inspection
 - launchd watchdog + customer setup script
+- **Action audit log** — permanent never-expiring log of every approval/denial
+  - Records: timestamp, miner ID, IP, model, problem, action taken, decision, approver name, Slack user ID, notes
+  - Slack user display name pulled automatically from Slack API
+  - API endpoints: `/audit/log` and `/audit/summary`
+- **Knowledge export** — `export_knowledge.py` exports `knowledge.json` monthly
+  - Model statistics, failure signatures, trouble miners, notification patterns, audit log
+- **Knowledge combiner** — `combine_knowledge.py` merges all customer files centrally
+  - Weighted by observation count — more data = higher confidence
+  - Outputs `master_knowledge.json` for distribution back to all customers
+  - No internet required — USB or manual transfer
 
 ### 🔧 Phase 2 — Dashboard (In Progress)
 
@@ -340,6 +352,7 @@ launchctl list | grep mining-guardian
 - [ ] Active LLM diagnosis for flagged miners
 - [ ] Predictive failure detection — early warning patterns per model
 - [ ] Plain-English Slack summaries from LLM
+- [ ] Load `master_knowledge.json` into LLM context for cross-customer pattern matching
 
 ### 🔜 Phase 4 — Full Fleet Control
 - [ ] Automations (pending AMS access)
