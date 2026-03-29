@@ -244,6 +244,61 @@ def restarts_recent(limit: int = 20):
     return [dict(r) for r in rows]
 
 
+@app.get("/audit/log")
+def audit_log(days: int = None, miner_id: str = None, limit: int = 100):
+    """Permanent action audit log — every approval and denial ever recorded.
+
+    Filterable by date range (days) and miner_id.
+    Grouped by date for easy review. Never expires.
+    """
+    conn   = get_db()
+    query  = "SELECT * FROM action_audit_log WHERE 1=1"
+    params = []
+    if days:
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        query += " AND date >= ?"
+        params.append(cutoff)
+    if miner_id:
+        query += " AND miner_id = ?"
+        params.append(miner_id)
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/audit/summary")
+def audit_summary():
+    """Audit log summary — counts by decision, action, and approver."""
+    conn = get_db()
+    by_decision = conn.execute("""
+        SELECT decision, COUNT(*) as count
+        FROM action_audit_log
+        GROUP BY decision
+    """).fetchall()
+    by_action = conn.execute("""
+        SELECT action_taken, decision, COUNT(*) as count
+        FROM action_audit_log
+        GROUP BY action_taken, decision
+        ORDER BY count DESC
+    """).fetchall()
+    by_approver = conn.execute("""
+        SELECT approved_by, decision, COUNT(*) as count
+        FROM action_audit_log
+        WHERE approved_by IS NOT NULL
+        GROUP BY approved_by, decision
+        ORDER BY count DESC
+    """).fetchall()
+    conn.close()
+    return {
+        "by_decision": [dict(r) for r in by_decision],
+        "by_action":   [dict(r) for r in by_action],
+        "by_approver": [dict(r) for r in by_approver],
+    }
+
+
 # ── Health Check ──────────────────────────────────────────────
 
 @app.get("/")

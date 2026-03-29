@@ -1231,6 +1231,28 @@ class GuardianDB:
                 CREATE INDEX IF NOT EXISTS idx_readings_miner
                     ON miner_readings(miner_id, scanned_at);
 
+                CREATE TABLE IF NOT EXISTS action_audit_log (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp     TEXT    NOT NULL,
+                    date          TEXT    NOT NULL,
+                    scan_id       INTEGER,
+                    miner_id      TEXT    NOT NULL,
+                    ip            TEXT    NOT NULL,
+                    model         TEXT,
+                    problem       TEXT    NOT NULL,
+                    action_taken  TEXT    NOT NULL,
+                    decision      TEXT    NOT NULL,
+                    approved_by   TEXT,
+                    slack_user_id TEXT,
+                    notes         TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_audit_date
+                    ON action_audit_log(date);
+
+                CREATE INDEX IF NOT EXISTS idx_audit_miner
+                    ON action_audit_log(miner_id);
+
                 CREATE TABLE IF NOT EXISTS ams_notifications (
                     row_id          INTEGER PRIMARY KEY AUTOINCREMENT,
                     recorded_at     TEXT    NOT NULL,
@@ -1282,6 +1304,49 @@ class GuardianDB:
                     ON miner_restarts(miner_id, restarted_at);
             """)
         logger.info("Database ready at %s", self.db_path)
+
+    def log_action(self, miner_id: str, ip: str, model: str,
+                   problem: str, action_taken: str, decision: str,
+                   approved_by: str = None, slack_user_id: str = None,
+                   scan_id: int = None, notes: str = None) -> None:
+        """Log every approval or denial to the permanent action audit log.
+
+        Never expires. Grouped by date for easy review.
+        approved_by should be the Slack display name of the person who responded.
+        decision should be 'APPROVED' or 'DENIED'.
+        """
+        now  = datetime.now()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO action_audit_log "
+                "(timestamp, date, scan_id, miner_id, ip, model, "
+                " problem, action_taken, decision, approved_by, "
+                " slack_user_id, notes) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (now.isoformat(), now.strftime("%Y-%m-%d"), scan_id,
+                 miner_id, ip, model, problem, action_taken,
+                 decision, approved_by, slack_user_id, notes)
+            )
+        logger.info("Audit log: %s %s on %s (%s) by %s",
+                    decision, action_taken, ip, model, approved_by or "unknown")
+
+    def get_audit_log(self, days: int = None, miner_id: str = None,
+                      limit: int = 100) -> List[Dict]:
+        """Retrieve audit log entries, optionally filtered by date range or miner."""
+        query  = "SELECT * FROM action_audit_log WHERE 1=1"
+        params = []
+        if days:
+            cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            query += " AND date >= ?"
+            params.append(cutoff)
+        if miner_id:
+            query += " AND miner_id = ?"
+            params.append(miner_id)
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
 
     def save_notifications(self, notifications: List[Dict]) -> None:
         """Store AMS notifications in the database."""
@@ -1493,9 +1558,35 @@ class GuardianDB:
 
 class SlackNotifier:
 
-    def __init__(self, webhook_url: Optional[str], channel_id: Optional[str] = None):
+    def __init__(self, webhook_url: Optional[str], channel_id: Optional[str] = None,
+                 bot_token: Optional[str] = None):
         self.webhook_url = webhook_url  # Slack incoming webhook URL
         self.channel_id  = channel_id  # for future direct API use
+        self.bot_token   = bot_token   # Slack bot token for user lookups
+
+    def get_user_display_name(self, slack_user_id: str) -> Optional[str]:
+        """Look up a Slack user's display name from their user ID.
+
+        Requires a Slack bot token with users:read scope.
+        Used to log the real name of whoever approved or denied an action.
+        """
+        if not self.bot_token:
+            logger.warning("No Slack bot token configured — cannot look up user name")
+            return None
+        try:
+            resp = requests.get(
+                "https://slack.com/api/users.info",
+                headers={"Authorization": f"Bearer {self.bot_token}"},
+                params={"user": slack_user_id},
+                timeout=5,
+            )
+            data = resp.json()
+            if data.get("ok"):
+                profile = data["user"].get("profile", {})
+                return profile.get("display_name") or profile.get("real_name")
+        except Exception as e:
+            logger.warning("Slack user lookup failed: %s", e)
+        return None
 
     def send_scan(self, miners: List[Dict], issues: List[Dict],
                   wx: Optional[Dict] = None,
