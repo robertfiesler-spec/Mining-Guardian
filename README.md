@@ -25,6 +25,7 @@ Humans stay in the loop on all remediation actions. Mining Guardian detects, exp
 | Dashboard API (FastAPI :8585) | ✅ Live |
 | Action audit log | ✅ Live |
 | Knowledge export / combine | ✅ Built |
+| Slack approval flow | 🔧 In progress — listener works, Slack event delivery debugging |
 | OpenClaw / local LLM | 🔜 Mac Mini setup |
 | Retool dashboard | ✅ Phase 1 live |
 | Automations | 🔜 Pending AMS access |
@@ -278,6 +279,65 @@ export $(grep -v '^#' .env | xargs) && python mining_guardian.py
 cp com.bixbit.mining-guardian.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
 launchctl list | grep mining-guardian
+```
+
+---
+
+## Slack Approval Flow
+
+When Mining Guardian posts a scan to #mining-guardian, operators reply `APPROVE` or `DENY` in the thread. The listener executes approved actions via AMS and logs everything to the audit log.
+
+### Architecture
+- `slack_listener.py` — Slack Bolt app using **Socket Mode** (no public URL needed)
+- `pending_approvals` table — stores actionable issues per scan with thread timestamp
+- `action_audit_log` table — permanent record of every decision with operator name
+
+### What gets approved
+- `PDU_CYCLE` — cuts and restores PDU outlet power
+- `RESTART` — sends firmware reboot via AMS
+- `PHYSICAL_CYCLE` — flagged as manual visit required, not executable remotely
+
+### Slack App Setup (api.slack.com/apps)
+**Bot Token Scopes required:**
+- `channels:history`, `channels:read`, `chat:write`, `chat:write.public`
+- `incoming-webhook`, `reactions:read`, `reactions:write`, `users:read`
+
+**Socket Mode:**
+- Enable Socket Mode → On
+- Create App-Level Token with `connections:write` scope → save as `SLACK_APP_TOKEN` in `.env`
+
+**Event Subscriptions:**
+- Enable Events → On
+- Subscribe to bot events → `message.channels`
+
+**Bot must be invited to #mining-guardian:**
+```
+/invite @Mining Guardian
+```
+
+### Running the listener
+```bash
+source venv/bin/activate
+export $(grep -v '^#' .env | xargs)
+python slack_listener.py
+```
+
+### Current debug status (2026-03-29)
+- ✅ Socket Mode connection established (`⚡️ Bolt app is running!`)
+- ✅ Tunnel working (`https://slack.fieslerfamily.com/slack/events`)
+- ✅ Full approval flow tested end-to-end via manual curl simulation
+- ✅ PDU cycles and firmware restarts execute correctly on APPROVE
+- ✅ Audit log writes with operator display name
+- 🔧 Real Slack thread reply events not delivering to listener yet
+- **Next step:** Confirm `message.channels` event is active under Socket Mode subscriptions
+
+### Permanent tunnel (slack.fieslerfamily.com)
+```bash
+# Start tunnel (run alongside slack_listener.py)
+cloudflared tunnel run mining-guardian
+
+# Config at: ~/.cloudflared/config.yml
+# Credentials at: ~/.cloudflared/2530d257-66be-4bd4-a056-13c12585c86f.json
 ```
 
 ---
