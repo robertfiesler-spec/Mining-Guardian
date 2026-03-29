@@ -1336,8 +1336,8 @@ class GuardianDB:
                 continue  # PHYSICAL_CYCLE requires manual visit, skip
             rows.append((
                 now, scan_id, thread_ts,
-                i["miner_id"], i["ip"], i["model"],
-                i["action"], i.get("issues", ""),
+                i["id"], i["ip"], i["model"],
+                i["action"], " | ".join(i.get("issues", [])),
                 i.get("pdu_id"), i.get("outlet"),
             ))
         if not rows:
@@ -1726,7 +1726,7 @@ class SlackNotifier:
                 lines.append(f"  • {temps}")
 
         if issues:
-            lines.append("\n_DRY RUN — no actions taken. Reply to approve actions._")
+            lines.append("\n_DRY RUN — no actions taken. Reply *APPROVE* or *DENY* in this thread to execute._")
 
         # AMS notifications section — exclude miners already flagged in main report
         if ams_notifs:
@@ -1781,7 +1781,7 @@ class SlackNotifier:
                 from slack_sdk import WebClient
                 client = WebClient(token=self.bot_token)
                 resp   = client.chat_postMessage(
-                    channel=CHANNEL_ID,
+                    channel=self.channel_id,
                     text="\n".join(lines)
                 )
                 thread_ts = resp["ts"]
@@ -2068,7 +2068,7 @@ class MiningGuardian:
         miners   = self.ams.get_miners(self.config.miner_filters)
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues, wx, ams_notifs)
-        self.db.save_scan(miners, issues)
+        scan_id   = self.db.save_scan(miners, issues)
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
