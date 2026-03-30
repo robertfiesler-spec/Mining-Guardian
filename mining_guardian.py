@@ -1017,7 +1017,11 @@ class ApprovalInterface:
 # after every scan. OpenClaw's local LLM interprets the findings
 # and posts a plain-English summary to Slack for operator review.
 #
-# Webhook URL format: http://127.0.0.1:<port>/webhook/<token>
+# OpenClaw Gateway runs at http://127.0.0.1:18789 by default.
+# Webhook URL format: http://127.0.0.1:18789/hooks
+# Requires hooks.enabled: true and hooks.token set in ~/.openclaw/openclaw.json
+# Full URL example: http://127.0.0.1:18789/hooks  (token sent as Authorization header)
+#
 # Set openclaw_webhook_url in config.json when OpenClaw is ready.
 # Leave it null to disable silently — no errors will be thrown.
 # ------------------------------------------------------------
@@ -1076,24 +1080,28 @@ class OpenClawNotifier:
             "summary": summary,
             "issues": [
                 {
-                    "miner_id":   i["id"],
-                    "ip":         i["ip"],
-                    "model":      i["model"],
-                    "status":     i["status"],
-                    "hashrate":   i["hashrate_pct"],
-                    "temp_chip":  i["temp_chip"],
-                    "action":     i["action"],
-                    "pdu_action": i.get("pdu_action"),
-                    "detail":     " | ".join(i["issues"]),
+                    "miner_id":    i["id"],
+                    "ip":          i["ip"],
+                    "model":       i["model"],
+                    "status":      i["status"],
+                    "hashrate":    i["hashrate_pct"],
+                    "temp_chip":   i["temp_chip"],
+                    "action":      i["action"],
+                    "pdu_action":  i.get("pdu_action"),
+                    "detail":      " | ".join(i["issues"]),
+                    "map_location": i.get("map_location", "N/A"),
+                    "active_profile": i.get("active_profile", "N/A"),
+                    "pdu_power_kw":   i.get("pdu_power_kw", None),
                 }
                 for i in issues
             ],
             # Instruction for the LLM — tells it what to do with this data
             "instructions": (
-                "You are Mining Guardian's AI analyst for BiXBiT USA. "
-                "Review the fleet scan below and post a concise Slack message to the #mining-ops channel. "
-                "Include: fleet status summary, list of miners needing action with their recommended fix, "
-                "and ask the operator to confirm before any actions are taken. "
+                "You are Mining Guardian's AI analyst for BiXBiT USA in Fort Worth, TX. "
+                "Review the fleet scan below and post a concise Slack message to #mining-guardian. "
+                "For each miner needing action, include: IP, model, map location, active profile, "
+                "PDU power draw, and recommended fix. "
+                "Ask the operator to reply APPROVE or DENY in the thread to confirm actions. "
                 "Keep it professional and brief."
             ),
         }
@@ -1897,6 +1905,8 @@ class MiningGuardian:
             "power_watts":  power_watts,
             "power_source": power_source,
             "map_location": miner.get("mapLocation", {}).get("title") or "not mapped",
+            "active_profile": miner.get("overclock", {}).get("profile") or miner.get("profile") or "N/A",
+            "pdu_power_kw":  round(pdu_power / 1000, 2) if pdu_power else None,
         }
 
     # ── Report printer ────────────────────────────────────────
@@ -2102,7 +2112,7 @@ EXAMPLE_CONFIG = {
     "ams_email":        "env:AMS_EMAIL",
     "ams_password":     "env:AMS_PASSWORD",
     "ams_workspace_id": "env:AMS_WORKSPACE_ID",
-    "openclaw_webhook_url": None,
+    "openclaw_webhook_url": "http://127.0.0.1:18789/hooks",
     "dry_run": True,
     "scan_interval_seconds": 300,
     "approval_mode": "manual",
