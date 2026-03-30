@@ -241,6 +241,16 @@ Fall back to miner-reported only if no PDU is assigned.
 ### AMS Miner Profile
 Each miner runs a power profile that dictates its operating speed and power draw. Profile management is visible in AMS and accessible via `change_power_profile()`. This is intentionally out of scope for autonomous action — profile changes require operator decision.
 
+Profile names vary by miner model. Some use descriptive names (`turbo`), others use rated specs (`440 TH/s - 5396 W`). Mining Guardian parses the spec-format names automatically to extract rated hashrate. Named profiles require a manual lookup table in `config.json`.
+
+**Known profiles — Antminer S21EXPHyd:**
+330 TH/s - 3959 W | 352 TH/s - 4238 W | 374 TH/s - 4481 W | 396 TH/s - 4787 W | 418 TH/s - 5093 W | 440 TH/s - 5396 W
+
+**Known profiles — Teraflex AH3880:**
+`turbo` = 600 TH/s (named profile — requires manual mapping)
+
+Hashrate analysis compares actual hashrate against the **active profile's rated TH/s**, not the absolute maximum. A miner running a lower profile is healthy at that profile's rated output.
+
 ---
 
 ## Remediation Actions
@@ -438,3 +448,53 @@ export $(grep -v '^#' .env | xargs) && python slack_listener.py
 ---
 
 *Built by Rob Fiesler — BiXBiT USA CTO*
+
+---
+
+## AMS Facility Map
+
+Physical layout of the BiXBiT Fort Worth facility as mapped in AMS (`staging-ui.dev.bixbit.io/map`).
+
+| Rack | Total Slots | Miners Placed | Cooling Type |
+|---|---|---|---|
+| 2U | 20 | 2 | Hydro |
+| BITMAIN | 18 | 2 | Hydro (1 slot currently won't accept placement) |
+| IMMERSION | 20 | 2 | Immersion |
+
+**38 miners currently show `N/A` for map location** — AMS map population is pending.
+
+Map position format: `Row N, Col N` — available via `get_map_layout()` WSS endpoint.
+Every Slack alert must include the miner's map location when available.
+Map has three visualization modes: Temperature, Hashrate, Power.
+
+---
+
+## AMS Miner Data Available Per Miner
+
+| Tab | Data | Mining Guardian Usage |
+|---|---|---|
+| Overview | Hashrate, temp, PDU kW, profile, fans, PSU | Per-scan telemetry |
+| Statistic | 24h/week/month hashrate + consumption + temp charts | LLM trend analysis |
+| Boards | Per-chip frequency, temp, voltage (3 boards × ~160 chips) | LLM deep diagnostics |
+| Events | Command history with Pending/Success/Error status | Action confirmation |
+| Logs | cgminer.conf, autotune profile, power calibration | LLM config context |
+
+### PDU Power Data
+Each miner overview shows real-time PDU outlet reading (e.g. `PDU #164/3 — 5.65 kW`) with a toggle slider for manual outlet control. PDU reading is the authoritative power source — always preferred over miner-reported consumption.
+
+### Profile Data
+Profile is shown in the miner overview firmware section and in the Overclock modal. Format varies by model:
+- Spec format (auto-parseable): `440 TH/s - 5396 W` — Mining Guardian extracts rated TH/s from the name
+- Named format (manual mapping required): `turbo` = 600 TH/s on Teraflex AH3880
+
+Hashrate analysis compares actual TH/s against the **active profile's rated TH/s**, not absolute max.
+
+### Known Profile Maps
+
+**Antminer S21EXPHyd** (auto-parsed from name):
+`330 TH/s - 3959 W` | `352 TH/s - 4238 W` | `374 TH/s - 4481 W` | `396 TH/s - 4787 W` | `418 TH/s - 5093 W` | `440 TH/s - 5396 W`
+
+**Teraflex AH3880** (named — requires manual config mapping):
+`turbo` = 600 TH/s
+
+*Additional model profiles to be defined in config.json as fleet is documented.*
