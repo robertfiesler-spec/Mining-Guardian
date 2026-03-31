@@ -20,6 +20,7 @@ from hashrate_evaluation import (
 )
 from miner_verify import verify_miner_online
 from facility_monitor import FacilityMonitor
+from hvac_client import HVACClient, format_hvac_report
 
 
 def _setup_logging() -> logging.Logger:
@@ -1885,6 +1886,7 @@ class MiningGuardian:
         # Polls PDUs and immersion tank each scan cycle.
         # S19JPros (outside container) have no PDU — not polled here.
         self.facility = FacilityMonitor()
+        self.hvac     = HVACClient()
 
     def _on_baseline_locked(self, miner_id: str, model: str,
                              ip: str, baseline_ths: float, samples: int) -> None:
@@ -2546,7 +2548,8 @@ class MiningGuardian:
     def _print_report(miners: List[Dict], issues: List[Dict],
                       wx: Optional[Dict] = None,
                       ams_notifs: Optional[List[Dict]] = None,
-                      facility=None) -> None:
+                      facility=None,
+                      hvac=None) -> None:
         now      = datetime.now().strftime("%Y-%m-%d %H:%M")
         online   = sum(1 for m in miners if m.get("status") == "online")
         offline  = len(miners) - online
@@ -2563,6 +2566,11 @@ class MiningGuardian:
                   f"|  Feels like: {wx['feels_like_f']}°F  "
                   f"|  Today: {wx['temp_low_f']}–{wx['temp_high_f']}°F")
         print(divider)
+
+        # HVAC / warehouse mechanical section
+        if hvac is not None:
+            print(format_hvac_report(hvac))
+            print(divider)
 
         if not issues:
             print("  ✅ All miners operating within normal parameters.")
@@ -2726,6 +2734,8 @@ class MiningGuardian:
         if wx:
             self.db.save_weather(wx)
 
+        hvac_snapshot = self.hvac.poll()
+
         ams_notifs = self.ams.get_notifications("miner")
         if ams_notifs:
             self.db.save_notifications(ams_notifs)
@@ -2733,7 +2743,7 @@ class MiningGuardian:
 
         miners   = self.ams.get_miners(self.config.miner_filters)
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
-        self._print_report(miners, issues, wx, ams_notifs, facility_snapshot)
+        self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot)
         scan_id   = self.db.save_scan(miners, issues)
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
