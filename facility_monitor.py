@@ -6,17 +6,24 @@ Polls all physical infrastructure in the BiXBiT USA warehouse:
   PDU 164 @ 192.168.188.16  — Bitmain shoebox (S21 EXP Hydro)
   Tank B100 @ 192.168.188.20 — Fog Hashing Elite 1 immersion tank (S21 Imm)
 
+Warehouse fleet — 6 miners total:
+  2 × Auradine AH3880     — PDU 163 outlets 3+4
+  2 × S21 EXP Hyd         — PDU 164 outlets 3+4
+  2 × S21 Imm             — Tank ports 19+20
+
 NOTE: S19JPros are in an outside container on their own power —
 no PDU access, AMS is the only data source for those miners.
 
-Known PDU outlet assignments (warehouse miners only):
-  PDU 163 outlet 3 → AH3880 #54504 @ 192.168.188.27
-  PDU 163 outlet 4 → AH3880 #63940 @ 192.168.188.28
+NOTE: Tank port 22 draws ~6.9 kW but is NOT a miner —
+it is support equipment (pump/cooling). Do not map it.
+
+Known PDU outlet → AMS miner ID assignments:
+  PDU 163 outlet 3 → AH3880    #54504 @ 192.168.188.27
+  PDU 163 outlet 4 → AH3880    #63940 @ 192.168.188.28
   PDU 164 outlet 3 → S21EXPHyd #53529 @ 192.168.188.25
-  PDU 164 outlet 4 → S21EXPHyd (second unit — not yet in AMS)
-  Tank port 19     → S21Imm #64345 @ 192.168.188.22
-  Tank port 20     → S21Imm #64346 @ 192.168.188.23
-  Tank port 22     → S21Imm (third unit — not yet in AMS)
+  PDU 164 outlet 4 → S21EXPHyd #?????  @ 192.168.188.26 (not yet in AMS)
+  Tank  port 19    → S21Imm    #64345 @ 192.168.188.22
+  Tank  port 20    → S21Imm    #64346 @ 192.168.188.23
 """
 
 import logging
@@ -30,20 +37,20 @@ from immersion_client import ImmersionTankClient, TankReading
 logger = logging.getLogger("mining_guardian")
 
 # ── PDU outlet → miner ID mapping ────────────────────────────────────────────
-# Update when new miners are added to AMS
+# Update PDU 164 outlet 4 once the second S21 EXP Hyd is added to AMS
 PDU_OUTLET_MAP = {
-    # (pdu_ip, outlet_index): miner_id
+    # (pdu_ip, outlet_index): miner_id or None if not yet in AMS
     ('192.168.188.15', 3): '54504',   # AH3880 #1
     ('192.168.188.15', 4): '63940',   # AH3880 #2
     ('192.168.188.16', 3): '53529',   # S21EXPHyd #1
-    ('192.168.188.16', 4): None,      # S21EXPHyd #2 — not yet in AMS
+    ('192.168.188.16', 4): None,      # S21EXPHyd #2 @ 192.168.188.26 — not yet in AMS
 }
 
 # Tank port → miner ID mapping
+# Port 22 is support equipment (~6.9 kW), NOT a miner — not mapped
 TANK_PORT_MAP = {
-    19: '64345',   # S21Imm #1
-    20: '64346',   # S21Imm #2
-    22: None,      # S21Imm #3 — not yet in AMS
+    19: '64345',   # S21Imm #1 @ 192.168.188.22
+    20: '64346',   # S21Imm #2 @ 192.168.188.23
 }
 
 
@@ -253,10 +260,15 @@ def format_facility_report(snapshot: "FacilitySnapshot") -> str:
         )
         for p in t.active_ports:
             miner_id = TANK_PORT_MAP.get(p.index)
+            if miner_id:
+                label = f"miner {miner_id}"
+            elif p.index == 22:
+                label = "support equipment (not a miner)"
+            else:
+                label = "unmapped port"
             lines.append(
                 f"    Port {p.index:02d}: {p.total_power_kw:.2f} kW  "
-                f"{p.avg_voltage}V  {p.avg_current}A  "
-                f"→ miner {miner_id or 'not in AMS'}"
+                f"{p.avg_voltage}V  {p.avg_current}A  → {label}"
             )
 
     for label, pdu in [
