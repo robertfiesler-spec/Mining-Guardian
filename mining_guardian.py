@@ -1221,21 +1221,33 @@ class GuardianDB:
                 );
 
                 CREATE TABLE IF NOT EXISTS miner_readings (
-                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scan_id       INTEGER NOT NULL REFERENCES scans(id),
-                    scanned_at    TEXT    NOT NULL,
-                    miner_id      TEXT    NOT NULL,
-                    ip            TEXT,
-                    model         TEXT,
-                    status        TEXT,
-                    hashrate      REAL,
-                    max_hashrate  REAL,
-                    hashrate_pct  REAL,
-                    temp_chip     REAL,
-                    issue         TEXT,
-                    action        TEXT,
-                    pdu_id        INTEGER,
-                    outlet        INTEGER
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id             INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at          TEXT    NOT NULL,
+                    miner_id            TEXT    NOT NULL,
+                    ip                  TEXT,
+                    mac                 TEXT,
+                    model               TEXT,
+                    status              TEXT,
+                    hashrate            REAL,
+                    max_hashrate        REAL,
+                    hashrate_pct        REAL,
+                    temp_chip           REAL,
+                    temp_board          REAL,
+                    cooling_mode        INTEGER,
+                    current_profile     TEXT,
+                    firmware_manufacturer TEXT,
+                    firmware_version    TEXT,
+                    uptime              TEXT,
+                    consumption         REAL,
+                    max_consumption     REAL,
+                    pdu_power           REAL,
+                    map_location        TEXT,
+                    error_codes         TEXT,
+                    issue               TEXT,
+                    action              TEXT,
+                    pdu_id              INTEGER,
+                    outlet              INTEGER
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_readings_miner
@@ -1473,6 +1485,10 @@ class GuardianDB:
                 pct       = round((hashrate / max_hr) * 100, 1) if max_hr > 0 else 0.0
                 temp_raw  = m.get("tempChip") or 0
                 temp      = temp_raw if temp_raw >= 0 else None
+                temp_board = m.get("tempBoard") or 0
+                pdu_power  = (m.get("pduOutlet") or {}).get("power") or 0
+                map_loc   = (m.get("mapLocation") or {}).get("title") or None
+                err_codes = str(m.get("errorCodes") or []) if m.get("errorCodes") else None
                 issue     = issue_map.get(miner_id)
 
                 rows.append((
@@ -1480,12 +1496,24 @@ class GuardianDB:
                     now,
                     miner_id,
                     m.get("ip"),
+                    m.get("mac"),
                     m.get("shortModel", m.get("name")),
                     m.get("status"),
                     hashrate,
                     max_hr,
                     pct,
                     temp,
+                    temp_board if temp_board >= 0 else None,
+                    m.get("coolingMode"),
+                    m.get("currentProfile"),
+                    m.get("firmwareManufacturer"),
+                    m.get("firmwareVersion"),
+                    m.get("uptime"),
+                    m.get("consumption") or 0,
+                    m.get("maxConsumption") or 0,
+                    round(pdu_power / 1000, 2) if pdu_power else 0,
+                    map_loc,
+                    err_codes,
                     " | ".join(issue["issues"]) if issue else None,
                     issue["action"] if issue else None,
                     issue.get("pdu_id") if issue else None,
@@ -1494,9 +1522,12 @@ class GuardianDB:
 
             conn.executemany(
                 "INSERT INTO miner_readings "
-                "(scan_id, scanned_at, miner_id, ip, model, status, hashrate, "
-                " max_hashrate, hashrate_pct, temp_chip, issue, action, pdu_id, outlet) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "(scan_id, scanned_at, miner_id, ip, mac, model, status, hashrate, "
+                " max_hashrate, hashrate_pct, temp_chip, temp_board, cooling_mode, "
+                " current_profile, firmware_manufacturer, firmware_version, uptime, "
+                " consumption, max_consumption, pdu_power, map_location, error_codes, "
+                " issue, action, pdu_id, outlet) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows
             )
 
