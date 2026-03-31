@@ -19,6 +19,13 @@ from hashrate_evaluation import (
     parse_bixbit_profile,
 )
 
+
+def _cooling_label(cooling_mode: int) -> str:
+    """Human-readable cooling type from AMS coolingMode integer."""
+    return {0: "unknown cooling", 1: "hydro", 3: "immersion", 4: "immersion"}.get(
+        cooling_mode, f"mode={cooling_mode}"
+    )
+
 def _setup_logging() -> logging.Logger:
     """Configure logging to both terminal and a daily rotating log file."""
     log_dir = Path("logs")
@@ -1885,6 +1892,45 @@ class MiningGuardian:
 
     # ── Per-miner analysis ────────────────────────────────────
 
+    @staticmethod
+    def _analyze_chains(chains: list) -> dict:
+        """
+        Analyse per-hashboard chain data from AMS.
+        Returns a dict with:
+          total_boards      — how many boards reported
+          active_boards     — boards with rate > 1000 MH/s (1 TH/s floor)
+          dead_boards       — boards with rate == 0 or None
+          dead_indices      — list of dead board index numbers
+          chain_rates_ths   — list of per-board rates in TH/s
+          expected_boards   — estimated expected board count
+          pct_capacity      — hashrate as % of full-board capacity
+        """
+        if not chains:
+            return {"total_boards": 0, "active_boards": 0, "dead_boards": 0,
+                    "dead_indices": [], "chain_rates_ths": [], "pct_capacity": None,
+                    "expected_boards": 0}
+
+        rates_mhs    = [c.get("rate", 0) or 0 for c in chains]
+        dead_indices = [chains[i].get("index", i) for i, r in enumerate(rates_mhs) if r < 1000]
+        active       = [r for r in rates_mhs if r >= 1000]
+        rates_ths    = [round(r / 1000, 1) for r in rates_mhs]
+
+        # Expected board count — standard miners have 3 boards
+        expected     = 3
+        avg_active   = (sum(active) / len(active)) if active else 0
+        pct_capacity = round((len(active) / expected) * 100, 1) if expected > 0 else None
+
+        return {
+            "total_boards":    len(chains),
+            "active_boards":   len(active),
+            "dead_boards":     len(dead_indices),
+            "dead_indices":    dead_indices,
+            "chain_rates_ths": rates_ths,
+            "avg_active_ths":  round(avg_active / 1000, 1),
+            "expected_boards": expected,
+            "pct_capacity":    pct_capacity,
+        }
+
     def _analyze_miner(self, miner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Return an issue dict if the miner has a problem, else None.
@@ -1935,7 +1981,24 @@ class MiningGuardian:
                 power_source, power_kw, pdu_id, outlet_index,
                 hashrate_pct="0%", tier="offline",
                 tier_note="Miner offline — no hashrate evaluation",
+                chain_info=None,
             )
+
+        # ── HASHBOARD check (always evaluated when online) ───────────────
+        chains     = miner.get("chains", []) or []
+        chain_info = self._analyze_chains(chains)
+
+        if chain_info["dead_boards"] > 0:
+            dead_idx   = chain_info["dead_indices"]
+            dead_count = chain_info["dead_boards"]
+            issues.append(
+                f"🔴 DEAD HASHBOARD{'S' if dead_count > 1 else ''}: "
+                f"Board{'s' if dead_count > 1 else ''} {dead_idx} offline "
+                f"({chain_info['active_boards']}/{chain_info['expected_boards']} boards active, "
+                f"~{chain_info['pct_capacity']:.0f}% capacity)"
+            )
+            # Restart is the first-line fix — logs collected before and after
+            action = "RESTART_CHECK_BOARDS"
 
         # ── Record baseline sample for Tier 3 learning ───────────────────
         # AMS hashrate field is in GH/s — divide by 1000 to get TH/s
@@ -1965,14 +2028,29 @@ class MiningGuardian:
                 )
                 action = "RESTART"
 
-        # ── TEMP check (firmware-agnostic, always evaluated) ─────────────
+        # ── TEMP thresholds — cooling-mode aware ────────────────────────
+        # coolingMode: 0=unknown, 1=hydro, 3=immersion(custom), 4=immersion
+        # Immersion and hydro run cooler than air — thresholds differ.
+        # Fleet data shows immersion S19JPros running 68-83°C normally.
+        cooling_mode = miner.get("coolingMode", 0) or 0
+        if cooling_mode == 1:           # hydro (S21EXPHyd, AH3880)
+            temp_yellow = 70
+            temp_red    = 80
+        elif cooling_mode in (3, 4):    # immersion (S19JPros, S21Imm)
+            temp_yellow = 82
+            temp_red    = 90
+        else:                           # unknown / air fallback
+            temp_yellow = 76
+            temp_red    = 86
+
+        # ── TEMP check ───────────────────────────────────────────────────
         if temp_chip is None:
             issues.append("⚠️ Sensor error — temp reading invalid")
-        elif temp_chip >= 86:
-            issues.append(f"🔴 RED — chip {temp_chip}°C (86°C+ threshold)")
+        elif temp_chip >= temp_red:
+            issues.append(f"🔴 RED — chip {temp_chip}°C (≥{temp_red}°C threshold, {_cooling_label(cooling_mode)})")
             action = "TEMP_ACTION_REQUIRED"
-        elif temp_chip >= 76:
-            issues.append(f"🟡 YELLOW — chip {temp_chip}°C (76–85°C range)")
+        elif temp_chip >= temp_yellow:
+            issues.append(f"🟡 YELLOW — chip {temp_chip}°C ({temp_yellow}–{temp_red-1}°C range, {_cooling_label(cooling_mode)})")
             if not action:
                 action = "MONITOR"
 
@@ -1989,6 +2067,7 @@ class MiningGuardian:
             power_source, power_kw, pdu_id, outlet_index,
             hashrate_pct=hashrate_pct_str, tier=tier,
             tier_note=tier_note,
+            chain_info=chain_info,
         )
 
     def _build_issue(self, miner: Dict[str, Any], issues: list,
@@ -1996,7 +2075,8 @@ class MiningGuardian:
                      power_watts: float, power_source: str,
                      power_kw: Optional[float], pdu_id: int, outlet_index: int,
                      hashrate_pct: str = "N/A", tier: str = "unknown",
-                     tier_note: str = "") -> Dict[str, Any]:
+                     tier_note: str = "",
+                     chain_info: Optional[dict] = None) -> Dict[str, Any]:
         """Build the standardised issue dict returned by _analyze_miner."""
         temp_chip = miner.get("tempChip", None)
         return {
@@ -2020,6 +2100,7 @@ class MiningGuardian:
             "pdu_power_kw": power_kw,
             "map_location": miner.get("mapLocation", {}).get("title") or "not mapped",
             "active_profile": miner.get("currentProfile", "") or "N/A",
+            "chain_info":   chain_info,
         }
 
     # ── Report printer ────────────────────────────────────────

@@ -148,7 +148,7 @@ class HashrateTierResolver:
         """
         miner_id   = str(miner.get("id", ""))
         ip         = miner.get("ip", "")
-        model_code = miner.get("model", "")       # AMS model code e.g. "antminer-s19jpro"
+        model_code = miner.get("model", "")
         firmware   = miner.get("firmwareManufacturer", "") or ""
         profile    = miner.get("currentProfile", "") or ""
 
@@ -161,9 +161,20 @@ class HashrateTierResolver:
                     "1_bixbit_profile",
                     f"BiXBiT firmware — active profile '{profile}' → {rated} TH/s"
                 )
-            # BiXBiT but profile string unparseable — fall through to Tier 2
 
-        # ── TIER 1b: Auradine mode-based ─────────────────────────────────
+        # ── TIER 1b: Empty firmware but parseable BiXBiT-format profile ──
+        # Offline miners lose their firmwareManufacturer field in AMS even
+        # when they run BiXBiT firmware — profile string is the signal.
+        if not firmware and profile:
+            rated = parse_bixbit_profile(profile)
+            if rated:
+                return (
+                    rated,
+                    "1_bixbit_profile_inferred",
+                    f"BiXBiT firmware inferred from profile '{profile}' → {rated} TH/s"
+                )
+
+        # ── TIER 1c: Auradine mode-based ─────────────────────────────────
         if firmware.upper() == "AURADINE":
             pmap = self.specs.get_profile_map(model_code)
             if pmap and profile:
@@ -188,7 +199,6 @@ class HashrateTierResolver:
         state = self.baseline.get_state(miner_id)
 
         if state is None:
-            # Never seen before — start learning
             self.baseline.start_learning(miner_id, ip, model_code, firmware)
             return (
                 None,
@@ -197,7 +207,6 @@ class HashrateTierResolver:
             )
 
         if not state["learning_complete"]:
-            # Still in learning window
             samples    = state["samples_collected"]
             hours      = state["hours_observed"]
             needed_hrs = self.specs.learning_window_hours
@@ -209,7 +218,6 @@ class HashrateTierResolver:
                 f"{hours:.1f}/{needed_hrs}h elapsed"
             )
 
-        # Baseline locked — use it
         baseline_ths = state["baseline_hashrate_ths"]
         if baseline_ths:
             return (
