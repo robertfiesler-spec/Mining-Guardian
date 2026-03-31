@@ -2100,49 +2100,174 @@ class MiningGuardian:
 
     # ── Hashboard restart + verification flow ─────────────────
 
-    REBOOT_WAIT_SECONDS   = 180   # time to wait for miner to come back after restart
-    REBOOT_POLL_INTERVAL  = 15    # check every N seconds during wait
-    BOARD_DEAD_THRESHOLD  = 1000  # MH/s — below this a board is considered dead
+    # Phase 1: wait for status == online
+    PHASE1_MAX_WAIT    = 600    # 10 minutes max for miner to come back online
+    # Phase 2: wait for hashrate stable + minerStatus == 0
+    PHASE2_MAX_WAIT    = 2700   # 45 minutes max for full stability
+    REBOOT_POLL_FAST   = 15     # poll interval during phase 1 (seconds)
+    REBOOT_POLL_SLOW   = 30     # poll interval during phase 2 (seconds)
+    STABLE_CONFIRM     = 2      # consecutive stable polls required before collecting logs
+    LOG_COLLECT_TIMEOUT = 30    # seconds to attempt log collection before giving up
+    BOARD_DEAD_THRESHOLD = 1000  # MH/s — below this a board is considered dead
+
+    def _collect_logs_nonblocking(self, miner_id: str, model: str,
+                                   label: str) -> dict:
+        """
+        Attempt log collection with a hard timeout.
+        Returns log dict (possibly empty) — never raises, never hangs.
+        If miner is offline or logs unavailable, returns {} immediately.
+        """
+        import signal
+
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("log collection timed out")
+
+        try:
+            signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(self.LOG_COLLECT_TIMEOUT)
+            logs = self.ams.collect_miner_logs(int(miner_id))
+            signal.alarm(0)  # cancel alarm
+            if logs:
+                self.db.save_logs(miner_id, model, label, logs)
+                logger.info("[%s] Logs collected (%s): %s files", miner_id, label, len(logs))
+            else:
+                logger.info("[%s] No logs available for %s — skipping", miner_id, label)
+            return logs or {}
+        except TimeoutError:
+            signal.alarm(0)
+            logger.warning("[%s] Log collection timed out after %ss (%s) — continuing",
+                           miner_id, self.LOG_COLLECT_TIMEOUT, label)
+            return {}
+        except Exception as e:
+            signal.alarm(0)
+            logger.warning("[%s] Log collection failed (%s): %s — continuing", miner_id, label, e)
+            return {}
+
+    def _wait_for_stable(self, miner_id: str) -> Optional[Dict]:
+        """
+        Two-phase wait after a restart.
+
+        Phase 1 — wait for status == 'online' (up to PHASE1_MAX_WAIT seconds).
+        Phase 2 — wait for full stability: hashrate > 0 AND minerStatus == 0
+                  on STABLE_CONFIRM consecutive polls (up to PHASE2_MAX_WAIT seconds).
+
+        Returns the stable miner dict, or None if timed out.
+        """
+        # ── Phase 1: wait for online ──────────────────────────────────────
+        waited  = 0
+        current = None
+        logger.info("[%s] Phase 1 — waiting for status=online (max %ss)",
+                    miner_id, self.PHASE1_MAX_WAIT)
+
+        while waited < self.PHASE1_MAX_WAIT:
+            time.sleep(self.REBOOT_POLL_FAST)
+            waited += self.REBOOT_POLL_FAST
+            try:
+                all_miners = self.ams.get_miners()
+                current    = next(
+                    (m for m in all_miners if str(m.get("id")) == str(miner_id)),
+                    None
+                )
+                if current and current.get("status") == "online":
+                    logger.info("[%s] Phase 1 complete — online after %ss", miner_id, waited)
+                    break
+                logger.debug("[%s] Phase 1: still offline at %ss", miner_id, waited)
+            except Exception as e:
+                logger.warning("[%s] Phase 1 poll error at %ss: %s", miner_id, waited, e)
+        else:
+            logger.warning("[%s] Phase 1 timed out — miner did not come online in %ss",
+                           miner_id, self.PHASE1_MAX_WAIT)
+            return None
+
+        # ── Phase 2: wait for stable hashrate ────────────────────────────
+        # minerStatus == 0 means normal running
+        # hashrate > 0 means actually hashing, not warming up
+        # We require STABLE_CONFIRM consecutive passing polls
+        stable_count = 0
+        waited2      = 0
+        logger.info("[%s] Phase 2 — waiting for stable hashrate (max %ss, need %s consecutive)",
+                    miner_id, self.PHASE2_MAX_WAIT, self.STABLE_CONFIRM)
+
+        while waited2 < self.PHASE2_MAX_WAIT:
+            time.sleep(self.REBOOT_POLL_SLOW)
+            waited2 += self.REBOOT_POLL_SLOW
+            try:
+                all_miners   = self.ams.get_miners()
+                current      = next(
+                    (m for m in all_miners if str(m.get("id")) == str(miner_id)),
+                    None
+                )
+                if not current:
+                    stable_count = 0
+                    continue
+
+                hashrate     = current.get("hashrate", 0) or 0
+                miner_status = current.get("minerStatus", -1)
+                is_stable    = (hashrate > 0 and miner_status == 0)
+
+                if is_stable:
+                    stable_count += 1
+                    logger.info(
+                        "[%s] Phase 2: stable poll %s/%s — hashrate=%.0f GH/s minerStatus=%s",
+                        miner_id, stable_count, self.STABLE_CONFIRM,
+                        hashrate, miner_status
+                    )
+                    if stable_count >= self.STABLE_CONFIRM:
+                        total = waited + waited2
+                        logger.info(
+                            "[%s] Phase 2 complete — stable after %ss total (%ss + %ss)",
+                            miner_id, total, waited, waited2
+                        )
+                        return current
+                else:
+                    if stable_count > 0:
+                        logger.debug(
+                            "[%s] Phase 2: stability reset at %ss — hashrate=%.0f minerStatus=%s",
+                            miner_id, waited2, hashrate, miner_status
+                        )
+                    stable_count = 0
+            except Exception as e:
+                logger.warning("[%s] Phase 2 poll error at %ss: %s", miner_id, waited2, e)
+                stable_count = 0
+
+        logger.warning(
+            "[%s] Phase 2 timed out — miner online but did not stabilise in %ss",
+            miner_id, self.PHASE2_MAX_WAIT
+        )
+        return current  # return what we have — better than nothing
 
     def execute_board_restart(self, issue: Dict[str, Any]) -> None:
         """
         Full dead-hashboard remediation sequence:
-          1. Collect pre-restart logs
+
+          1. Attempt pre-restart log collection (non-blocking, 30s timeout)
+             — if miner is offline or logs unavailable, skip and continue
           2. Restart miner via AMS
-          3. Wait for miner to come back online (up to REBOOT_WAIT_SECONDS)
-          4. Collect post-restart logs
-          5. Compare board states before vs after
-          6. If board recovered → log success, clear elevated monitoring
-          7. If board still dead → create AMS ticket + Slack alert
+          3. Phase 1 wait: poll for status=online (up to 10 min)
+          4. Phase 2 wait: poll for stable hashrate + minerStatus=0 (up to 45 min)
+          5. Collect post-restart logs (non-blocking)
+          6. Compare board states before vs after
+          7a. All boards recovered → log success + Slack
+          7b. Partial recovery → Slack + escalate remaining dead boards
+          7c. Still dead → AMS ticket + Slack escalation
 
         Called after operator approves RESTART_CHECK_BOARDS action.
-        All steps are logged to the action_audit_log.
         """
-        miner_id  = issue["id"]
-        ip        = issue["ip"]
-        model     = issue["model"]
+        miner_id   = issue["id"]
+        ip         = issue["ip"]
+        model      = issue["model"]
         chain_info = issue.get("chain_info") or {}
         dead_before = chain_info.get("dead_boards", 0)
         dead_idx    = chain_info.get("dead_indices", [])
 
         logger.info(
-            "Board restart flow starting — miner %s (%s @ %s) — dead boards: %s",
+            "Board restart flow — miner %s (%s @ %s) dead boards: %s",
             miner_id, model, ip, dead_idx
         )
 
-        # ── Step 1: Collect pre-restart logs ─────────────────────────────
-        logger.info("[%s] Step 1 — collecting pre-restart logs", miner_id)
-        try:
-            pre_logs = self.ams.collect_miner_logs(int(miner_id))
-            if pre_logs:
-                self.db.save_logs(miner_id, model, "pre-restart-board-check", pre_logs)
-                logger.info("[%s] Pre-restart logs collected: %s files", miner_id, len(pre_logs))
-            else:
-                logger.warning("[%s] No pre-restart logs available", miner_id)
-                pre_logs = {}
-        except Exception as e:
-            logger.warning("[%s] Pre-restart log collection failed: %s", miner_id, e)
-            pre_logs = {}
+        # ── Step 1: Pre-restart logs (best-effort, never blocks) ─────────
+        logger.info("[%s] Step 1 — pre-restart log collection (best-effort)", miner_id)
+        self._collect_logs_nonblocking(miner_id, model, "pre-restart-board-check")
 
         # ── Step 2: Restart via AMS ───────────────────────────────────────
         logger.info("[%s] Step 2 — sending restart via AMS", miner_id)
@@ -2164,62 +2289,23 @@ class MiningGuardian:
             )
             return
 
-        # ── Step 3: Wait for miner to come back online ───────────────────
-        logger.info(
-            "[%s] Step 3 — waiting up to %ss for miner to come back",
-            miner_id, self.REBOOT_WAIT_SECONDS
-        )
-        came_back   = False
-        post_miner  = None
-        waited      = 0
+        # ── Steps 3+4: Wait for stable (two-phase) ───────────────────────
+        logger.info("[%s] Step 3+4 — waiting for stable operation", miner_id)
+        post_miner = self._wait_for_stable(miner_id)
 
-        while waited < self.REBOOT_WAIT_SECONDS:
-            time.sleep(self.REBOOT_POLL_INTERVAL)
-            waited += self.REBOOT_POLL_INTERVAL
-            try:
-                # Fetch fresh miner data from AMS
-                all_miners = self.ams.get_miners()
-                post_miner = next(
-                    (m for m in all_miners if str(m.get("id")) == str(miner_id)),
-                    None
-                )
-                if post_miner and post_miner.get("status") == "online":
-                    came_back = True
-                    logger.info(
-                        "[%s] Back online after %ss", miner_id, waited
-                    )
-                    break
-                else:
-                    logger.debug("[%s] Still offline at %ss...", miner_id, waited)
-            except Exception as e:
-                logger.warning("[%s] Poll error at %ss: %s", miner_id, waited, e)
-
-        if not came_back:
-            logger.warning(
-                "[%s] Did not come back online within %ss after restart",
-                miner_id, self.REBOOT_WAIT_SECONDS
-            )
+        if post_miner is None:
             self._escalate_board_issue(
                 miner_id, ip, model, dead_idx,
-                reason=f"Miner did not come back online within {self.REBOOT_WAIT_SECONDS}s after restart"
+                reason="Miner did not come back online within 10 minutes after restart"
             )
             return
 
-        # Give AMS an extra moment to populate fresh chain data
-        time.sleep(10)
+        # ── Step 5: Post-restart logs (best-effort) ───────────────────────
+        logger.info("[%s] Step 5 — post-restart log collection (best-effort)", miner_id)
+        self._collect_logs_nonblocking(miner_id, model, "post-restart-board-check")
 
-        # ── Step 4: Collect post-restart logs ────────────────────────────
-        logger.info("[%s] Step 4 — collecting post-restart logs", miner_id)
-        try:
-            post_logs = self.ams.collect_miner_logs(int(miner_id))
-            if post_logs:
-                self.db.save_logs(miner_id, model, "post-restart-board-check", post_logs)
-                logger.info("[%s] Post-restart logs collected: %s files", miner_id, len(post_logs))
-        except Exception as e:
-            logger.warning("[%s] Post-restart log collection failed: %s", miner_id, e)
-
-        # ── Step 5: Compare board states ─────────────────────────────────
-        logger.info("[%s] Step 5 — comparing board states", miner_id)
+        # ── Step 6: Compare board states ─────────────────────────────────
+        logger.info("[%s] Step 6 — comparing board states", miner_id)
         post_chains    = post_miner.get("chains", []) or []
         post_info      = self._analyze_chains(post_chains)
         still_dead     = post_info.get("dead_boards", 0)
@@ -2231,55 +2317,54 @@ class MiningGuardian:
             miner_id, dead_before, dead_idx, still_dead, still_dead_idx, recovered_idx
         )
 
-        # ── Step 6: Board recovered ───────────────────────────────────────
+        # ── Step 7: Outcome ───────────────────────────────────────────────
         if still_dead == 0:
+            # Full recovery
             msg = (
                 f"✅ *Board restart successful* — Miner {miner_id} ({model} @ {ip})\n"
                 f"Dead board(s) {dead_idx} recovered after restart.\n"
                 f"All {post_info.get('active_boards')}/{post_info.get('expected_boards')} "
-                f"boards now active. Miner back to full capacity."
+                f"boards now active."
             )
-            logger.info("[%s] All boards recovered — %s", miner_id, msg)
+            logger.info("[%s] All boards recovered", miner_id)
             self.db.log_action(
                 miner_id, ip, model,
                 problem=f"Dead boards {dead_idx}",
                 action_taken="RESTART_CHECK_BOARDS",
                 decision="RESOLVED",
-                notes=f"All boards recovered after restart. "
-                      f"Pre/post logs saved. Recovered: {recovered_idx}"
+                notes=f"All boards recovered. Pre/post logs saved. Recovered: {recovered_idx}"
             )
             try:
                 self.slack.post_to_channel(msg)
             except Exception as e:
-                logger.warning("Slack notification failed: %s", e)
+                logger.warning("[%s] Slack notification failed: %s", miner_id, e)
 
         elif still_dead < dead_before:
-            # Partial recovery — some boards came back, some didn't
+            # Partial recovery
             msg = (
                 f"⚠️ *Partial board recovery* — Miner {miner_id} ({model} @ {ip})\n"
                 f"Boards {recovered_idx} recovered. Boards {still_dead_idx} still dead.\n"
                 f"Escalating to ticket for physical inspection."
             )
-            logger.info("[%s] Partial recovery — escalating", miner_id)
+            logger.info("[%s] Partial recovery — escalating boards %s", miner_id, still_dead_idx)
             self.db.log_action(
                 miner_id, ip, model,
                 problem=f"Dead boards {dead_idx}",
                 action_taken="RESTART_CHECK_BOARDS",
                 decision="PARTIAL",
-                notes=f"Partial recovery. Recovered: {recovered_idx}. "
-                      f"Still dead: {still_dead_idx}"
+                notes=f"Partial recovery. Recovered: {recovered_idx}. Still dead: {still_dead_idx}"
             )
             try:
                 self.slack.post_to_channel(msg)
             except Exception as e:
-                logger.warning("Slack notification failed: %s", e)
+                logger.warning("[%s] Slack notification failed: %s", miner_id, e)
             self._escalate_board_issue(
                 miner_id, ip, model, still_dead_idx,
-                reason=f"Partial recovery after restart — boards {still_dead_idx} still dead"
+                reason=f"Partial recovery — boards {still_dead_idx} still dead after restart"
             )
 
         else:
-            # ── Step 7: Board still dead → escalate ──────────────────────
+            # No recovery
             self._escalate_board_issue(
                 miner_id, ip, model, still_dead_idx,
                 reason=f"Board(s) {still_dead_idx} still dead after restart"
