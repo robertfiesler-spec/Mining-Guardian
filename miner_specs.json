@@ -1,0 +1,118 @@
+{
+  "_comment": "Published stock hashrate specs for Mining Guardian hashrate evaluation. Sources: Bitmain support, Auradine docs, Bitdeer official. All values are manufacturer-rated at stock firmware. BiXBiT firmware overrides these via active profile. Tolerances are ±3% per manufacturer spec.",
+  "_last_updated": "2026-03-31",
+  "_evaluation_tiers": {
+    "tier_1": "BiXBiT firmware — compare against currentProfile parsed TH/s (live from AMS miner_config)",
+    "tier_2": "Stock firmware with known model — compare against rated_ths from this file",
+    "tier_3": "Unknown model or unlisted — use 3-5 day running average baseline (miner_baselines table)"
+  },
+
+  "models": {
+
+    "antminer-s19jpro": {
+      "display_name": "Antminer S19J Pro",
+      "manufacturer": "Bitmain",
+      "variants": [
+        {"label": "104T", "rated_ths": 104, "rated_watts": 3068, "efficiency_j_th": 29.5},
+        {"label": "100T", "rated_ths": 100, "rated_watts": 3050, "efficiency_j_th": 30.5},
+        {"label": "96T",  "rated_ths": 96,  "rated_watts": 2832, "efficiency_j_th": 29.5},
+        {"label": "92T",  "rated_ths": 92,  "rated_watts": 2714, "efficiency_j_th": 29.5}
+      ],
+      "default_rated_ths": 104,
+      "default_rated_watts": 3068,
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "notes": "Most common variant in fleet is 104T. AMS model code: antminer-s19jpro"
+    },
+
+    "antminer-s19j-pro": {
+      "display_name": "Antminer S19J Pro",
+      "manufacturer": "Bitmain",
+      "variants": [
+        {"label": "104T", "rated_ths": 104, "rated_watts": 3068, "efficiency_j_th": 29.5},
+        {"label": "100T", "rated_ths": 100, "rated_watts": 3050, "efficiency_j_th": 30.5},
+        {"label": "96T",  "rated_ths": 96,  "rated_watts": 2832, "efficiency_j_th": 29.5}
+      ],
+      "default_rated_ths": 104,
+      "default_rated_watts": 3068,
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "notes": "Alternate AMS model code for same hardware. AMS model code: antminer-s19j-pro"
+    },
+
+    "antminer-s21-imm": {
+      "display_name": "Antminer S21 Immersion",
+      "manufacturer": "Bitmain",
+      "variants": [
+        {"label": "301T", "rated_ths": 301, "rated_watts": 5569, "efficiency_j_th": 18.5},
+        {"label": "215T", "rated_ths": 215, "rated_watts": 3440, "efficiency_j_th": 16.0}
+      ],
+      "default_rated_ths": 215,
+      "default_rated_watts": 3440,
+      "cooling": "immersion",
+      "algorithm": "SHA256",
+      "notes": "Two immersion variants exist. 215T is more common at standard settings, 301T is high-energy mode. AMS model code: antminer-s21-imm"
+    },
+
+    "antminer-s21e-xp-hydro": {
+      "display_name": "Antminer S21e XP Hydro",
+      "manufacturer": "Bitmain",
+      "variants": [
+        {"label": "440T",  "rated_ths": 440,  "rated_watts": 5396,  "efficiency_j_th": 12.26},
+        {"label": "430T",  "rated_ths": 430,  "rated_watts": 5289,  "efficiency_j_th": 12.3},
+        {"label": "396T",  "rated_ths": 396,  "rated_watts": 4787,  "efficiency_j_th": 12.09},
+        {"label": "360T",  "rated_ths": 360,  "rated_watts": 6480,  "efficiency_j_th": 18.0},
+        {"label": "330T",  "rated_ths": 330,  "rated_watts": 3959,  "efficiency_j_th": 12.0}
+      ],
+      "default_rated_ths": 440,
+      "default_rated_watts": 5396,
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "notes": "2U hydro-cooled. Profiles follow '{TH/s} TH/s - ~{W} W' format on BiXBiT firmware — parseable. Stock rated at 440T. AMS model code: antminer-s21e-xp-hydro"
+    },
+
+    "teraflux-ah3880": {
+      "display_name": "Teraflux AH3880",
+      "manufacturer": "Auradine",
+      "variants": [
+        {"label": "turbo",  "rated_ths": 600, "rated_watts": null, "efficiency_j_th": null},
+        {"label": "normal", "rated_ths": 500, "rated_watts": null, "efficiency_j_th": null},
+        {"label": "eco",    "rated_ths": null, "rated_watts": null, "efficiency_j_th": null}
+      ],
+      "default_rated_ths": 600,
+      "default_rated_watts": null,
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "notes": "Mode-based not profile-based. 'turbo'=600 TH/s (manual mapping required). 'normal' and 'eco' are estimates. Exact watts depend on mode. AMS model code: teraflux-ah3880. Auradine firmware uses mode API not overclock profiles.",
+      "profile_map": {
+        "turbo":  600,
+        "normal": 500,
+        "eco":    null
+      }
+    },
+
+    "sealminer-a2": {
+      "display_name": "SealMiner A2",
+      "manufacturer": "Bitdeer",
+      "variants": [
+        {"label": "High Performance", "rated_ths": 247, "rated_watts": 4304, "efficiency_j_th": 17.4},
+        {"label": "Normal",           "rated_ths": 226, "rated_watts": 3729, "efficiency_j_th": 16.5},
+        {"label": "Low Power",        "rated_ths": 174, "rated_watts": 2668, "efficiency_j_th": 15.36}
+      ],
+      "default_rated_ths": 226,
+      "default_rated_watts": 3729,
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "notes": "SEAL02 chip, 4nm process. Three power modes. Default/normal mode is 226 TH/s. AMS model code: sealminer-a2"
+    }
+  },
+
+  "baseline_config": {
+    "_comment": "Settings for Tier 3 running-average baseline system",
+    "learning_window_hours": 72,
+    "minimum_samples": 36,
+    "baseline_tolerance_pct": 10,
+    "applies_to_firmware": ["Stock", "unknown", ""],
+    "also_applies_when": "model not in miner_specs or rated_ths is null"
+  }
+}
