@@ -1,10 +1,19 @@
 {
-  "_comment": "Published stock hashrate specs for Mining Guardian hashrate evaluation. Sources: Bitmain support, Auradine docs, Bitdeer official. All values are manufacturer-rated at stock firmware. BiXBiT firmware overrides these via active profile. Tolerances are ±3% per manufacturer spec.",
-  "_last_updated": "2026-03-31",
+  "_comment": "Published stock hashrate specs for Mining Guardian — Tier 2 evaluation. Sources: MicroBT official shop, Bitmain support, Canaan official, Bitdeer official, hashrateindex.com. All values are manufacturer-rated at stock firmware. Actual values fluctuate ±3% (hashrate) and ±5% (power). Last updated: 2026-03-31.",
+
   "_evaluation_tiers": {
-    "tier_1": "BiXBiT firmware — compare against currentProfile parsed TH/s (live from AMS miner_config)",
-    "tier_2": "Stock firmware with known model — compare against rated_ths from this file",
-    "tier_3": "Unknown model or unlisted — use 3-5 day running average baseline (miner_baselines table)"
+    "tier_1": "BiXBiT firmware — compare against currentProfile parsed TH/s (live from AMS miner_config endpoint). Most accurate.",
+    "tier_2": "Stock/Auradine/other firmware with known model — compare against default_rated_ths from this file.",
+    "tier_3": "Unknown model or model not in this file — use 3-5 day running average baseline (miner_baselines table in guardian.db)."
+  },
+
+  "_profile_parsing_rules": {
+    "bixbit_antminer":    "Parse '{TH/s} TH/s - ~{W} W' — strip ~ before parsing watts. First number = TH/s.",
+    "bixbit_s21exphyd":   "Same format. profileName is 'freq:voltage:voltage' internal key.",
+    "auradine_ah3880":    "Mode-based: turbo=600, normal~500, eco=variable. Use profile_map in this file.",
+    "stock_antminer":     "Use default_rated_ths. No profile data available from AMS.",
+    "whatsminer":         "Power modes: Low/Normal/High. Use normal mode as default_rated_ths.",
+    "avalon":             "Three modes: Normal, High Performance, Low Power. Use Normal as default_rated_ths."
   },
 
   "models": {
@@ -12,6 +21,8 @@
     "antminer-s19jpro": {
       "display_name": "Antminer S19J Pro",
       "manufacturer": "Bitmain",
+      "cooling": "air",
+      "algorithm": "SHA256",
       "variants": [
         {"label": "104T", "rated_ths": 104, "rated_watts": 3068, "efficiency_j_th": 29.5},
         {"label": "100T", "rated_ths": 100, "rated_watts": 3050, "efficiency_j_th": 30.5},
@@ -20,14 +31,14 @@
       ],
       "default_rated_ths": 104,
       "default_rated_watts": 3068,
-      "cooling": "air",
-      "algorithm": "SHA256",
-      "notes": "Most common variant in fleet is 104T. AMS model code: antminer-s19jpro"
+      "notes": "Most common variant is 104T. AMS model codes: antminer-s19jpro, antminer-s19j-pro"
     },
 
     "antminer-s19j-pro": {
       "display_name": "Antminer S19J Pro",
       "manufacturer": "Bitmain",
+      "cooling": "air",
+      "algorithm": "SHA256",
       "variants": [
         {"label": "104T", "rated_ths": 104, "rated_watts": 3068, "efficiency_j_th": 29.5},
         {"label": "100T", "rated_ths": 100, "rated_watts": 3050, "efficiency_j_th": 30.5},
@@ -35,45 +46,137 @@
       ],
       "default_rated_ths": 104,
       "default_rated_watts": 3068,
+      "notes": "Alternate AMS model code for same hardware as antminer-s19jpro"
+    },
+
+    "antminer-s19-pro": {
+      "display_name": "Antminer S19 Pro",
+      "manufacturer": "Bitmain",
       "cooling": "air",
       "algorithm": "SHA256",
-      "notes": "Alternate AMS model code for same hardware. AMS model code: antminer-s19j-pro"
+      "variants": [
+        {"label": "110T", "rated_ths": 110, "rated_watts": 3250, "efficiency_j_th": 29.5},
+        {"label": "105T", "rated_ths": 105, "rated_watts": 3100, "efficiency_j_th": 29.5}
+      ],
+      "default_rated_ths": 110,
+      "default_rated_watts": 3250,
+      "notes": "S19 Pro 110T is most common"
+    },
+
+    "antminer-s19-xp": {
+      "display_name": "Antminer S19 XP",
+      "manufacturer": "Bitmain",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "140T", "rated_ths": 140, "rated_watts": 3010, "efficiency_j_th": 21.5},
+        {"label": "134T", "rated_ths": 134, "rated_watts": 2880, "efficiency_j_th": 21.5}
+      ],
+      "default_rated_ths": 140,
+      "default_rated_watts": 3010,
+      "notes": "5nm chip. Most efficient S19 series air-cooled model"
+    },
+
+    "antminer-s21": {
+      "display_name": "Antminer S21",
+      "manufacturer": "Bitmain",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "200T", "rated_ths": 200, "rated_watts": 3500, "efficiency_j_th": 17.5}
+      ],
+      "default_rated_ths": 200,
+      "default_rated_watts": 3500,
+      "notes": "Air-cooled S21 standard model"
     },
 
     "antminer-s21-imm": {
       "display_name": "Antminer S21 Immersion",
       "manufacturer": "Bitmain",
+      "cooling": "immersion",
+      "algorithm": "SHA256",
       "variants": [
-        {"label": "301T", "rated_ths": 301, "rated_watts": 5569, "efficiency_j_th": 18.5},
-        {"label": "215T", "rated_ths": 215, "rated_watts": 3440, "efficiency_j_th": 16.0}
+        {"label": "301T-HEM", "rated_ths": 301, "rated_watts": 5569, "efficiency_j_th": 18.5},
+        {"label": "215T-NEM", "rated_ths": 215, "rated_watts": 3440, "efficiency_j_th": 16.0}
       ],
       "default_rated_ths": 215,
       "default_rated_watts": 3440,
-      "cooling": "immersion",
+      "notes": "NEM=Normal Energy Mode (215T), HEM=High Energy Mode (301T). Default is NEM. AMS model code: antminer-s21-imm"
+    },
+
+    "antminer-s21-hyd": {
+      "display_name": "Antminer S21 Hydro",
+      "manufacturer": "Bitmain",
+      "cooling": "hydro",
       "algorithm": "SHA256",
-      "notes": "Two immersion variants exist. 215T is more common at standard settings, 301T is high-energy mode. AMS model code: antminer-s21-imm"
+      "variants": [
+        {"label": "335T", "rated_ths": 335, "rated_watts": 5360, "efficiency_j_th": 16.0}
+      ],
+      "default_rated_ths": 335,
+      "default_rated_watts": 5360,
+      "notes": "Hydro-cooled S21"
     },
 
     "antminer-s21e-xp-hydro": {
       "display_name": "Antminer S21e XP Hydro",
       "manufacturer": "Bitmain",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
       "variants": [
-        {"label": "440T",  "rated_ths": 440,  "rated_watts": 5396,  "efficiency_j_th": 12.26},
-        {"label": "430T",  "rated_ths": 430,  "rated_watts": 5289,  "efficiency_j_th": 12.3},
-        {"label": "396T",  "rated_ths": 396,  "rated_watts": 4787,  "efficiency_j_th": 12.09},
-        {"label": "360T",  "rated_ths": 360,  "rated_watts": 6480,  "efficiency_j_th": 18.0},
-        {"label": "330T",  "rated_ths": 330,  "rated_watts": 3959,  "efficiency_j_th": 12.0}
+        {"label": "440T", "rated_ths": 440, "rated_watts": 5396, "efficiency_j_th": 12.26},
+        {"label": "396T", "rated_ths": 396, "rated_watts": 4787, "efficiency_j_th": 12.09},
+        {"label": "360T", "rated_ths": 360, "rated_watts": 6480, "efficiency_j_th": 18.0},
+        {"label": "330T", "rated_ths": 330, "rated_watts": 3959, "efficiency_j_th": 12.0}
       ],
       "default_rated_ths": 440,
       "default_rated_watts": 5396,
+      "notes": "2U hydro. BiXBiT profiles parse as '{TH/s} TH/s - ~{W} W'. AMS model code: antminer-s21e-xp-hydro"
+    },
+
+    "antminer-s21-xp-hyd": {
+      "display_name": "Antminer S21 XP Hydro",
+      "manufacturer": "Bitmain",
       "cooling": "hydro",
       "algorithm": "SHA256",
-      "notes": "2U hydro-cooled. Profiles follow '{TH/s} TH/s - ~{W} W' format on BiXBiT firmware — parseable. Stock rated at 440T. AMS model code: antminer-s21e-xp-hydro"
+      "variants": [
+        {"label": "473T", "rated_ths": 473, "rated_watts": 5676, "efficiency_j_th": 12.0}
+      ],
+      "default_rated_ths": 473,
+      "default_rated_watts": 5676,
+      "notes": "12 J/TH efficiency. Released June 2024"
+    },
+
+    "antminer-s21-xp-imm": {
+      "display_name": "Antminer S21 XP Immersion",
+      "manufacturer": "Bitmain",
+      "cooling": "immersion",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "300T", "rated_ths": 300, "rated_watts": 4050, "efficiency_j_th": 13.5}
+      ],
+      "default_rated_ths": 300,
+      "default_rated_watts": 4050,
+      "notes": "NEM/HEM dual-mode. 13.5 J/TH efficiency"
+    },
+
+    "antminer-s23-hyd": {
+      "display_name": "Antminer S23 Hydro",
+      "manufacturer": "Bitmain",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "580T", "rated_ths": 580, "rated_watts": 6380, "efficiency_j_th": 11.0}
+      ],
+      "default_rated_ths": 580,
+      "default_rated_watts": 6380,
+      "notes": "Latest gen hydro. ~11 J/TH"
     },
 
     "teraflux-ah3880": {
       "display_name": "Teraflux AH3880",
       "manufacturer": "Auradine",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
       "variants": [
         {"label": "turbo",  "rated_ths": 600, "rated_watts": null, "efficiency_j_th": null},
         {"label": "normal", "rated_ths": 500, "rated_watts": null, "efficiency_j_th": null},
@@ -81,19 +184,15 @@
       ],
       "default_rated_ths": 600,
       "default_rated_watts": null,
-      "cooling": "hydro",
-      "algorithm": "SHA256",
-      "notes": "Mode-based not profile-based. 'turbo'=600 TH/s (manual mapping required). 'normal' and 'eco' are estimates. Exact watts depend on mode. AMS model code: teraflux-ah3880. Auradine firmware uses mode API not overclock profiles.",
-      "profile_map": {
-        "turbo":  600,
-        "normal": 500,
-        "eco":    null
-      }
+      "profile_map": {"turbo": 600, "normal": 500, "eco": null},
+      "notes": "Mode-based not profile-based. turbo=600 TH/s. AMS model code: teraflux-ah3880. Uses Auradine REST API (port 8443) as direct fallback."
     },
 
     "sealminer-a2": {
       "display_name": "SealMiner A2",
       "manufacturer": "Bitdeer",
+      "cooling": "air",
+      "algorithm": "SHA256",
       "variants": [
         {"label": "High Performance", "rated_ths": 247, "rated_watts": 4304, "efficiency_j_th": 17.4},
         {"label": "Normal",           "rated_ths": 226, "rated_watts": 3729, "efficiency_j_th": 16.5},
@@ -101,18 +200,465 @@
       ],
       "default_rated_ths": 226,
       "default_rated_watts": 3729,
+      "notes": "SEAL02 chip, 4nm. Three modes. Normal=default. AMS model code: sealminer-a2"
+    },
+
+    "sealminer-a2-pro-air": {
+      "display_name": "SealMiner A2 Pro Air",
+      "manufacturer": "Bitdeer",
       "cooling": "air",
       "algorithm": "SHA256",
-      "notes": "SEAL02 chip, 4nm process. Three power modes. Default/normal mode is 226 TH/s. AMS model code: sealminer-a2"
+      "variants": [
+        {"label": "270T", "rated_ths": 270, "rated_watts": 4050, "efficiency_j_th": 14.9},
+        {"label": "255T", "rated_ths": 255, "rated_watts": 3790, "efficiency_j_th": 14.9}
+      ],
+      "default_rated_ths": 262,
+      "default_rated_watts": 3920,
+      "notes": "Updated A2 with 14.9 J/TH. Range 255-270T. Released March 2025"
+    },
+
+    "sealminer-a2-pro-hyd": {
+      "display_name": "SealMiner A2 Pro Hydro",
+      "manufacturer": "Bitdeer",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "530T", "rated_ths": 530, "rated_watts": 7900, "efficiency_j_th": 14.9},
+        {"label": "500T", "rated_ths": 500, "rated_watts": 7450, "efficiency_j_th": 14.9}
+      ],
+      "default_rated_ths": 500,
+      "default_rated_watts": 7450,
+      "notes": "Hydro version of A2 Pro. Range 500-530T. 14.9 J/TH. Released March 2025"
+    },
+
+    "sealminer-a3-air": {
+      "display_name": "SealMiner A3 Air",
+      "manufacturer": "Bitdeer",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "260T", "rated_ths": 260, "rated_watts": 3640, "efficiency_j_th": 14.0}
+      ],
+      "default_rated_ths": 260,
+      "default_rated_watts": 3640,
+      "notes": "A3 series air-cooled base. Released Sept 2025"
+    },
+
+    "sealminer-a3-pro-air": {
+      "display_name": "SealMiner A3 Pro Air",
+      "manufacturer": "Bitdeer",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "290T", "rated_ths": 290, "rated_watts": 3625, "efficiency_j_th": 12.5}
+      ],
+      "default_rated_ths": 290,
+      "default_rated_watts": 3625,
+      "notes": "Flagship air model. 12.5 J/TH. Released Sept 2025"
+    },
+
+    "sealminer-a3-hyd": {
+      "display_name": "SealMiner A3 Hydro",
+      "manufacturer": "Bitdeer",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "500T", "rated_ths": 500, "rated_watts": 6750, "efficiency_j_th": 13.5}
+      ],
+      "default_rated_ths": 500,
+      "default_rated_watts": 6750,
+      "notes": "A3 hydro base. 13.5 J/TH. Released Sept 2025"
+    },
+
+    "sealminer-a3-pro-hyd": {
+      "display_name": "SealMiner A3 Pro Hydro",
+      "manufacturer": "Bitdeer",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "660T", "rated_ths": 660, "rated_watts": 8250, "efficiency_j_th": 12.5}
+      ],
+      "default_rated_ths": 660,
+      "default_rated_watts": 8250,
+      "notes": "Flagship hydro. 12.5 J/TH. Released Sept 2025"
+    },
+
+    "whatsminer-m50": {
+      "display_name": "WhatsMiner M50",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "114T", "rated_ths": 114, "rated_watts": 3306, "efficiency_j_th": 29.0}
+      ],
+      "default_rated_ths": 114,
+      "default_rated_watts": 3306,
+      "notes": "5nm chip. Air-cooled"
+    },
+
+    "whatsminer-m50s": {
+      "display_name": "WhatsMiner M50S",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "128T", "rated_ths": 128, "rated_watts": 3276, "efficiency_j_th": 25.6},
+        {"label": "126T", "rated_ths": 126, "rated_watts": 3276, "efficiency_j_th": 26.0}
+      ],
+      "default_rated_ths": 128,
+      "default_rated_watts": 3276,
+      "notes": "Higher efficiency than M50"
+    },
+
+    "whatsminer-m50s-plus-plus": {
+      "display_name": "WhatsMiner M50S++",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "162T", "rated_ths": 162, "rated_watts": 3402, "efficiency_j_th": 21.0},
+        {"label": "154T", "rated_ths": 154, "rated_watts": 3234, "efficiency_j_th": 21.0}
+      ],
+      "default_rated_ths": 158,
+      "default_rated_watts": 3318,
+      "notes": "Range 154-162T"
+    },
+
+    "whatsminer-m53": {
+      "display_name": "WhatsMiner M53",
+      "manufacturer": "MicroBT",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "226T", "rated_ths": 226, "rated_watts": 6574, "efficiency_j_th": 29.0}
+      ],
+      "default_rated_ths": 226,
+      "default_rated_watts": 6574,
+      "notes": "Hydro-cooled version of M50 series"
+    },
+
+    "whatsminer-m56s-plus-plus": {
+      "display_name": "WhatsMiner M56S++",
+      "manufacturer": "MicroBT",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "254T", "rated_ths": 254, "rated_watts": 5588, "efficiency_j_th": 22.0}
+      ],
+      "default_rated_ths": 254,
+      "default_rated_watts": 5588,
+      "notes": "Hydro-cooled"
+    },
+
+    "whatsminer-m60": {
+      "display_name": "WhatsMiner M60",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "160T", "rated_ths": 160, "rated_watts": 3184, "efficiency_j_th": 19.9}
+      ],
+      "default_rated_ths": 160,
+      "default_rated_watts": 3184,
+      "notes": "Air-cooled M60 base"
+    },
+
+    "whatsminer-m60s": {
+      "display_name": "WhatsMiner M60S",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "188T", "rated_ths": 188, "rated_watts": 3478, "efficiency_j_th": 18.5},
+        {"label": "184T", "rated_ths": 184, "rated_watts": 3404, "efficiency_j_th": 18.5}
+      ],
+      "default_rated_ths": 186,
+      "default_rated_watts": 3441,
+      "notes": "Range 184-188T. Official WhatsMiner shop lists 184~188T"
+    },
+
+    "whatsminer-m60s-plus": {
+      "display_name": "WhatsMiner M60S+",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "200T", "rated_ths": 200, "rated_watts": 3600, "efficiency_j_th": 18.0},
+        {"label": "188T", "rated_ths": 188, "rated_watts": 3384, "efficiency_j_th": 18.0}
+      ],
+      "default_rated_ths": 194,
+      "default_rated_watts": 3492,
+      "notes": "Range 188-200T. Official shop lists 188~200T"
+    },
+
+    "whatsminer-m60s-plus-plus": {
+      "display_name": "WhatsMiner M60S++",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "226T", "rated_ths": 226, "rated_watts": 3600, "efficiency_j_th": 15.9}
+      ],
+      "default_rated_ths": 226,
+      "default_rated_watts": 3600,
+      "notes": "Top air-cooled M60 variant"
+    },
+
+    "whatsminer-m63": {
+      "display_name": "WhatsMiner M63",
+      "manufacturer": "MicroBT",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "366T", "rated_ths": 366, "rated_watts": 7289, "efficiency_j_th": 19.9},
+        {"label": "334T", "rated_ths": 334, "rated_watts": 6647, "efficiency_j_th": 19.9}
+      ],
+      "default_rated_ths": 350,
+      "default_rated_watts": 6968,
+      "notes": "Hydro-cooled. Range 334-366T"
+    },
+
+    "whatsminer-m63s": {
+      "display_name": "WhatsMiner M63S",
+      "manufacturer": "MicroBT",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "412T", "rated_ths": 412, "rated_watts": 7622, "efficiency_j_th": 18.5},
+        {"label": "390T", "rated_ths": 390, "rated_watts": 7215, "efficiency_j_th": 18.5},
+        {"label": "360T", "rated_ths": 360, "rated_watts": 6660, "efficiency_j_th": 18.5}
+      ],
+      "default_rated_ths": 390,
+      "default_rated_watts": 7215,
+      "notes": "Hydro-cooled. Range 360-412T"
+    },
+
+    "whatsminer-m63s-plus": {
+      "display_name": "WhatsMiner M63S+",
+      "manufacturer": "MicroBT",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "450T", "rated_ths": 450, "rated_watts": 7650, "efficiency_j_th": 17.0}
+      ],
+      "default_rated_ths": 450,
+      "default_rated_watts": 7650,
+      "notes": "Hydro-cooled"
+    },
+
+    "whatsminer-m63s-plus-plus": {
+      "display_name": "WhatsMiner M63S++",
+      "manufacturer": "MicroBT",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "464T", "rated_ths": 464, "rated_watts": 7192, "efficiency_j_th": 15.5}
+      ],
+      "default_rated_ths": 464,
+      "default_rated_watts": 7192,
+      "notes": "Top hydro M63 variant. Official shop: 464TH/15.5J/TH"
+    },
+
+    "whatsminer-m66": {
+      "display_name": "WhatsMiner M66",
+      "manufacturer": "MicroBT",
+      "cooling": "immersion",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "276T", "rated_ths": 276, "rated_watts": 5492, "efficiency_j_th": 19.9},
+        {"label": "240T", "rated_ths": 240, "rated_watts": 4776, "efficiency_j_th": 19.9}
+      ],
+      "default_rated_ths": 276,
+      "default_rated_watts": 5492,
+      "notes": "Immersion-cooled. Range 240-276T"
+    },
+
+    "whatsminer-m66s": {
+      "display_name": "WhatsMiner M66S",
+      "manufacturer": "MicroBT",
+      "cooling": "immersion",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "290T", "rated_ths": 290, "rated_watts": 5365, "efficiency_j_th": 18.5},
+        {"label": "286T", "rated_ths": 286, "rated_watts": 5291, "efficiency_j_th": 18.5},
+        {"label": "270T", "rated_ths": 270, "rated_watts": 4995, "efficiency_j_th": 18.5}
+      ],
+      "default_rated_ths": 288,
+      "default_rated_watts": 5328,
+      "notes": "Immersion-cooled. Official shop: 286~290T"
+    },
+
+    "whatsminer-m66s-plus": {
+      "display_name": "WhatsMiner M66S+",
+      "manufacturer": "MicroBT",
+      "cooling": "immersion",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "318T", "rated_ths": 318, "rated_watts": 5406, "efficiency_j_th": 17.0}
+      ],
+      "default_rated_ths": 318,
+      "default_rated_watts": 5406,
+      "notes": "Immersion-cooled"
+    },
+
+    "whatsminer-m70": {
+      "display_name": "WhatsMiner M70",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "236T", "rated_ths": 236, "rated_watts": 3422, "efficiency_j_th": 14.5}
+      ],
+      "default_rated_ths": 236,
+      "default_rated_watts": 3422,
+      "notes": "Next-gen air-cooled. Official shop: 236TH/14.5J/TH"
+    },
+
+    "whatsminer-m70s": {
+      "display_name": "WhatsMiner M70S",
+      "manufacturer": "MicroBT",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "250T", "rated_ths": 250, "rated_watts": 3375, "efficiency_j_th": 13.5}
+      ],
+      "default_rated_ths": 250,
+      "default_rated_watts": 3375,
+      "notes": "Official shop: 250TH/13.5J/TH"
+    },
+
+    "whatsminer-m73": {
+      "display_name": "WhatsMiner M73",
+      "manufacturer": "MicroBT",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "512T", "rated_ths": 512, "rated_watts": 7424, "efficiency_j_th": 14.5}
+      ],
+      "default_rated_ths": 512,
+      "default_rated_watts": 7424,
+      "notes": "Flagship hydro. Official shop: 512TH/14.5J/TH"
+    },
+
+    "avalon-a1466": {
+      "display_name": "Avalon A1466",
+      "manufacturer": "Canaan",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "150T-HP", "rated_ths": 150, "rated_watts": 3230, "efficiency_j_th": 21.5},
+        {"label": "150T",    "rated_ths": 150, "rated_watts": 3230, "efficiency_j_th": 21.5}
+      ],
+      "default_rated_ths": 150,
+      "default_rated_watts": 3230,
+      "notes": "A14 series. Three modes: Normal, High Performance, Low Power. Released Aug 2023"
+    },
+
+    "avalon-a1566": {
+      "display_name": "Avalon A1566",
+      "manufacturer": "Canaan",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "185T", "rated_ths": 185, "rated_watts": 3420, "efficiency_j_th": 18.5}
+      ],
+      "default_rated_ths": 185,
+      "default_rated_watts": 3420,
+      "notes": "A15 series flagship air model. Released Q4 2024"
+    },
+
+    "avalon-a1566i": {
+      "display_name": "Avalon A1566I (Immersion)",
+      "manufacturer": "Canaan",
+      "cooling": "immersion",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "249T", "rated_ths": 249, "rated_watts": 4500, "efficiency_j_th": 18.1}
+      ],
+      "default_rated_ths": 249,
+      "default_rated_watts": 4500,
+      "notes": "Immersion variant of A1566"
+    },
+
+    "avalon-a1566ha": {
+      "display_name": "Avalon A1566HA (2U Hydro)",
+      "manufacturer": "Canaan",
+      "cooling": "hydro",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "480T", "rated_ths": 480, "rated_watts": 8064, "efficiency_j_th": 16.8}
+      ],
+      "default_rated_ths": 480,
+      "default_rated_watts": 8064,
+      "notes": "2U hydro form factor. High-density rack deployment"
+    },
+
+    "avalon-a15": {
+      "display_name": "Avalon A15",
+      "manufacturer": "Canaan",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "203T", "rated_ths": 203, "rated_watts": 3816, "efficiency_j_th": 18.8},
+        {"label": "194T", "rated_ths": 194, "rated_watts": 3647, "efficiency_j_th": 18.8},
+        {"label": "188T", "rated_ths": 188, "rated_watts": 3534, "efficiency_j_th": 18.8}
+      ],
+      "default_rated_ths": 194,
+      "default_rated_watts": 3647,
+      "notes": "Updated A15 series. Range 188-203T. Released Jan 2025"
+    },
+
+    "avalon-a15-xp": {
+      "display_name": "Avalon A15 XP",
+      "manufacturer": "Canaan",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "212T", "rated_ths": 212, "rated_watts": 3774, "efficiency_j_th": 17.8},
+        {"label": "200T", "rated_ths": 200, "rated_watts": 3560, "efficiency_j_th": 17.8}
+      ],
+      "default_rated_ths": 206,
+      "default_rated_watts": 3667,
+      "notes": "Range 200-212T. 17.8 J/TH efficiency"
+    },
+
+    "avalon-a15-pro": {
+      "display_name": "Avalon A15 Pro",
+      "manufacturer": "Canaan",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "215T+", "rated_ths": 215, "rated_watts": 3612, "efficiency_j_th": 16.8}
+      ],
+      "default_rated_ths": 215,
+      "default_rated_watts": 3612,
+      "notes": "Flagship A15 air model. 16.8 J/TH"
+    },
+
+    "avalon-a15-se": {
+      "display_name": "Avalon A15 SE",
+      "manufacturer": "Canaan",
+      "cooling": "air",
+      "algorithm": "SHA256",
+      "variants": [
+        {"label": "185T", "rated_ths": 185, "rated_watts": 3515, "efficiency_j_th": 19.0},
+        {"label": "170T", "rated_ths": 170, "rated_watts": 3230, "efficiency_j_th": 19.0}
+      ],
+      "default_rated_ths": 177,
+      "default_rated_watts": 3360,
+      "notes": "Entry-level A15. Range 170-185T"
     }
   },
 
   "baseline_config": {
-    "_comment": "Settings for Tier 3 running-average baseline system",
+    "_comment": "Settings for Tier 3 running-average baseline (models not in this file or unknown firmware)",
     "learning_window_hours": 72,
     "minimum_samples": 36,
-    "baseline_tolerance_pct": 10,
+    "baseline_tolerance_low_pct": 10,
+    "baseline_tolerance_high_pct": 20,
     "applies_to_firmware": ["Stock", "unknown", ""],
-    "also_applies_when": "model not in miner_specs or rated_ths is null"
+    "also_applies_when": "model not found in this spec file OR default_rated_ths is null",
+    "during_learning_window": "Flag offline/board errors/temp spikes only — no hashrate flagging until baseline locked",
+    "slack_notification_on_lock": true
   }
 }
