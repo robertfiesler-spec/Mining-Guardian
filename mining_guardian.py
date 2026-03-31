@@ -1938,7 +1938,8 @@ class MiningGuardian:
             )
 
         # ── Record baseline sample for Tier 3 learning ───────────────────
-        hashrate_ths = hashrate / 1_000_000 if hashrate > 0 else 0
+        # AMS hashrate field is in GH/s — divide by 1000 to get TH/s
+        hashrate_ths = hashrate / 1_000 if hashrate > 0 else 0
         just_locked  = self.baseline.record_sample(
             miner_id, hashrate_ths, power_kw
         )

@@ -375,8 +375,8 @@ class BaselineManager:
 
         # Calculate averages — use median to resist outliers
         hashrates = sorted(r["hashrate"] for r in rows)
-        # Convert from MH/s (AMS units) to TH/s
-        median_ths = (hashrates[len(hashrates) // 2]) / 1_000_000
+        # Convert from GH/s (AMS units) to TH/s
+        median_ths = (hashrates[len(hashrates) // 2]) / 1_000
 
         power_readings = [r["pdu_power"] for r in rows if r["pdu_power"] and r["pdu_power"] > 0]
         avg_power_kw   = (sum(power_readings) / len(power_readings) / 1000) if power_readings else None
