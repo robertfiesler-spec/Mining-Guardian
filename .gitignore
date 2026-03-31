@@ -25,3 +25,4 @@ config.json
 *.log
 
 logs/
+ams_api_spec.json
