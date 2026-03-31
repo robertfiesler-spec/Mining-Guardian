@@ -2,343 +2,267 @@
 
 **Autonomous fleet monitoring and remediation system for Bitcoin mining operations.**
 
-Mining Guardian runs on a local Mac Mini connected directly to the mining network. It connects to the BiXBiT AMS platform via authenticated WebSocket and REST API, scans every miner in the fleet, and delivers actionable alerts to the operator via Slack. A local LLM (via OpenClaw) provides plain-English diagnosis and decision support.
+Mining Guardian runs on a local Mac Mini connected to the mining network. It connects
+to the BiXBiT AMS platform via authenticated WebSocket and REST API, scans every miner
+in the fleet, and delivers actionable alerts to the operator via Slack. A local LLM
+(via OpenClaw) provides plain-English diagnosis and decision support.
 
-Humans stay in the loop on all remediation actions. Mining Guardian detects, explains, and recommends — operators approve.
+Humans stay in the loop on all remediation actions. Mining Guardian detects, explains,
+and recommends — operators approve.
 
 ---
 
-## Current Status — March 30, 2026
+## Current Status — March 31, 2026
 
 | Component | Status |
 |---|---|
 | AMS authentication (cookie JWT) | ✅ Live |
 | Full fleet scan via WebSocket | ✅ Live |
-| Hashrate + temperature analysis | ✅ Live |
+| Three-tier hashrate evaluation | ✅ Live |
+| Dead hashboard detection | ✅ Live |
+| AMS false-offline verification (TCP:4028) | ✅ Live |
+| Firmware-aware miner routing | ✅ Live |
 | PDU power cycle | ✅ Built |
 | Firmware restart | ✅ Built |
-| SQLite database (all scans) | ✅ Live |
+| Dead board restart + log compare flow | ✅ Built |
+| Post-restart common_status stability polling | ✅ Built |
+| SQLite database (27-field schema) | ✅ Live |
 | Miner log collection | ✅ Live |
 | Weather data per scan | ✅ Live |
 | AMS notifications (40/scan) | ✅ Live |
 | Slack reporting | ✅ Live |
 | Dashboard API (FastAPI :8585) | ✅ Live |
-| Retool dashboard (Phase 1) | ✅ Live via cloudflared tunnel |
+| Retool dashboard Phase 1 | ✅ Live via cloudflared tunnel |
 | Action audit log | ✅ Live |
 | Knowledge export / combine | ✅ Built |
-| Slack approval flow | 🔧 In progress — polling listener next |
+| miner_specs.json (35+ models) | ✅ Built |
+| PDU clients (163 @ .15, 164 @ .16) | ✅ Live |
+| Immersion tank client (B100 @ .20) | ✅ Live |
+| Facility monitor (all 3 infra sources) | ✅ Live in scan report |
+| Auradine AH3880 direct client (reference) | ✅ Documented |
+| BiXBiT direct API docs (port 4029 fallback) | ✅ Documented |
+| morning.sh daily briefing | ✅ Live (cron 7am) |
 | OpenClaw / local LLM | 🔜 Mac Mini arriving this week |
-| Automations | 🔜 Pending AMS access |
-| Facility map integration | 🔜 Pending AMS map setup |
+| Profile map (config.json) | 🔜 Pending walk-through session |
+| Second S21 EXP Hyd added to AMS | 🔜 Pending Rob (IP: .26) |
+
 
 ---
 
-## Fleet Status (as of 2026-03-30)
+## Fleet — USA 188 (192.168.188.x)
 
-- **44 miners** in AMS (cleaned up — offline miners removed)
-- **43 online** | **1 offline** (53490 — S19JPro, no PDU assigned)
-- **1 underperforming** (53476 — A2, 0% hashrate, firmware restart needed)
-- **6 monitoring** (S19JPros running 76–84°C)
-- Facility: Fort Worth, TX | Two PDUs at 192.168.188.15 and .16
-- Subnet: 192.168.188.x
+### Outside Container (own power — no PDU access)
+- **39 × Antminer S19JPro** — all on BiXBiT firmware, immersion cooled
+- Monitored via AMS only. TCP:4028 used for false-offline verification.
 
+### Warehouse / R&D Center
+
+| Device | Count | IP | PDU | Cooling | AMS |
+|---|---|---|---|---|---|
+| Auradine AH3880 | 2 | .27, .28 | PDU 163 outlets 3+4 | Hydro | ✅ |
+| Antminer S21 EXP Hyd | 1 | .25 | PDU 164 outlet 3 | Hydro | ✅ |
+| Antminer S21 EXP Hyd | 1 | .26 | PDU 164 outlet 4 | Hydro | ⏳ Add to AMS |
+| Antminer S21 Imm | 2 | .22, .23 | Tank B100 ports 19+20 | Immersion | ✅ |
+
+**Total fleet in AMS: 48 miners** (49 once second S21 EXP Hyd is added)
+
+### Infrastructure
+
+| Device | IP | Client | Data |
+|---|---|---|---|
+| BiXBiT 2U+PDU (rack PDU) | 192.168.188.15 | pdu_client.py | L1-3 V/A/kW, per-outlet kW |
+| BiXBiT Bitmain PDU (shoebox rack) | 192.168.188.16 | pdu_client.py | L1-3 V/A/kW, per-outlet kW |
+| Fog Hashing Elite 1 (immersion tank) | 192.168.188.20 | immersion_client.py | Fluid temps, pump, per-port kW |
+
+**PDU power readings always take priority over miner-reported consumption.**
+
+---
+
+## Firmware Routing
+
+Mining Guardian uses firmware-aware evaluation. The correct API path depends on what firmware the miner is running.
+
+| Firmware | Detection | Primary Path | Direct API |
+|---|---|---|---|
+| BiXBiT (Bitmain) | `firmwareManufacturer == "BiXBiT"` or profile string present | AMS → all commands | Port 4029 fallback (docs/BIXBIT_DIRECT_API.md) |
+| Stock Antminer | `firmwareManufacturer == "Stock"` | AMS → all commands | CGMiner TCP:4028 (read-only) |
+| Auradine | `firmwareManufacturer == "Auradine"` | AMS → all commands | Port 8443 fallback (AURADINE_API.md) |
+| Unknown | Empty firmware field | AMS + Tier 3 baseline learning | TCP:4028 verify only |
+
+**Architecture rule: ALL commands go through AMS first. Direct APIs are fallback only.**
+Reason: AMS provides audit log, single auth layer, and network simplicity.
+Mac Mini only needs LAN access to AMS — not direct IP to each miner.
+
+
+---
+
+## Three-Tier Hashrate Evaluation
+
+Mining Guardian evaluates every miner against the most accurate baseline available.
+
+### Tier 1 — BiXBiT Profile (live from AMS)
+For miners on BiXBiT firmware. Calls AMS `miner_config` to get `profilesList`,
+parses `currentProfile` string (e.g. `"144 TH/s - ~4913 W"`) stripping the `~`,
+and compares actual hashrate against that profile's rated TH/s.
+Covers: 36 BiXBiT S19JPros + 2 Auradine AH3880s (turbo = 600 TH/s).
+
+### Tier 2 — Published Spec Lookup
+For miners on Stock/Auradine firmware with a known model.
+Looks up `miner_specs.json` by AMS model code.
+Covers: Stock S19JPros at 104 TH/s, plus 35+ models from Bitmain, Bitdeer, MicroBT, Canaan.
+
+### Tier 3 — Learned Baseline
+For miners with unrecognized models or no published spec.
+72-hour learning window, minimum 36 samples, ±10% tolerance band.
+During learning window: still monitors temps, boards, and offline status — just not hashrate drift.
+
+**Evaluation threshold: 90% of rated TH/s.** Below this triggers a RESTART or RESTART_CHECK_BOARDS action.
+
+---
+
+## Dead Hashboard Detection
+
+Each miner has 3 hashboards. Mining Guardian checks `chains` data from AMS per scan.
+
+| Board State | Signature | % Output | Action |
+|---|---|---|---|
+| All 3 boards healthy | All chains > threshold | ~100% | No action |
+| 1 board dead | 1 chain ≈ 0 MH/s | ~66% | RESTART_CHECK_BOARDS |
+| 2 boards dead | 2 chains ≈ 0 MH/s | ~33% | RESTART_CHECK_BOARDS |
+
+### RESTART_CHECK_BOARDS Flow (execute_board_restart)
+1. Attempt pre-restart log collection (30s timeout — skip silently if offline)
+2. Send restart via AMS
+3. Phase 1: poll for miner online (up to 10 min, every 15s)
+4. Phase 2: poll `common_status` via TCP:4029 for `"mining"` (primary)
+   OR poll AMS minerStatus==0 + hashrate>0 (fallback if TCP unavailable)
+   Require 2 consecutive stable polls. Up to 45 min.
+   If `"emergency"` detected → escalate immediately.
+5. Collect post-restart logs (non-blocking)
+6. Compare board states before vs after
+7. If board recovered → resolve, log it
+8. If board still dead → create AMS ticket + Slack alert (physical inspection required)
+
+**Pre-restart log rule applies to ALL restarts** — not just dead board cases.
+
+---
+
+## AMS False-Offline Detection
+
+AMS occasionally reports a miner as offline when it's actually running (WebSocket sync lag,
+recent reboot, etc.). Before taking any offline action, Mining Guardian verifies:
+
+1. Attempt TCP connect to miner IP on port 4028
+2. If port responds → miner is alive, AMS is out of sync → skip this scan cycle, no alert
+3. If port does not respond → genuinely offline → proceed with action
+
+This resolved 5 false PHYSICAL_CYCLE flags that were showing healthy miners as needing
+manual intervention. Both miners at .50 and .31 were confirmed reachable despite AMS
+reporting offline.
+
+---
+
+## Model Mismatch Handling
+
+AMS can have a miner registered with the wrong model (e.g. miner 53476 registered as
+`sealminer-a2` but is actually an S19JPro). Mining Guardian resolves this by priority:
+
+1. If `currentProfile` parses as a valid BiXBiT profile → use profile TH/s (Tier 1), display `name` field
+2. If `name` field contains model string → use that for display
+3. Fall back to `shortModel` from AMS only if no profile or name available
+
+
+---
+
+## Facility Monitor
+
+`facility_monitor.py` polls all three infrastructure devices every scan and appends
+a warehouse section to the scan report.
+
+### PDU Clients (pdu_client.py)
+Auth: HMAC-SHA1 login (custom BiXBiT PDU firmware, port 80).
+Data: L1/L2/L3 voltage, current, total kW, total kWh, per-outlet kW.
+PDU 163 @ .15: Auradine rack — outlets 3+4 = AH3880s (~9.9 kW each)
+PDU 164 @ .16: Bitmain shoebox rack — outlets 3+4 = S21EXPHyd (~5.5 kW each)
+
+### Immersion Tank Client (immersion_client.py)
+Device: Fog Hashing Elite 1 (B100) @ 192.168.188.20
+Auth: None (open REST JSON API)
+Data: fluid in/out temp, pump status, fluid level alarms, per-port kW, mining switch state
+Ports 19+20: S21 Imm miners (~6-6.3 kW each)
+Port 22: support equipment (not a miner — ~6.9 kW cooling/pump load)
+
+### Miner → Outlet Map
+```
+192.168.188.27 (AH3880)      → PDU 163 outlet 3
+192.168.188.28 (AH3880)      → PDU 163 outlet 4
+192.168.188.25 (S21EXPHyd)   → PDU 164 outlet 3
+192.168.188.26 (S21EXPHyd)   → PDU 164 outlet 4  (pending AMS ID)
+192.168.188.22 (S21 Imm)     → Tank B100 port 19
+192.168.188.23 (S21 Imm)     → Tank B100 port 20
+```
+
+---
+
+## Temperature Thresholds
+
+**Uniform across ALL cooling types (air, immersion, hydro).**
+Immersion miners are overclocked and run at higher TH/s than stock, which means
+they run as hot or hotter than air-cooled miners. Same thresholds apply.
+
+| Zone | Chip Temp | Action |
+|---|---|---|
+| 🟢 Healthy | < 76°C | None |
+| 🟡 Monitor | 76–85°C | Watch next scan |
+| 🔴 Action | ≥ 86°C | Alert operator |
 
 ---
 
 ## System Architecture
 
 ```
-BiXBiT AMS (cloud)
+BiXBiT AMS (cloud / staging)
         │
         │  WebSocket + REST (cookie-based JWT)
         ▼
-┌──────────────────────────────────────────────────┐
-│              Mac Mini (local network)            │
-│                                                  │
-│  mining_guardian.py  (Python daemon)             │
-│  ├── Scans fleet every 5 min                     │
-│  ├── Hashrate % + chip temp analysis             │
-│  ├── PDU cycle / firmware restart logic          │
-│  ├── Miner log collection + 7-day purge          │
-│  ├── AMS notification polling (40/scan)          │
-│  ├── Weather data (Open-Meteo, Fort Worth TX)    │
-│  ├── SQLite DB — all scan + telemetry history    │
-│  └── Posts findings to Slack                     │
-│                                                  │
-│  slack_listener.py  (approval polling loop)      │
-│  ├── Polls #mining-guardian every 5 seconds      │
-│  ├── Detects APPROVE / DENY in scan threads      │
-│  ├── Executes approved actions via AMS           │
-│  └── Writes to permanent audit log               │
-│                                                  │
-│  dashboard_api.py  (FastAPI :8585)               │
-│  ├── Exposed via cloudflared tunnel              │
-│  ├── dashboard.fieslerfamily.com                 │
-│  └── 13+ endpoints for Retool + future UI        │
-│                                                  │
-│  OpenClaw  (local LLM — pending Mac Mini)        │
-│  ├── Ollama runtime + Qwen3/LLaMA model          │
-│  ├── Handles ALL Slack channel I/O               │
-│  ├── Mining Guardian posts to OpenClaw webhook   │
-│  └── RAG over miner logs + knowledge.json        │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│               Mac Mini (local network)               │
+│                                                      │
+│  mining_guardian.py  (Python daemon)                 │
+│  ├── Scans fleet every 5 min via AMS WebSocket       │
+│  ├── Three-tier hashrate evaluation                  │
+│  ├── Dead hashboard detection + remediation flow     │
+│  ├── AMS false-offline TCP:4028 verification         │
+│  ├── PDU power cycle / firmware restart via AMS      │
+│  ├── Miner log collection + 7-day purge              │
+│  ├── AMS notification polling (40/scan)              │
+│  ├── Weather data (Open-Meteo, Fort Worth TX)        │
+│  ├── SQLite DB — 27-field schema, all history        │
+│  ├── FacilityMonitor — PDU 163/164 + tank B100       │
+│  └── Posts findings to OpenClaw webhook              │
+│                                                      │
+│  facility_monitor.py                                 │
+│  ├── pdu_client.py → PDU 163 @ .15, PDU 164 @ .16   │
+│  └── immersion_client.py → Tank B100 @ .20           │
+│                                                      │
+│  hashrate_evaluation.py                              │
+│  ├── MinerSpecsLoader (miner_specs.json)             │
+│  └── BaselineManager (Tier 3 learning window)        │
+│                                                      │
+│  dashboard_api.py  (FastAPI :8585)                   │
+│  ├── Exposed via cloudflared tunnel                  │
+│  ├── dashboard.fieslerfamily.com                     │
+│  └── 15+ endpoints for Retool                        │
+│                                                      │
+│  OpenClaw  (pending Mac Mini install)                │
+│  ├── Handles ALL Slack I/O                           │
+│  ├── Mining Guardian POSTs to localhost:18789/hooks  │
+│  ├── Delivers APPROVE/DENY buttons in Slack          │
+│  └── Ollama local LLM for log analysis               │
+└──────────────────────────────────────────────────────┘
         │
-        │  Slack → #mining-guardian (private channel)
-        ▼
-   Operator approves or denies action
-        │
-        ▼
-   AMS executes approved command
-```
-
----
-
-## Slack Approval Flow
-
-### Current Architecture (Polling — active path)
-The listener polls Slack every 5 seconds using `conversations.replies` — no Socket Mode, no webhooks, no tunnel required. Simple and reliable.
-
-```
-mining_guardian.py → posts scan to #mining-guardian → saves thread_ts to pending_approvals
-slack_listener.py  → polls every 5s → finds APPROVE/DENY → executes via AMS → logs audit
-```
-
-### Why Polling (not Socket Mode)
-- `#mining-guardian` is a **private channel** — requires `groups:history` scope
-- Socket Mode event delivery was unreliable across multiple fresh app installs
-- Polling confirmed working: token reads channel successfully (`conversations.history → True`)
-- Up to 5-second delay on approval — acceptable for mining fleet operations
-
-### Slack App (api.slack.com/apps — App ID: A0APJEN0GGN)
-**Bot Token Scopes required:**
-- `channels:history`, `channels:read`, `groups:history` ← critical for private channel
-- `chat:write`, `chat:write.public`, `incoming-webhook`
-- `reactions:read`, `reactions:write`, `users:read`
-
-**Socket Mode:** Enabled (for future OpenClaw integration)
-
-**Bot must be invited to #mining-guardian:**
-```
-/invite @Mining Guardian
-```
-
-### Future Architecture (OpenClaw — pending Mac Mini)
-Once OpenClaw is installed on the Mac Mini, Mining Guardian will post to OpenClaw's Gateway webhook (`localhost:18789/hooks`) and OpenClaw will handle all Slack I/O through its own battle-tested Bolt/Socket Mode connection. No separate `slack_listener.py` needed.
-
-
----
-
-## OpenClaw + Local LLM Integration (Pending Mac Mini)
-
-### What OpenClaw Is
-OpenClaw is a local AI agent platform that runs a Gateway process on your machine (`localhost:18789`). It handles all messaging channel integrations — Slack, Telegram, WhatsApp, etc. — so Mining Guardian doesn't need to manage its own Slack listener.
-
-### Integration Plan
-1. Install OpenClaw: `npm install -g openclaw && openclaw onboard`
-2. Configure Slack channel in `~/.openclaw/openclaw.json` using existing bot/app tokens
-3. Enable `hooks` in config so Mining Guardian can POST scan results to OpenClaw
-4. Mining Guardian posts to `localhost:18789/hooks` → OpenClaw delivers to Slack with APPROVE/DENY buttons
-5. OpenClaw receives button clicks and fires callback to Mining Guardian
-
-### Local LLM for Log Analysis
-**Architecture: RAG (Retrieval-Augmented Generation) — not fine-tuning**
-- Miner logs → ChromaDB (vector embeddings)
-- Current scan data → context window
-- LLM reasons over retrieved log history → intelligent recommendations
-
-**Recommended Stack:**
-| Component | Choice | Why |
-|---|---|---|
-| Runtime | Ollama | Simple, runs as background service, HTTP API at localhost:11434 |
-| Model (16GB Mac Mini) | LLaMA 3.2 8B (Q4_K_M) | Fits comfortably, fast inference |
-| Model (32GB Mac Mini) | Qwen3-Coder 32B (Q4_K_M) | Best for log analysis + pattern recognition |
-| Vector DB | ChromaDB | Simple Python integration, no server needed |
-
-**OpenClaw config for Ollama:**
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": { "primary": "ollama/qwen3-coder:32b" }
-    }
-  }
-}
-```
-
----
-
-## Retool Dashboard
-
-Phase 1 live at: `https://robfiesler25.retool.com/apps/Mining%20Guardian`
-
-**Connected via:** `https://dashboard.fieslerfamily.com` (Cloudflare tunnel → localhost:8585)
-
-| Panel | Status |
-|---|---|
-| Total Miners / Online / Offline / Issues tiles | ✅ Live |
-| Currently Flagged Miners table | ✅ Live |
-| Most Flagged Miners (All Time) | ✅ Live |
-| AMS Alert Summary | ✅ Live |
-| Outside Temperature chart | ✅ Live |
-| Scan history trend chart | 🔜 Phase 2 |
-| Facility map panel | 🔜 After AMS map setup |
-| Per-miner drill-down | 🔜 Phase 2 |
-
-**To start dashboard API:**
-```bash
-source venv/bin/activate
-export $(grep -v '^#' .env | xargs)
-python dashboard_api.py
-```
-
-**Cloudflare tunnel** (must be running for Retool to connect):
-```bash
-cloudflared tunnel run mining-guardian
-```
-Tunnel config: `~/.cloudflared/config.yml`
-- `slack.fieslerfamily.com` → localhost:8686 (Slack listener)
-- `dashboard.fieslerfamily.com` → localhost:8585 (Dashboard API)
-
----
-
-## morning.sh (Daily Briefing)
-
-Cron job fires at 7am daily, logs to `~/morning-log.txt`.
-
-**Contents:** Bitcoin price (Coinbase API), system stats, network check, parallel miner subnet scan, Mining Guardian last scan summary, Slack post to #mining-guardian.
-
-**Sleep fix:** `caffeinate -i -w $$` added — prevents Mac from sleeping during cron run.
-
-**macOS Full Disk Access required for cron:**
-System Settings → Privacy & Security → Full Disk Access → add `/usr/sbin/cron`
-
-**Cron entry:**
-```
-0 7 * * * /bin/zsh /Users/BigBobby/Documents/GitHub/mac-scripts/morning.sh >> /Users/BigBobby/morning-log.txt 2>&1
-```
-
-
----
-
-## Analysis Logic
-
-### Hashrate
-- **Below 90% of `maxHashrate`** → flagged, firmware restart recommended
-- **0% (offline)** → flagged as critical
-
-### Chip Temperature
-| Zone | Range | Action |
-|---|---|---|
-| 🟢 Green | Below 76°C | Healthy |
-| 🟡 Yellow | 76–85°C | Monitor |
-| 🔴 Red | 86°C+ | Action required |
-
-### Power Data Priority Rule
-**Always prefer PDU outlet readings over miner-reported consumption.**
-Smart PDUs measure actual AC power at the wall. Miner-reported numbers are estimates.
-Fall back to miner-reported only if no PDU is assigned.
-
-### AMS Miner Profile
-Each miner runs a power profile that dictates its operating speed and power draw. Profile management is visible in AMS and accessible via `change_power_profile()`. This is intentionally out of scope for autonomous action — profile changes require operator decision.
-
-Profile names vary by miner model. Some use descriptive names (`turbo`), others use rated specs (`440 TH/s - 5396 W`). Mining Guardian parses the spec-format names automatically to extract rated hashrate. Named profiles require a manual lookup table in `config.json`.
-
-**Known profiles — Antminer S21EXPHyd:**
-330 TH/s - 3959 W | 352 TH/s - 4238 W | 374 TH/s - 4481 W | 396 TH/s - 4787 W | 418 TH/s - 5093 W | 440 TH/s - 5396 W
-
-**Known profiles — Teraflex AH3880:**
-`turbo` = 600 TH/s (named profile — requires manual mapping)
-
-Hashrate analysis compares actual hashrate against the **active profile's rated TH/s**, not the absolute maximum. A miner running a lower profile is healthy at that profile's rated output.
-
----
-
-## Remediation Actions
-
-| Situation | Action |
-|---|---|
-| Miner offline + PDU assigned | PDU power cycle — cut outlet, wait 5s, restore |
-| Miner offline, no PDU | Physical visit required — flagged in Slack |
-| Miner online but underperforming | Firmware restart via AMS |
-| Chip temp 86°C+ | Operator chooses: restart / lower profile / raise cooling |
-
-After any restart: logs collected immediately on boot, elevated monitoring for 3 hours.
-
----
-
-## AMS Endpoint Library
-
-All methods live on `AMSClient` in `mining_guardian.py`.
-
-### Miner Control
-| Method | Endpoint | Description |
-|---|---|---|
-| `change_power_profile(ids, profile)` | `POST /miners/dcs/change_overclock_config` | Change power/speed profile |
-| `start_miner(ids)` | `POST /miners/dcs/start` | Start miners |
-| `stop_miner(ids)` | `POST /miners/dcs/stop` | Stop miners |
-| `reboot_miner(ids)` | `POST /miners/dcs/reboot` | Firmware reboot |
-| `led_on(ids)` / `led_off(ids)` | `POST /miners/dcs/led_on` / `led_off` | Flash LED to locate miner |
-| `pdu_power_cycle(pdu_id, outlet)` | `POST /pdus/dcs/set_control_outlet` | Cut + restore outlet power |
-
-### Miner Data
-| Method | Endpoint | Description |
-|---|---|---|
-| `get_miners()` | `WSS miners/list_ws` | Full fleet list with telemetry |
-| `get_miner_stats(id, range)` | `POST /miner_stats/device_charts` | Hashrate/power/temp history |
-| `get_miner_boards(id)` | `WSS miners/chips_ws` | Per-chip frequency (126 chips/board) |
-| `get_event_history(id)` | `POST /miners/request_list` | Event history |
-| `get_notifications(type, limit)` | `POST /notifications/channels` | AMS alerts |
-| `get_pdu_power_by_miner(id)` | PDU outlet data | **PDU power draw takes priority over miner-reported** |
-
-### Facility & Map
-| Method | Endpoint | Description |
-|---|---|---|
-| `get_map_groups()` | `GET /map/groups` | Facility rows, racks, sections |
-| `get_map_layout()` | `WSS map/ws` | Full spatial miner layout with physical location |
-| `get_tickets()` | `GET /ticket` | Maintenance tickets |
-| `create_ticket(title, desc, priority)` | `POST /ticket` | Create maintenance ticket |
-
-### Deliberately Out of Scope
-- **Pool management** — security risk
-- **Miner settings** — naming/config left to AMS UI
-- **Power profile changes** — operator decision only
-
----
-
-## Database
-
-SQLite at `guardian.db`.
-
-| Table | Contents | Retention |
-|---|---|---|
-| `scans` | Scan summaries | Permanent |
-| `miner_readings` | Per-miner telemetry per scan | Permanent |
-| `miner_logs` | Raw log file content | 7-day rolling purge |
-| `miner_restarts` | Restart events + elevated monitoring | Permanent |
-| `ams_notifications` | AMS-generated alerts | Permanent |
-| `weather_readings` | Ambient temp/humidity per scan | Permanent |
-| `pending_approvals` | Pending APPROVE/DENY per scan thread | Cleared on decision |
-| `action_audit_log` | Every approval/denial ever — permanent | Never expires |
-
-### Audit Log Fields
-`timestamp, date, scan_id, miner_id, ip, model, problem, action_taken, decision, approved_by, slack_user_id, notes`
-
----
-
-## Configuration
-
-`config.json` (gitignored):
-```json
-{
-  "ams_base_url":      "https://api-staging.dev.bixbit.io/api/v1",
-  "ams_email":         "env:AMS_EMAIL",
-  "ams_password":      "env:AMS_PASSWORD",
-  "ams_workspace_id":  "env:AMS_WORKSPACE_ID",
-  "slack_webhook_url": "env:SLACK_WEBHOOK_URL",
-  "dry_run":           true,
-  "scan_interval_seconds": 300,
-  "approval_mode":     "manual"
-}
+        ▼  Slack → #mining-guardian
+   Operator approves or denies → AMS executes
 ```
 
 
@@ -346,91 +270,85 @@ SQLite at `guardian.db`.
 
 ## Roadmap
 
-### ✅ Phase 1 — Core Monitoring (Complete)
-- AMS auth with auto token refresh
-- Full fleet scan via WebSocket, paginated
-- Hashrate % + chip temperature zone analysis
-- PDU power cycle for offline miners
-- Firmware restart for underperforming miners
-- SQLite database — permanent scan + telemetry history
-- Miner log collection with 7-day rolling purge
-- AMS notification polling — 40 alerts per scan
-- Weather integration (Open-Meteo, Fort Worth TX)
-- Slack reporting — grouped by model, deduped
-- Post-restart elevated monitoring (3 hours)
-- Dashboard API — FastAPI :8585, 13+ endpoints
-- Action audit log — permanent, never-expiring
-- Knowledge export/combine — federated learning system
-- launchd watchdog + customer setup script
-- morning.sh — daily briefing cron at 7am
+### ✅ Complete
+- AMS cookie-based JWT auth with auto token refresh
+- Full fleet WebSocket scan, paginated
+- Three-tier hashrate evaluation (BiXBiT profile / spec lookup / learned baseline)
+- Dead hashboard detection (chain-level data from AMS)
+- RESTART_CHECK_BOARDS flow with pre/post log compare and ticket escalation
+- Post-restart stability polling via common_status (TCP:4029) + AMS fallback
+- AMS false-offline verification via TCP:4028
+- AMS model mismatch fix (profile string + name field over AMS model field)
+- Firmware-aware evaluation routing (BiXBiT / Stock / Auradine / Unknown)
+- miner_specs.json — 35+ models: Bitmain, Bitdeer, MicroBT, Canaan
+- Tier 3 baseline learning system (72hr window, 36 samples min)
+- PDU clients — BiXBiT 2U+PDU HMAC-SHA1 auth (163 @ .15, 164 @ .16)
+- Immersion tank client — Fog Hashing Elite 1 REST API (B100 @ .20)
+- FacilityMonitor — all 3 infrastructure sources, wired into scan report
+- Miner → outlet map in facility_monitor.py
+- DB schema upgrade to 27 fields (mac, cooling_mode, profile, firmware, PDU power, etc.)
+- Temperature thresholds: uniform 76°C yellow / 86°C red across all cooling types
+- PDU power rule: PDU readings always take priority over miner-reported consumption
+- Permanent action audit log
+- Knowledge export + federated combine system
+- Dashboard API (FastAPI :8585, 15+ endpoints)
+- Retool Phase 1 dashboard (via cloudflared tunnel at dashboard.fieslerfamily.com)
+- morning.sh daily briefing (cron 7am, caffeinate fix, Full Disk Access confirmed)
+- AMS API fully documented (153 endpoints, AMS_API.md)
+- Auradine AH3880 direct API documented (AURADINE_API.md — reference/fallback)
+- WhatsMiner direct API documented (WHATSMINER_API.md — reference/fallback)
+- BiXBiT Bitmain direct API documented (docs/BIXBIT_DIRECT_API.md — reference/fallback)
 
-### 🔧 Phase 2 — Approval Flow + Dashboard (In Progress)
-- [x] Slack bot posting scans to #mining-guardian
-- [x] Pending approvals saved with thread timestamps
-- [x] Full approval flow tested — PDU cycles and restarts execute correctly
-- [x] Audit log with operator display name
-- [x] Retool Phase 1 dashboard live (via cloudflared tunnel)
-- [x] AMS cleanup — fleet down to 44 accurate miners
-- [ ] **Polling-based Slack listener** — replace Socket Mode with 5-second poll
-- [ ] Retool scan history trend chart
-- [ ] Retool facility map panel (after AMS map setup)
+### 🔜 Next Up
+- Add second S21 EXP Hyd (.26) to AMS — Rob's action item
+  → Tell me the AMS ID and I'll update PDU_OUTLET_MAP in facility_monitor.py
+- Profile map session — walk through each miner model to build config.json profile table
+- Wire execute_board_restart into OpenClaw approval callback (Mac Mini task)
+- Pre-restart log collection for regular RESTART actions (same non-blocking approach)
 
-### 🔜 Phase 3 — OpenClaw + Local LLM (This Week — Mac Mini arriving)
-- [ ] Install OpenClaw on Mac Mini
-- [ ] Configure Slack integration via OpenClaw (replaces slack_listener.py)
-- [ ] Install Ollama + Qwen3-Coder or LLaMA 3.2 (depending on RAM)
-- [ ] Wire Mining Guardian → OpenClaw webhook for scan delivery + approval
-- [ ] RAG pipeline: miner logs → ChromaDB → LLM context
-- [ ] Plain-English Slack summaries from LLM
-- [ ] Load master_knowledge.json into LLM context
+### 🔜 Mac Mini Arrival (this week)
+- Install OpenClaw + configure Slack integration
+- Install Ollama + Qwen3-Coder or LLaMA 3.2 (depending on RAM)
+- Wire Mining Guardian → OpenClaw webhook (already coded: POST to localhost:18789/hooks)
+- Test full APPROVE/DENY flow end-to-end via Slack
+- Deploy Mining Guardian as launchd service
 
-### 🔜 Phase 4 — AI Diagnosis
-- [ ] Log tagging — healthy / underperforming / failed / recovered
-- [ ] Predictive failure detection per miner model
-- [ ] Cross-customer pattern matching via federated knowledge
-- [ ] AMS map location included in all alerts
-- [ ] Ticket auto-creation for physical intervention miners
-
-### 🔜 Phase 5 — Full Fleet Control
-- [ ] Automations (pending AMS access)
-- [ ] Overclocking profile management per model
-- [ ] Container monitoring (immersion + hydro)
-- [ ] Firmware version drift detection
-- [ ] React dashboard (white-label, customer-facing)
-
-### 🔜 Phase 6 — Multi-Customer Platform
-- [ ] Packaged Mac Mini installer — one script, guided setup
-- [ ] Central management console — all customer sites
-- [ ] White-labeled customer portal
+### 🔜 Future
+- Container monitoring (USA 188 containers — build when live access granted)
+- Retool Phase 2: scan history trend chart, facility map panel, per-miner drill-down
+- Firmware version drift detection across fleet
+- Predictive failure detection from log patterns
+- Cross-customer federated knowledge (master_knowledge.json pipeline)
+- React dashboard (white-label, customer-facing)
+- Multi-customer platform + packaged Mac Mini installer
 
 ---
 
-## Mac Mini Deployment
+## Direct Device API Reference
 
-```bash
-git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
-cd "Mining Gaurdian"
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env        # fill in credentials
-export $(grep -v '^#' .env | xargs) && python mining_guardian.py
+All three direct APIs are documented as **reference and fallback only**.
+AMS is always the primary path. Direct APIs are used only if AMS is unreachable.
 
-# Install watchdog
-cp com.bixbit.mining-guardian.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+| File | Device | Port | Auth |
+|---|---|---|---|
+| docs/BIXBIT_DIRECT_API.md | BiXBiT Bitmain firmware miners | 4029 (write), 4028 (read) | Token + AES-ECB (enc=false for default pw) |
+| AURADINE_API.md | Auradine AH3880 | 8443 HTTPS | JWT Bearer token |
+| WHATSMINER_API.md | WhatsMiner (MicroBT) | 4028 TCP | Token-based |
 
-# Install OpenClaw
-npm install -g openclaw
-openclaw onboard
-```
+Key commands available via BiXBiT direct API (docs/BIXBIT_DIRECT_API.md):
+- `common_status` — authoritative device state: mining / auto-tuning / starting / emergency
+- `get_events` — structured event log (used for pre/post restart comparison)
+- `set_work_mode Sleep` — graceful standby before PDU cut
+- `restart` / `reboot` — firmware restart vs full OS reboot
+- `get_profiles` — full profile list with TH/s and wattage names
+
 
 ---
 
 ## Running
 
 ```bash
-# Single scan
+# Single scan (test)
 source venv/bin/activate
 export $(grep -v '^#' .env | xargs) && python mining_guardian.py
 
@@ -439,62 +357,68 @@ source venv/bin/activate && python dashboard_api.py
 
 # Cloudflare tunnel (required for Retool)
 cloudflared tunnel run mining-guardian
+```
 
-# Slack listener (polling mode — coming next)
-source venv/bin/activate
-export $(grep -v '^#' .env | xargs) && python slack_listener.py
+---
+
+## Configuration
+
+`config.json` (gitignored):
+```json
+{
+  "ams_base_url":           "https://api-staging.dev.bixbit.io/api/v1",
+  "ams_email":              "env:AMS_EMAIL",
+  "ams_password":           "env:AMS_PASSWORD",
+  "ams_workspace_id":       "env:AMS_WORKSPACE_ID",
+  "slack_webhook_url":      "env:SLACK_WEBHOOK_URL",
+  "dry_run":                true,
+  "scan_interval_seconds":  300,
+  "approval_mode":          "manual"
+}
+```
+
+---
+
+## Database Schema
+
+SQLite at `guardian.db`. Key tables:
+
+| Table | Contents | Retention |
+|---|---|---|
+| `scans` | Scan summaries | Permanent |
+| `miner_readings` | 27-field per-miner telemetry per scan | Permanent |
+| `miner_logs` | Raw log file content | 7-day rolling purge |
+| `miner_restarts` | Restart events | Permanent |
+| `ams_notifications` | AMS-generated alerts | Permanent |
+| `weather_readings` | Ambient temp/humidity per scan | Permanent |
+| `pending_approvals` | Pending APPROVE/DENY per scan thread | Cleared on decision |
+| `action_audit_log` | Every approval/denial — permanent record | Never expires |
+| `miner_baselines` | Tier 3 learned baselines per miner | Permanent |
+
+`miner_readings` 27 fields include: mac, cooling_mode, current_profile,
+firmware_manufacturer, firmware_version, pdu_power, map_location, error_codes,
+consumption, temp_board, and all standard hashrate/temp/fan fields.
+
+---
+
+## Mac Mini Deployment
+
+```bash
+git clone https://github.com/robertfiesler-spec/Mining-Gaurdian.git
+cd "Mining Gaurdian"
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # fill in credentials
+export $(grep -v '^#' .env | xargs) && python mining_guardian.py
+
+# launchd watchdog
+cp com.bixbit.mining-guardian.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.bixbit.mining-guardian.plist
+
+# OpenClaw (pending)
+npm install -g openclaw && openclaw onboard
 ```
 
 ---
 
 *Built by Rob Fiesler — BiXBiT USA CTO*
-
----
-
-## AMS Facility Map
-
-Physical layout of the BiXBiT Fort Worth facility as mapped in AMS (`staging-ui.dev.bixbit.io/map`).
-
-| Rack | Total Slots | Miners Placed | Cooling Type |
-|---|---|---|---|
-| 2U | 20 | 2 | Hydro |
-| BITMAIN | 18 | 2 | Hydro (1 slot currently won't accept placement) |
-| IMMERSION | 20 | 2 | Immersion |
-
-**38 miners currently show `N/A` for map location** — AMS map population is pending.
-
-Map position format: `Row N, Col N` — available via `get_map_layout()` WSS endpoint.
-Every Slack alert must include the miner's map location when available.
-Map has three visualization modes: Temperature, Hashrate, Power.
-
----
-
-## AMS Miner Data Available Per Miner
-
-| Tab | Data | Mining Guardian Usage |
-|---|---|---|
-| Overview | Hashrate, temp, PDU kW, profile, fans, PSU | Per-scan telemetry |
-| Statistic | 24h/week/month hashrate + consumption + temp charts | LLM trend analysis |
-| Boards | Per-chip frequency, temp, voltage (3 boards × ~160 chips) | LLM deep diagnostics |
-| Events | Command history with Pending/Success/Error status | Action confirmation |
-| Logs | cgminer.conf, autotune profile, power calibration | LLM config context |
-
-### PDU Power Data
-Each miner overview shows real-time PDU outlet reading (e.g. `PDU #164/3 — 5.65 kW`) with a toggle slider for manual outlet control. PDU reading is the authoritative power source — always preferred over miner-reported consumption.
-
-### Profile Data
-Profile is shown in the miner overview firmware section and in the Overclock modal. Format varies by model:
-- Spec format (auto-parseable): `440 TH/s - 5396 W` — Mining Guardian extracts rated TH/s from the name
-- Named format (manual mapping required): `turbo` = 600 TH/s on Teraflex AH3880
-
-Hashrate analysis compares actual TH/s against the **active profile's rated TH/s**, not absolute max.
-
-### Known Profile Maps
-
-**Antminer S21EXPHyd** (auto-parsed from name):
-`330 TH/s - 3959 W` | `352 TH/s - 4238 W` | `374 TH/s - 4481 W` | `396 TH/s - 4787 W` | `418 TH/s - 5093 W` | `440 TH/s - 5396 W`
-
-**Teraflex AH3880** (named — requires manual config mapping):
-`turbo` = 600 TH/s
-
-*Additional model profiles to be defined in config.json as fleet is documented.*
