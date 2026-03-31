@@ -2148,6 +2148,41 @@ class MiningGuardian:
     LOG_COLLECT_TIMEOUT = 30    # seconds to attempt log collection before giving up
     BOARD_DEAD_THRESHOLD = 1000  # MH/s — below this a board is considered dead
 
+    def _get_common_status_direct(self, ip: str, timeout: float = 5.0) -> Optional[str]:
+        """Query common_status directly from the device via TCP port 4029.
+
+        This is the authoritative post-restart state signal from BiXBiT firmware.
+        AMS is always the primary command path — this is used only during the
+        post-restart stability wait where device-level status is more reliable
+        than AMS polling lag.
+
+        Returns the common_status string (e.g. "mining", "auto-tuning",
+        "starting") or None if the device is unreachable or the response
+        cannot be parsed.
+        """
+        import socket, base64, json as _json
+        try:
+            cmd = _json.dumps({"command": "common_status"})
+            payload = _json.dumps({"enc": False, "data": base64.b64encode(cmd.encode()).decode()}) + "\n"
+            with socket.create_connection((ip, 4029), timeout=timeout) as sock:
+                sock.sendall(payload.encode())
+                chunks = []
+                sock.settimeout(timeout)
+                while True:
+                    try:
+                        chunk = sock.recv(4096)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                    except socket.timeout:
+                        break
+                raw = b"".join(chunks).decode(errors="replace").strip()
+                resp = _json.loads(raw)
+                status_val = resp.get("COMMON_STATUS", [{}])[0].get("common_status")
+                return status_val
+        except Exception:
+            return None
+
     def _collect_logs_nonblocking(self, miner_id: str, model: str,
                                    label: str) -> dict:
         """
@@ -2217,38 +2252,61 @@ class MiningGuardian:
                            miner_id, self.PHASE1_MAX_WAIT)
             return None
 
-        # ── Phase 2: wait for stable hashrate ────────────────────────────
-        # minerStatus == 0 means normal running
-        # hashrate > 0 means actually hashing, not warming up
-        # We require STABLE_CONFIRM consecutive passing polls
+        # ── Phase 2: wait for stable mining state ────────────────────────
+        # Primary signal: common_status == "mining" via TCP port 4029
+        #   This is the authoritative device state from BiXBiT firmware.
+        #   States like "starting", "auto-tuning", "initializing" mean not ready.
+        #   "emergency" means escalate immediately.
+        # Fallback signal: AMS minerStatus == 0 AND hashrate > 0
+        #   Used when direct TCP is not available (e.g. different network segment).
+        # We require STABLE_CONFIRM consecutive passing polls either way.
         stable_count = 0
         waited2      = 0
-        logger.info("[%s] Phase 2 — waiting for stable hashrate (max %ss, need %s consecutive)",
+        logger.info("[%s] Phase 2 — waiting for stable mining state (max %ss, need %s consecutive)",
                     miner_id, self.PHASE2_MAX_WAIT, self.STABLE_CONFIRM)
 
         while waited2 < self.PHASE2_MAX_WAIT:
             time.sleep(self.REBOOT_POLL_SLOW)
             waited2 += self.REBOOT_POLL_SLOW
             try:
-                all_miners   = self.ams.get_miners()
-                current      = next(
-                    (m for m in all_miners if str(m.get("id")) == str(miner_id)),
-                    None
-                )
-                if not current:
-                    stable_count = 0
-                    continue
+                # --- Primary: direct common_status via TCP 4029 ---
+                device_status = None
+                try:
+                    device_status = self._get_common_status_direct(ip)
+                except Exception:
+                    pass  # fallback to AMS below
 
-                hashrate     = current.get("hashrate", 0) or 0
-                miner_status = current.get("minerStatus", -1)
-                is_stable    = (hashrate > 0 and miner_status == 0)
+                if device_status == "emergency":
+                    logger.error(
+                        "[%s] Phase 2: device entered EMERGENCY mode at %ss — escalating",
+                        miner_id, waited2
+                    )
+                    break  # exit loop, board comparison will escalate to ticket
+
+                if device_status is not None:
+                    # We have a direct device answer — trust it over AMS
+                    is_stable = (device_status == "mining")
+                    status_source = f"direct({device_status})"
+                else:
+                    # --- Fallback: AMS minerStatus + hashrate ---
+                    all_miners = self.ams.get_miners()
+                    current    = next(
+                        (m for m in all_miners if str(m.get("id")) == str(miner_id)),
+                        None
+                    )
+                    if not current:
+                        stable_count = 0
+                        continue
+                    hashrate     = current.get("hashrate", 0) or 0
+                    miner_status = current.get("minerStatus", -1)
+                    is_stable    = (hashrate > 0 and miner_status == 0)
+                    status_source = f"ams(hr={hashrate:.0f} ms={miner_status})"
 
                 if is_stable:
                     stable_count += 1
                     logger.info(
-                        "[%s] Phase 2: stable poll %s/%s — hashrate=%.0f GH/s minerStatus=%s",
-                        miner_id, stable_count, self.STABLE_CONFIRM,
-                        hashrate, miner_status
+                        "[%s] Phase 2: stable poll %s/%s — %s",
+                        miner_id, stable_count, self.STABLE_CONFIRM, status_source
                     )
                     if stable_count >= self.STABLE_CONFIRM:
                         total = waited + waited2
@@ -2256,12 +2314,21 @@ class MiningGuardian:
                             "[%s] Phase 2 complete — stable after %ss total (%ss + %ss)",
                             miner_id, total, waited, waited2
                         )
+                        # Refresh AMS data one final time before returning
+                        try:
+                            all_miners = self.ams.get_miners()
+                            current = next(
+                                (m for m in all_miners if str(m.get("id")) == str(miner_id)),
+                                current
+                            )
+                        except Exception:
+                            pass
                         return current
                 else:
                     if stable_count > 0:
                         logger.debug(
-                            "[%s] Phase 2: stability reset at %ss — hashrate=%.0f minerStatus=%s",
-                            miner_id, waited2, hashrate, miner_status
+                            "[%s] Phase 2: stability reset at %ss — %s",
+                            miner_id, waited2, status_source
                         )
                     stable_count = 0
             except Exception as e:
