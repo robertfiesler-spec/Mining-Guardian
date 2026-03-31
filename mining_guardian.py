@@ -14,6 +14,11 @@ import websocket
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from hashrate_evaluation import (
+    MinerSpecsLoader, BaselineManager, HashrateTierResolver,
+    parse_bixbit_profile,
+)
+
 def _setup_logging() -> logging.Logger:
     """Configure logging to both terminal and a daily rotating log file."""
     log_dir = Path("logs")
@@ -1839,7 +1844,7 @@ class SlackNotifier:
 
 
 class MiningGuardian:
-    HASHRATE_THRESHOLD = 0.90   # flag if below 90% of maxHashrate
+    HASHRATE_THRESHOLD = 0.90   # flag if below 90% of rated TH/s
 
     def __init__(self, config: GuardianConfig):
         self.config   = config
@@ -1852,92 +1857,168 @@ class MiningGuardian:
         self.db       = GuardianDB()
         self.weather  = WeatherCollector()
 
+        # ── Three-tier hashrate evaluation ───────────────────────────────
+        self.specs    = MinerSpecsLoader("miner_specs.json")
+        self.baseline = BaselineManager(
+            db_path              = self.db.db_path,
+            learning_window_hours= self.specs.learning_window_hours,
+            minimum_samples      = self.specs.minimum_samples,
+            tolerance_pct        = self.specs.baseline_tolerance_pct,
+            notify_callback      = self._on_baseline_locked,
+        )
+        self.tier_resolver = HashrateTierResolver(self.specs, self.baseline)
+
+    def _on_baseline_locked(self, miner_id: str, model: str,
+                             ip: str, baseline_ths: float, samples: int) -> None:
+        """Called when a Tier 3 miner's baseline is locked — post to Slack."""
+        msg = (
+            f"📊 *Baseline locked for miner {miner_id}* ({model} @ {ip})\n"
+            f"Learned hashrate: *{baseline_ths:.1f} TH/s* from {samples} samples over "
+            f"{self.specs.learning_window_hours}h. Now actively monitoring."
+        )
+        logger.info("Baseline locked: %s → %.1f TH/s", miner_id, baseline_ths)
+        try:
+            if self.slack and hasattr(self.slack, "post_message"):
+                self.slack.post_message(msg)
+        except Exception as e:
+            logger.warning("Failed to post baseline lock notification: %s", e)
+
     # ── Per-miner analysis ────────────────────────────────────
 
     def _analyze_miner(self, miner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Return an issue dict if the miner has a problem, else None."""
+        """
+        Return an issue dict if the miner has a problem, else None.
+
+        Hashrate evaluation uses three tiers:
+          Tier 1 — BiXBiT firmware:  parse currentProfile string (live)
+          Tier 2 — Known model spec: look up default_rated_ths in miner_specs.json
+          Tier 3 — Unknown model:    use 3-day running average baseline
+        During Tier 3 learning window, hashrate is NOT flagged — only hard faults.
+        """
         miner_id   = str(miner.get("id", "unknown"))
         ip         = miner.get("ip", "unknown")
         name       = miner.get("shortModel", miner.get("name", "unknown"))
+        model_code = miner.get("model", "")
         status     = miner.get("status", "unknown")
-        hashrate   = miner.get("hashrate", 0) or 0
-        max_hr     = miner.get("maxHashrate", 0) or 0
+        hashrate   = miner.get("hashrate", 0) or 0     # MH/s from AMS
+        firmware   = miner.get("firmwareManufacturer", "") or ""
+
         temp_chip_raw = miner.get("tempChip", 0) or 0
         temp_chip     = temp_chip_raw if temp_chip_raw >= 0 else None
-        temp_low   = miner.get("tempChipLow", 86)
-        temp_med   = miner.get("tempChipMedium", 95)
-        temp_max   = miner.get("maxTempChip", 100)
-        # Power — prefer PDU outlet reading (more accurate), fall back to miner-reported
+
+        # Power — PDU reading is authoritative, fall back to miner-reported
         pdu_power    = miner.get("pduOutlet", {}).get("power", 0) or 0
         miner_power  = miner.get("consumption", 0) or 0
         power_watts  = pdu_power if pdu_power > 0 else miner_power
         power_source = "PDU" if pdu_power > 0 else "miner"
+        power_kw     = round(power_watts / 1000, 3) if power_watts else None
 
         pdu_id       = miner.get("pduOutlet", {}).get("pduID") or 0
         outlet_index = miner.get("pduOutlet", {}).get("outletIndex") or 0
         has_pdu      = pdu_id > 0 and outlet_index > 0
 
-        issues = []
-        action = None
+        issues    = []
+        action    = None
         pdu_action = None
 
-        # ── Hashrate check ──────────────────────────────────
+        # ── OFFLINE check (firmware-agnostic, always evaluated) ──────────
         if status == "offline":
-            pct = 0.0
             issues.append("OFFLINE")
             if has_pdu:
-                action = "PDU_CYCLE"
+                action     = "PDU_CYCLE"
                 pdu_action = f"PDU {pdu_id} → Outlet {outlet_index}"
             else:
-                # No PDU assigned — can't remote restart, must physically power cycle
                 action = "PHYSICAL_CYCLE"
-        elif max_hr > 0:
-            pct = (hashrate / max_hr) * 100
-            if pct < self.HASHRATE_THRESHOLD * 100:
-                issues.append(f"Hashrate {pct:.1f}% of max ({hashrate:,} / {max_hr:,} GH/s)")
-                action = "RESTART"
-        else:
-            pct = None
 
-        # ── Temp check ──────────────────────────────────────
-        # Green:  < 76°C  — healthy, no action
-        # Yellow: 76–85°C — monitor
-        # Red:    86°C+   — operator chooses action
-        temp_issue = None
+            return self._build_issue(
+                miner, issues, action, pdu_action, power_watts,
+                power_source, power_kw, pdu_id, outlet_index,
+                hashrate_pct="0%", tier="offline",
+                tier_note="Miner offline — no hashrate evaluation",
+            )
+
+        # ── Record baseline sample for Tier 3 learning ───────────────────
+        hashrate_ths = hashrate / 1_000_000 if hashrate > 0 else 0
+        just_locked  = self.baseline.record_sample(
+            miner_id, hashrate_ths, power_kw
+        )
+        if just_locked:
+            logger.info("Baseline just locked for miner %s during this scan", miner_id)
+
+        # ── Resolve rated TH/s (the three-tier lookup) ───────────────────
+        rated_ths, tier, tier_note = self.tier_resolver.resolve(miner)
+
+        # ── HASHRATE check ───────────────────────────────────────────────
+        hashrate_pct_str = "N/A"
+        if tier == "3_learning" or rated_ths is None:
+            # In learning window — skip hashrate evaluation
+            pass
+        elif rated_ths > 0:
+            pct = (hashrate_ths / rated_ths) * 100
+            hashrate_pct_str = f"{pct:.1f}%"
+            if pct < self.HASHRATE_THRESHOLD * 100:
+                issues.append(
+                    f"Hashrate {pct:.1f}% of rated "
+                    f"({hashrate_ths:.1f} / {rated_ths:.0f} TH/s) "
+                    f"[{tier}]"
+                )
+                action = "RESTART"
+
+        # ── TEMP check (firmware-agnostic, always evaluated) ─────────────
         if temp_chip is None:
-            temp_issue = "⚠️ Sensor error — temp reading invalid"
+            issues.append("⚠️ Sensor error — temp reading invalid")
         elif temp_chip >= 86:
-            temp_issue = f"🔴 RED — chip {temp_chip}°C (86°C+ threshold)"
+            issues.append(f"🔴 RED — chip {temp_chip}°C (86°C+ threshold)")
             action = "TEMP_ACTION_REQUIRED"
         elif temp_chip >= 76:
-            temp_issue = f"🟡 YELLOW — chip {temp_chip}°C (76–85°C range)"
+            issues.append(f"🟡 YELLOW — chip {temp_chip}°C (76–85°C range)")
             if not action:
                 action = "MONITOR"
-        # below 76 is green — no issue logged
 
-        if temp_issue:
-            issues.append(temp_issue)
+        # ── Learning window advisory (non-blocking) ──────────────────────
+        if tier == "3_learning":
+            # Don't add as an "issue" — just annotate in the return dict
+            pass
 
         if not issues:
             return None
 
+        return self._build_issue(
+            miner, issues, action, pdu_action, power_watts,
+            power_source, power_kw, pdu_id, outlet_index,
+            hashrate_pct=hashrate_pct_str, tier=tier,
+            tier_note=tier_note,
+        )
+
+    def _build_issue(self, miner: Dict[str, Any], issues: list,
+                     action: Optional[str], pdu_action: Optional[str],
+                     power_watts: float, power_source: str,
+                     power_kw: Optional[float], pdu_id: int, outlet_index: int,
+                     hashrate_pct: str = "N/A", tier: str = "unknown",
+                     tier_note: str = "") -> Dict[str, Any]:
+        """Build the standardised issue dict returned by _analyze_miner."""
+        temp_chip = miner.get("tempChip", None)
         return {
-            "id":       miner_id,
-            "ip":       ip,
-            "model":    name,
-            "status":   status,
-            "hashrate_pct": f"{pct:.1f}%" if pct is not None else "N/A",
-            "temp_chip": f"{temp_chip}°C" if temp_chip is not None else "sensor error",
-            "issues":   issues,
-            "action":   action,
-            "pdu_id":   pdu_id,
-            "outlet":   outlet_index,
-            "pdu_action": pdu_action,
+            "id":           str(miner.get("id", "unknown")),
+            "ip":           miner.get("ip", "unknown"),
+            "model":        miner.get("shortModel", miner.get("name", "unknown")),
+            "model_code":   miner.get("model", ""),
+            "firmware":     miner.get("firmwareManufacturer", "") or "",
+            "status":       miner.get("status", "unknown"),
+            "hashrate_pct": hashrate_pct,
+            "tier":         tier,
+            "tier_note":    tier_note,
+            "temp_chip":    f"{temp_chip}°C" if temp_chip is not None else "sensor error",
+            "issues":       issues,
+            "action":       action,
+            "pdu_id":       pdu_id,
+            "outlet":       outlet_index,
+            "pdu_action":   pdu_action,
             "power_watts":  power_watts,
             "power_source": power_source,
+            "pdu_power_kw": power_kw,
             "map_location": miner.get("mapLocation", {}).get("title") or "not mapped",
-            "active_profile": miner.get("overclock", {}).get("profile") or miner.get("profile") or "N/A",
-            "pdu_power_kw":  round(pdu_power / 1000, 2) if pdu_power else None,
+            "active_profile": miner.get("currentProfile", "") or "N/A",
         }
 
     # ── Report printer ────────────────────────────────────────
