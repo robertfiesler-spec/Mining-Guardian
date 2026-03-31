@@ -244,13 +244,41 @@ Returns whether AMS is installed and the API key.
 5. `get_board_slots_state` — detect disabled boards
 6. `get_overclock_info` — full overclock context for LLM analysis
 
-### Connection method
-Direct TCP to miner IP on port 4028.
-Commands must be encrypted (encryption key derived from device password).
-Each command is a JSON object with "cmd" field + optional "param" field.
+## Architecture — Firmware Detection Strategy
 
-### Authentication note
-Firmware password required for encrypted commands.
-BiXBiT manages firmware credentials — need credential management strategy.
+Mining Guardian must be firmware-aware. Not all customers run BiXBiT firmware.
+Before using direct device API, detect what's running on each miner.
 
-*Status: API documented. Implementation pending firmware credential access.*
+### Detection Flow
+```
+Miner in fleet
+    ├── BiXBiT firmware → WhatsMiner Extended API (this doc)
+    ├── Standard Antminer firmware → Bitmain CGMiner API (separate doc)
+    ├── Standard WhatsMiner firmware → Standard WhatsMiner API
+    └── Unknown / unresponsive → AMS only, no direct API
+```
+
+### Credentials (BiXBiT firmware)
+- Bitmain machines running BiXBiT firmware: `root` / `root`
+- WhatsMiner machines running BiXBiT firmware: `admin` / `admin`
+
+### Detection Method
+1. Check `get_firmware_version` — `custom_api_version` field confirms BiXBiT firmware
+2. Check `get_liquid_cooling` — `cool_mode` field confirms cooling type (air/liquid/hydro/immersion)
+3. Fall back to AMS-only if direct API unresponsive
+
+### Network Requirement
+Direct device API (port 4028) only reachable from local mining network.
+Mac Mini deployment (on-site) is required for direct API access.
+Remote operation (via AMS) does not have access to port 4028.
+
+### Config in config.json
+```json
+{
+  "direct_api_enabled": true,
+  "miner_credentials": {
+    "bitmain_bixbit": {"user": "root", "password": "root"},
+    "whatsminer_bixbit": {"user": "admin", "password": "admin"}
+  }
+}
+```
