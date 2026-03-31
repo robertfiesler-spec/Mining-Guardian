@@ -19,6 +19,7 @@ from hashrate_evaluation import (
     parse_bixbit_profile,
 )
 from miner_verify import verify_miner_online
+from facility_monitor import FacilityMonitor
 
 
 def _setup_logging() -> logging.Logger:
@@ -1880,6 +1881,11 @@ class MiningGuardian:
         )
         self.tier_resolver = HashrateTierResolver(self.specs, self.baseline)
 
+        # ── Facility infrastructure monitor ──────────────────────────────
+        # Polls PDUs and immersion tank each scan cycle.
+        # S19JPros (outside container) have no PDU — not polled here.
+        self.facility = FacilityMonitor()
+
     def _on_baseline_locked(self, miner_id: str, model: str,
                              ip: str, baseline_ths: float, samples: int) -> None:
         """Called when a Tier 3 miner's baseline is locked — post to Slack."""
@@ -2472,7 +2478,8 @@ class MiningGuardian:
     @staticmethod
     def _print_report(miners: List[Dict], issues: List[Dict],
                       wx: Optional[Dict] = None,
-                      ams_notifs: Optional[List[Dict]] = None) -> None:
+                      ams_notifs: Optional[List[Dict]] = None,
+                      facility=None) -> None:
         now      = datetime.now().strftime("%Y-%m-%d %H:%M")
         online   = sum(1 for m in miners if m.get("status") == "online")
         offline  = len(miners) - online
@@ -2567,6 +2574,15 @@ class MiningGuardian:
         healthy = len(miners) - len(issues)
         print(f"\n  ✅ Healthy: {healthy} miners within normal parameters")
         print(f"  {'[DRY RUN — no actions taken]' if True else ''}")
+
+        # ── Facility infrastructure section ──────────────────────────────
+        if facility is not None:
+            try:
+                from facility_monitor import format_facility_report
+                print(format_facility_report(facility))
+            except Exception as e:
+                logger.warning("Facility report section failed: %s", e)
+
         print(f"{divider}\n")
         # AMS notifications section
         if ams_notifs:
@@ -2635,7 +2651,10 @@ class MiningGuardian:
             logger.info("Log collection complete — %s miners logged", collected)
 
     def run_once(self) -> Dict[str, Any]:
-        # Fetch weather and AMS notifications first
+        # ── Poll facility infrastructure first ───────────────────────────
+        facility_snapshot = self.facility.poll()
+
+        # Fetch weather and AMS notifications
         wx = self.weather.fetch()
         if wx:
             self.db.save_weather(wx)
@@ -2647,7 +2666,7 @@ class MiningGuardian:
 
         miners   = self.ams.get_miners(self.config.miner_filters)
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
-        self._print_report(miners, issues, wx, ams_notifs)
+        self._print_report(miners, issues, wx, ams_notifs, facility_snapshot)
         scan_id   = self.db.save_scan(miners, issues)
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
