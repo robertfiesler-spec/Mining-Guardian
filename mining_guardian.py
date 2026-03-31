@@ -20,12 +20,6 @@ from hashrate_evaluation import (
 )
 
 
-def _cooling_label(cooling_mode: int) -> str:
-    """Human-readable cooling type from AMS coolingMode integer."""
-    return {0: "unknown cooling", 1: "hydro", 3: "immersion", 4: "immersion"}.get(
-        cooling_mode, f"mode={cooling_mode}"
-    )
-
 def _setup_logging() -> logging.Logger:
     """Configure logging to both terminal and a daily rotating log file."""
     log_dir = Path("logs")
@@ -2028,29 +2022,17 @@ class MiningGuardian:
                 )
                 action = "RESTART"
 
-        # ── TEMP thresholds — cooling-mode aware ────────────────────────
-        # coolingMode: 0=unknown, 1=hydro, 3=immersion(custom), 4=immersion
-        # Immersion and hydro run cooler than air — thresholds differ.
-        # Fleet data shows immersion S19JPros running 68-83°C normally.
-        cooling_mode = miner.get("coolingMode", 0) or 0
-        if cooling_mode == 1:           # hydro (S21EXPHyd, AH3880)
-            temp_yellow = 70
-            temp_red    = 80
-        elif cooling_mode in (3, 4):    # immersion (S19JPros, S21Imm)
-            temp_yellow = 82
-            temp_red    = 90
-        else:                           # unknown / air fallback
-            temp_yellow = 76
-            temp_red    = 86
-
         # ── TEMP check ───────────────────────────────────────────────────
+        # Same thresholds regardless of cooling type.
+        # Immersion miners are overclocked and run hotter than stock —
+        # the same 76/86 limits apply across air, immersion, and hydro.
         if temp_chip is None:
             issues.append("⚠️ Sensor error — temp reading invalid")
-        elif temp_chip >= temp_red:
-            issues.append(f"🔴 RED — chip {temp_chip}°C (≥{temp_red}°C threshold, {_cooling_label(cooling_mode)})")
+        elif temp_chip >= 86:
+            issues.append(f"🔴 RED — chip {temp_chip}°C (86°C+ threshold)")
             action = "TEMP_ACTION_REQUIRED"
-        elif temp_chip >= temp_yellow:
-            issues.append(f"🟡 YELLOW — chip {temp_chip}°C ({temp_yellow}–{temp_red-1}°C range, {_cooling_label(cooling_mode)})")
+        elif temp_chip >= 76:
+            issues.append(f"🟡 YELLOW — chip {temp_chip}°C (76–85°C range)")
             if not action:
                 action = "MONITOR"
 
