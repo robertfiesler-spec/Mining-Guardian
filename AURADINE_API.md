@@ -4,6 +4,8 @@
 
 ---
 
+> ⚠️ **Architecture note:** AMS is always the primary route for all miner commands in Mining Guardian. The Mac Mini only needs LAN access to AMS — not direct access to each miner. AMS provides the audit log. This direct device API is documented as a reference and fallback only.
+
 ## Overview
 
 The AH3880 exposes two API surfaces that Mining Guardian can use:
