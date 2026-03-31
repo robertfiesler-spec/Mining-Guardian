@@ -172,13 +172,8 @@ Priority sensors to pull every scan:
 - Container alarms: likely GET /container/{id}/alarms
 
 ### Multi-Workspace Authentication
-Containers live in a SEPARATE workspace from the miners (USA 188).
-Same login credentials, different workspace ID.
-Mining Guardian will need to authenticate to both workspaces per scan:
-- Workspace 119 (USA 188) → miners, PDUs, map
-- Container workspace (ID TBD) → containers, cooling systems
+Currently containers live in a separate workspace from miners (USA 188) for testing purposes only.
+In production, containers and miners will be in the SAME workspace.
+No multi-workspace complexity needed — one login, one workspace, everything together.
 
-This means `AMSClient` needs a second instance pointed at the container workspace,
-or a workspace-switching method added to the existing client.
-
-*Status: Pending live container access and container workspace ID*
+*Status: Pending live container access in USA 188 workspace*
