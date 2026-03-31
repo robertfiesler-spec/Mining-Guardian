@@ -1058,6 +1058,7 @@ class OpenClawNotifier:
 
         pdu_cycles_oc  = [i for i in issues if i["action"] == "PDU_CYCLE"]
         fw_restarts_oc = [i for i in issues if i["action"] == "RESTART"]
+        board_restarts_oc = [i for i in issues if i["action"] == "RESTART_CHECK_BOARDS"]
         phys_oc        = [i for i in issues if i["action"] == "PHYSICAL_CYCLE"]
         monitors_oc    = [i for i in issues if i["action"] == "MONITOR"]
         temp_oc        = [i for i in issues if i["action"] == "TEMP_ACTION_REQUIRED"]
@@ -1067,6 +1068,15 @@ class OpenClawNotifier:
             parts.append(f"{len(pdu_cycles_oc)} offline miner(s) need PDU power cycle")
         if fw_restarts_oc:
             parts.append(f"{len(fw_restarts_oc)} miner(s) need firmware restart")
+        if board_restarts_oc:
+            dead_details = ", ".join(
+                f"{i['ip']} boards {i.get('chain_info', {}).get('dead_indices', [])}"
+                for i in board_restarts_oc
+            )
+            parts.append(
+                f"{len(board_restarts_oc)} miner(s) have dead hashboard(s) — "
+                f"restart + log comparison required ({dead_details})"
+            )
         if phys_oc:
             parts.append(f"{len(phys_oc)} offline miner(s) need physical power cycle at facility")
         if temp_oc:
@@ -1358,8 +1368,8 @@ class GuardianDB:
         now  = datetime.now().isoformat()
         rows = []
         for i in issues:
-            if i["action"] not in ("PDU_CYCLE", "RESTART"):
-                continue  # PHYSICAL_CYCLE requires manual visit, skip
+            if i["action"] not in ("PDU_CYCLE", "RESTART", "RESTART_CHECK_BOARDS"):
+                continue  # PHYSICAL_CYCLE requires manual visit, MONITOR needs no approval
             rows.append((
                 now, scan_id, thread_ts,
                 i["id"], i["ip"], i["model"],
@@ -2020,7 +2030,10 @@ class MiningGuardian:
                     f"({hashrate_ths:.1f} / {rated_ths:.0f} TH/s) "
                     f"[{tier}]"
                 )
-                action = "RESTART"
+                # Only set RESTART if a dead board hasn't already claimed the action
+                # Dead board takes priority — its flow includes a restart anyway
+                if action != "RESTART_CHECK_BOARDS":
+                    action = "RESTART"
 
         # ── TEMP check ───────────────────────────────────────────────────
         # Same thresholds regardless of cooling type.
@@ -2085,6 +2098,258 @@ class MiningGuardian:
             "chain_info":   chain_info,
         }
 
+    # ── Hashboard restart + verification flow ─────────────────
+
+    REBOOT_WAIT_SECONDS   = 180   # time to wait for miner to come back after restart
+    REBOOT_POLL_INTERVAL  = 15    # check every N seconds during wait
+    BOARD_DEAD_THRESHOLD  = 1000  # MH/s — below this a board is considered dead
+
+    def execute_board_restart(self, issue: Dict[str, Any]) -> None:
+        """
+        Full dead-hashboard remediation sequence:
+          1. Collect pre-restart logs
+          2. Restart miner via AMS
+          3. Wait for miner to come back online (up to REBOOT_WAIT_SECONDS)
+          4. Collect post-restart logs
+          5. Compare board states before vs after
+          6. If board recovered → log success, clear elevated monitoring
+          7. If board still dead → create AMS ticket + Slack alert
+
+        Called after operator approves RESTART_CHECK_BOARDS action.
+        All steps are logged to the action_audit_log.
+        """
+        miner_id  = issue["id"]
+        ip        = issue["ip"]
+        model     = issue["model"]
+        chain_info = issue.get("chain_info") or {}
+        dead_before = chain_info.get("dead_boards", 0)
+        dead_idx    = chain_info.get("dead_indices", [])
+
+        logger.info(
+            "Board restart flow starting — miner %s (%s @ %s) — dead boards: %s",
+            miner_id, model, ip, dead_idx
+        )
+
+        # ── Step 1: Collect pre-restart logs ─────────────────────────────
+        logger.info("[%s] Step 1 — collecting pre-restart logs", miner_id)
+        try:
+            pre_logs = self.ams.collect_miner_logs(int(miner_id))
+            if pre_logs:
+                self.db.save_logs(miner_id, model, "pre-restart-board-check", pre_logs)
+                logger.info("[%s] Pre-restart logs collected: %s files", miner_id, len(pre_logs))
+            else:
+                logger.warning("[%s] No pre-restart logs available", miner_id)
+                pre_logs = {}
+        except Exception as e:
+            logger.warning("[%s] Pre-restart log collection failed: %s", miner_id, e)
+            pre_logs = {}
+
+        # ── Step 2: Restart via AMS ───────────────────────────────────────
+        logger.info("[%s] Step 2 — sending restart via AMS", miner_id)
+        try:
+            self.ams.reboot_miner([miner_id])
+            self.db.record_restart(
+                miner_id, ip, model,
+                f"Dead board restart — boards {dead_idx} offline before restart"
+            )
+            logger.info("[%s] Restart command sent", miner_id)
+        except Exception as e:
+            logger.error("[%s] Restart command failed: %s", miner_id, e)
+            self.db.log_action(
+                miner_id, ip, model,
+                problem=f"Dead boards {dead_idx}",
+                action_taken="RESTART_CHECK_BOARDS",
+                decision="ERROR",
+                notes=f"Restart command failed: {e}"
+            )
+            return
+
+        # ── Step 3: Wait for miner to come back online ───────────────────
+        logger.info(
+            "[%s] Step 3 — waiting up to %ss for miner to come back",
+            miner_id, self.REBOOT_WAIT_SECONDS
+        )
+        came_back   = False
+        post_miner  = None
+        waited      = 0
+
+        while waited < self.REBOOT_WAIT_SECONDS:
+            time.sleep(self.REBOOT_POLL_INTERVAL)
+            waited += self.REBOOT_POLL_INTERVAL
+            try:
+                # Fetch fresh miner data from AMS
+                all_miners = self.ams.get_miners()
+                post_miner = next(
+                    (m for m in all_miners if str(m.get("id")) == str(miner_id)),
+                    None
+                )
+                if post_miner and post_miner.get("status") == "online":
+                    came_back = True
+                    logger.info(
+                        "[%s] Back online after %ss", miner_id, waited
+                    )
+                    break
+                else:
+                    logger.debug("[%s] Still offline at %ss...", miner_id, waited)
+            except Exception as e:
+                logger.warning("[%s] Poll error at %ss: %s", miner_id, waited, e)
+
+        if not came_back:
+            logger.warning(
+                "[%s] Did not come back online within %ss after restart",
+                miner_id, self.REBOOT_WAIT_SECONDS
+            )
+            self._escalate_board_issue(
+                miner_id, ip, model, dead_idx,
+                reason=f"Miner did not come back online within {self.REBOOT_WAIT_SECONDS}s after restart"
+            )
+            return
+
+        # Give AMS an extra moment to populate fresh chain data
+        time.sleep(10)
+
+        # ── Step 4: Collect post-restart logs ────────────────────────────
+        logger.info("[%s] Step 4 — collecting post-restart logs", miner_id)
+        try:
+            post_logs = self.ams.collect_miner_logs(int(miner_id))
+            if post_logs:
+                self.db.save_logs(miner_id, model, "post-restart-board-check", post_logs)
+                logger.info("[%s] Post-restart logs collected: %s files", miner_id, len(post_logs))
+        except Exception as e:
+            logger.warning("[%s] Post-restart log collection failed: %s", miner_id, e)
+
+        # ── Step 5: Compare board states ─────────────────────────────────
+        logger.info("[%s] Step 5 — comparing board states", miner_id)
+        post_chains    = post_miner.get("chains", []) or []
+        post_info      = self._analyze_chains(post_chains)
+        still_dead     = post_info.get("dead_boards", 0)
+        still_dead_idx = post_info.get("dead_indices", [])
+        recovered_idx  = [i for i in dead_idx if i not in still_dead_idx]
+
+        logger.info(
+            "[%s] Board comparison — before: %s dead %s | after: %s dead %s | recovered: %s",
+            miner_id, dead_before, dead_idx, still_dead, still_dead_idx, recovered_idx
+        )
+
+        # ── Step 6: Board recovered ───────────────────────────────────────
+        if still_dead == 0:
+            msg = (
+                f"✅ *Board restart successful* — Miner {miner_id} ({model} @ {ip})\n"
+                f"Dead board(s) {dead_idx} recovered after restart.\n"
+                f"All {post_info.get('active_boards')}/{post_info.get('expected_boards')} "
+                f"boards now active. Miner back to full capacity."
+            )
+            logger.info("[%s] All boards recovered — %s", miner_id, msg)
+            self.db.log_action(
+                miner_id, ip, model,
+                problem=f"Dead boards {dead_idx}",
+                action_taken="RESTART_CHECK_BOARDS",
+                decision="RESOLVED",
+                notes=f"All boards recovered after restart. "
+                      f"Pre/post logs saved. Recovered: {recovered_idx}"
+            )
+            try:
+                self.slack.post_to_channel(msg)
+            except Exception as e:
+                logger.warning("Slack notification failed: %s", e)
+
+        elif still_dead < dead_before:
+            # Partial recovery — some boards came back, some didn't
+            msg = (
+                f"⚠️ *Partial board recovery* — Miner {miner_id} ({model} @ {ip})\n"
+                f"Boards {recovered_idx} recovered. Boards {still_dead_idx} still dead.\n"
+                f"Escalating to ticket for physical inspection."
+            )
+            logger.info("[%s] Partial recovery — escalating", miner_id)
+            self.db.log_action(
+                miner_id, ip, model,
+                problem=f"Dead boards {dead_idx}",
+                action_taken="RESTART_CHECK_BOARDS",
+                decision="PARTIAL",
+                notes=f"Partial recovery. Recovered: {recovered_idx}. "
+                      f"Still dead: {still_dead_idx}"
+            )
+            try:
+                self.slack.post_to_channel(msg)
+            except Exception as e:
+                logger.warning("Slack notification failed: %s", e)
+            self._escalate_board_issue(
+                miner_id, ip, model, still_dead_idx,
+                reason=f"Partial recovery after restart — boards {still_dead_idx} still dead"
+            )
+
+        else:
+            # ── Step 7: Board still dead → escalate ──────────────────────
+            self._escalate_board_issue(
+                miner_id, ip, model, still_dead_idx,
+                reason=f"Board(s) {still_dead_idx} still dead after restart"
+            )
+
+    def _escalate_board_issue(self, miner_id: str, ip: str, model: str,
+                               dead_idx: list, reason: str) -> None:
+        """
+        Escalate a persistent dead hashboard to AMS ticket + Slack alert.
+        Called when restart did not resolve the board issue.
+        """
+        title = (
+            f"Dead hashboard — {model} @ {ip} "
+            f"(Miner {miner_id}, board(s) {dead_idx})"
+        )
+        description = (
+            f"Miner: {miner_id} ({model})\n"
+            f"IP: {ip}\n"
+            f"Dead board(s): {dead_idx}\n"
+            f"Reason: {reason}\n"
+            f"Action taken: Restart attempted — board(s) did not recover.\n"
+            f"Pre and post-restart logs have been collected and saved to guardian.db.\n"
+            f"Physical inspection and board replacement required."
+        )
+
+        # Create AMS ticket
+        try:
+            ticket = self.ams.create_ticket(
+                title=title,
+                description=description,
+                priority="high"
+            )
+            ticket_id = ticket.get("id", "unknown")
+            logger.info("[%s] AMS ticket created: %s", miner_id, ticket_id)
+        except Exception as e:
+            ticket_id = "failed"
+            logger.error("[%s] AMS ticket creation failed: %s", miner_id, e)
+
+        # Log to audit
+        self.db.log_action(
+            miner_id, ip, model,
+            problem=f"Dead boards {dead_idx}",
+            action_taken="RESTART_CHECK_BOARDS",
+            decision="ESCALATED",
+            notes=f"{reason}. AMS ticket #{ticket_id} created. Physical inspection required."
+        )
+
+        # Enable elevated monitoring so next scans watch it closely
+        self.db.record_restart(miner_id, ip, model, reason)
+
+        # Slack alert
+        slack_msg = (
+            f"🔴 *Dead hashboard — physical inspection required*\n"
+            f"*Miner:* {miner_id} | {model} @ {ip}\n"
+            f"*Dead board(s):* {dead_idx}\n"
+            f"*Reason:* {reason}\n"
+            f"*AMS Ticket:* #{ticket_id}\n"
+            f"*Action:* Pre and post-restart logs saved. Board did not recover after restart.\n"
+            f"Physical inspection and board replacement needed."
+        )
+        try:
+            self.slack.post_to_channel(slack_msg)
+        except Exception as e:
+            logger.warning("[%s] Slack escalation alert failed: %s", miner_id, e)
+
+        logger.info(
+            "[%s] Escalated — dead boards %s, ticket #%s, Slack notified",
+            miner_id, dead_idx, ticket_id
+        )
+
     # ── Report printer ────────────────────────────────────────
 
     @staticmethod
@@ -2114,9 +2379,10 @@ class MiningGuardian:
             # Group by action
             pdu_cycles    = [i for i in issues if i["action"] == "PDU_CYCLE"]
             fw_restarts   = [i for i in issues if i["action"] == "RESTART"]
+            board_restarts = [i for i in issues if i["action"] == "RESTART_CHECK_BOARDS"]
             phys_cycles   = [i for i in issues if i["action"] == "PHYSICAL_CYCLE"]
             monitors      = [i for i in issues if i["action"] == "MONITOR"]
-            restarts      = pdu_cycles + fw_restarts + phys_cycles
+            restarts      = pdu_cycles + fw_restarts + phys_cycles + board_restarts
 
             if restarts:
 
@@ -2136,6 +2402,17 @@ class MiningGuardian:
                     for i in fw_restarts:
                         issue_str = " | ".join(i["issues"])
                         print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {i['hashrate_pct']:<10} {i['temp_chip']:<10} {issue_str}")
+
+                if board_restarts:
+                    print(f"\n  🔴 DEAD HASHBOARD — RESTART + LOG COMPARISON REQUIRED ({len(board_restarts)} miners)\n")
+                    print(f"  {'ID':<8} {'IP':<18} {'Model':<14} {'Dead Boards':<14} {'Active':<10} {'Hashrate':<10} Location")
+                    print(f"  {'-'*8} {'-'*18} {'-'*14} {'-'*14} {'-'*10} {'-'*10} {'-'*20}")
+                    for i in board_restarts:
+                        ci = i.get("chain_info") or {}
+                        dead_str   = str(ci.get("dead_indices", []))
+                        active_str = f"{ci.get('active_boards',0)}/{ci.get('expected_boards',3)}"
+                        print(f"  {i['id']:<8} {i['ip']:<18} {i['model']:<14} {dead_str:<14} {active_str:<10} {i['hashrate_pct']:<10} {i.get('map_location','not mapped')}")
+                    print(f"\n  Flow: collect logs → restart → wait → collect logs → compare → ticket if still dead")
 
                 if phys_cycles:
                     print(f"\n  🔴 OFFLINE — PHYSICAL POWER CYCLE REQUIRED ({len(phys_cycles)} miners)\n")
@@ -2264,10 +2541,11 @@ class MiningGuardian:
         return {
             "scanned": len(miners),
             "issues":  len(issues),
-            "pdu_cycle":       [i["id"] for i in issues if i["action"] == "PDU_CYCLE"],
-            "firmware_restart":[i["id"] for i in issues if i["action"] == "RESTART"],
-            "physical_cycle":  [i["id"] for i in issues if i["action"] == "PHYSICAL_CYCLE"],
-            "monitor":         [i["id"] for i in issues if i["action"] == "MONITOR"],
+            "pdu_cycle":         [i["id"] for i in issues if i["action"] == "PDU_CYCLE"],
+            "firmware_restart":  [i["id"] for i in issues if i["action"] == "RESTART"],
+            "board_restart":     [i["id"] for i in issues if i["action"] == "RESTART_CHECK_BOARDS"],
+            "physical_cycle":    [i["id"] for i in issues if i["action"] == "PHYSICAL_CYCLE"],
+            "monitor":           [i["id"] for i in issues if i["action"] == "MONITOR"],
         }
 
     def loop(self) -> None:
