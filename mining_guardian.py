@@ -18,6 +18,7 @@ from hashrate_evaluation import (
     MinerSpecsLoader, BaselineManager, HashrateTierResolver,
     parse_bixbit_profile,
 )
+from miner_verify import verify_miner_online
 
 
 def _setup_logging() -> logging.Logger:
@@ -1971,22 +1972,39 @@ class MiningGuardian:
         action    = None
         pdu_action = None
 
-        # ── OFFLINE check (firmware-agnostic, always evaluated) ──────────
+        # ── OFFLINE check ────────────────────────────────────────────────
         if status == "offline":
-            issues.append("OFFLINE")
-            if has_pdu:
-                action     = "PDU_CYCLE"
-                pdu_action = f"PDU {pdu_id} → Outlet {outlet_index}"
+            # AMS can report false-offline after a restart or WebSocket sync lag.
+            # Verify directly before taking any action.
+            verify = verify_miner_online(ip)
+            if verify["actually_online"]:
+                logger.info(
+                    "[%s] AMS reports offline but miner is reachable — %s. "
+                    "Skipping this scan (AMS sync lag).",
+                    miner_id, verify["status_detail"]
+                )
+                # Miner is alive — skip all evaluation this cycle.
+                # AMS will catch up on the next scan.
+                return None
             else:
-                action = "PHYSICAL_CYCLE"
+                logger.debug(
+                    "[%s] AMS offline confirmed by direct check — %s",
+                    miner_id, verify["status_detail"]
+                )
+                issues.append("OFFLINE")
+                if has_pdu:
+                    action     = "PDU_CYCLE"
+                    pdu_action = f"PDU {pdu_id} → Outlet {outlet_index}"
+                else:
+                    action = "PHYSICAL_CYCLE"
 
-            return self._build_issue(
-                miner, issues, action, pdu_action, power_watts,
-                power_source, power_kw, pdu_id, outlet_index,
-                hashrate_pct="0%", tier="offline",
-                tier_note="Miner offline — no hashrate evaluation",
-                chain_info=None,
-            )
+                return self._build_issue(
+                    miner, issues, action, pdu_action, power_watts,
+                    power_source, power_kw, pdu_id, outlet_index,
+                    hashrate_pct="0%", tier="offline",
+                    tier_note="Miner offline — confirmed by direct check",
+                    chain_info=None,
+                )
 
         # ── HASHBOARD check (always evaluated when online) ───────────────
         chains     = miner.get("chains", []) or []
@@ -2073,12 +2091,26 @@ class MiningGuardian:
                      tier_note: str = "",
                      chain_info: Optional[dict] = None) -> Dict[str, Any]:
         """Build the standardised issue dict returned by _analyze_miner."""
-        temp_chip = miner.get("tempChip", None)
+        temp_chip  = miner.get("tempChip", None)
+        model_code = miner.get("model", "")
+        profile    = miner.get("currentProfile", "") or ""
+
+        # Use name (e.g. "Antminer S19JPro") as display model when AMS model
+        # code is misregistered but name/profile reveal the real hardware.
+        # A parseable BiXBiT profile string is the most reliable identity signal.
+        short_model = miner.get("shortModel", miner.get("name", "unknown"))
+        full_name   = miner.get("name", "")
+        if parse_bixbit_profile(profile) and full_name:
+            # Profile confirms BiXBiT firmware — trust name over shortModel
+            display_model = full_name
+        else:
+            display_model = short_model
+
         return {
             "id":           str(miner.get("id", "unknown")),
             "ip":           miner.get("ip", "unknown"),
-            "model":        miner.get("shortModel", miner.get("name", "unknown")),
-            "model_code":   miner.get("model", ""),
+            "model":        display_model,
+            "model_code":   model_code,
             "firmware":     miner.get("firmwareManufacturer", "") or "",
             "status":       miner.get("status", "unknown"),
             "hashrate_pct": hashrate_pct,
