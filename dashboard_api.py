@@ -365,54 +365,48 @@ def weather_history(days: int = 7):
 @app.get("/facility/power_live")
 def facility_power_live():
     """Live warehouse power readings from PDUs and immersion tank."""
-    from facility_monitor import FacilityMonitor
+    from facility_monitor import FacilityMonitor, PDU_OUTLET_MAP
     fm = FacilityMonitor()
     snap = fm.poll()
 
-    result = {"total_kw": snap.total_warehouse_kw, "sources": []}
+    result = {"total_kw": round(snap.total_warehouse_kw, 2), "sources": []}
 
-    if snap.pdu_163:
-        pdu163 = {"name": "PDU 163 — 2U Rack (Auradines)", "ip": "192.168.188.15",
-                  "total_kw": snap.pdu_163.total_power_kw,
-                  "voltage_v": snap.pdu_163.voltage_l1,
-                  "current_a": snap.pdu_163.current_l1,
-                  "outlets": []}
-        for o in snap.pdu_163.outlets:
-            if o.power_kw > 0:
-                pdu163["outlets"].append({"outlet": o.outlet_num, "kw": round(o.power_kw,2),
-                    "voltage": round(o.avg_voltage_v,1), "amps": round(o.avg_current_a,1),
-                    "miner": o.miner_label})
-        result["sources"].append(pdu163)
+    for label, pdu in [("PDU 163 — 2U Rack (Auradines)", snap.pdu_163),
+                       ("PDU 164 — Bitmain Shoebox (S21 EXP Hydro)", snap.pdu_164)]:
+        if not pdu:
+            continue
+        src = {"name": label, "ip": pdu.ip,
+               "total_kw": round(pdu.total_power_kw or 0, 2),
+               "voltage_v": pdu.l1_voltage_v, "current_a": pdu.l1_current_a,
+               "outlets": []}
+        for o in pdu.outlets:
+            if o.on:
+                mid = PDU_OUTLET_MAP.get((pdu.ip, o.index))
+                src["outlets"].append({
+                    "outlet": o.index,
+                    "kw": round(o.power_kw, 2),
+                    "voltage": round(o.avg_voltage_v, 1),
+                    "amps": round(o.avg_current_a, 1),
+                    "miner": f"miner {mid}" if mid else "not mapped"})
+        result["sources"].append(src)
 
-    if snap.pdu_164:
-        pdu164 = {"name": "PDU 164 — Bitmain Shoebox (S21 EXP Hydro)", "ip": "192.168.188.16",
-                  "total_kw": snap.pdu_164.total_power_kw,
-                  "voltage_v": snap.pdu_164.voltage_l1,
-                  "current_a": snap.pdu_164.current_l1,
-                  "outlets": []}
-        for o in snap.pdu_164.outlets:
-            if o.power_kw > 0:
-                pdu164["outlets"].append({"outlet": o.outlet_num, "kw": round(o.power_kw,2),
-                    "voltage": round(o.avg_voltage_v,1), "amps": round(o.avg_current_a,1),
-                    "miner": o.miner_label})
-        result["sources"].append(pdu164)
-
-    if snap.tank:
-        tank = {"name": "Immersion Tank B100", "ip": "192.168.188.20",
-                "total_kw": snap.tank_total_kw if hasattr(snap, 'tank_total_kw') else 0,
-                "fluid_in_c": snap.tank.fluid_in_temp_c if snap.tank else None,
-                "fluid_out_c": snap.tank.fluid_out_temp_c if snap.tank else None,
-                "pump_running": snap.tank.pump_running if snap.tank else None,
-                "ports": []}
-        tank_kw = 0
-        for p in (snap.tank.ports if snap.tank else []):
-            if p.power_kw > 0:
-                tank["ports"].append({"port": p.port_num, "kw": round(p.power_kw,2),
-                    "voltage": round(p.avg_voltage,1), "amps": round(p.avg_current,1),
-                    "miner": p.miner_label})
-                tank_kw += p.power_kw
-        tank["total_kw"] = round(tank_kw, 2)
-        result["sources"].append(tank)
+    tank = snap.tank_b100
+    if tank:
+        tsrc = {"name": "Immersion Tank B100", "ip": "192.168.188.20",
+                "total_kw": round(tank.total_power_kw or 0, 2),
+                "fluid_in_c": tank.in_temp_c, "fluid_out_c": tank.out_temp_c,
+                "pump_running": tank.pump_on, "ports": []}
+        for p in tank.ports:
+            pw = (p.power_a_kw or 0) + (p.power_b_kw or 0) + (p.power_c_kw or 0)
+            if pw > 0.1:
+                mid = PDU_OUTLET_MAP.get(('192.168.188.20', p.index))
+                tsrc["ports"].append({
+                    "port": p.index,
+                    "kw": round(pw, 2),
+                    "voltage": round(p.voltage_a, 1),
+                    "amps": round(p.current_a, 1),
+                    "miner": f"miner {mid}" if mid else "support equipment"})
+        result["sources"].append(tsrc)
 
     return result
 
