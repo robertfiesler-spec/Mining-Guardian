@@ -2908,6 +2908,24 @@ class MiningGuardian:
         thread_ts = self.slack.send_scan(miners, issues, wx, ams_notifs, hvac_snapshot)
         if thread_ts and issues:
             self.db.save_pending_approvals(thread_ts, scan_id, issues)
+
+        # LLM analysis — feed scan data to local Ollama model
+        if issues:
+            try:
+                from llm_analyzer import LLMAnalyzer
+                analyzer = LLMAnalyzer()
+                wx_data = {"temp_f": wx.get("temp_f"), "humidity_pct": wx.get("humidity_pct")} if wx else None
+                hvac_data = None
+                if hvac_snapshot:
+                    hvac_data = {"supply_temp_f": hvac_snapshot.supply_temp_f,
+                                 "return_temp_f": hvac_snapshot.return_temp_f,
+                                 "delta_t_f": hvac_snapshot.delta_t_f}
+                analysis = analyzer.analyze_issues(scan_id, issues, wx_data, hvac_data)
+                if analysis:
+                    logger.info("LLM analysis: %s", analysis[:200])
+            except Exception as e:
+                logger.warning("LLM analysis skipped: %s", e)
+
         return {
             "scanned": len(miners),
             "issues":  len(issues),

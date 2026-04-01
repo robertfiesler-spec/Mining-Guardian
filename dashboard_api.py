@@ -561,6 +561,19 @@ def audit_summary():
     }
 
 
+# ── LLM Analysis History ──────────────────────────────────────
+
+@app.get("/llm/history")
+def llm_history(limit: int = 10):
+    """Recent LLM analysis results."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM llm_analysis ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 # ── Environment Chart (standalone HTML) ───────────────────────
 
 @app.get("/charts/environment", response_class=HTMLResponse)
