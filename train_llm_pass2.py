@@ -41,15 +41,15 @@ def get_miner_history():
 
     # Get AMS notifications per miner IP
     notifs = conn.execute('''
-        SELECT ip, key, alert_level, COUNT(*) as cnt
+        SELECT miner_ip, key, alert_level, COUNT(*) as cnt
         FROM ams_notifications
-        GROUP BY ip, key, alert_level
-        ORDER BY ip, cnt DESC
+        GROUP BY miner_ip, key, alert_level
+        ORDER BY miner_ip, cnt DESC
     ''').fetchall()
 
     notif_map = {}
     for n in notifs:
-        ip = n["ip"]
+        ip = n["miner_ip"]
         if ip not in notif_map:
             notif_map[ip] = []
         notif_map[ip].append(f'{n["key"]}({n["alert_level"]}): {n["cnt"]}x')
