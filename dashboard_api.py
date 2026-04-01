@@ -628,13 +628,24 @@ def audit_summary():
 
 @app.get("/llm/history")
 def llm_history(limit: int = 10):
-    """Recent LLM analysis results."""
+    """Recent LLM analysis results — proxied from VPS if local DB is empty."""
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM llm_analysis ORDER BY id DESC LIMIT ?", (limit,)
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM llm_analysis ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    except Exception:
+        rows = []
     conn.close()
-    return [dict(r) for r in rows]
+    if rows:
+        return [dict(r) for r in rows]
+    # Fallback: proxy from VPS
+    try:
+        import requests as _req
+        resp = _req.get(f"http://100.106.123.83:8585/llm/history?limit={limit}", timeout=5)
+        return resp.json()
+    except Exception:
+        return []
 
 
 # ── Environment Chart (standalone HTML) ───────────────────────
