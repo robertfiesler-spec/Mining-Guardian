@@ -109,6 +109,89 @@ setInterval(load, 300000);
 </script>
 </body></html>"""
 
+POWER_CHART_HTML = """<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Mining Guardian — Warehouse Power</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fa;padding:24px}
+  h1{font-size:20px;color:#333;margin-bottom:4px}
+  .sub{font-size:13px;color:#888;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;max-width:1100px}
+  .card{background:#fff;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .card h2{font-size:15px;color:#555;margin-bottom:12px;border-bottom:2px solid #e0e0e0;padding-bottom:6px}
+  .total{font-size:32px;font-weight:700;color:#333;margin:8px 0}
+  .total small{font-size:14px;color:#888;font-weight:400}
+  .total-bar{background:#f0f0f0;border-radius:8px;height:18px;margin:10px 0;overflow:hidden;display:flex}
+  .total-bar span{height:100%;display:block;transition:width .5s}
+  .outlet{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f5f5f5}
+  .outlet:last-child{border:none}
+  .outlet .name{font-size:13px;color:#333;font-weight:500}
+  .outlet .kw{font-size:15px;font-weight:600}
+  .outlet .detail{font-size:11px;color:#999}
+  .c1{color:#e67e22} .c2{color:#2980b9} .c3{color:#c0392b}
+  .b1{background:#e67e22} .b2{background:#2980b9} .b3{background:#c0392b}
+  .tank-info{font-size:13px;color:#666;margin-bottom:10px}
+  .tank-info span{font-weight:600}
+  #status{font-size:12px;color:#aaa;margin-top:12px}
+</style>
+</head><body>
+<h1>Warehouse Power — Live</h1>
+<p class="sub">Auto-refreshes every 30 seconds</p>
+<div class="grid" id="grid"></div>
+<p id="status">Loading...</p>
+<script>
+async function load(){
+  try{
+    const r=await fetch('/facility/power_live');
+    const d=await r.json();
+    const grid=document.getElementById('grid');
+    grid.innerHTML='';
+
+    // Total card
+    const pcts=d.sources.map(s=>s.total_kw);
+    const colors=['#e67e22','#2980b9','#c0392b'];
+    let totalCard=`<div class="card"><h2>Total Warehouse</h2>
+      <div class="total">${d.total_kw.toFixed(1)} kW <small>across ${d.sources.length} sources</small></div>
+      <div class="total-bar">`;
+    d.sources.forEach((s,i)=>{
+      const pct=(s.total_kw/d.total_kw*100).toFixed(0);
+      totalCard+=`<span class="b${i+1}" style="width:${pct}%" title="${s.name}: ${s.total_kw.toFixed(1)} kW"></span>`;
+    });
+    totalCard+=`</div>`;
+    d.sources.forEach((s,i)=>{
+      totalCard+=`<div class="outlet"><span class="name c${i+1}">${s.name.split('—')[0].trim()}</span><span class="kw c${i+1}">${s.total_kw.toFixed(1)} kW</span></div>`;
+    });
+    totalCard+=`</div>`;
+    grid.innerHTML+=totalCard;
+
+    // Per-source cards
+    d.sources.forEach((s,i)=>{
+      let card=`<div class="card"><h2>${s.name}</h2>`;
+      if(s.fluid_in_c!=null){
+        card+=`<div class="tank-info">Fluid: <span>in ${(s.fluid_in_c*9/5+32).toFixed(0)}°F</span> / <span>out ${(s.fluid_out_c*9/5+32).toFixed(0)}°F</span> | Pump: ${s.pump_running?'🟢 ON':'🔴 OFF'}</div>`;
+      }
+      const items=s.outlets||s.ports||[];
+      items.forEach(o=>{
+        const label=o.miner||'—';
+        const num=o.outlet!=null?'Outlet '+o.outlet:'Port '+o.port;
+        card+=`<div class="outlet">
+          <div><div class="name">${num} → ${label}</div><div class="detail">${o.voltage}V · ${o.amps}A</div></div>
+          <span class="kw">${o.kw.toFixed(2)} kW</span></div>`;
+      });
+      card+=`</div>`;
+      grid.innerHTML+=card;
+    });
+
+    document.getElementById('status').textContent='Last updated: '+new Date().toLocaleTimeString();
+  }catch(e){document.getElementById('status').textContent='Error: '+e.message}
+}
+load();
+setInterval(load,30000);
+</script>
+</body></html>"""
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -277,7 +360,61 @@ def weather_history(days: int = 7):
     return [dict(r) for r in rows]
 
 
-# ── Facility / HVAC ──────────────────────────────────────────
+# ── Live Facility Power ───────────────────────────────────────
+
+@app.get("/facility/power_live")
+def facility_power_live():
+    """Live warehouse power readings from PDUs and immersion tank."""
+    from facility_monitor import FacilityMonitor
+    fm = FacilityMonitor()
+    snap = fm.poll()
+
+    result = {"total_kw": snap.total_warehouse_kw, "sources": []}
+
+    if snap.pdu_163:
+        pdu163 = {"name": "PDU 163 — 2U Rack (Auradines)", "ip": "192.168.188.15",
+                  "total_kw": snap.pdu_163.total_power_kw,
+                  "voltage_v": snap.pdu_163.voltage_l1,
+                  "current_a": snap.pdu_163.current_l1,
+                  "outlets": []}
+        for o in snap.pdu_163.outlets:
+            if o.power_kw > 0:
+                pdu163["outlets"].append({"outlet": o.outlet_num, "kw": round(o.power_kw,2),
+                    "voltage": round(o.avg_voltage_v,1), "amps": round(o.avg_current_a,1),
+                    "miner": o.miner_label})
+        result["sources"].append(pdu163)
+
+    if snap.pdu_164:
+        pdu164 = {"name": "PDU 164 — Bitmain Shoebox (S21 EXP Hydro)", "ip": "192.168.188.16",
+                  "total_kw": snap.pdu_164.total_power_kw,
+                  "voltage_v": snap.pdu_164.voltage_l1,
+                  "current_a": snap.pdu_164.current_l1,
+                  "outlets": []}
+        for o in snap.pdu_164.outlets:
+            if o.power_kw > 0:
+                pdu164["outlets"].append({"outlet": o.outlet_num, "kw": round(o.power_kw,2),
+                    "voltage": round(o.avg_voltage_v,1), "amps": round(o.avg_current_a,1),
+                    "miner": o.miner_label})
+        result["sources"].append(pdu164)
+
+    if snap.tank:
+        tank = {"name": "Immersion Tank B100", "ip": "192.168.188.20",
+                "total_kw": snap.tank_total_kw if hasattr(snap, 'tank_total_kw') else 0,
+                "fluid_in_c": snap.tank.fluid_in_temp_c if snap.tank else None,
+                "fluid_out_c": snap.tank.fluid_out_temp_c if snap.tank else None,
+                "pump_running": snap.tank.pump_running if snap.tank else None,
+                "ports": []}
+        tank_kw = 0
+        for p in (snap.tank.ports if snap.tank else []):
+            if p.power_kw > 0:
+                tank["ports"].append({"port": p.port_num, "kw": round(p.power_kw,2),
+                    "voltage": round(p.avg_voltage,1), "amps": round(p.avg_current,1),
+                    "miner": p.miner_label})
+                tank_kw += p.power_kw
+        tank["total_kw"] = round(tank_kw, 2)
+        result["sources"].append(tank)
+
+    return result
 
 @app.get("/facility/environment_history")
 def environment_history(days: int = 7):
@@ -436,6 +573,12 @@ def audit_summary():
 def environment_chart():
     """Standalone HTML line chart — outside temp, supply/return water, humidity."""
     return ENVIRONMENT_CHART_HTML
+
+
+@app.get("/charts/power", response_class=HTMLResponse)
+def power_chart():
+    """Standalone HTML dashboard — live warehouse power summary."""
+    return POWER_CHART_HTML
 
 
 # ── Health Check ──────────────────────────────────────────────
