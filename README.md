@@ -12,7 +12,7 @@ and recommends — operators approve.
 
 ---
 
-## Current Status — March 31, 2026
+## Current Status — April 1, 2026
 
 | Component | Status |
 |---|---|
@@ -30,7 +30,7 @@ and recommends — operators approve.
 | Miner log collection | ✅ Live |
 | Weather data per scan | ✅ Live |
 | AMS notifications (40/scan) | ✅ Live |
-| Slack reporting | ✅ Live |
+| Slack reporting — full scan report | ✅ Live |
 | Dashboard API (FastAPI :8585) | ✅ Live |
 | Retool dashboard Phase 1 | ✅ Live via cloudflared tunnel |
 | Action audit log | ✅ Live |
@@ -38,13 +38,17 @@ and recommends — operators approve.
 | miner_specs.json (35+ models) | ✅ Built |
 | PDU clients (163 @ .15, 164 @ .16) | ✅ Live |
 | Immersion tank client (B100 @ .20) | ✅ Live |
-| Facility monitor (all 3 infra sources) | ✅ Live in scan report |
+| Facility monitor (all 3 infra sources) | ✅ Live in scan + Slack |
+| HVAC client (Eclypse BAS @ .235) | ✅ Live — one-off for this facility only |
+| HVAC in morning.sh daily briefing | ✅ Live |
+| HVAC in Slack scan report | ✅ Live |
 | Auradine AH3880 direct client (reference) | ✅ Documented |
 | BiXBiT direct API docs (port 4029 fallback) | ✅ Documented |
+| Warehouse mechanical BAS documented | ✅ docs/WAREHOUSE_MECHANICAL.md |
 | morning.sh daily briefing | ✅ Live (cron 7am) |
+| Second S21 EXP Hyd (64407 @ .26) in AMS | ✅ Added + PDU outlet map updated |
 | OpenClaw / local LLM | 🔜 Mac Mini arriving this week |
 | Profile map (config.json) | 🔜 Pending walk-through session |
-| Second S21 EXP Hyd added to AMS | 🔜 Pending Rob (IP: .26) |
 
 
 ---
@@ -298,13 +302,21 @@ BiXBiT AMS (cloud / staging)
 - Auradine AH3880 direct API documented (AURADINE_API.md — reference/fallback)
 - WhatsMiner direct API documented (WHATSMINER_API.md — reference/fallback)
 - BiXBiT Bitmain direct API documented (docs/BIXBIT_DIRECT_API.md — reference/fallback)
+- Warehouse mechanical BAS documented (docs/WAREHOUSE_MECHANICAL.md)
+- Second S21 EXP Hyd (64407 @ .26) added to AMS + PDU outlet map updated
+- **HVAC client — Eclypse BAS @ .235 (one-off for this facility only)**
+  - Supply/return water temps, ΔT, differential pressure
+  - CW Pump 1 + 2 VFD % (real speed from analog outputs AO-101/102)
+  - CT Fan 1 + 2 VFD % (real speed from analog outputs AO-103/104)
+  - Basin level low, leak alarm, tower vibration monitoring
+  - Live in every scan report — terminal and Slack
+  - Live in morning.sh daily briefing — terminal and Slack
+  - NOTE: Future deployments use AMS container tab — not custom BAS clients
 
 ### 🔜 Next Up
-- Add second S21 EXP Hyd (.26) to AMS — Rob's action item
-  → Tell me the AMS ID and I'll update PDU_OUTLET_MAP in facility_monitor.py
 - Profile map session — walk through each miner model to build config.json profile table
 - Wire execute_board_restart into OpenClaw approval callback (Mac Mini task)
-- Pre-restart log collection for regular RESTART actions (same non-blocking approach)
+- Pre-restart log collection for regular RESTART actions
 
 ### 🔜 Mac Mini Arrival (this week)
 - Install OpenClaw + configure Slack integration
@@ -314,7 +326,7 @@ BiXBiT AMS (cloud / staging)
 - Deploy Mining Guardian as launchd service
 
 ### 🔜 Future
-- Container monitoring (USA 188 containers — build when live access granted)
+- Container monitoring (future deployments via AMS container tab — not custom BAS clients)
 - Retool Phase 2: scan history trend chart, facility map panel, per-miner drill-down
 - Firmware version drift detection across fleet
 - Predictive failure detection from log patterns
