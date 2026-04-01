@@ -1696,7 +1696,8 @@ class SlackNotifier:
 
     def send_scan(self, miners: List[Dict], issues: List[Dict],
                   wx: Optional[Dict] = None,
-                  ams_notifs: Optional[List[Dict]] = None) -> None:
+                  ams_notifs: Optional[List[Dict]] = None,
+                  hvac=None) -> None:
         """POST a formatted scan summary to Slack via incoming webhook."""
         if not self.webhook_url:
             logger.debug("Slack webhook not configured — skipping Slack notification")
@@ -1729,6 +1730,39 @@ class SlackNotifier:
                 f"🌡️ Outside: *{wx['temp_f']}°F* | Humidity: *{wx['humidity_pct']}%* | "
                 f"Feels like: {wx['feels_like_f']}°F | Today: {wx['temp_low_f']}–{wx['temp_high_f']}°F"
             )
+
+        # HVAC / warehouse mechanical section
+        if hvac is not None:
+            sup = f"{hvac.supply_temp_f:.1f}°F" if hvac.supply_temp_f is not None else "N/A"
+            ret = f"{hvac.return_temp_f:.1f}°F" if hvac.return_temp_f is not None else "N/A"
+            dlt = f"{hvac.delta_t_f:+.1f}°F"   if hvac.delta_t_f     is not None else "N/A"
+            dp  = f"{hvac.diff_pressure_psi:.1f} PSI" if hvac.diff_pressure_psi is not None else "N/A"
+            pump = "🟢 ON" if hvac.spray_pump_on else "🔴 OFF"
+            fans = f"🟢 {hvac.fans_active} active" if hvac.fans_active > 0 else "🔴 0 active"
+            f1 = "ON" if hvac.ct_fan1_on else "off"
+            f2 = "ON" if hvac.ct_fan2_on else "off"
+
+            hvac_lines = [
+                f"\n*🏭 Warehouse Mechanical*",
+                f"  Supply: *{sup}* | Return: *{ret}* | ΔT: *{dlt}* | Diff Press: *{dp}*",
+                f"  Spray Pump: {pump} | Fans: {fans} (Fan1={f1}, Fan2={f2})",
+            ]
+
+            # Alarms
+            alarms = []
+            if hvac.leak_alarm:       alarms.append("🔴 LEAK DETECTED")
+            if hvac.tower_vibration:  alarms.append("🔴 TOWER VIBRATION")
+            if hvac.ct1_fault:        alarms.append("🔴 CT Fan 1 FAULT")
+            if hvac.ct2_fault:        alarms.append("🔴 CT Fan 2 FAULT")
+            if hvac.pump_fault:       alarms.append("🔴 Spray Pump FAULT")
+            if hvac.basin_level_ok is False: alarms.append("🔴 BASIN LEVEL LOW")
+
+            if alarms:
+                hvac_lines.append(f"  ⚠️ *ALARMS:* {' | '.join(alarms)}")
+            else:
+                hvac_lines.append("  ✅ All alarms clear")
+
+            lines.extend(hvac_lines)
 
         lines.append(status_line)
 
@@ -2748,7 +2782,7 @@ class MiningGuardian:
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
-        thread_ts = self.slack.send_scan(miners, issues, wx, ams_notifs)
+        thread_ts = self.slack.send_scan(miners, issues, wx, ams_notifs, hvac_snapshot)
         if thread_ts and issues:
             self.db.save_pending_approvals(thread_ts, scan_id, issues)
         return {
