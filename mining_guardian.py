@@ -97,6 +97,7 @@ class GuardianConfig:
     dry_run: bool = True
     collect_logs: bool = False  # enable log collection independently of dry_run
     scan_interval_seconds: int = 300
+    slack_interval_seconds: int = 3600  # post to Slack at most once per hour
     approval_mode: str = "manual"
     miner_filters: Dict[str, Any] = field(default_factory=dict)
     rules: List[ParameterRule] = field(default_factory=list)
@@ -128,6 +129,7 @@ class GuardianConfig:
             dry_run=raw.get("dry_run", True),
             collect_logs=raw.get("collect_logs", False),
             scan_interval_seconds=raw.get("scan_interval_seconds", 300),
+            slack_interval_seconds=raw.get("slack_interval_seconds", 3600),
             approval_mode=raw.get("approval_mode", "manual"),
             miner_filters=raw.get("miner_filters", {}),
             rules=rules,
@@ -1955,6 +1957,7 @@ class MiningGuardian:
             bot_token=GuardianConfig._resolve(config.slack_bot_token) if hasattr(config, "slack_bot_token") and config.slack_bot_token else None
         )
         self.db       = GuardianDB()
+        self._last_slack_post = 0  # timestamp of last Slack post
         self.weather  = WeatherCollector()
 
         # ── Three-tier hashrate evaluation ───────────────────────────────
@@ -2905,9 +2908,18 @@ class MiningGuardian:
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
-        thread_ts = self.slack.send_scan(miners, issues, wx, ams_notifs, hvac_snapshot)
-        if thread_ts and issues:
-            self.db.save_pending_approvals(thread_ts, scan_id, issues)
+
+        # Slack throttle — only post at most once per slack_interval_seconds
+        import time as _time
+        now_ts = _time.time()
+        if now_ts - self._last_slack_post >= self.config.slack_interval_seconds:
+            thread_ts = self.slack.send_scan(miners, issues, wx, ams_notifs, hvac_snapshot)
+            self._last_slack_post = now_ts
+            if thread_ts and issues:
+                self.db.save_pending_approvals(thread_ts, scan_id, issues)
+        else:
+            logger.info("Slack throttled — next post in %ds",
+                        int(self.config.slack_interval_seconds - (now_ts - self._last_slack_post)))
 
         # LLM analysis — feed scan data to local Ollama model
         if issues:
