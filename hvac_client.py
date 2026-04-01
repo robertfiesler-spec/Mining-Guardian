@@ -214,7 +214,6 @@ def format_hvac_report(snap: HVACSnapshot) -> str:
     if snap.ct1_fault:        alarms.append("🔴 CT Fan 1 FAULT")
     if snap.ct2_fault:        alarms.append("🔴 CT Fan 2 FAULT")
     if snap.pump_fault:       alarms.append("🔴 Spray Pump FAULT")
-    if snap.basin_level_ok is False: alarms.append("🔴 BASIN LEVEL LOW")
 
     lines.append("")
     if alarms:

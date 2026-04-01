@@ -1757,7 +1757,6 @@ class SlackNotifier:
             if hvac.ct1_fault:        alarms.append("🔴 CT Fan 1 FAULT")
             if hvac.ct2_fault:        alarms.append("🔴 CT Fan 2 FAULT")
             if hvac.pump_fault:       alarms.append("🔴 Spray Pump FAULT")
-            if hvac.basin_level_ok is False: alarms.append("🔴 BASIN LEVEL LOW")
 
             if alarms:
                 hvac_lines.append(f"  ⚠️ *ALARMS:* {' | '.join(alarms)}")
