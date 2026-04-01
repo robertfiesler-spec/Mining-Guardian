@@ -19,6 +19,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, Query
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "guardian.db")
@@ -31,6 +32,82 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Chart HTML template ───────────────────────────────────────
+ENVIRONMENT_CHART_HTML = """<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Mining Guardian — Environment</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #f8f9fa; padding: 24px; }
+  h1 { font-size: 20px; color: #333; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #888; margin-bottom: 16px; }
+  .card { background: #fff; border-radius: 10px; padding: 20px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.08); max-width: 1000px; }
+  canvas { width: 100% !important; height: 350px !important; }
+  .legend { display:flex; gap:20px; margin-top:12px; font-size:13px; }
+  .legend span { display:flex; align-items:center; gap:5px; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+</style>
+</head><body>
+<h1>Environment Monitor — 5 Day Trend</h1>
+<p class="sub">Data points every scan cycle &bull; Auto-refreshes every 5 min</p>
+<div class="card">
+  <canvas id="chart"></canvas>
+  <div class="legend">
+    <span><i class="dot" style="background:#e67e22"></i> Outside Temp (&deg;F)</span>
+    <span><i class="dot" style="background:#2980b9"></i> Supply Water (&deg;F)</span>
+    <span><i class="dot" style="background:#c0392b"></i> Return Water (&deg;F)</span>
+    <span><i class="dot" style="background:#27ae60"></i> Humidity (%)</span>
+  </div>
+</div>
+<script>
+async function load() {
+  const r = await fetch('/facility/environment_history?days=5');
+  const data = await r.json();
+  const labels = data.map(d => d.recorded_at);
+  new Chart(document.getElementById('chart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'Outside Temp (°F)', data: data.map(d=>d.outside_temp_f),
+          borderColor:'#e67e22', backgroundColor:'transparent', pointRadius:3,
+          pointBackgroundColor:'#e67e22', tension:0.3, borderWidth:2 },
+        { label:'Supply Water (°F)', data: data.map(d=>d.supply_temp_f),
+          borderColor:'#2980b9', backgroundColor:'transparent', pointRadius:3,
+          pointBackgroundColor:'#2980b9', tension:0.3, borderWidth:2 },
+        { label:'Return Water (°F)', data: data.map(d=>d.return_temp_f),
+          borderColor:'#c0392b', backgroundColor:'transparent', pointRadius:3,
+          pointBackgroundColor:'#c0392b', tension:0.3, borderWidth:2 },
+        { label:'Humidity (%)', data: data.map(d=>d.humidity_pct),
+          borderColor:'#27ae60', backgroundColor:'transparent', pointRadius:3,
+          pointBackgroundColor:'#27ae60', tension:0.3, borderWidth:2 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type:'time', time:{ unit:'hour', stepSize:6,
+              displayFormats:{ hour:'MMM d ha' }},
+             grid:{ color:'#f0f0f0' },
+             ticks:{ maxRotation:45, font:{size:11} }},
+        y: { grid:{ color:'#f0f0f0' },
+             ticks:{ font:{size:11} }}
+      },
+      interaction: { intersect:false, mode:'index' }
+    }
+  });
+}
+load();
+setInterval(load, 300000);
+</script>
+</body></html>"""
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -351,6 +428,14 @@ def audit_summary():
         "by_action":   [dict(r) for r in by_action],
         "by_approver": [dict(r) for r in by_approver],
     }
+
+
+# ── Environment Chart (standalone HTML) ───────────────────────
+
+@app.get("/charts/environment", response_class=HTMLResponse)
+def environment_chart():
+    """Standalone HTML line chart — outside temp, supply/return water, humidity."""
+    return ENVIRONMENT_CHART_HTML
 
 
 # ── Health Check ──────────────────────────────────────────────
