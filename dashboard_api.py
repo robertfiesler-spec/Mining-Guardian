@@ -192,6 +192,69 @@ setInterval(load,30000);
 </script>
 </body></html>"""
 
+LLM_INSIGHTS_HTML = """<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Mining Guardian — AI Insights</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8f9fa;padding:24px}
+  h1{font-size:20px;color:#333;margin-bottom:4px}
+  .sub{font-size:13px;color:#888;margin-bottom:16px}
+  .cards{max-width:1000px;display:flex;flex-direction:column;gap:16px}
+  .card{background:#fff;border-radius:10px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #3498db}
+  .card.fleet{border-left-color:#9b59b6}
+  .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .card-header h3{font-size:14px;color:#555}
+  .card-header .time{font-size:12px;color:#aaa}
+  .card-header .duration{font-size:11px;color:#bbb;margin-left:8px}
+  .miner-tag{display:inline-block;background:#eef;color:#336;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;margin-right:6px}
+  .miner-tag.fleet{background:#f3e8ff;color:#6b21a8}
+  .response{font-size:13px;color:#444;line-height:1.6;white-space:pre-wrap;margin-top:8px}
+  .response strong{color:#222}
+  .empty{text-align:center;color:#aaa;padding:40px;font-size:15px}
+  #status{font-size:12px;color:#aaa;margin-top:12px}
+</style>
+</head><body>
+<h1>AI Insights — LLM Analysis History</h1>
+<p class="sub">Ollama LLaMA 3.1 8B analyzing fleet patterns • Auto-refreshes every 5 min</p>
+<div class="cards" id="cards"></div>
+<p id="status">Loading...</p>
+<script>
+async function load(){
+  try{
+    const r=await fetch('/llm/history?limit=20');
+    const data=await r.json();
+    const cards=document.getElementById('cards');
+    if(!data||data.length===0){
+      cards.innerHTML='<div class="empty">No LLM analysis yet — waiting for first scan with issues</div>';
+      document.getElementById('status').textContent='';
+      return;
+    }
+    cards.innerHTML='';
+    data.forEach(d=>{
+      const isFleet=d.miner_id==='fleet';
+      const tag=isFleet?
+        '<span class="miner-tag fleet">Fleet Analysis</span>':
+        '<span class="miner-tag">Miner '+d.miner_id+'</span>';
+      const time=d.analyzed_at?d.analyzed_at.substring(0,16).replace('T',' '):'?';
+      const dur=d.duration_ms?(d.duration_ms/1000).toFixed(1)+'s':'?';
+      const resp=(d.response||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/\*\*(.*?)\*\*/g,'<strong>$1<\/strong>');
+      cards.innerHTML+=
+        '<div class="card '+(isFleet?'fleet':'')+'">'+
+        '<div class="card-header"><h3>'+tag+(d.ip&&d.ip!=='all'&&d.ip!=='historical'?' @ '+d.ip:'')+'</h3>'+
+        '<span><span class="time">'+time+'</span><span class="duration">'+dur+'</span></span></div>'+
+        '<div class="response">'+resp+'</div></div>';
+    });
+    document.getElementById('status').textContent='Last updated: '+new Date().toLocaleTimeString()+' — '+data.length+' analyses';
+  }catch(e){document.getElementById('status').textContent='Error: '+e.message}
+}
+load();
+setInterval(load,300000);
+</script>
+</body></html>"""
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -586,6 +649,12 @@ def environment_chart():
 def power_chart():
     """Standalone HTML dashboard — live warehouse power summary."""
     return POWER_CHART_HTML
+
+
+@app.get("/charts/llm-insights", response_class=HTMLResponse)
+def llm_insights_chart():
+    """Standalone HTML dashboard — LLM analysis history."""
+    return LLM_INSIGHTS_HTML
 
 
 # ── Health Check ──────────────────────────────────────────────
