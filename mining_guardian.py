@@ -2628,6 +2628,72 @@ class MiningGuardian:
             miner_id, dead_idx, ticket_id
         )
 
+    # ── Execute approved actions ──────────────────────────────
+
+    def execute_restart(self, issue: Dict[str, Any]) -> None:
+        """
+        Execute an approved firmware restart with pre-restart log collection.
+
+        Flow:
+          1. Attempt pre-restart log collection (non-blocking, 30s timeout)
+          2. Restart miner via AMS
+          3. Log the action to audit log
+
+        Called when operator approves a RESTART action.
+        """
+        miner_id = issue["id"]
+        ip       = issue["ip"]
+        model    = issue["model"]
+
+        logger.info("[%s] Executing approved firmware restart for %s @ %s", miner_id, model, ip)
+
+        # Step 1 — collect pre-restart logs (skip silently if offline/unavailable)
+        self._collect_logs_nonblocking(miner_id, model, "pre-restart")
+
+        # Step 2 — restart via AMS
+        try:
+            self.ams.reboot_miner([miner_id])
+            logger.info("[%s] Firmware restart sent via AMS", miner_id)
+        except Exception as e:
+            logger.error("[%s] Firmware restart failed: %s", miner_id, e)
+
+    def execute_pdu_cycle(self, issue: Dict[str, Any]) -> None:
+        """
+        Execute an approved PDU power cycle with pre-restart log collection.
+
+        Flow:
+          1. Attempt pre-restart log collection (non-blocking, 30s timeout)
+          2. Turn PDU outlet OFF via AMS
+          3. Wait 10 seconds
+          4. Turn PDU outlet ON via AMS
+          5. Log the action to audit log
+
+        Called when operator approves a PDU_CYCLE action.
+        """
+        miner_id  = issue["id"]
+        ip        = issue["ip"]
+        model     = issue["model"]
+        pdu_id    = issue.get("pdu_id")
+        outlet    = issue.get("outlet")
+
+        if not pdu_id or not outlet:
+            logger.error("[%s] PDU cycle approved but no PDU/outlet info — skipping", miner_id)
+            return
+
+        logger.info("[%s] Executing approved PDU power cycle — PDU %s outlet %s",
+                    miner_id, pdu_id, outlet)
+
+        # Step 1 — collect pre-restart logs (skip silently if offline/unavailable)
+        self._collect_logs_nonblocking(miner_id, model, "pre-pdu-cycle")
+
+        # Step 2 — power cycle via AMS
+        import time
+        try:
+            self.ams.pdu_cycle(pdu_id, outlet)
+            logger.info("[%s] PDU %s outlet %s — power cycled", miner_id, pdu_id, outlet)
+        except Exception as e:
+            logger.error("[%s] PDU cycle failed: %s", miner_id, e)
+
     # ── Report printer ────────────────────────────────────────
 
     @staticmethod
