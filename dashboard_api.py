@@ -405,7 +405,7 @@ def facility_power_live():
                     "kw": round(pw, 2),
                     "voltage": round(p.voltage_a, 1),
                     "amps": round(p.current_a, 1),
-                    "miner": f"miner {mid}" if mid else "support equipment"})
+                    "miner": f"miner {mid}" if mid else "tank cooling system"})
         result["sources"].append(tsrc)
 
     return result
