@@ -1870,7 +1870,7 @@ class SlackNotifier:
                 lines.append(f"  • {temps}")
 
         if issues:
-            lines.append("\n_DRY RUN — no actions taken. Reply *APPROVE* or *DENY* in this thread to execute._")
+            lines.append("\n_Reply *APPROVE* or *DENY* in this thread to execute._")
 
         # AMS notifications section — exclude miners already flagged in main report
         if ams_notifs:
