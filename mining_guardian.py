@@ -1382,6 +1382,24 @@ class GuardianDB:
 
                 CREATE INDEX IF NOT EXISTS idx_restarts_miner
                     ON miner_restarts(miner_id, restarted_at);
+
+                CREATE TABLE IF NOT EXISTS known_dead_boards (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    model           TEXT,
+                    board_indices   TEXT    NOT NULL,
+                    first_seen      TEXT    NOT NULL,
+                    restart_attempted TEXT,
+                    restart_result  TEXT,
+                    ticket_created  TEXT,
+                    resolved_at     TEXT,
+                    notes           TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_dead_boards_miner
+                    ON known_dead_boards(miner_id)
+                    WHERE resolved_at IS NULL;
             """)
         logger.info("Database ready at %s", self.db_path)
 
@@ -1651,6 +1669,45 @@ class GuardianDB:
             except Exception:
                 return None
         return None
+
+    def has_known_dead_boards(self, miner_id: str) -> bool:
+        """Check if this miner has unresolved known dead boards (already attempted restart)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM known_dead_boards WHERE miner_id = ? AND resolved_at IS NULL AND restart_attempted IS NOT NULL",
+                (miner_id,)
+            ).fetchone()
+            return row is not None
+
+    def register_dead_boards(self, miner_id: str, ip: str, model: str,
+                             board_indices: list, restart_result: str = None):
+        """Register or update known dead boards for a miner."""
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM known_dead_boards WHERE miner_id = ? AND resolved_at IS NULL",
+                (miner_id,)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE known_dead_boards SET board_indices = ?, restart_attempted = ?, restart_result = ? WHERE id = ?",
+                    (str(board_indices), now, restart_result, existing[0])
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO known_dead_boards (miner_id, ip, model, board_indices, first_seen, restart_attempted, restart_result) VALUES (?,?,?,?,?,?,?)",
+                    (miner_id, ip, model, str(board_indices), now, now if restart_result else None, restart_result)
+                )
+        logger.info("[%s] Registered known dead boards %s — result: %s", miner_id, board_indices, restart_result)
+
+    def resolve_dead_boards(self, miner_id: str):
+        """Mark dead boards as resolved (boards recovered after restart or repair)."""
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE known_dead_boards SET resolved_at = ? WHERE miner_id = ? AND resolved_at IS NULL",
+                (now, miner_id)
+            )
 
     def last_log_collected(self, miner_id: str) -> Optional[datetime]:
         """Return datetime of last log collection for this miner, or None."""
@@ -2108,16 +2165,20 @@ class MiningGuardian:
         chain_info = self._analyze_chains(chains)
 
         if chain_info["dead_boards"] > 0:
-            dead_idx   = chain_info["dead_indices"]
-            dead_count = chain_info["dead_boards"]
-            issues.append(
-                f"🔴 DEAD HASHBOARD{'S' if dead_count > 1 else ''}: "
-                f"Board{'s' if dead_count > 1 else ''} {dead_idx} offline "
-                f"({chain_info['active_boards']}/{chain_info['expected_boards']} boards active, "
-                f"~{chain_info['pct_capacity']:.0f}% capacity)"
-            )
-            # Restart is the first-line fix — logs collected before and after
-            action = "RESTART_CHECK_BOARDS"
+            # Check if this miner already has known dead boards — skip reflagging
+            if self.db.has_known_dead_boards(miner_id):
+                logger.debug("[%s] Known dead boards — suppressed (ticket already created)", miner_id)
+            else:
+                dead_idx   = chain_info["dead_indices"]
+                dead_count = chain_info["dead_boards"]
+                issues.append(
+                    f"🔴 DEAD HASHBOARD{'S' if dead_count > 1 else ''}: "
+                    f"Board{'s' if dead_count > 1 else ''} {dead_idx} offline "
+                    f"({chain_info['active_boards']}/{chain_info['expected_boards']} boards active, "
+                    f"~{chain_info['pct_capacity']:.0f}% capacity)"
+                )
+                # Restart is the first-line fix — logs collected before and after
+                action = "RESTART_CHECK_BOARDS"
 
         # ── Record baseline sample for Tier 3 learning ───────────────────
         # AMS hashrate field is in GH/s — divide by 1000 to get TH/s
@@ -2827,14 +2888,14 @@ class MiningGuardian:
     # ── Main entry ────────────────────────────────────────────
 
     def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
-        """Download logs for flagged miners every scan, healthy miners every 6 hours."""
+        """Download logs once per day for ALL miners (good or bad) for LLM learning."""
         if not self.config.collect_logs:
             logger.debug("Log collection disabled — set collect_logs: true in config to enable")
             return
 
-        issue_ids = {i["id"] for i in issues}
         now = datetime.now()
         collected = 0
+        daily_seconds = 86400  # 24 hours
 
         for miner in miners:
             miner_id  = str(miner.get("id", ""))
@@ -2843,34 +2904,18 @@ class MiningGuardian:
             if "TH/s" in profile_s and miner.get("name") and miner.get("name") != model:
                 model = miner["name"]
             status    = miner.get("status", "unknown")
-            flagged   = miner_id in issue_ids
 
             # Skip offline miners — no connection means no logs available
             if status == "offline":
                 continue
 
-            # Determine collection priority
-            elevated  = self.db.is_elevated_monitoring(miner_id)
-            last      = self.db.last_log_collected(miner_id)
+            # Once per day for ALL miners — no duplicates
+            last = self.db.last_log_collected(miner_id)
+            if last is not None and (now - last).total_seconds() < daily_seconds:
+                continue  # Already collected today
 
-            if flagged or elevated:
-                # Flagged or post-restart elevated — always collect
-                should_collect = True
-                if elevated:
-                    health_status = "post-restart"
-                else:
-                    health_status = "flagged"
-            elif status == "online":
-                # Healthy miners — collect every 6 hours
-                should_collect = last is None or (now - last).total_seconds() > 21600
-                health_status = "healthy"
-            else:
-                # Offline miners with no PDU — skip log collection
-                should_collect = False
-                health_status = "offline"
-
-            if not should_collect:
-                continue
+            flagged = miner_id in {i["id"] for i in issues}
+            health_status = "flagged" if flagged else "healthy"
 
             try:
                 log_files = self.ams.collect_miner_logs(int(miner_id))
