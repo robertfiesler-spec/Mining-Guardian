@@ -1556,13 +1556,18 @@ class GuardianDB:
                 err_codes = str(m.get("errorCodes") or []) if m.get("errorCodes") else None
                 issue     = issue_map.get(miner_id)
 
+                # Use 'name' when profile confirms BiXBiT firmware and shortModel is wrong
+                raw_model = m.get("shortModel", m.get("name", "unknown"))
+                profile_str = m.get("currentProfile", "")
+                if "TH/s" in profile_str and m.get("name") and m.get("name") != raw_model:
+                    raw_model = m["name"]
                 rows.append((
                     scan_id,
                     now,
                     miner_id,
                     m.get("ip"),
                     m.get("mac"),
-                    m.get("shortModel", m.get("name")),
+                    raw_model,
                     m.get("status"),
                     hashrate,
                     max_hr,
@@ -2765,6 +2770,9 @@ class MiningGuardian:
         for miner in miners:
             miner_id  = str(miner.get("id", ""))
             model     = miner.get("shortModel", miner.get("name", "unknown"))
+            profile_s = miner.get("currentProfile", "")
+            if "TH/s" in profile_s and miner.get("name") and miner.get("name") != model:
+                model = miner["name"]
             status    = miner.get("status", "unknown")
             flagged   = miner_id in issue_ids
 

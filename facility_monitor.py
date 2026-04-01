@@ -43,7 +43,11 @@ PDU_OUTLET_MAP = {
     ('192.168.188.15', 3): '54504',   # AH3880 #1
     ('192.168.188.15', 4): '63940',   # AH3880 #2
     ('192.168.188.16', 3): '53529',   # S21EXPHyd #1
-    ('192.168.188.16', 4): '64407',      # S21EXPHyd #2 @ 192.168.188.26 — not yet in AMS
+    ('192.168.188.16', 4): '64407',   # S21EXPHyd #2 @ 192.168.188.26
+    # Immersion tank B100 ports
+    ('192.168.188.20', 19): '64345',  # S21 Imm #1
+    ('192.168.188.20', 20): '64346',  # S21 Imm #2
+    # Port 22 is the tank's internal cooling system (heat exchanger + pump), NOT a miner
 }
 
 # Tank port → miner ID mapping
