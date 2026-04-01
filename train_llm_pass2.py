@@ -63,8 +63,8 @@ def train_pass2():
     miners, notif_map = get_miner_history()
     logger.info("Pass 2: %d miners with scan history", len(miners))
 
-    # Batch miners into groups of 10 for fleet-level analysis
-    batch_size = 10
+    # Batch miners into groups of 5 for fleet-level analysis (smaller = faster on CPU)
+    batch_size = 5
     results = []
 
     for i in range(0, len(miners), batch_size):

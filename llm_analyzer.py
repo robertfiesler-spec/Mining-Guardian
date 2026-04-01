@@ -92,7 +92,7 @@ class LLMAnalyzer:
                 "model": self.model,
                 "prompt": f"{SYSTEM_PROMPT}\n\n{prompt}",
                 "stream": False
-            }, timeout=120)
+            }, timeout=300)
             elapsed = int((datetime.now() - start).total_seconds() * 1000)
             data = resp.json()
             return data.get("response", ""), elapsed
