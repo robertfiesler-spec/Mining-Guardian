@@ -200,7 +200,61 @@ def weather_history(days: int = 7):
     return [dict(r) for r in rows]
 
 
-# ── Notifications ─────────────────────────────────────────────
+# ── Facility / HVAC ──────────────────────────────────────────
+
+@app.get("/facility/environment_history")
+def environment_history(days: int = 7):
+    """Combined outside weather + HVAC supply/return temps for charting.
+
+    Returns one array of time-series records sorted by timestamp.
+    Uses WEATHER data for outside_temp_f and humidity_pct (accurate).
+    Uses HVAC data for supply_temp_f and return_temp_f.
+    All merged on nearest timestamp.
+    """
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = get_db()
+
+    # Get weather history (outside temp + humidity — authoritative source)
+    wx_rows = conn.execute(
+        "SELECT recorded_at, temp_f as outside_temp_f, humidity_pct "
+        "FROM weather_readings WHERE recorded_at > ? ORDER BY recorded_at ASC",
+        (cutoff,)
+    ).fetchall()
+
+    # Get HVAC history (supply/return water temps)
+    hvac_rows = conn.execute(
+        "SELECT recorded_at, supply_temp_f, return_temp_f, delta_t_f, "
+        "       diff_pressure as diff_pressure_psi, "
+        "       cwp1_vfd_pct, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct "
+        "FROM hvac_readings WHERE recorded_at > ? ORDER BY recorded_at ASC",
+        (cutoff,)
+    ).fetchall()
+    conn.close()
+
+    # Merge on timestamp — pair each weather reading with the closest HVAC reading
+    result = []
+    hvac_list = [dict(r) for r in hvac_rows]
+    hvac_idx = 0
+    for wx in wx_rows:
+        rec = {
+            "recorded_at":    wx["recorded_at"],
+            "outside_temp_f": wx["outside_temp_f"],
+            "humidity_pct":   wx["humidity_pct"],
+            "supply_temp_f":  None,
+            "return_temp_f":  None,
+            "delta_t_f":      None,
+        }
+        # Find nearest HVAC reading within 60 seconds of this weather reading
+        while hvac_idx < len(hvac_list) and hvac_list[hvac_idx]["recorded_at"] < wx["recorded_at"]:
+            hvac_idx += 1
+        if hvac_idx < len(hvac_list):
+            h = hvac_list[hvac_idx]
+            rec["supply_temp_f"] = h["supply_temp_f"]
+            rec["return_temp_f"] = h["return_temp_f"]
+            rec["delta_t_f"]     = h["delta_t_f"]
+        result.append(rec)
+
+    return result
 
 @app.get("/notifications/recent")
 def notifications_recent(limit: int = 50):

@@ -1337,6 +1337,24 @@ class GuardianDB:
                     humidity_min    REAL
                 );
 
+                CREATE TABLE IF NOT EXISTS hvac_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorded_at     TEXT    NOT NULL,
+                    supply_temp_f   REAL,
+                    return_temp_f   REAL,
+                    delta_t_f       REAL,
+                    diff_pressure   REAL,
+                    spray_pump_on   INTEGER,
+                    cwp1_vfd_pct    REAL,
+                    cwp2_vfd_pct    REAL,
+                    ct1_vfd_pct     REAL,
+                    ct2_vfd_pct     REAL,
+                    leak_alarm      INTEGER DEFAULT 0,
+                    ct1_fault       INTEGER DEFAULT 0,
+                    ct2_fault       INTEGER DEFAULT 0,
+                    pump_fault      INTEGER DEFAULT 0
+                );
+
                 CREATE TABLE IF NOT EXISTS miner_logs (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     collected_at  TEXT    NOT NULL,
@@ -1477,6 +1495,34 @@ class GuardianDB:
                  weather.get("temp_low_f"),
                  weather.get("humidity_max"),
                  weather.get("humidity_min"))
+            )
+
+    def save_hvac(self, hvac) -> None:
+        """Store an HVAC snapshot alongside scan data."""
+        if hvac is None:
+            return
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO hvac_readings "
+                "(recorded_at, supply_temp_f, return_temp_f, delta_t_f, "
+                " diff_pressure, spray_pump_on, cwp1_vfd_pct, cwp2_vfd_pct, "
+                " ct1_vfd_pct, ct2_vfd_pct, leak_alarm, ct1_fault, ct2_fault, pump_fault) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (now,
+                 hvac.supply_temp_f,
+                 hvac.return_temp_f,
+                 hvac.delta_t_f,
+                 hvac.diff_pressure_psi,
+                 1 if hvac.spray_pump_on else 0,
+                 hvac.cwp1_vfd_pct,
+                 hvac.cwp2_vfd_pct,
+                 hvac.ct1_vfd_pct,
+                 hvac.ct2_vfd_pct,
+                 1 if hvac.leak_alarm else 0,
+                 1 if hvac.ct1_fault else 0,
+                 1 if hvac.ct2_fault else 0,
+                 1 if hvac.pump_fault else 0)
             )
 
     def save_scan(self, miners: List[Dict], issues: List[Dict]) -> int:
@@ -2770,6 +2816,8 @@ class MiningGuardian:
             self.db.save_weather(wx)
 
         hvac_snapshot = self.hvac.poll()
+        if hvac_snapshot:
+            self.db.save_hvac(hvac_snapshot)
 
         ams_notifs = self.ams.get_notifications("miner")
         if ams_notifs:
