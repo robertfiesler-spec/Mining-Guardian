@@ -1738,14 +1738,16 @@ class SlackNotifier:
             dlt = f"{hvac.delta_t_f:+.1f}°F"   if hvac.delta_t_f     is not None else "N/A"
             dp  = f"{hvac.diff_pressure_psi:.1f} PSI" if hvac.diff_pressure_psi is not None else "N/A"
             pump = "🟢 ON" if hvac.spray_pump_on else "🔴 OFF"
-            fans = f"🟢 {hvac.fans_active} active" if hvac.fans_active > 0 else "🔴 0 active"
-            f1 = "ON" if hvac.ct_fan1_on else "off"
-            f2 = "ON" if hvac.ct_fan2_on else "off"
+            cwp1 = f"{hvac.cwp1_vfd_pct:.0f}%" if hvac.cwp1_vfd_pct is not None else "?"
+            cwp2 = f"{hvac.cwp2_vfd_pct:.0f}%" if hvac.cwp2_vfd_pct is not None else "?"
+            ct1  = f"{hvac.ct1_vfd_pct:.0f}%"  if hvac.ct1_vfd_pct  is not None else "?"
+            ct2  = f"{hvac.ct2_vfd_pct:.0f}%"  if hvac.ct2_vfd_pct  is not None else "?"
 
             hvac_lines = [
                 f"\n*🏭 Warehouse Mechanical*",
                 f"  Supply: *{sup}* | Return: *{ret}* | ΔT: *{dlt}* | Diff Press: *{dp}*",
-                f"  Spray Pump: {pump} | Fans: {fans} (Fan1={f1}, Fan2={f2})",
+                f"  Spray Pump: {pump} | CW Pump 1: {cwp1} | CW Pump 2: {cwp2}",
+                f"  CT Fan 1: {ct1} | CT Fan 2: {ct2}",
             ]
 
             # Alarms

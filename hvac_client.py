@@ -43,6 +43,12 @@ class HVACSnapshot:
     ct_fan_pct:      Optional[float] = None   # AV-10013 CWDP_PID Output or AV-10023
     pump_pct:        Optional[float] = None   # AV-10013 CWDP_PID Output
 
+    # VFD actual speeds (analog outputs — real signal to equipment)
+    cwp1_vfd_pct:    Optional[float] = None   # AO-101 CWP1_VFD
+    cwp2_vfd_pct:    Optional[float] = None   # AO-102 CWP2_VFD (lead pump)
+    ct1_vfd_pct:     Optional[float] = None   # AO-103 CT1_VFD
+    ct2_vfd_pct:     Optional[float] = None   # AO-104 CT2_VFD
+
     # Alarms
     system_enabled:  Optional[bool]  = None   # BV-1 SystemEnable
     leak_alarm:      Optional[bool]  = None   # BV-22 LeakDetection_Alarm (True = alarm)
@@ -76,8 +82,11 @@ class HVACClient:
         "pump_fault":     ("binary-value",  "10",  "present-value"),
         "system_enable":  ("binary-value",  "1",   "present-value"),
         "leak_alarm":     ("binary-value",  "22",  "present-value"),
-        "dp_pid_out":     ("analog-value",  "10013", "present-value"),
-        "pid4_out":       ("analog-value",  "10023", "present-value"),
+        # VFD outputs — actual speed % going to equipment
+        "cwp1_vfd":       ("analog-output", "101", "present-value"),
+        "cwp2_vfd":       ("analog-output", "102", "present-value"),
+        "ct1_vfd":        ("analog-output", "103", "present-value"),
+        "ct2_vfd":        ("analog-output", "104", "present-value"),
     }
 
     def _curl(self, url: str) -> Optional[dict]:
@@ -136,6 +145,12 @@ class HVACClient:
                 fan_pct = self._to_float(vals.get("pid4_out"))
             snap.ct_fan_pct = fan_pct
 
+            # VFD actual speeds
+            snap.cwp1_vfd_pct = self._to_float(vals.get("cwp1_vfd"))
+            snap.cwp2_vfd_pct = self._to_float(vals.get("cwp2_vfd"))
+            snap.ct1_vfd_pct  = self._to_float(vals.get("ct1_vfd"))
+            snap.ct2_vfd_pct  = self._to_float(vals.get("ct2_vfd"))
+
             # Delta T
             if snap.supply_temp_f is not None and snap.return_temp_f is not None:
                 snap.delta_t_f = round(snap.return_temp_f - snap.supply_temp_f, 2)
@@ -176,16 +191,21 @@ def format_hvac_report(snap: HVACSnapshot) -> str:
     pump_str = "🟢 ON" if snap.spray_pump_on else ("🔴 OFF" if snap.spray_pump_on is False else "?")
     lines.append(f"  Spray Pump        :  {pump_str}")
 
-    fan_count = snap.fans_active
-    if snap.ct_fan1_on is not None or snap.ct_fan2_on is not None:
-        f1 = "ON" if snap.ct_fan1_on  else "off"
-        f2 = "ON" if snap.ct_fan2_on  else "off"
-        fan_icon = "🟢" if fan_count > 0 else "🔴"
-        pct_str = f"  @ {snap.ct_fan_pct:.0f}%" if snap.ct_fan_pct is not None else ""
-        lines.append(f"  Cooling Tower Fans:  {fan_icon} {fan_count} active  "
-                     f"(Fan1={f1}, Fan2={f2}){pct_str}")
-    else:
-        lines.append(f"  Cooling Tower Fans:  ?")
+    # Chilled water pumps with VFD %
+    cwp1_pct = f"{snap.cwp1_vfd_pct:.0f}%" if snap.cwp1_vfd_pct is not None else "?"
+    cwp2_pct = f"{snap.cwp2_vfd_pct:.0f}%" if snap.cwp2_vfd_pct is not None else "?"
+    cwp1_icon = "🟢" if snap.cwp1_vfd_pct and snap.cwp1_vfd_pct > 0 else "⚫"
+    cwp2_icon = "🟢" if snap.cwp2_vfd_pct and snap.cwp2_vfd_pct > 0 else "⚫"
+    lines.append(f"  CW Pump 1         :  {cwp1_icon} {cwp1_pct}")
+    lines.append(f"  CW Pump 2         :  {cwp2_icon} {cwp2_pct}")
+
+    # Cooling tower fans with VFD %
+    ct1_pct = f"{snap.ct1_vfd_pct:.0f}%" if snap.ct1_vfd_pct is not None else "?"
+    ct2_pct = f"{snap.ct2_vfd_pct:.0f}%" if snap.ct2_vfd_pct is not None else "?"
+    ct1_icon = "🟢" if snap.ct1_vfd_pct and snap.ct1_vfd_pct > 0 else "⚫"
+    ct2_icon = "🟢" if snap.ct2_vfd_pct and snap.ct2_vfd_pct > 0 else "⚫"
+    lines.append(f"  CT Fan 1          :  {ct1_icon} {ct1_pct}")
+    lines.append(f"  CT Fan 2          :  {ct2_icon} {ct2_pct}")
 
     # Alarms section — only show if something is wrong
     alarms = []
