@@ -268,9 +268,20 @@ class CommandHandler:
         logger.info("Command Handler started — watching #mining-guardian")
         logger.info("Commands: status, miner <ip>, hot, dead, knowledge, btc, or ask anything")
 
-        # Set initial timestamp to NOW so we only process new messages
-        self.last_ts = str(time.time())
-        logger.info("Starting from timestamp: %s", self.last_ts)
+        # Get latest message timestamp as starting point
+        try:
+            resp = self.client.conversations_history(channel=CHANNEL_ID, limit=1)
+            msgs = resp.get("messages", [])
+            if msgs:
+                self.last_ts = msgs[0]["ts"]
+                logger.info("Starting after latest message ts: %s", self.last_ts)
+            else:
+                self.last_ts = str(time.time())
+                logger.info("No messages found, starting from now")
+        except Exception as e:
+            self.last_ts = str(time.time())
+            logger.error("Could not read channel history: %s", e)
+            logger.error("Check that bot has groups:history scope for private channels")
 
         while True:
             try:
@@ -278,25 +289,25 @@ class CommandHandler:
                     channel=CHANNEL_ID, oldest=self.last_ts, limit=10)
                 messages = resp.get("messages", [])
 
-                for msg in reversed(messages):  # process oldest first
+                # Process oldest first
+                for msg in sorted(messages, key=lambda m: float(m.get("ts", "0"))):
                     ts = msg.get("ts", "")
-                    if ts in self.processed:
+                    if ts in self.processed or ts == self.last_ts:
                         continue
                     self.processed.add(ts)
-                    self.last_ts = ts  # advance past this message
+                    self.last_ts = ts
 
-                    # Only respond to human messages (not bot posts)
-                    if msg.get("subtype"):
-                        continue
-                    if msg.get("bot_id"):
+                    # Skip bot messages
+                    if msg.get("subtype") or msg.get("bot_id"):
                         continue
 
                     text = msg.get("text", "").strip()
-                    logger.info("Received message from %s: %s", msg.get("user", "?"), text[:50])
+                    user = msg.get("user", "?")
+                    logger.info("Message from %s: '%s'", user, text[:80])
                     self._handle_message(msg)
 
             except Exception as e:
-                logger.error("Command handler error: %s", e)
+                logger.error("Poll error: %s", e)
 
             time.sleep(POLL_INTERVAL)
 
