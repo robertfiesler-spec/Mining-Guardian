@@ -120,10 +120,16 @@ class LLMAnalyzer:
 
         prompt_parts = [f"Scan #{scan_id} — {len(issues)} miners flagged:\n"]
 
-        for i in issues:
+        # Cap at 10 miners per LLM call to keep prompt manageable for CPU inference
+        capped = issues[:10]
+        if len(issues) > 10:
+            prompt_parts.append(f"(Showing top 10 of {len(issues)} — prioritized by severity)")
+
+        for i in capped:
+            # Keep issue descriptions concise — max 150 chars each
+            issue_str = ' | '.join(i.get('issues', []))[:150]
             line = (f"- Miner {i['id']} ({i['model']}) @ {i['ip']}: "
-                    f"{i.get('action', 'UNKNOWN')} — "
-                    f"{' | '.join(i.get('issues', []))}")
+                    f"{i.get('action', 'UNKNOWN')} — {issue_str}")
             prompt_parts.append(line)
 
         if weather:

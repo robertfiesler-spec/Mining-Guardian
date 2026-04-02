@@ -2978,7 +2978,10 @@ class MiningGuardian:
                         int(self.config.slack_interval_seconds - (now_ts - self._last_slack_post)))
 
         # LLM analysis — feed scan data to local Ollama model
-        if issues:
+        # Skip when scan data is clearly bad (AMS down = all offline)
+        online = sum(1 for m in miners if m.get("status") == "online")
+        actionable_issues = [i for i in issues if i["action"] not in ("MONITOR", "PHYSICAL_CYCLE")]
+        if actionable_issues and online > 0 and len(actionable_issues) <= 20:
             try:
                 from llm_analyzer import LLMAnalyzer
                 analyzer = LLMAnalyzer()
@@ -2988,10 +2991,9 @@ class MiningGuardian:
                     hvac_data = {"supply_temp_f": hvac_snapshot.supply_temp_f,
                                  "return_temp_f": hvac_snapshot.return_temp_f,
                                  "delta_t_f": hvac_snapshot.delta_t_f}
-                analysis = analyzer.analyze_issues(scan_id, issues, wx_data, hvac_data)
+                analysis = analyzer.analyze_issues(scan_id, actionable_issues, wx_data, hvac_data)
                 if analysis:
                     logger.info("LLM analysis: %s", analysis[:200])
-                    # Save LLM insight to persistent knowledge
                     try:
                         from knowledge_manager import KnowledgeManager
                         km = KnowledgeManager()
@@ -3000,6 +3002,10 @@ class MiningGuardian:
                         pass
             except Exception as e:
                 logger.warning("LLM analysis skipped: %s", e)
+        elif issues and online == 0:
+            logger.info("LLM analysis skipped — all miners offline (AMS likely down)")
+        elif len(actionable_issues) > 20:
+            logger.info("LLM analysis skipped — too many issues (%d), likely systemic problem", len(actionable_issues))
 
         # Update persistent knowledge with scan results
         try:
