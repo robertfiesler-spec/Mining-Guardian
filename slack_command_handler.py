@@ -268,17 +268,22 @@ class CommandHandler:
         logger.info("Command Handler started — watching #mining-guardian")
         logger.info("Commands: status, miner <ip>, hot, dead, knowledge, btc, or ask anything")
 
+        # Set initial timestamp to NOW so we only process new messages
+        self.last_ts = str(time.time())
+        logger.info("Starting from timestamp: %s", self.last_ts)
+
         while True:
             try:
                 resp = self.client.conversations_history(
                     channel=CHANNEL_ID, oldest=self.last_ts, limit=10)
                 messages = resp.get("messages", [])
 
-                for msg in messages:
+                for msg in reversed(messages):  # process oldest first
                     ts = msg.get("ts", "")
                     if ts in self.processed:
                         continue
                     self.processed.add(ts)
+                    self.last_ts = ts  # advance past this message
 
                     # Only respond to human messages (not bot posts)
                     if msg.get("subtype"):
@@ -286,10 +291,9 @@ class CommandHandler:
                     if msg.get("bot_id"):
                         continue
 
+                    text = msg.get("text", "").strip()
+                    logger.info("Received message from %s: %s", msg.get("user", "?"), text[:50])
                     self._handle_message(msg)
-
-                if messages:
-                    self.last_ts = messages[0].get("ts", self.last_ts)
 
             except Exception as e:
                 logger.error("Command handler error: %s", e)
