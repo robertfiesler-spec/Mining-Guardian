@@ -44,18 +44,18 @@ DECISION RULES:
 - Miner at 0% hashrate with all boards dead → likely needs physical inspection.
 
 Rules:
-- Be concise and actionable — operators read this in Slack
+- Be CONCISE — max 10 lines total. Operators are busy.
+- Use specific miner IDs and IPs, never ranges like "53480-53590"
 - Focus on ROOT CAUSE, not symptoms
-- If multiple miners have the same issue, identify the common pattern
-- Flag recurring problems that suggest hardware failure vs temporary issues
-- Note any environmental correlations (temperature, power)
-- ALWAYS consider profile adjustment as an option for thermal issues before recommending cooling changes
+- Group miners with the same issue together in one line
+- ALWAYS consider profile adjustment for thermal issues before recommending cooling changes
+- Dead board after 1 restart = maintenance ticket, stop recommending restarts
+- Never recommend air cooling — this facility is 100% liquid cooled
 
-Format your response as:
-DIAGNOSIS: (1-2 sentences)
-ROOT CAUSE: (best guess)
-ACTION: (specific recommendation — include profile adjustment when thermal issues are involved)
-PATTERN: (any trend across multiple scans, or "none detected" if first occurrence)"""
+Format (keep it SHORT):
+DIAGNOSIS: (1 sentence max)
+ACTION: (bullet list, one line per action, include miner IP)
+PATTERN: (1 sentence or "none")"""
 
 
 class LLMAnalyzer:
