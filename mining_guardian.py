@@ -2013,6 +2013,7 @@ class MiningGuardian:
         )
         self.db       = GuardianDB()
         self._last_slack_post = 0  # timestamp of last Slack post
+        self._reported_notif_ids = set()  # AMS notification IDs already reported to Slack
         self.weather  = WeatherCollector()
 
         # ── Three-tier hashrate evaluation ───────────────────────────────
@@ -2944,6 +2945,18 @@ class MiningGuardian:
             self.db.save_notifications(ams_notifs)
             logger.info("Pulled %s AMS notifications", len(ams_notifs))
 
+        # Filter out already-reported notifications for Slack
+        new_notifs = []
+        if ams_notifs:
+            for n in ams_notifs:
+                nid = n.get("id")
+                if nid and nid not in self._reported_notif_ids:
+                    new_notifs.append(n)
+                    self._reported_notif_ids.add(nid)
+            if len(new_notifs) < len(ams_notifs):
+                logger.info("AMS notifications: %d new, %d already reported",
+                            len(new_notifs), len(ams_notifs) - len(new_notifs))
+
         miners   = self.ams.get_miners(self.config.miner_filters)
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot)
@@ -2956,7 +2969,7 @@ class MiningGuardian:
         import time as _time
         now_ts = _time.time()
         if now_ts - self._last_slack_post >= self.config.slack_interval_seconds:
-            thread_ts = self.slack.send_scan(miners, issues, wx, ams_notifs, hvac_snapshot)
+            thread_ts = self.slack.send_scan(miners, issues, wx, new_notifs, hvac_snapshot)
             self._last_slack_post = now_ts
             if thread_ts and issues:
                 self.db.save_pending_approvals(thread_ts, scan_id, issues)
