@@ -42,6 +42,8 @@ DECISION RULES:
 - Hashrate drop without temperature issue → firmware restart.
 - Dead hashboard after 1 restart attempt → create maintenance ticket, stop reflagging.
 - Miner at 0% hashrate with all boards dead → likely needs physical inspection.
+- Chain detachment can indicate a bad/dying hashboard, NOT just a firmware glitch. Compare pre-restart and post-restart logs to determine if the board recovered or if it's hardware failure.
+- Always examine CGMiner logs before and after restarts — log patterns (chain errors, voltage drops, ASIC failures) reveal whether the root cause is firmware, PSU, or a failing board.
 
 Rules:
 - Be CONCISE — max 10 lines total. Operators are busy.
