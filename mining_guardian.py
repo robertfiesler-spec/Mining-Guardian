@@ -1920,13 +1920,7 @@ class SlackNotifier:
             lines.append("  Options: [1] Restart  [2] Lower power  [3] Raise cooling")
 
         if monitors:
-            by_model3: dict = defaultdict(list)
-            for i in monitors:
-                by_model3[i["model"]].append(i)
-            lines.append(f"\n*🟡 Monitor — Running Warm ({len(monitors)} miners)*")
-            for model, group in by_model3.items():
-                temps = ", ".join(f"`{i['ip']}` {i['temp_chip']}" for i in group)
-                lines.append(f"  • {temps}")
+            lines.append(f"\n*🟡 Running Warm — {len(monitors)} miners in yellow zone (76–85°C)*")
 
         if issues:
             lines.append("\n_Reply *APPROVE* or *DENY* in this thread to execute._")
@@ -1972,8 +1966,12 @@ class SlackNotifier:
                     lines.append(f"  🟡 Warning ({len(warnings)})")
                     for key, ips in by_key2.items():
                         label = key_labels.get(key, key)
-                        ip_list = ", ".join(f"`{ip}`" for ip in ips)
-                        lines.append(f"    • *{label}:* {ip_list}")
+                        # Just show count for noisy alerts, IPs for actionable ones
+                        if key in ("workerOnline", "workerOffline", "consumptionChangeLevel"):
+                            lines.append(f"    • *{label}:* {len(ips)} miners")
+                        else:
+                            ip_list = ", ".join(f"`{ip}`" for ip in ips)
+                            lines.append(f"    • *{label}:* {ip_list}")
 
         payload = {"text": "\n".join(lines)}
 
