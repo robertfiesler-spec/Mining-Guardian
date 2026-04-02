@@ -1,0 +1,86 @@
+{
+  "collect_logs": true,
+  "scan_interval_seconds": 300,
+  "slack_interval_seconds": 3600,
+  "miner_filters": {},
+
+  "temp_thresholds": {
+    "yellow": 76,
+    "red": 86,
+    "note": "Standard across all models and cooling types"
+  },
+
+  "profile_map": {
+    "S19JPro": {
+      "display_name": "Antminer S19J Pro",
+      "firmware": "BiXBiT",
+      "boards": 3,
+      "stock_ths": 104,
+      "min_ths": 104,
+      "max_ths": 160,
+      "profiles_parseable": true,
+      "profile_format": "{TH/s} TH/s - {W} W",
+      "note": "BiXBiT firmware allows profiles from 104-160 TH/s. AMS reports as S19JPro, Antminer S19JPro, or Antminer S19j Pro — all same hardware."
+    },
+
+    "AH3880": {
+      "display_name": "Teraflux AH3880",
+      "firmware": "Auradine",
+      "boards": 2,
+      "stock_ths": 300,
+      "min_ths": 300,
+      "max_ths": 600,
+      "profiles_parseable": false,
+      "named_profiles": {
+        "eco": 300,
+        "turbo": 600
+      },
+      "profile_note": "Supports any custom TH/s value from 300-600. Named profiles are shortcuts.",
+      "note": "Auradine firmware uses named profiles. 'turbo' = 600 TH/s, 'eco' = 300 TH/s. Port 8443 HTTPS API."
+    },
+
+    "S21EXPHyd": {
+      "display_name": "Antminer S21 EXP Hydro",
+      "firmware": "BiXBiT",
+      "boards": 3,
+      "stock_ths": 430,
+      "min_ths": 214,
+      "max_ths": 506,
+      "profiles_parseable": true,
+      "profile_format": "{TH/s} TH/s - {W} W",
+      "note": "BiXBiT firmware allows overclock to 506 TH/s. Stock firmware default is 430 TH/s. AMS reports as S21EXPHyd, Antminer S21EXPHyd, or Antminer S21e XP Hyd."
+    },
+
+    "S21Imm": {
+      "display_name": "Antminer S21 Immersion",
+      "firmware": "BiXBiT",
+      "boards": 3,
+      "profiles_parseable": true,
+      "profile_format": "{TH/s} TH/s - {W} W",
+      "per_miner_specs": {
+        "192.168.188.22": {
+          "stock_ths": 208,
+          "min_ths": 208,
+          "max_ths": 360,
+          "note": "S21 Immersion unit 1 — in immersion tank port 19"
+        },
+        "192.168.188.23": {
+          "stock_ths": 217,
+          "min_ths": 217,
+          "max_ths": 347,
+          "note": "S21 Immersion unit 2 — in immersion tank port 20"
+        }
+      },
+      "note": "Two S21 Imm units with different specs. Each has unique stock/max TH/s. In Fog Hashing B100 immersion tank."
+    }
+  },
+
+  "model_aliases": {
+    "Antminer S19JPro": "S19JPro",
+    "Antminer S19j Pro": "S19JPro",
+    "A2": "S19JPro",
+    "Antminer S21EXPHyd": "S21EXPHyd",
+    "Antminer S21e XP Hyd.": "S21EXPHyd",
+    "Antminer S21Imm": "S21Imm"
+  }
+}
