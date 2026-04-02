@@ -1804,6 +1804,65 @@ class SlackNotifier:
             logger.warning("Slack user lookup failed: %s", e)
         return None
 
+    def send_ams_down(self, miners: List[Dict], wx: Optional[Dict] = None,
+                      hvac=None) -> None:
+        """Send a simple AMS-is-down message with just weather and mechanical data."""
+        if not self.webhook_url:
+            return
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        lines = [
+            f"*🤖 Mining Guardian — {now}*",
+            f"🔴 *AMS is offline* — all {len(miners)} miners reporting offline.",
+            "Miner analysis suspended until AMS comes back online.",
+        ]
+
+        if wx:
+            lines.append(
+                f"\n🌡️ Outside: *{wx['temp_f']}°F* | Humidity: *{wx['humidity_pct']}%* | "
+                f"Feels like: {wx['feels_like_f']}°F | Today: {wx['temp_low_f']}–{wx['temp_high_f']}°F"
+            )
+
+        if hvac is not None:
+            sup = f"{hvac.supply_temp_f:.1f}°F" if hvac.supply_temp_f is not None else "N/A"
+            ret = f"{hvac.return_temp_f:.1f}°F" if hvac.return_temp_f is not None else "N/A"
+            dlt = f"{hvac.delta_t_f:+.1f}°F"   if hvac.delta_t_f     is not None else "N/A"
+            dp  = f"{hvac.diff_pressure_psi:.1f} PSI" if hvac.diff_pressure_psi is not None else "N/A"
+            pump = "🟢 ON" if hvac.spray_pump_on else "🔴 OFF"
+            cwp1 = f"{hvac.cwp1_vfd_pct:.0f}%" if hvac.cwp1_vfd_pct is not None else "?"
+            cwp2 = f"{hvac.cwp2_vfd_pct:.0f}%" if hvac.cwp2_vfd_pct is not None else "?"
+            ct1  = f"{hvac.ct1_vfd_pct:.0f}%"  if hvac.ct1_vfd_pct  is not None else "?"
+            ct2  = f"{hvac.ct2_vfd_pct:.0f}%"  if hvac.ct2_vfd_pct  is not None else "?"
+
+            lines.append(f"\n*🏭 Warehouse Mechanical*")
+            lines.append(f"  Supply: *{sup}* | Return: *{ret}* | ΔT: *{dlt}* | Diff Press: *{dp}*")
+            lines.append(f"  Spray Pump: {pump} | CW Pump 1: {cwp1} | CW Pump 2: {cwp2}")
+            lines.append(f"  CT Fan 1: {ct1} | CT Fan 2: {ct2}")
+
+            alarms = []
+            if hvac.leak_alarm:       alarms.append("🔴 LEAK DETECTED")
+            if hvac.tower_vibration:  alarms.append("🔴 TOWER VIBRATION")
+            if hvac.ct1_fault:        alarms.append("🔴 CT Fan 1 FAULT")
+            if hvac.ct2_fault:        alarms.append("🔴 CT Fan 2 FAULT")
+            if hvac.pump_fault:       alarms.append("🔴 Spray Pump FAULT")
+
+            if alarms:
+                lines.append(f"  ⚠️ *ALARMS:* {' | '.join(alarms)}")
+            else:
+                lines.append("  ✅ All alarms clear")
+
+        payload = {"text": "\n".join(lines)}
+        try:
+            if self.bot_token:
+                from slack_sdk import WebClient
+                client = WebClient(token=self.bot_token)
+                client.chat_postMessage(channel=self.channel_id, text=payload["text"])
+            else:
+                requests.post(self.webhook_url, json=payload, timeout=10)
+            logger.info("AMS-down notification sent to Slack")
+        except Exception as e:
+            logger.warning("Slack AMS-down notification failed: %s", e)
+
     def send_scan(self, miners: List[Dict], issues: List[Dict],
                   wx: Optional[Dict] = None,
                   ams_notifs: Optional[List[Dict]] = None,
@@ -2958,6 +3017,33 @@ class MiningGuardian:
                             len(new_notifs), len(ams_notifs) - len(new_notifs))
 
         miners   = self.ams.get_miners(self.config.miner_filters)
+
+        # AMS-down detection — if ALL miners are offline, AMS is likely down
+        online_count = sum(1 for m in miners if m.get("status") == "online")
+        ams_is_down = len(miners) > 0 and online_count == 0
+
+        if ams_is_down:
+            logger.warning("AMS appears down — all %d miners reporting offline", len(miners))
+            # Only post once per hour, just weather + mechanical
+            import time as _time
+            now_ts = _time.time()
+            if now_ts - self._last_slack_post >= self.config.slack_interval_seconds:
+                self._last_slack_post = now_ts
+                self.slack.send_ams_down(miners, wx, hvac_snapshot)
+            else:
+                logger.info("AMS down — Slack throttled, next post in %ds",
+                            int(self.config.slack_interval_seconds - (now_ts - self._last_slack_post)))
+            # Still save scan to DB for tracking, but skip everything else
+            self.db.save_scan(miners, [])
+            # Update knowledge
+            try:
+                from knowledge_manager import KnowledgeManager
+                km = KnowledgeManager()
+                km.update_from_scan(miners, [], wx, hvac_snapshot)
+            except Exception:
+                pass
+            return {"scanned": len(miners), "issues": 0, "ams_down": True}
+
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot)
         scan_id   = self.db.save_scan(miners, issues)
