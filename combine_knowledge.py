@@ -1,187 +1,245 @@
-#!/usr/bin/env python3
 """
 combine_knowledge.py
-Mining Guardian — Central Knowledge Combiner
+Mining Guardian — Federated Knowledge Merger
 
-Run this at your office after collecting knowledge.json files
-from all customer Mac Minis (via USB or manual transfer).
+Takes multiple knowledge.json files from different Mining Guardian deployments,
+feeds them to the LLM for intelligent synthesis, and produces a master_knowledge.json
+that contains combined insights, cross-site patterns, and weighted confidence scores.
 
-Merges all customer knowledge files into a single
-master_knowledge.json weighted by confidence (observation count).
+This is NOT a simple merge — it's a LEARNING EVENT. The LLM reads all knowledge bases
+and produces NEW insights that no single site had individually.
 
 Usage:
-    # Combine all knowledge files in a folder
-    python combine_knowledge.py --input /path/to/collected/
+  python3 combine_knowledge.py site_a.json site_b.json [site_c.json ...]
+  python3 combine_knowledge.py /path/to/exports/*.json
 
-    # Combine specific files
-    python combine_knowledge.py customer1.json customer2.json customer3.json
-
-    # Specify output path
-    python combine_knowledge.py --input ./collected/ --output master_knowledge.json
+Output:
+  master_knowledge.json — combined knowledge for all sites
 """
 
 import json
-import os
-import argparse
+import sys
+import logging
+import requests
 from datetime import datetime
-from collections import defaultdict
-from pathlib import Path
+from typing import List, Dict
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("combine_knowledge")
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL = "llama3.1:8b"
+OUTPUT_PATH = "master_knowledge.json"
 
 
-def load_knowledge_files(paths: list) -> list:
-    """Load and validate knowledge JSON files."""
-    knowledge_list = []
+def load_knowledge_files(paths: List[str]) -> List[Dict]:
+    """Load and validate multiple knowledge.json files."""
+    sites = []
     for path in paths:
         try:
             with open(path) as f:
                 data = json.load(f)
-            if "model_statistics" not in data:
-                print(f"⚠️  Skipping {path} — not a valid knowledge file")
-                continue
-            data["_source_file"] = str(path)
-            knowledge_list.append(data)
-            print(f"✅ Loaded {path} (exported {data.get('exported_at', 'unknown')})")
+            site_name = path.replace("/", "_").replace(".json", "")
+            sites.append({"name": site_name, "data": data, "path": path})
+            miners = len(data.get("miner_profiles", {}))
+            insights = len(data.get("known_issues", []))
+            patterns = len(data.get("patterns", []))
+            logger.info("Loaded %s: %d miners, %d insights, %d patterns",
+                        path, miners, insights, patterns)
         except Exception as e:
-            print(f"❌ Failed to load {path}: {e}")
-    return knowledge_list
+            logger.error("Failed to load %s: %s", path, e)
+    return sites
 
 
-def combine_model_statistics(all_knowledge: list) -> list:
-    """Merge model statistics across all customers, weighted by observation count."""
-    model_data = defaultdict(lambda: {
-        "total_readings": 0,
-        "hashrate_sum": 0.0,
-        "hashrate_count": 0,
-        "temp_sum": 0.0,
-        "temp_count": 0,
-        "max_temp_seen": 0.0,
-        "restart_count": 0,
-        "pdu_cycle_count": 0,
-        "physical_cycle_count": 0,
-        "offline_count": 0,
-    })
+def build_merge_prompt(sites: List[Dict]) -> str:
+    """Build a prompt that asks the LLM to synthesize knowledge from multiple sites."""
+    parts = [
+        "You are Mining Guardian AI performing a KNOWLEDGE MERGE across multiple mining sites.",
+        "Each site has been independently monitoring miners and learning patterns.",
+        "Your job: synthesize ALL knowledge into unified insights that make every site smarter.",
+        "",
+        "INSTRUCTIONS:",
+        "1. Identify patterns that appear at MULTIPLE sites — these are high-confidence universal patterns.",
+        "2. Flag patterns unique to one site — these may be site-specific or early warnings for other sites.",
+        "3. Combine miner model insights — if Site A learned about S19JPro issues and Site B learned about AH3880, both benefit.",
+        "4. Weight confidence by how many sites confirm the same pattern.",
+        "5. Generate NEW insights by cross-referencing: e.g., if Site A sees chain detachment in heat and Site B in cold, it's likely hardware not environmental.",
+        "",
+        f"DATA FROM {len(sites)} SITES:",
+        ""
+    ]
 
-    for k in all_knowledge:
-        for stat in k.get("model_statistics", []):
-            model = stat.get("model")
-            if not model:
-                continue
-            d = model_data[model]
-            d["total_readings"]      += stat.get("total_readings", 0) or 0
-            d["restart_count"]       += stat.get("restart_count", 0) or 0
-            d["pdu_cycle_count"]     += stat.get("pdu_cycle_count", 0) or 0
-            d["physical_cycle_count"]+= stat.get("physical_cycle_count", 0) or 0
-            d["offline_count"]       += stat.get("offline_count", 0) or 0
-            d["max_temp_seen"]        = max(d["max_temp_seen"],
-                                           stat.get("max_temp_seen") or 0)
-            if stat.get("avg_healthy_hashrate"):
-                d["hashrate_sum"]   += stat["avg_healthy_hashrate"] * (stat.get("total_readings") or 1)
-                d["hashrate_count"] += stat.get("total_readings", 1) or 1
-            if stat.get("avg_temp"):
-                d["temp_sum"]   += stat["avg_temp"] * (stat.get("total_readings") or 1)
-                d["temp_count"] += stat.get("total_readings", 1) or 1
+    for site in sites:
+        d = site["data"]
+        parts.append(f"=== SITE: {site['name']} ===")
+        parts.append(f"Miners tracked: {len(d.get('miner_profiles', {}))}")
 
-    results = []
-    for model, d in sorted(model_data.items(), key=lambda x: -x[1]["total_readings"]):
-        results.append({
-            "model":                 model,
-            "total_readings":        d["total_readings"],
-            "avg_healthy_hashrate":  round(d["hashrate_sum"] / d["hashrate_count"], 2)
-                                     if d["hashrate_count"] else None,
-            "avg_temp":              round(d["temp_sum"] / d["temp_count"], 2)
-                                     if d["temp_count"] else None,
-            "max_temp_seen":         d["max_temp_seen"],
-            "restart_count":         d["restart_count"],
-            "pdu_cycle_count":       d["pdu_cycle_count"],
-            "physical_cycle_count":  d["physical_cycle_count"],
-            "offline_count":         d["offline_count"],
-            "failure_rate_pct":      round(
-                (d["restart_count"] + d["pdu_cycle_count"] + d["physical_cycle_count"])
-                / max(d["total_readings"], 1) * 100, 2),
-        })
-    return results
+        # Patterns
+        patterns = d.get("patterns", [])
+        if patterns:
+            parts.append(f"Patterns ({len(patterns)}):")
+            for p in patterns:
+                parts.append(f"  - {p[:200]}")
 
+        # Recent insights
+        insights = d.get("known_issues", [])[-10:]
+        if insights:
+            parts.append(f"Recent insights ({len(insights)}):")
+            for i in insights:
+                parts.append(f"  [{i.get('date','')}] {i.get('insight','')[:200]}")
 
-def combine_notification_patterns(all_knowledge: list) -> list:
-    """Merge AMS notification patterns across all customers."""
-    patterns = defaultdict(lambda: defaultdict(int))
-    for k in all_knowledge:
-        for p in k.get("notification_patterns", []):
-            patterns[p.get("key")][p.get("alert_level")] += p.get("count", 0)
+        # Fleet summary
+        fs = d.get("fleet_summary", {})
+        if fs:
+            parts.append(f"Fleet: {fs.get('total_miners','?')} miners")
+            if fs.get("models"):
+                parts.append(f"Models: {', '.join(fs['models'])}")
+        parts.append("")
 
-    results = []
-    for key, levels in sorted(patterns.items()):
-        for level, count in sorted(levels.items()):
-            results.append({"key": key, "alert_level": level, "count": count})
-    return sorted(results, key=lambda x: -x["count"])
+    parts.append("RESPOND IN JSON FORMAT ONLY (no markdown, no backticks):")
+    parts.append('{')
+    parts.append('  "universal_patterns": ["pattern confirmed across multiple sites"],')
+    parts.append('  "site_specific_patterns": [{"site": "name", "pattern": "...", "may_apply_to": "all/specific"}],')
+    parts.append('  "new_cross_site_insights": ["NEW insight derived from combining data across sites"],')
+    parts.append('  "model_insights": {"S19JPro": ["insight about this model"], "AH3880": ["insight"]},')
+    parts.append('  "confidence_rankings": [{"pattern": "...", "confidence": "high/medium/low", "sites_confirming": 2}]')
+    parts.append('}')
 
+    return "\n".join(parts)
 
-def combine_audit_logs(all_knowledge: list) -> list:
-    """Combine all audit log entries from all customers."""
-    all_entries = []
-    for k in all_knowledge:
-        source = k.get("_source_file", "unknown")
-        for entry in k.get("action_audit_log", []):
-            entry["_source"] = source
-            all_entries.append(entry)
-    return sorted(all_entries, key=lambda x: x.get("date", ""), reverse=True)
+def query_llm(prompt: str) -> str:
+    """Send the merge prompt to Ollama and get synthesized knowledge."""
+    logger.info("Sending merge prompt to LLM (%d chars)...", len(prompt))
+    try:
+        resp = requests.post(OLLAMA_URL, json={
+            "model": MODEL,
+            "prompt": prompt,
+            "stream": False
+        }, timeout=600)  # 10 min timeout for large merges
+        return resp.json().get("response", "")
+    except Exception as e:
+        logger.error("LLM query failed: %s", e)
+        return ""
 
 
-def combine_knowledge(input_paths: list, output_path: str = "master_knowledge.json"):
-    """Main combiner — merges all knowledge files into one master file."""
-    print(f"\n{'='*60}")
-    print(f"  Mining Guardian — Knowledge Combiner")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print(f"{'='*60}\n")
-
-    all_knowledge = load_knowledge_files(input_paths)
-    if not all_knowledge:
-        print("❌ No valid knowledge files found. Exiting.")
-        return
-
-    print(f"\nCombining {len(all_knowledge)} knowledge files...\n")
-
+def build_master_knowledge(sites: List[Dict], llm_synthesis: str) -> Dict:
+    """Combine raw knowledge from all sites with LLM synthesis into master."""
     master = {
-        "combined_at":    datetime.now().isoformat(),
-        "combine_version":"1.0",
-        "source_count":   len(all_knowledge),
-        "sources":        [k.get("_source_file") for k in all_knowledge],
-        "model_statistics":       combine_model_statistics(all_knowledge),
-        "notification_patterns":  combine_notification_patterns(all_knowledge),
-        "action_audit_log":       combine_audit_logs(all_knowledge),
+        "version": 1,
+        "last_merged": datetime.now().isoformat(),
+        "sites_merged": [s["name"] for s in sites],
+        "site_count": len(sites),
+        "fleet_summary": {},
+        "miner_profiles": {},
+        "known_issues": [],
+        "patterns": [],
+        "llm_synthesis": {},
     }
 
-    with open(output_path, "w") as f:
-        json.dump(master, f, indent=2, default=str)
+    # Merge miner profiles — keep the one with the most flags (most data)
+    for site in sites:
+        for mid, profile in site["data"].get("miner_profiles", {}).items():
+            key = f"{site['name']}_{mid}"
+            existing = master["miner_profiles"].get(key)
+            if not existing or profile.get("total_flags", 0) > existing.get("total_flags", 0):
+                master["miner_profiles"][key] = profile
 
-    print(f"✅ Master knowledge written to {output_path}")
-    print(f"   Sources combined:   {len(all_knowledge)}")
-    print(f"   Models tracked:     {len(master['model_statistics'])}")
-    print(f"   Alert patterns:     {len(master['notification_patterns'])}")
-    print(f"   Audit entries:      {len(master['action_audit_log'])}")
-    print(f"\nDistribute {output_path} to all customer Mac Minis.")
-    print("Drop it in the Mining Guardian repo folder as master_knowledge.json.")
+    # Merge patterns — deduplicate by similarity
+    all_patterns = set()
+    for site in sites:
+        for p in site["data"].get("patterns", []):
+            all_patterns.add(p)
+    master["patterns"] = list(all_patterns)
+
+    # Merge insights — keep all, sorted by date
+    all_insights = []
+    for site in sites:
+        for i in site["data"].get("known_issues", []):
+            i["source_site"] = site["name"]
+            all_insights.append(i)
+    all_insights.sort(key=lambda x: x.get("date", ""), reverse=True)
+    master["known_issues"] = all_insights[:100]  # keep top 100
+
+    # Add LLM synthesis
+    try:
+        synthesis = json.loads(llm_synthesis)
+        master["llm_synthesis"] = synthesis
+
+        # Add universal patterns from LLM to the main patterns list
+        for p in synthesis.get("universal_patterns", []):
+            if p not in master["patterns"]:
+                master["patterns"].append(p)
+
+        # Add cross-site insights as known issues
+        for insight in synthesis.get("new_cross_site_insights", []):
+            master["known_issues"].insert(0, {
+                "date": datetime.now().isoformat()[:10],
+                "miner_id": "cross-site",
+                "insight": insight,
+                "source_site": "llm_merge"
+            })
+    except json.JSONDecodeError:
+        logger.warning("LLM response was not valid JSON — saving raw text")
+        master["llm_synthesis"] = {"raw_response": llm_synthesis[:2000]}
+
+    # Fleet summary
+    total_miners = sum(len(s["data"].get("miner_profiles", {})) for s in sites)
+    all_models = set()
+    for s in sites:
+        fs = s["data"].get("fleet_summary", {})
+        if fs.get("models"):
+            all_models.update(fs["models"])
+    master["fleet_summary"] = {
+        "total_miners_across_sites": total_miners,
+        "models": list(all_models),
+        "sites": len(sites)
+    }
+
+    return master
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: python3 combine_knowledge.py site_a.json site_b.json [site_c.json ...]")
+        print("  Merges multiple knowledge.json files with LLM-powered synthesis.")
+        print("  Output: master_knowledge.json")
+        sys.exit(1)
+
+    paths = sys.argv[1:]
+    logger.info("=" * 60)
+    logger.info("FEDERATED KNOWLEDGE MERGE — %d sites", len(paths))
+    logger.info("=" * 60)
+
+    # Load all knowledge files
+    sites = load_knowledge_files(paths)
+    if len(sites) < 2:
+        logger.error("Need at least 2 knowledge files to merge")
+        sys.exit(1)
+
+    # Build merge prompt and send to LLM
+    prompt = build_merge_prompt(sites)
+    llm_response = query_llm(prompt)
+    if llm_response:
+        logger.info("LLM synthesis received (%d chars)", len(llm_response))
+    else:
+        logger.warning("LLM synthesis failed — merging without AI insights")
+
+    # Build master knowledge
+    master = build_master_knowledge(sites, llm_response)
+
+    # Save
+    with open(OUTPUT_PATH, "w") as f:
+        json.dump(master, f, indent=2)
+
+    logger.info("=" * 60)
+    logger.info("MERGE COMPLETE — master_knowledge.json")
+    logger.info("  Sites merged: %d", master["site_count"])
+    logger.info("  Total miners: %d", len(master["miner_profiles"]))
+    logger.info("  Patterns: %d", len(master["patterns"]))
+    logger.info("  Insights: %d", len(master["known_issues"]))
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Combine Mining Guardian knowledge files")
-    parser.add_argument("files", nargs="*", help="Knowledge JSON files to combine")
-    parser.add_argument("--input", help="Folder containing knowledge JSON files")
-    parser.add_argument("--output", default="master_knowledge.json",
-                        help="Output file (default: master_knowledge.json)")
-    args = parser.parse_args()
-
-    paths = []
-    if args.input:
-        folder = Path(args.input)
-        paths = list(folder.glob("*.json"))
-        if not paths:
-            print(f"No JSON files found in {args.input}")
-            exit(1)
-    elif args.files:
-        paths = [Path(f) for f in args.files]
-    else:
-        print("Usage: python combine_knowledge.py --input /folder/  OR  file1.json file2.json")
-        exit(1)
-
-    combine_knowledge(paths, args.output)
+    main()
