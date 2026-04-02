@@ -288,6 +288,8 @@ class CommandHandler:
                 resp = self.client.conversations_history(
                     channel=CHANNEL_ID, oldest=self.last_ts, limit=10)
                 messages = resp.get("messages", [])
+                if messages:
+                    logger.info("Poll returned %d messages (oldest_ts=%s)", len(messages), self.last_ts)
 
                 # Process oldest first
                 for msg in sorted(messages, key=lambda m: float(m.get("ts", "0"))):
