@@ -17,12 +17,16 @@ Output:
   master_knowledge.json — combined knowledge for all sites
 """
 
+import os
 import json
 import sys
 import logging
 import requests
 from datetime import datetime
 from typing import List, Dict
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
@@ -31,6 +35,9 @@ logger = logging.getLogger("combine_knowledge")
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = "llama3.1:8b"
 OUTPUT_PATH = "master_knowledge.json"
+
+# Use Claude API if available, fall back to Ollama
+CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 
 def load_knowledge_files(paths: List[str]) -> List[Dict]:
@@ -109,14 +116,33 @@ def build_merge_prompt(sites: List[Dict]) -> str:
     return "\n".join(parts)
 
 def query_llm(prompt: str) -> str:
-    """Send the merge prompt to Ollama and get synthesized knowledge."""
-    logger.info("Sending merge prompt to LLM (%d chars)...", len(prompt))
+    """Send the merge prompt to Claude API (preferred) or Ollama (fallback)."""
+    if CLAUDE_API_KEY:
+        logger.info("Using Claude API for knowledge merge (%d chars)...", len(prompt))
+        try:
+            resp = requests.post("https://api.anthropic.com/v1/messages", json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 4096,
+                "messages": [{"role": "user", "content": prompt}]
+            }, headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }, timeout=120)
+            data = resp.json()
+            text = data.get("content", [{}])[0].get("text", "")
+            logger.info("Claude merge complete (%d chars)", len(text))
+            return text
+        except Exception as e:
+            logger.error("Claude API failed: %s — falling back to Ollama", e)
+
+    logger.info("Using Ollama for knowledge merge (%d chars)...", len(prompt))
     try:
         resp = requests.post(OLLAMA_URL, json={
             "model": MODEL,
             "prompt": prompt,
             "stream": False
-        }, timeout=600)  # 10 min timeout for large merges
+        }, timeout=600)
         return resp.json().get("response", "")
     except Exception as e:
         logger.error("LLM query failed: %s", e)

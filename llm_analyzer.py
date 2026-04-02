@@ -6,18 +6,25 @@ Sends miner scan data and collected logs to the local Ollama LLM
 for diagnosis and pattern detection. Stores analysis results in the database.
 """
 
+import os
 import json
 import logging
 import sqlite3
 import requests
 from datetime import datetime
 from typing import Optional, Dict, List
+from dotenv import load_dotenv
 
+load_dotenv()
 logger = logging.getLogger("llm_analyzer")
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "llama3.1:8b"
+MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 DB_PATH = "guardian.db"
+
+# Claude API for deep analysis (weekly training, knowledge merge)
+CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = "claude-sonnet-4-20250514"
 
 SYSTEM_PROMPT = """You are Mining Guardian AI, an expert Bitcoin mining fleet analyst for BiXBiT USA.
 You analyze miner scan data and logs to diagnose problems, identify patterns, and recommend actions.
@@ -112,6 +119,46 @@ class LLMAnalyzer:
         except Exception as e:
             logger.error("LLM query failed: %s", e)
             return f"LLM error: {e}", 0
+
+    def _query_claude(self, prompt: str) -> tuple:
+        """Send prompt to Claude API for deep analysis. Used for weekly training and knowledge merge."""
+        if not CLAUDE_API_KEY:
+            logger.warning("Claude API key not set — falling back to Ollama")
+            return self._query_llm(prompt)
+        try:
+            start = datetime.now()
+            resp = requests.post("https://api.anthropic.com/v1/messages", json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": 4096,
+                "messages": [{"role": "user", "content": f"{SYSTEM_PROMPT}\n\n{prompt}"}]
+            }, headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }, timeout=120)
+            elapsed = int((datetime.now() - start).total_seconds() * 1000)
+            data = resp.json()
+            text = data.get("content", [{}])[0].get("text", "")
+            logger.info("Claude analysis complete (%dms, %d chars)", elapsed, len(text))
+            return text, elapsed
+        except Exception as e:
+            logger.error("Claude API failed: %s — falling back to Ollama", e)
+            return self._query_llm(prompt)
+
+    def deep_analyze(self, prompt: str) -> str:
+        """Use Claude API for deep analysis (weekly training, knowledge merge). Falls back to Ollama."""
+        response, duration = self._query_claude(prompt)
+        conn = sqlite3.connect(self.db_path)
+        model_used = CLAUDE_MODEL if CLAUDE_API_KEY else self.model
+        conn.execute("""
+            INSERT INTO llm_analysis
+            (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (0, datetime.now().isoformat(), "deep_analysis", "all",
+              prompt[:2000], response, model_used, duration))
+        conn.commit()
+        conn.close()
+        return response
 
     def analyze_issues(self, scan_id: int, issues: List[Dict],
                        weather: Optional[Dict] = None,
