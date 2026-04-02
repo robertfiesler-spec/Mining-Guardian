@@ -87,10 +87,21 @@ class LLMAnalyzer:
     def _query_llm(self, prompt: str) -> tuple:
         """Send prompt to Ollama and return (response_text, duration_ms)."""
         try:
+            # Include accumulated fleet knowledge in every prompt
+            knowledge_context = ""
+            try:
+                from knowledge_manager import KnowledgeManager
+                km = KnowledgeManager()
+                knowledge_context = km.build_context_prompt()
+            except Exception:
+                pass
+
+            full_prompt = f"{SYSTEM_PROMPT}\n\n{knowledge_context}\n\n{prompt}" if knowledge_context else f"{SYSTEM_PROMPT}\n\n{prompt}"
+
             start = datetime.now()
             resp = requests.post(self.ollama_url, json={
                 "model": self.model,
-                "prompt": f"{SYSTEM_PROMPT}\n\n{prompt}",
+                "prompt": full_prompt,
                 "stream": False
             }, timeout=300)
             elapsed = int((datetime.now() - start).total_seconds() * 1000)

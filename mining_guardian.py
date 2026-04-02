@@ -2991,8 +2991,23 @@ class MiningGuardian:
                 analysis = analyzer.analyze_issues(scan_id, issues, wx_data, hvac_data)
                 if analysis:
                     logger.info("LLM analysis: %s", analysis[:200])
+                    # Save LLM insight to persistent knowledge
+                    try:
+                        from knowledge_manager import KnowledgeManager
+                        km = KnowledgeManager()
+                        km.add_llm_insight(analysis)
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.warning("LLM analysis skipped: %s", e)
+
+        # Update persistent knowledge with scan results
+        try:
+            from knowledge_manager import KnowledgeManager
+            km = KnowledgeManager()
+            km.update_from_scan(miners, issues, wx, hvac_snapshot)
+        except Exception as e:
+            logger.warning("Knowledge update skipped: %s", e)
 
         return {
             "scanned": len(miners),
