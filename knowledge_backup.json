@@ -1,0 +1,1808 @@
+{
+  "version": 1,
+  "last_updated": "2026-04-02T17:16:25.280812",
+  "fleet_summary": {
+    "last_scan": "2026-04-02T17:16:25.280781",
+    "total_miners": 49,
+    "online": 0,
+    "offline": 49,
+    "issues_this_scan": 0,
+    "outside_temp_f": 75.5,
+    "supply_water_f": 75.05,
+    "return_water_f": 86.64
+  },
+  "miner_profiles": {
+    "53475": {
+      "model": "S21EXPHyd",
+      "ip": "192.168.188.26",
+      "total_flags": 28,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "53476": {
+      "model": "A2",
+      "ip": "192.168.188.31",
+      "total_flags": 130,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53477": {
+      "model": "S19JPro",
+      "ip": "192.168.188.36",
+      "total_flags": 93,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53478": {
+      "model": "S19JPro",
+      "ip": "192.168.188.37",
+      "total_flags": 0,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "53479": {
+      "model": "S19JPro",
+      "ip": "192.168.188.40",
+      "total_flags": 23,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "53480": {
+      "model": "S19JPro",
+      "ip": "192.168.188.44",
+      "total_flags": 51,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53481": {
+      "model": "S19JPro",
+      "ip": "192.168.188.45",
+      "total_flags": 30,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53482": {
+      "model": "S19JPro",
+      "ip": "192.168.188.46",
+      "total_flags": 49,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53483": {
+      "model": "S19JPro",
+      "ip": "192.168.188.48",
+      "total_flags": 11,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53484": {
+      "model": "S19JPro",
+      "ip": "192.168.188.49",
+      "total_flags": 41,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53486": {
+      "model": "S19JPro",
+      "ip": "192.168.188.56",
+      "total_flags": 44,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53487": {
+      "model": "S19JPro",
+      "ip": "192.168.188.57",
+      "total_flags": 20,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53488": {
+      "model": "S19JPro",
+      "ip": "192.168.188.58",
+      "total_flags": 23,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "53489": {
+      "model": "S19JPro",
+      "ip": "192.168.188.60",
+      "total_flags": 9,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53490": {
+      "model": "S19JPro",
+      "ip": "192.168.188.62",
+      "total_flags": 21,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53491": {
+      "model": "S19JPro",
+      "ip": "192.168.188.70",
+      "total_flags": 14,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53492": {
+      "model": "S19JPro",
+      "ip": "192.168.188.71",
+      "total_flags": 30,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53493": {
+      "model": "S19JPro",
+      "ip": "192.168.188.81",
+      "total_flags": 35,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53494": {
+      "model": "S19JPro",
+      "ip": "192.168.188.84",
+      "total_flags": 30,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53495": {
+      "model": "S19JPro",
+      "ip": "192.168.188.96",
+      "total_flags": 14,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53496": {
+      "model": "S19JPro",
+      "ip": "192.168.188.97",
+      "total_flags": 30,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53497": {
+      "model": "S19JPro",
+      "ip": "192.168.188.98",
+      "total_flags": 31,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53499": {
+      "model": "S19JPro",
+      "ip": "192.168.188.125",
+      "total_flags": 10,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53501": {
+      "model": "S19JPro",
+      "ip": "192.168.188.128",
+      "total_flags": 34,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53502": {
+      "model": "S19JPro",
+      "ip": "192.168.188.133",
+      "total_flags": 8,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53504": {
+      "model": "S19JPro",
+      "ip": "192.168.188.152",
+      "total_flags": 7,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53506": {
+      "model": "S19JPro",
+      "ip": "192.168.188.178",
+      "total_flags": 23,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "53507": {
+      "model": "S19JPro",
+      "ip": "192.168.188.192",
+      "total_flags": 9,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53508": {
+      "model": "S19JPro",
+      "ip": "192.168.188.194",
+      "total_flags": 20,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53510": {
+      "model": "S19JPro",
+      "ip": "192.168.188.196",
+      "total_flags": 55,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53511": {
+      "model": "S19JPro",
+      "ip": "192.168.188.206",
+      "total_flags": 24,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53512": {
+      "model": "S19JPro",
+      "ip": "192.168.188.216",
+      "total_flags": 0,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "53513": {
+      "model": "S19JPro",
+      "ip": "192.168.188.225",
+      "total_flags": 43,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53514": {
+      "model": "S19JPro",
+      "ip": "192.168.188.226",
+      "total_flags": 35,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53515": {
+      "model": "S19JPro",
+      "ip": "192.168.188.227",
+      "total_flags": 14,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53516": {
+      "model": "S19JPro",
+      "ip": "192.168.188.228",
+      "total_flags": 15,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53517": {
+      "model": "S19JPro",
+      "ip": "192.168.188.231",
+      "total_flags": 44,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53519": {
+      "model": "S19JPro",
+      "ip": "192.168.188.234",
+      "total_flags": 13,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53520": {
+      "model": "S19JPro",
+      "ip": "192.168.188.238",
+      "total_flags": 26,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53521": {
+      "model": "S19JPro",
+      "ip": "192.168.188.12",
+      "total_flags": 53,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53522": {
+      "model": "S19JPro",
+      "ip": "192.168.188.52",
+      "total_flags": 23,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53523": {
+      "model": "S19JPro",
+      "ip": "192.168.188.103",
+      "total_flags": 23,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "53526": {
+      "model": "S19JPro",
+      "ip": "192.168.188.233",
+      "total_flags": 34,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53527": {
+      "model": "S19JPro",
+      "ip": "192.168.188.195",
+      "total_flags": 126,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53528": {
+      "model": "S19JPro",
+      "ip": "192.168.188.136",
+      "total_flags": 31,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "53529": {
+      "model": "S21EXPHyd",
+      "ip": "192.168.188.25",
+      "total_flags": 44,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "54504": {
+      "model": "AH3880",
+      "ip": "192.168.188.27",
+      "total_flags": 34,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "54566": {
+      "model": "S19JPro",
+      "ip": "192.168.188.32",
+      "total_flags": 32,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "54567": {
+      "model": "S19JPro",
+      "ip": "192.168.188.35",
+      "total_flags": 9,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "54568": {
+      "model": "S19JPro",
+      "ip": "192.168.188.249",
+      "total_flags": 0,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "54569": {
+      "model": "S19JPro",
+      "ip": "192.168.188.251",
+      "total_flags": 28,
+      "last_flagged": null,
+      "issue_history": []
+    },
+    "54570": {
+      "model": "S19JPro",
+      "ip": "192.168.188.127",
+      "total_flags": 42,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "63940": {
+      "model": "AH3880",
+      "ip": "192.168.188.28",
+      "total_flags": 37,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "64345": {
+      "model": "S21Imm",
+      "ip": "192.168.188.22",
+      "total_flags": 7,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "64346": {
+      "model": "S21Imm",
+      "ip": "192.168.188.23",
+      "total_flags": 15,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "64347": {
+      "model": "S19JPro",
+      "ip": "192.168.188.177",
+      "total_flags": 91,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "64348": {
+      "model": "S19JPro",
+      "ip": "192.168.188.50",
+      "total_flags": 16,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PHYSICAL_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    },
+    "64407": {
+      "model": "S21EXPHyd",
+      "ip": "192.168.188.26",
+      "total_flags": 98,
+      "last_flagged": "2026-04-02T14:04:17.281368",
+      "issue_history": [
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "PDU_CYCLE",
+          "summary": "OFFLINE"
+        }
+      ]
+    }
+  },
+  "known_issues": [
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple miners are experiencing issues, including dead hashboards, stuck boards, sensor errors, and temperature warnings.\n\n**ROOT CAUSE:**\n\n* Miners 53476, 53527: Dead or stuck hashboards ( likely hardware failure)\n* Miners 64347, 64407: Sensor errors due to invalid temperature readings ( likely software glitch or faulty sensor)\n* Miners 53480-53590 (except 53501): Yellow chip temperatures ( likely thermal management issue)\n\n**ACTION:**\n\n* For miners with dead or stuck hashboards"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple miners are experiencing hash rate drops, dead hashboards, or temperature issues, indicating a combination of hardware and environmental problems.\n\n**ROOT CAUSE:** Hardware failures (dead hashboards), thermal management issues, and possible sensor errors due to incorrect temperature readings.\n\n**ACTION:**\n\n1. **Miner 53476**: Dead hashboard after restart attempt; create maintenance ticket.\n2. **Miners 53507, 53511, 53527**: Lower TH/s profile from \"144 TH/s\" to \"120 TH/s\" "
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple miners experiencing hashrate drops, dead boards, or high temperatures, suggesting a combination of hardware and environmental issues.\n\n**ROOT CAUSE:**\n\n1. **Dead Hashboards**: Miner 53476 and 53527 have dead hashboards, indicating potential hardware failure.\n2. **Temperature Issues**: Miners 53480-53597 are running hot (YELLOW zone), which may be caused by the high ambient temperature (86.3\u00b0F) or an individual miner's thermal profile issue.\n\n**ACTION:**\n\n1. **Restart Dead"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Scan #0 Diagnosis:** Five miners experienced a single occurrence of hashrate drop, indicating possible software or firmware issues.\n\n**ROOT CAUSE:** Temporary software glitch or firmware issue causing the hashrate drop.\n\n**ACTION:**\n\n* Miner 53519 (S19JPro): **Firmware restart**\n* Miners 54567 and 64345 (S19JPro and S21Imm, respectively) and 53478 (S19JPro): **Firmware restart** (no profile adjustment needed)\n* Miner 64346 (S21Imm): **Lower TH/s profile to 80 TH/s**, as it's running at maximum"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Scan #0 Analysis**\n\n**Miner 53494 (Antminer S19JPro) @ 192.168.188.84:**\nDIAGNOSIS: Persistent hardware failure or software issue, despite multiple restarts.\nROOT CAUSE: Likely hardware failure, given the high frequency of flags and lack of progress with restart attempts.\nACTION: Physical inspection is recommended to identify the root cause.\n\n**Miner 64407 (Antminer S21e XP Hyd.) @ 192.168.188.26:**\nDIAGNOSIS: Hashrate drop without apparent temperature issue, suggesting software or firmware pr"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Scan #0 Analysis**\n\n**DIAGNOSIS:** Multiple S19JPro miners are experiencing persistent hashrate drops with frequent restarts and physical power cycles, suggesting a hardware or firmware issue.\n\n**ROOT CAUSE:** Hardware failure is the most likely cause, given the repeated occurrences across multiple miners. It's possible that a specific batch of S19JPro miners is affected by a manufacturing defect or faulty components.\n\n**ACTION:**\n\n* Recommend immediate physical inspection for Miner 53521 (Ant"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Scan #0 Analysis**\n\n**Miner 53496 (Antminer S19JPro) @ 192.168.188.97:** \nDIAGNOSIS: Persistent hashrate drop, high flags.\nROOT CAUSE: Temporary software glitch or hardware failure.\nACTION: PDU power cycle and check for physical issues after cycling.\n\n**Miner 53501 (S19JPro) @ 192.168.188.128:** \nDIAGNOSIS: High flags, low hashrate drop.\nROOT CAUSE: Similar to Miner 53496, temporary software glitch or hardware failure.\nACTION: PDU power cycle and check for physical issues after cycling.\n\n**Min"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Scan #0 Analysis**\n\n**DIAGNOSIS:** Four S19JPro miners are experiencing persistent hash rate drops (HR <90%), with some showing higher frequency of restarts.\n\n**ROOT CAUSE:** Temporary software or firmware issues, possibly related to environmental conditions.\n\n**ACTION:**\n- Restart all four miners.\n- Consider lowering their TH/s profile by 10% (e.g., from \"144 TH/s\" to \"130.4 TH/s\") for Miner 53517 and adjust accordingly for the others if temperature doesn't improve post-restart.\n- Perform phy"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Scan #0 Diagnosis**: Four Antminer S19JPro/AH3880 miners are experiencing repeated hashrate drops and restarts, indicating potential hardware or software issues.\n\n**ROOT CAUSE**: All four miners have the same issue, suggesting a common pattern that may not be related to environmental factors (temperature is within normal range). Given the frequency of restarts and physical cycle flags, it's likely that we're dealing with recurring hardware failures rather than temporary issues. I suspect some "
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple miners are experiencing persistent hashrate drops (37% to 91%), with some showing signs of hardware failure.\n\n**ROOT CAUSE:** Likely a combination of firmware/software glitches and possible hardware issues.\n\n**ACTION:**\n\n1. **Miner 63940 (AH3880)**: Immediate physical inspection is required due to repeated failures, even after restarts and PDU cycles.\n2. For miners 53480, 53486, and 53514 (S19JPro): Restart + Dead Hashboard restart for each miner to assess if boards recov"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Scan #57 Analysis**\n\n**DIAGNOSIS:** Multiple miners are experiencing hash rate drops, dead hashboards, or temperature warnings, indicating potential thermal management issues or hardware failures.\n\n**ROOT CAUSE:** Environmental correlation with the current 86.0\u00b0F (30\u00b0C) outside ambient temperature in Fort Worth, TX may be exacerbating the thermal management issues.\n\n**ACTION:**\n\n1. **Miner 53476**: Dead hashboard; restart and compare logs before/after to check if board recovers. If not, create"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple miners are experiencing restarts, dead hashboards, or temperature-related issues, indicating potential hardware problems or environmental factors affecting performance.\n\n**ROOT CAUSE:**\n\n1. **Miner 53476**: Dead hashboards ( Boards [0, 1, 2] offline) likely due to physical damage or manufacturing defect.\n2. **Temperature-related issues:** Multiple S19JPro miners have chip temperatures between 76\u00b0C and 78\u00b0C, which is close to the upper limit of the recommended range (76-85"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**Executive Summary**\n\nOur latest scan reveals mixed results for the BiXBiT USA mining fleet. While overall hashrate is above average at 98.6%, some units are experiencing repeated issues that require immediate attention. We've identified a small number of miners with high flag counts, indicating potential hardware or environmental stressors. Our analysis will prioritize these units to minimize downtime and ensure optimal performance.\n\n**Top 5 Miners Requiring Immediate Maintenance**\n\n1. **Miner"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple S19JPro miners have restarted, with elevated Hash Rate (HR) averages across all instances.\n\n**ROOT CAUSE:** Insufficient cooling or high ambient temperature causing the miners to automatically restart.\n\n**ACTION:** Increase fan speed on affected S19JPro miners to 80% and monitor for improvement. If issues persist, consider relocating these units to a cooler environment.\n\n**PATTERN:** All affected miners are S19JPro models; none of the other models (S21Imm) have reported r"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple Antminer S19JPros are experiencing restarts and monitor flags due to high hash rate (HR) averages. Some miners also report physical cycle errors.\n\n**ROOT CAUSE:** Overheating likely caused by inadequate cooling, as all affected miners have high HR averages (ranging from 156% to 177%) which can indicate excessive heat buildup.\n\n**ACTION:** Check the cooling systems on these miners, focusing on those with the highest HR averages (53507, 53508, and 53516). Consider temporary"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple Antminer S19JPro and S21EXPHyd miners are experiencing repeated restarts and physical cycle errors.\n\n**ROOT CAUSE:** Overheating due to high ambient temperature (average of 25-30\u00b0C) in the mining room, causing thermal throttling and subsequent system resets.\n\n**ACTION:** Immediately reduce miner load to prevent further overheating. Recommend adjusting the air conditioning settings or adding more cooling units to maintain a stable temperature below 20\u00b0C.\n\n**PATTERN:** None"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "DIAGNOSIS: Multiple S19JPro miners are experiencing restarts, physical cycle failures, and monitoring errors, affecting their performance and availability.\n\nROOT CAUSE: **Possible overheating issue**, as all affected miners have average HR (hash rate) percentages below 90% despite being identical models. This suggests a common environmental factor rather than hardware-specific problems.\n\nACTION: Investigate temperature readings for these miners to confirm overheating is the cause, then consider "
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "fleet",
+      "insight": "**DIAGNOSIS:** Multiple Antminer S19JPro and S21e XP Hyd. miners are experiencing hash rate issues, board failures, or sensor errors, likely due to environmental factors.\n\n**ROOT CAUSE:** Temperature-related issues (chip temperature above 76\u00b0C) are the primary cause of these problems. Specifically, the chip temperature range for the Antminer S19JPro is set between 76-85\u00b0C, and some miners are exceeding this threshold, causing performance degradation or board failures.\n\n**ACTION:**\n\n1. **Cooling "
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "54570",
+      "insight": "**DIAGNOSIS:** Miner 54570 (S19JPro) has experienced repeated detachment of Chain[3], with no clear indication of temperature or power fluctuations.\n\n**ROOT CAUSE:** Firmware version mismatch between the miner's reported firmware (0.9.9.3-stage29) and the actual running firmware (0.1.0.2816). The miner is running an older firmware version than what it claims to be, which may be causing the issue with Chain[3] detachment.\n\n**ACTION:** Update the miner's firmware to the latest available version (0"
+    },
+    {
+      "date": "2026-04-01",
+      "miner_id": "53510",
+      "insight": "DIAGNOSIS: Miner 53510 (S19JPro) has been flagged historically with 19 flags, indicating recurring issues.\n\nROOT CAUSE: The miner's Chain[3] is consistently detached upon boot-up and remains detached throughout its operation.\n\nACTION: Update firmware to the latest version and reflash the miner. Also, check for any loose connections or damaged cabling between the power supply unit (PSU) and the miner, as this may be causing intermittent issues with Chain[3].\n\nPATTERN: None detected; however, it's"
+    }
+  ],
+  "patterns": [
+    "Chain[3] detachment is recurring across multiple S19JPro miners \u2014 likely firmware or PSU issue",
+    "Miner 53476 has persistent dead boards across all 3 chains \u2014 needs physical inspection or replacement",
+    "Single miner overheating should be addressed with TH/s profile reduction before cooling changes",
+    "Multiple miners overheating simultaneously indicates environmental cause \u2014 check HVAC system",
+    "Firmware version mismatch (0.9.9.3-stage29 vs 0.1.0.2816) detected on multiple units",
+    "Chain detachment can be caused by a bad/dying hashboard \u2014 not just firmware. Pre/post restart log comparison reveals if the board recovered or is hardware failure.",
+    "CGMiner log patterns (chain errors, voltage drops, ASIC failures) are critical for distinguishing firmware glitches from hardware failures."
+  ],
+  "baselines": {}
+}
