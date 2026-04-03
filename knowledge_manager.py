@@ -45,6 +45,14 @@ class KnowledgeManager:
 
     def save(self):
         self.knowledge["last_updated"] = datetime.now().isoformat()
+        # Deduplicate patterns before saving
+        seen = []
+        unique = []
+        for p in self.knowledge.get("patterns", []):
+            if p not in seen:
+                seen.append(p)
+                unique.append(p)
+        self.knowledge["patterns"] = unique
         with open(self.knowledge_path, "w") as f:
             json.dump(self.knowledge, f, indent=2)
         logger.info("Knowledge saved — %d known issues, %d patterns",
