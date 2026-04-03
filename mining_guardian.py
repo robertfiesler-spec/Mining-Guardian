@@ -1692,7 +1692,9 @@ class GuardianDB:
 
     def register_dead_boards(self, miner_id: str, ip: str, model: str,
                              board_indices: list, restart_result: str = None):
-        """Register or update known dead boards for a miner."""
+        """Register or update known dead boards for a miner.
+        Sets ticket_created=None so the next scan knows to create an AMS ticket.
+        """
         now = datetime.now().isoformat()
         with self._connect() as conn:
             existing = conn.execute(
@@ -1701,15 +1703,55 @@ class GuardianDB:
             ).fetchone()
             if existing:
                 conn.execute(
-                    "UPDATE known_dead_boards SET board_indices = ?, restart_attempted = ?, restart_result = ? WHERE id = ?",
+                    "UPDATE known_dead_boards SET board_indices=?, restart_attempted=?, restart_result=? WHERE id=?",
                     (str(board_indices), now, restart_result, existing[0])
                 )
             else:
                 conn.execute(
-                    "INSERT INTO known_dead_boards (miner_id, ip, model, board_indices, first_seen, restart_attempted, restart_result) VALUES (?,?,?,?,?,?,?)",
-                    (miner_id, ip, model, str(board_indices), now, now if restart_result else None, restart_result)
+                    "INSERT INTO known_dead_boards "
+                    "(miner_id, ip, model, board_indices, first_seen, restart_attempted, restart_result, ticket_created) "
+                    "VALUES (?,?,?,?,?,?,?,NULL)",
+                    (miner_id, ip, model, str(board_indices), now,
+                     now if restart_result else None, restart_result)
                 )
         logger.info("[%s] Registered known dead boards %s — result: %s", miner_id, board_indices, restart_result)
+
+    def needs_ticket(self, miner_id: str) -> Optional[dict]:
+        """Return dead board record if it needs an AMS ticket created (ticket_created IS NULL)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT miner_id, ip, model, board_indices, first_seen, restart_result "
+                "FROM known_dead_boards "
+                "WHERE miner_id=? AND resolved_at IS NULL AND ticket_created IS NULL "
+                "AND restart_attempted IS NOT NULL",
+                (miner_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def mark_ticket_created(self, miner_id: str, ticket_id: str = None) -> None:
+        """Record that an AMS ticket has been created for this dead board miner."""
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE known_dead_boards SET ticket_created=? "
+                "WHERE miner_id=? AND resolved_at IS NULL",
+                (ticket_id or now, miner_id)
+            )
+        conn.commit() if hasattr(conn, 'commit') else None
+        logger.info("[%s] AMS ticket recorded: %s", miner_id, ticket_id or now)
+
+    def get_newly_ticketed(self) -> list:
+        """Return dead board miners whose ticket was just created in the last scan cycle."""
+        cutoff = (datetime.now() - timedelta(minutes=6)).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT miner_id, ip, model, board_indices, ticket_created "
+                "FROM known_dead_boards "
+                "WHERE resolved_at IS NULL AND ticket_created IS NOT NULL "
+                "AND ticket_created >= ?",
+                (cutoff,)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def resolve_dead_boards(self, miner_id: str):
         """Mark dead boards as resolved (boards recovered after restart or repair)."""
@@ -1990,6 +2032,18 @@ class SlackNotifier:
                 lines.append("  ⚠️ Restart already attempted — software cannot fix this.")
                 for i in dead_mixed:
                     lines.append(f"  • `{i['ip']}` {i['model']} — needs physical board inspection")
+
+        # One-time notice for miners whose AMS ticket was just created this cycle
+        try:
+            db = GuardianDB()
+            newly_ticketed = db.get_newly_ticketed()
+            if newly_ticketed:
+                lines.append(f"\n*🎫 AMS Tickets Created ({len(newly_ticketed)})*")
+                for t in newly_ticketed:
+                    lines.append(f"  • `{t['ip']}` ({t['model']}) — ticket created, removed from future reports")
+                lines.append("  _These miners will no longer appear in scan reports until resolved._")
+        except Exception:
+            pass
 
         if phys_cycles:
             from collections import defaultdict
@@ -2799,6 +2853,9 @@ class MiningGuardian:
             )
             ticket_id = ticket.get("id", "unknown")
             logger.info("[%s] AMS ticket created: %s", miner_id, ticket_id)
+            # Mark ticket created so this miner is suppressed from future Slack reports
+            self.db.register_dead_boards(miner_id, ip, model, dead_idx, restart_result="failed")
+            self.db.mark_ticket_created(miner_id, str(ticket_id))
         except Exception as e:
             ticket_id = "failed"
             logger.error("[%s] AMS ticket creation failed: %s", miner_id, e)
