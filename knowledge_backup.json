@@ -1,15 +1,15 @@
 {
   "version": 1,
-  "last_updated": "2026-04-02T22:25:20.784605",
+  "last_updated": "2026-04-03T03:55:38.185327",
   "fleet_summary": {
-    "last_scan": "2026-04-02T18:19:01.788846",
+    "last_scan": "2026-04-03T03:55:38.185229",
     "total_miners": 49,
-    "online": 48,
-    "offline": 1,
-    "issues_this_scan": 21,
-    "outside_temp_f": 76.8,
-    "supply_water_f": 75.67,
-    "return_water_f": 85.91
+    "online": 46,
+    "offline": 3,
+    "issues_this_scan": 14,
+    "outside_temp_f": 75.2,
+    "supply_water_f": 74.25,
+    "return_water_f": 83.54
   },
   "miner_profiles": {
     "53475": {
@@ -22,109 +22,114 @@
     "53476": {
       "model": "A2",
       "ip": "192.168.188.31",
-      "total_flags": 134,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 160,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 3.3% of rated (4.6 / 139 TH/s) [1_bixbit_profile]"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 3.3% of rated (4.6 / 139 TH/s) [1_bixbit_profile]"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART_CHECK_BOARDS",
-          "summary": "\ud83d\udd34 DEAD HASHBOARDS: Boards [0, 1, 2] offline (0/3 boards active, ~0% capacity) | Hashrate 0.0% of rated (0.0 / 139 TH/s) [1_bixbit_profile]"
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [1] offline (2/3 boards active, ~67% capacity) | Hashrate 10.8% of rated (24.3 / 226 TH/s) [2_spec_lookup]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART_CHECK_BOARDS",
-          "summary": "\ud83d\udd34 DEAD HASHBOARDS: Boards [0, 1, 2] offline (0/3 boards active, ~0% capacity) | Hashrate 0.0% of rated (0.0 / 139 TH/s) [1_bixbit_profile]"
+          "summary": "\ud83d\udd34 DEAD HASHBOARDS: Boards [0, 1, 2] offline (0/3 boards active, ~0% capacity) | Hashrate 0.0% of rated (0.0 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [1] offline (2/3 boards active, ~67% capacity) | Hashrate 14.8% of rated (33.4 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [1] offline (2/3 boards active, ~67% capacity) | Hashrate 7.0% of rated (15.8 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARDS: Boards [0, 1, 2] offline (0/3 boards active, ~0% capacity) | Hashrate 0.0% of rated (0.0 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [1] offline (2/3 boards active, ~67% capacity) | Hashrate 6.5% of rated (14.6 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARDS: Boards [0, 1, 2] offline (0/3 boards active, ~0% capacity) | Hashrate 0.0% of rated (0.0 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARDS: Boards [0, 1, 2] offline (0/3 boards active, ~0% capacity) | Hashrate 0.0% of rated (0.0 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [1] offline (2/3 boards active, ~67% capacity) | Hashrate 11.7% of rated (26.5 / 226 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [1] offline (2/3 boards active, ~67% capacity) | Hashrate 3.3% of rated (7.5 / 226 TH/s) [2_spec_lookup]"
         }
       ]
     },
     "53477": {
       "model": "S19JPro",
       "ip": "192.168.188.36",
-      "total_flags": 98,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 124,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup]"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         }
@@ -147,56 +152,56 @@
     "53480": {
       "model": "S19JPro",
       "ip": "192.168.188.44",
-      "total_flags": 56,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 82,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 144 TH/s) [1_bixbit_profile_inferred]"
+          "summary": "Hashrate 89.1% of rated (128.3 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         }
@@ -243,14 +248,9 @@
     "53482": {
       "model": "S19JPro",
       "ip": "192.168.188.46",
-      "total_flags": 50,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 55,
+      "last_flagged": "2026-04-03T02:48:49.589401",
       "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
         {
           "date": "2026-04-02",
           "action": "PHYSICAL_CYCLE",
@@ -275,59 +275,89 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 133 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "RESTART",
+          "summary": "Hashrate 85.5% of rated (113.7 / 133 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "RESTART",
+          "summary": "Hashrate 90.0% of rated (119.7 / 133 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 83.0% of rated (110.4 / 133 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 88.9% of rated (118.3 / 133 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 86.3% of rated (114.8 / 133 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53483": {
       "model": "S19JPro",
       "ip": "192.168.188.48",
-      "total_flags": 15,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 41,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 87.8% of rated (121.2 / 138 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 63.9% of rated (88.2 / 138 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 84.6% of rated (116.8 / 138 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 83\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 83\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 83\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 83\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 84\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
@@ -372,8 +402,8 @@
     "53486": {
       "model": "S19JPro",
       "ip": "192.168.188.56",
-      "total_flags": 45,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 46,
+      "last_flagged": "2026-04-03T01:31:13.679796",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -404,64 +434,69 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 143 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 82.1% of rated (117.3 / 143 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53487": {
       "model": "S19JPro",
       "ip": "192.168.188.57",
-      "total_flags": 25,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 51,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 139 TH/s) [1_bixbit_profile_inferred]"
+          "summary": "Hashrate 87.0% of rated (121.0 / 139 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
@@ -475,77 +510,67 @@
     "53489": {
       "model": "S19JPro",
       "ip": "192.168.188.60",
-      "total_flags": 14,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 40,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 133 TH/s) [1_bixbit_profile_inferred]"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 82.7% of rated (110.0 / 133 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
     "53490": {
       "model": "S19JPro",
       "ip": "192.168.188.62",
-      "total_flags": 26,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 28,
+      "last_flagged": "2026-04-02T22:54:03.480373",
       "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
         {
           "date": "2026-04-02",
           "action": "PHYSICAL_CYCLE",
@@ -585,64 +610,74 @@
           "date": "2026-04-02",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
     "53491": {
       "model": "S19JPro",
       "ip": "192.168.188.70",
-      "total_flags": 19,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 40,
+      "last_flagged": "2026-04-03T03:22:17.484631",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 144 TH/s) [1_bixbit_profile_inferred]"
+          "summary": "Hashrate 82.7% of rated (119.1 / 144 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
-          "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 81.6% of rated (117.5 / 144 TH/s) [1_bixbit_profile]"
         }
       ]
     },
@@ -687,8 +722,8 @@
     "53493": {
       "model": "S19JPro",
       "ip": "192.168.188.81",
-      "total_flags": 37,
-      "last_flagged": "2026-04-02T18:07:46.188340",
+      "total_flags": 39,
+      "last_flagged": "2026-04-03T02:59:56.990361",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -724,14 +759,24 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 85.7% of rated (123.4 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 89.3% of rated (128.6 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 85.4% of rated (123.0 / 144 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53494": {
       "model": "S19JPro",
       "ip": "192.168.188.84",
-      "total_flags": 32,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 34,
+      "last_flagged": "2026-04-02T22:54:03.480373",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -767,102 +812,11 @@
           "date": "2026-04-02",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
-        }
-      ]
-    },
-    "53495": {
-      "model": "S19JPro",
-      "ip": "192.168.188.96",
-      "total_flags": 19,
-      "last_flagged": "2026-04-02T18:19:01.788846",
-      "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 138 TH/s) [1_bixbit_profile_inferred]"
         },
         {
           "date": "2026-04-02",
           "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
-        }
-      ]
-    },
-    "53496": {
-      "model": "S19JPro",
-      "ip": "192.168.188.97",
-      "total_flags": 32,
-      "last_flagged": "2026-04-02T18:19:01.788846",
-      "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 134 TH/s) [1_bixbit_profile_inferred]"
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
           "date": "2026-04-02",
@@ -871,61 +825,177 @@
         }
       ]
     },
+    "53495": {
+      "model": "S19JPro",
+      "ip": "192.168.188.96",
+      "total_flags": 45,
+      "last_flagged": "2026-04-03T03:55:38.185229",
+      "issue_history": [
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 79\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 86.8% of rated (119.8 / 138 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 78\u00b0C (76\u201385\u00b0C range)"
+        }
+      ]
+    },
+    "53496": {
+      "model": "S19JPro",
+      "ip": "192.168.188.97",
+      "total_flags": 49,
+      "last_flagged": "2026-04-03T03:11:07.383831",
+      "issue_history": [
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        }
+      ]
+    },
     "53497": {
       "model": "S19JPro",
       "ip": "192.168.188.98",
-      "total_flags": 36,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 62,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 143 TH/s) [1_bixbit_profile_inferred]"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
-          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
@@ -975,8 +1045,8 @@
     "53501": {
       "model": "S19JPro",
       "ip": "192.168.188.128",
-      "total_flags": 35,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 36,
+      "last_flagged": "2026-04-03T01:53:25.282469",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1007,14 +1077,19 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 139 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 89.5% of rated (124.4 / 139 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53502": {
       "model": "S19JPro",
       "ip": "192.168.188.133",
-      "total_flags": 10,
-      "last_flagged": "2026-04-02T18:07:46.188340",
+      "total_flags": 12,
+      "last_flagged": "2026-04-03T01:31:13.679796",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1050,6 +1125,16 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 89.7% of rated (129.1 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 88.3% of rated (127.2 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 86.4% of rated (124.4 / 144 TH/s) [1_bixbit_profile]"
         }
       ]
     },
@@ -1101,56 +1186,56 @@
     "53507": {
       "model": "S19JPro",
       "ip": "192.168.188.192",
-      "total_flags": 14,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 40,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 144 TH/s) [1_bixbit_profile_inferred]"
+          "summary": "Hashrate 74.3% of rated (107.0 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 89.7% of rated (129.1 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 89.9% of rated (129.4 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 77\u00b0C (76\u201385\u00b0C range)"
         }
@@ -1159,56 +1244,66 @@
     "53508": {
       "model": "S19JPro",
       "ip": "192.168.188.194",
-      "total_flags": 23,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 38,
+      "last_flagged": "2026-04-03T02:15:44.282058",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 149 TH/s) [1_bixbit_profile_inferred]"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 89.5% of rated (133.4 / 149 TH/s) [1_bixbit_profile]"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 89.1% of rated (132.8 / 149 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53510": {
       "model": "S19JPro",
       "ip": "192.168.188.196",
-      "total_flags": 58,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 60,
+      "last_flagged": "2026-04-02T22:54:03.480373",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1249,14 +1344,24 @@
           "date": "2026-04-02",
           "action": "MONITOR",
           "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
     "53511": {
       "model": "S19JPro",
       "ip": "192.168.188.206",
-      "total_flags": 26,
-      "last_flagged": "2026-04-02T18:07:46.188340",
+      "total_flags": 29,
+      "last_flagged": "2026-04-03T02:48:49.589401",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1292,6 +1397,21 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 87.8% of rated (121.2 / 138 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 89.4% of rated (123.3 / 138 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 89.9% of rated (124.0 / 138 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 75.3% of rated (104.0 / 138 TH/s) [1_bixbit_profile]"
         }
       ]
     },
@@ -1305,8 +1425,8 @@
     "53513": {
       "model": "S19JPro",
       "ip": "192.168.188.225",
-      "total_flags": 46,
-      "last_flagged": "2026-04-02T18:07:46.188340",
+      "total_flags": 48,
+      "last_flagged": "2026-04-03T00:57:48.484789",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1347,14 +1467,24 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 76.8% of rated (110.6 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 72.4% of rated (104.3 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 76.0% of rated (109.4 / 144 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53514": {
       "model": "S19JPro",
       "ip": "192.168.188.226",
-      "total_flags": 36,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 37,
+      "last_flagged": "2026-04-03T01:31:13.679796",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1385,20 +1515,20 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 138 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 87.1% of rated (120.2 / 138 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53515": {
       "model": "S19JPro",
       "ip": "192.168.188.227",
-      "total_flags": 15,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 20,
+      "last_flagged": "2026-04-03T02:48:49.589401",
       "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
         {
           "date": "2026-04-02",
           "action": "PHYSICAL_CYCLE",
@@ -1423,6 +1553,31 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 144 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "RESTART",
+          "summary": "Hashrate 88.3% of rated (127.2 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 85.9% of rated (123.7 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 88.2% of rated (127.1 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 89.1% of rated (128.3 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 77.9% of rated (112.2 / 144 TH/s) [1_bixbit_profile]"
         }
       ]
     },
@@ -1467,14 +1622,9 @@
     "53517": {
       "model": "S19JPro",
       "ip": "192.168.188.231",
-      "total_flags": 46,
-      "last_flagged": "2026-04-02T17:45:22.898046",
+      "total_flags": 50,
+      "last_flagged": "2026-04-03T03:44:29.385397",
       "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
         {
           "date": "2026-04-02",
           "action": "PHYSICAL_CYCLE",
@@ -1504,6 +1654,26 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 69.1% of rated (102.9 / 149 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 82.5% of rated (122.9 / 149 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 76.8% of rated (114.5 / 149 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 87.9% of rated (131.0 / 149 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 78.1% of rated (116.4 / 149 TH/s) [1_bixbit_profile]"
         }
       ]
     },
@@ -1553,8 +1723,8 @@
     "53520": {
       "model": "S19JPro",
       "ip": "192.168.188.238",
-      "total_flags": 27,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 31,
+      "last_flagged": "2026-04-03T03:33:23.184284",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1585,40 +1755,35 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 138 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 86.4% of rated (119.3 / 138 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 87.6% of rated (120.9 / 138 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 86.6% of rated (119.5 / 138 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 83.3% of rated (115.0 / 138 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53521": {
       "model": "S19JPro",
       "ip": "192.168.188.12",
-      "total_flags": 55,
-      "last_flagged": "2026-04-02T18:07:46.188340",
+      "total_flags": 63,
+      "last_flagged": "2026-04-03T02:15:44.282058",
       "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
         {
           "date": "2026-04-02",
           "action": "RESTART",
@@ -1628,64 +1793,104 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 87.5% of rated (134.7 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "RESTART",
+          "summary": "Hashrate 72.8% of rated (112.1 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "RESTART",
+          "summary": "Hashrate 79.9% of rated (123.1 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "RESTART",
+          "summary": "Hashrate 63.8% of rated (98.2 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-02",
+          "action": "RESTART",
+          "summary": "Hashrate 78.4% of rated (120.7 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 67.4% of rated (103.8 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 76.5% of rated (117.8 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 76.6% of rated (118.0 / 154 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 88.4% of rated (136.1 / 154 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "53522": {
       "model": "S19JPro",
       "ip": "192.168.188.52",
-      "total_flags": 28,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 54,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 144 TH/s) [1_bixbit_profile_inferred]"
+          "summary": "Hashrate 82.5% of rated (118.8 / 144 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 69.3% of rated (99.7 / 144 TH/s) [1_bixbit_profile]"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 68.2% of rated (98.2 / 144 TH/s) [1_bixbit_profile]"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 69.9% of rated (100.6 / 144 TH/s) [1_bixbit_profile]"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 75.8% of rated (109.1 / 144 TH/s) [1_bixbit_profile]"
+          "date": "2026-04-03",
+          "action": "MONITOR",
+          "summary": "\ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
@@ -1742,58 +1947,58 @@
     "53527": {
       "model": "S19JPro",
       "ip": "192.168.188.195",
-      "total_flags": 131,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 157,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 144 TH/s) [1_bixbit_profile_inferred]"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART_CHECK_BOARDS",
-          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 64.8% of rated (93.3 / 144 TH/s) [1_bixbit_profile]"
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 67.7% of rated (97.5 / 144 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART_CHECK_BOARDS",
-          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 66.9% of rated (96.4 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 65.0% of rated (93.6 / 144 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART_CHECK_BOARDS",
-          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 63.6% of rated (91.5 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 65.4% of rated (94.2 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART_CHECK_BOARDS",
-          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 65.6% of rated (94.4 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 61.6% of rated (88.7 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 67.4% of rated (97.1 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 69.2% of rated (99.7 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 65.2% of rated (93.9 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 68.5% of rated (98.6 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 60.2% of rated (86.7 / 144 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARD: Board [0] offline (2/3 boards active, ~67% capacity) | Hashrate 65.9% of rated (94.8 / 144 TH/s) [1_bixbit_profile] | \ud83d\udfe1 YELLOW \u2014 chip 76\u00b0C (76\u201385\u00b0C range)"
         }
       ]
     },
@@ -1838,8 +2043,8 @@
     "53529": {
       "model": "S21EXPHyd",
       "ip": "192.168.188.25",
-      "total_flags": 46,
-      "last_flagged": "2026-04-02T17:56:35.087883",
+      "total_flags": 47,
+      "last_flagged": "2026-04-03T00:13:23.781090",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -1875,6 +2080,11 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 84.4% of rated (325.1 / 385 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 67.3% of rated (259.1 / 385 TH/s) [1_bixbit_profile]"
         }
       ]
     },
@@ -2014,8 +2224,8 @@
     "54570": {
       "model": "S19JPro",
       "ip": "192.168.188.127",
-      "total_flags": 43,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 45,
+      "last_flagged": "2026-04-03T03:11:07.383831",
       "issue_history": [
         {
           "date": "2026-04-02",
@@ -2046,49 +2256,74 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 143 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 82.1% of rated (117.4 / 143 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 86.2% of rated (123.2 / 143 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "63940": {
       "model": "AH3880",
       "ip": "192.168.188.28",
-      "total_flags": 39,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 65,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 600 TH/s) [2_spec_lookup]"
+          "summary": "Hashrate 50.6% of rated (303.4 / 600 TH/s) [2_spec_lookup]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 39.2% of rated (235.3 / 600 TH/s) [2_spec_lookup]"
+          "summary": "Hashrate 50.4% of rated (302.5 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.5% of rated (303.0 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.4% of rated (302.6 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.5% of rated (303.2 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.6% of rated (303.4 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.5% of rated (303.2 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.5% of rated (303.0 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.6% of rated (303.4 / 600 TH/s) [2_spec_lookup]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 50.6% of rated (303.4 / 600 TH/s) [2_spec_lookup]"
         }
       ]
     },
@@ -2133,14 +2368,9 @@
     "64346": {
       "model": "S21Imm",
       "ip": "192.168.188.23",
-      "total_flags": 16,
-      "last_flagged": "2026-04-02T17:34:14.884692",
+      "total_flags": 21,
+      "last_flagged": "2026-04-03T02:26:57.382744",
       "issue_history": [
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
         {
           "date": "2026-04-02",
           "action": "PHYSICAL_CYCLE",
@@ -2165,62 +2395,87 @@
           "date": "2026-04-02",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 355 TH/s) [1_bixbit_profile_inferred]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 45.7% of rated (162.4 / 355 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 58.7% of rated (208.5 / 355 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 70.6% of rated (250.5 / 355 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 84.0% of rated (298.2 / 355 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 88.7% of rated (315.0 / 355 TH/s) [1_bixbit_profile]"
         }
       ]
     },
     "64347": {
       "model": "S19JPro",
       "ip": "192.168.188.177",
-      "total_flags": 96,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 122,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PHYSICAL_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup]"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
           "action": "RESTART",
           "summary": "Hashrate 0.0% of rated (0.0 / 104 TH/s) [2_spec_lookup] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
         }
@@ -2272,58 +2527,58 @@
     "64407": {
       "model": "S21EXPHyd",
       "ip": "192.168.188.26",
-      "total_flags": 103,
-      "last_flagged": "2026-04-02T18:19:01.788846",
+      "total_flags": 127,
+      "last_flagged": "2026-04-03T03:55:38.185229",
       "issue_history": [
         {
-          "date": "2026-04-02",
-          "action": "PDU_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PDU_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PDU_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PDU_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
-          "action": "PDU_CYCLE",
-          "summary": "OFFLINE"
-        },
-        {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 0.0% of rated (0.0 / 429 TH/s) [1_bixbit_profile_inferred]"
+          "summary": "Hashrate 2.7% of rated (11.5 / 429 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 1.7% of rated (7.5 / 429 TH/s) [1_bixbit_profile]"
+          "summary": "Hashrate 1.4% of rated (5.8 / 429 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 3.2% of rated (13.5 / 429 TH/s) [1_bixbit_profile]"
+          "summary": "Hashrate 1.3% of rated (5.5 / 429 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 3.0% of rated (12.9 / 429 TH/s) [1_bixbit_profile]"
+          "summary": "Hashrate 2.7% of rated (11.8 / 429 TH/s) [1_bixbit_profile]"
         },
         {
-          "date": "2026-04-02",
+          "date": "2026-04-03",
           "action": "RESTART",
-          "summary": "Hashrate 2.7% of rated (11.7 / 429 TH/s) [1_bixbit_profile]"
+          "summary": "Hashrate 0.0% of rated (0.0 / 429 TH/s) [1_bixbit_profile] | \u26a0\ufe0f Sensor error \u2014 temp reading invalid"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 2.8% of rated (12.2 / 429 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 3.0% of rated (13.1 / 429 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 2.8% of rated (11.9 / 429 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART_CHECK_BOARDS",
+          "summary": "\ud83d\udd34 DEAD HASHBOARDS: Boards [0, 1, 2] offline (0/3 boards active, ~0% capacity) | Hashrate 0.0% of rated (0.0 / 429 TH/s) [1_bixbit_profile]"
+        },
+        {
+          "date": "2026-04-03",
+          "action": "RESTART",
+          "summary": "Hashrate 1.6% of rated (7.0 / 429 TH/s) [1_bixbit_profile]"
         }
       ]
     }
