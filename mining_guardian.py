@@ -2060,7 +2060,7 @@ class SlackNotifier:
 
 
 class MiningGuardian:
-    HASHRATE_THRESHOLD = 0.90   # flag if below 90% of rated TH/s
+    HASHRATE_THRESHOLD = 0.80   # flag if below 80% of rated TH/s
 
     def __init__(self, config: GuardianConfig):
         self.config   = config
@@ -2191,13 +2191,22 @@ class MiningGuardian:
             verify = verify_miner_online(ip)
             if verify["actually_online"]:
                 logger.info(
-                    "[%s] AMS reports offline but miner is reachable — %s. "
-                    "Skipping this scan (AMS sync lag).",
+                    "[%s] AMS reports offline but miner is reachable — %s.",
                     miner_id, verify["status_detail"]
                 )
-                # Miner is alive — skip all evaluation this cycle.
-                # AMS will catch up on the next scan.
-                return None
+                # Miner is alive but AMS thinks it's offline — report the discrepancy
+                issues.append(
+                    f"⚠️ AMS SYNC: Miner is ONLINE (verified via direct check) "
+                    f"but AMS reports offline — check AMS"
+                )
+                action = "MONITOR"
+                return self._build_issue(
+                    miner, issues, action, pdu_action, power_watts,
+                    power_source, power_kw, pdu_id, outlet_index,
+                    hashrate_pct="N/A", tier="ams_sync",
+                    tier_note="AMS offline but miner reachable",
+                    chain_info=None,
+                )
             else:
                 logger.debug(
                     "[%s] AMS offline confirmed by direct check — %s",
