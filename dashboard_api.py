@@ -474,57 +474,71 @@ def facility_power_live():
     return result
 
 @app.get("/facility/environment_history")
-def environment_history(days: int = 7):
-    """Combined outside weather + HVAC supply/return temps for charting.
-
-    Returns one array of time-series records sorted by timestamp.
-    Uses WEATHER data for outside_temp_f and humidity_pct (accurate).
-    Uses HVAC data for supply_temp_f and return_temp_f.
-    All merged on nearest timestamp.
+def environment_history(days: int = 5):
+    """Combined outside weather + HVAC temps for charting.
+    Downsampled to 4 points per day (every 6 hours) for readability.
+    Returns at most 20 data points over 5 days.
     """
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
 
-    # Get weather history (outside temp + humidity — authoritative source)
-    wx_rows = conn.execute(
-        "SELECT recorded_at, temp_f as outside_temp_f, humidity_pct "
-        "FROM weather_readings WHERE recorded_at > ? ORDER BY recorded_at ASC",
-        (cutoff,)
-    ).fetchall()
+    # Downsample to one point per 6-hour bucket using SQLite strftime
+    wx_rows = conn.execute("""
+        SELECT
+            strftime('%Y-%m-%dT', recorded_at) ||
+            CASE CAST(strftime('%H', recorded_at) AS INT)
+                WHEN 0 THEN '00:00:00' WHEN 1 THEN '00:00:00' WHEN 2 THEN '00:00:00'
+                WHEN 3 THEN '00:00:00' WHEN 4 THEN '00:00:00' WHEN 5 THEN '00:00:00'
+                WHEN 6 THEN '06:00:00' WHEN 7 THEN '06:00:00' WHEN 8 THEN '06:00:00'
+                WHEN 9 THEN '06:00:00' WHEN 10 THEN '06:00:00' WHEN 11 THEN '06:00:00'
+                WHEN 12 THEN '12:00:00' WHEN 13 THEN '12:00:00' WHEN 14 THEN '12:00:00'
+                WHEN 15 THEN '12:00:00' WHEN 16 THEN '12:00:00' WHEN 17 THEN '12:00:00'
+                ELSE '18:00:00'
+            END as bucket,
+            AVG(temp_f) as outside_temp_f,
+            AVG(humidity_pct) as humidity_pct
+        FROM weather_readings
+        WHERE recorded_at > ?
+        GROUP BY bucket
+        ORDER BY bucket ASC
+    """, (cutoff,)).fetchall()
 
-    # Get HVAC history (supply/return water temps)
-    hvac_rows = conn.execute(
-        "SELECT recorded_at, supply_temp_f, return_temp_f, delta_t_f, "
-        "       diff_pressure as diff_pressure_psi, "
-        "       cwp1_vfd_pct, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct "
-        "FROM hvac_readings WHERE recorded_at > ? ORDER BY recorded_at ASC",
-        (cutoff,)
-    ).fetchall()
+    hvac_rows = conn.execute("""
+        SELECT
+            strftime('%Y-%m-%dT', recorded_at) ||
+            CASE CAST(strftime('%H', recorded_at) AS INT)
+                WHEN 0 THEN '00:00:00' WHEN 1 THEN '00:00:00' WHEN 2 THEN '00:00:00'
+                WHEN 3 THEN '00:00:00' WHEN 4 THEN '00:00:00' WHEN 5 THEN '00:00:00'
+                WHEN 6 THEN '06:00:00' WHEN 7 THEN '06:00:00' WHEN 8 THEN '06:00:00'
+                WHEN 9 THEN '06:00:00' WHEN 10 THEN '06:00:00' WHEN 11 THEN '06:00:00'
+                WHEN 12 THEN '12:00:00' WHEN 13 THEN '12:00:00' WHEN 14 THEN '12:00:00'
+                WHEN 15 THEN '12:00:00' WHEN 16 THEN '12:00:00' WHEN 17 THEN '12:00:00'
+                ELSE '18:00:00'
+            END as bucket,
+            AVG(supply_temp_f) as supply_temp_f,
+            AVG(return_temp_f) as return_temp_f,
+            AVG(delta_t_f) as delta_t_f
+        FROM hvac_readings
+        WHERE recorded_at > ?
+        GROUP BY bucket
+        ORDER BY bucket ASC
+    """, (cutoff,)).fetchall()
     conn.close()
 
-    # Merge on timestamp — pair each weather reading with the closest HVAC reading
+    # Merge weather + HVAC on bucket timestamp
+    hvac_map = {r["bucket"]: dict(r) for r in hvac_rows}
     result = []
-    hvac_list = [dict(r) for r in hvac_rows]
-    hvac_idx = 0
     for wx in wx_rows:
-        rec = {
-            "recorded_at":    wx["recorded_at"],
-            "outside_temp_f": wx["outside_temp_f"],
-            "humidity_pct":   wx["humidity_pct"],
-            "supply_temp_f":  None,
-            "return_temp_f":  None,
-            "delta_t_f":      None,
-        }
-        # Find nearest HVAC reading within 60 seconds of this weather reading
-        while hvac_idx < len(hvac_list) and hvac_list[hvac_idx]["recorded_at"] < wx["recorded_at"]:
-            hvac_idx += 1
-        if hvac_idx < len(hvac_list):
-            h = hvac_list[hvac_idx]
-            rec["supply_temp_f"] = h["supply_temp_f"]
-            rec["return_temp_f"] = h["return_temp_f"]
-            rec["delta_t_f"]     = h["delta_t_f"]
-        result.append(rec)
-
+        bucket = wx["bucket"]
+        h = hvac_map.get(bucket, {})
+        result.append({
+            "recorded_at":    bucket,
+            "outside_temp_f": round(wx["outside_temp_f"], 1) if wx["outside_temp_f"] else None,
+            "humidity_pct":   round(wx["humidity_pct"], 1) if wx["humidity_pct"] else None,
+            "supply_temp_f":  round(h["supply_temp_f"], 1) if h.get("supply_temp_f") else None,
+            "return_temp_f":  round(h["return_temp_f"], 1) if h.get("return_temp_f") else None,
+            "delta_t_f":      round(h["delta_t_f"], 1) if h.get("delta_t_f") else None,
+        })
     return result
 
 @app.get("/notifications/recent")
