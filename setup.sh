@@ -76,8 +76,8 @@ else
   ok "Virtual environment already exists"
 fi
 
-"$VENV/bin/pip" install --quiet requests websocket-client || fail "Failed to install dependencies"
-ok "Dependencies installed (requests, websocket-client)"
+"$VENV/bin/pip" install --quiet requests websocket-client python-dotenv slack-sdk fastapi uvicorn || fail "Failed to install dependencies"
+ok "Dependencies installed"
 
 # ── Step 4: Write .env file ───────────────────────────────
 step "STEP 4 — Writing credentials"

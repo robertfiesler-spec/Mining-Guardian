@@ -28,7 +28,7 @@ def query_claude(prompt: str) -> str:
     """Send prompt to Claude API."""
     logger.info("Sending to Claude (%d chars)...", len(prompt))
     resp = requests.post("https://api.anthropic.com/v1/messages", json={
-        "model": "claude-sonnet-4-20250514",
+        "model": "claude-sonnet-4-6",
         "max_tokens": 4096,
         "messages": [{"role": "user", "content": prompt}]
     }, headers={

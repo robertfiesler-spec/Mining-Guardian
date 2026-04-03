@@ -1,6 +1,6 @@
-# Mining Guardian — Miner Profile Map Questionnaire
-# Rob needs to answer these questions for each miner model/type tomorrow.
-# This builds config.json so Mining Guardian evaluates hashrate correctly.
+# Mining Guardian — Miner Profile Map
+# COMPLETED April 2, 2026 — all answers confirmed and built into config.json
+# Kept for reference only.
 
 ## ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

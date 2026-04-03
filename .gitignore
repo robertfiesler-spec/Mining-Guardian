@@ -1,10 +1,8 @@
 # macOS
 .DS_Store
-guardian.db
-knowledge.json
-master_knowledge.json
 .AppleDouble
 .LSOverride
+*.rtfd
 
 # Python
 __pycache__/
@@ -15,16 +13,27 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+venv/
 
-# Secrets / config
+# Secrets / credentials
 config.json
 *.env
 .env
 
+# Database (large, local only)
+guardian.db
+*.sqbpro
+
+# LLM knowledge (backed up separately as knowledge_backup.json)
+knowledge.json
+master_knowledge.json
+
 # Logs
 *.log
-
 logs/
+
+# AMS API spec (large, not needed in repo)
 ams_api_spec.json
-*.rtfd
-git hub paswords*
+
+# LaunchAgent plist (machine-specific)
+com.bixbit.mining-guardian.plist
