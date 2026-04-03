@@ -211,20 +211,11 @@ class CommandHandler:
             self._reply(channel, thread_ts, f"BTC price unavailable: {e}")
 
     def cmd_ask_llm(self, channel, thread_ts, question):
-        """Forward a question to Ollama LLM with fleet context."""
+        """Forward a question to Claude API with fleet context."""
         try:
-            from knowledge_manager import KnowledgeManager
-            from llm_analyzer import SYSTEM_PROMPT
-            km = KnowledgeManager()
-            context = km.build_context_prompt()
-
-            prompt = f"{SYSTEM_PROMPT}\n\n{context}\n\nOperator question: {question}\n\nAnswer concisely."
-            resp = requests.post(OLLAMA_URL, json={
-                "model": "llama3.1:8b",
-                "prompt": prompt,
-                "stream": False
-            }, timeout=120)
-            answer = resp.json().get("response", "No response from LLM")
+            from llm_analyzer import LLMAnalyzer
+            analyzer = LLMAnalyzer()
+            answer = analyzer.deep_analyze(f"Operator question: {question}\n\nAnswer concisely.")
             self._reply(channel, thread_ts, f"*🧠 Mining Guardian AI:*\n{answer[:2000]}")
         except Exception as e:
             self._reply(channel, thread_ts, f"LLM query failed: {e}")

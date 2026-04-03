@@ -3067,27 +3067,41 @@ class MiningGuardian:
         # Skip when scan data is clearly bad (AMS down = all offline)
         online = sum(1 for m in miners if m.get("status") == "online")
         actionable_issues = [i for i in issues if i["action"] not in ("MONITOR", "PHYSICAL_CYCLE")]
+        # LLM analysis — use Claude API only, runs with Slack post (once per hour)
+        # Ollama local LLM removed — too slow on CPU, hangs up scans
         if actionable_issues and online > 0 and len(actionable_issues) <= 20:
-            try:
-                from llm_analyzer import LLMAnalyzer
-                analyzer = LLMAnalyzer()
-                wx_data = {"temp_f": wx.get("temp_f"), "humidity_pct": wx.get("humidity_pct")} if wx else None
-                hvac_data = None
-                if hvac_snapshot:
-                    hvac_data = {"supply_temp_f": hvac_snapshot.supply_temp_f,
-                                 "return_temp_f": hvac_snapshot.return_temp_f,
-                                 "delta_t_f": hvac_snapshot.delta_t_f}
-                analysis = analyzer.analyze_issues(scan_id, actionable_issues, wx_data, hvac_data)
-                if analysis:
-                    logger.info("LLM analysis: %s", analysis[:200])
-                    try:
-                        from knowledge_manager import KnowledgeManager
-                        km = KnowledgeManager()
-                        km.add_llm_insight(analysis)
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.warning("LLM analysis skipped: %s", e)
+            # Only run LLM analysis when we're also posting to Slack (once per hour)
+            if now_ts - self._last_slack_post < 60:  # just posted to Slack
+                try:
+                    from llm_analyzer import LLMAnalyzer
+                    analyzer = LLMAnalyzer()
+                    wx_data = {"temp_f": wx.get("temp_f"), "humidity_pct": wx.get("humidity_pct")} if wx else None
+                    hvac_data = None
+                    if hvac_snapshot:
+                        hvac_data = {"supply_temp_f": hvac_snapshot.supply_temp_f,
+                                     "return_temp_f": hvac_snapshot.return_temp_f,
+                                     "delta_t_f": hvac_snapshot.delta_t_f}
+                    analysis = analyzer.deep_analyze(
+                        f"Scan #{scan_id} — {len(actionable_issues)} miners flagged:\n" +
+                        "\n".join(f"- Miner {i['id']} ({i['model']}) @ {i['ip']}: {i.get('action','?')} — {' | '.join(i.get('issues',[]))[:150]}" for i in actionable_issues[:10]) +
+                        f"\nWeather: {wx_data}" +
+                        f"\nHVAC: {hvac_data}" +
+                        "\nProvide: DIAGNOSIS (1 sentence), ACTION (bullet list with miner IPs), PATTERN (1 sentence or none)"
+                    )
+                    if analysis and 'error' not in analysis.lower():
+                        logger.info("Claude analysis: %s", analysis[:200])
+                        try:
+                            from knowledge_manager import KnowledgeManager
+                            km = KnowledgeManager()
+                            km.add_llm_insight(analysis)
+                        except Exception:
+                            pass
+                    else:
+                        logger.info("Claude analysis skipped or errored")
+                except Exception as e:
+                    logger.warning("Claude analysis skipped: %s", e)
+            else:
+                logger.debug("LLM analysis deferred — runs with next Slack post")
         elif issues and online == 0:
             logger.info("LLM analysis skipped — all miners offline (AMS likely down)")
         elif len(actionable_issues) > 20:
