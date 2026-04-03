@@ -1405,12 +1405,23 @@ class GuardianDB:
 
     def save_pending_approvals(self, thread_ts: str, scan_id: int,
                                issues: List[Dict]) -> None:
-        """Save actionable issues as pending approvals linked to a Slack thread."""
+        """Save actionable issues as pending approvals linked to a Slack thread.
+
+        Filters out miners that should never appear in the approval queue:
+          - Known dead boards (already attempted restart, needs physical inspection)
+          - PHYSICAL_CYCLE (no PDU, requires manual visit)
+          - MONITOR (no action needed)
+        """
         now  = datetime.now().isoformat()
         rows = []
         for i in issues:
             if i["action"] not in ("PDU_CYCLE", "RESTART", "RESTART_CHECK_BOARDS"):
-                continue  # PHYSICAL_CYCLE requires manual visit, MONITOR needs no approval
+                continue  # PHYSICAL_CYCLE and MONITOR never need approval
+            # Skip known dead boards — they need physical inspection, not software action
+            if self.has_known_dead_boards(str(i["id"])):
+                logger.info("Skipping pending approval for miner %s (%s) — known dead boards",
+                            i["id"], i.get("ip"))
+                continue
             rows.append((
                 now, scan_id, thread_ts,
                 i["id"], i["ip"], i["model"],
@@ -1944,22 +1955,41 @@ class SlackNotifier:
             lines.append("  _After power cycle: logs collected on boot, elevated monitoring for 3hrs._")
 
         if fw_restarts:
-            # Group by model
+            # Split into: has known dead boards (info only) vs approvable
+            dead_board_miners = set()
+            try:
+                with self._connect() as conn:
+                    rows = conn.execute(
+                        "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL"
+                    ).fetchall()
+                    dead_board_miners = {str(r["miner_id"]) for r in rows}
+            except Exception:
+                pass
+
+            approvable = [i for i in fw_restarts if str(i["id"]) not in dead_board_miners]
+            dead_mixed = [i for i in fw_restarts if str(i["id"]) in dead_board_miners]
+
             from collections import defaultdict
-            by_model: dict = defaultdict(list)
-            for i in fw_restarts:
-                by_model[i["model"]].append(i)
-            lines.append(f"\n*🔴 Firmware Restart Recommended ({len(fw_restarts)} miners)*")
-            for model, group in by_model.items():
-                if len(group) == 1:
-                    i = group[0]
-                    lines.append(f"  • `{i['ip']}` {model} — Hashrate: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
-                else:
-                    # Show all IPs with a shared issue summary
-                    ips = ", ".join(f"`{i['ip']}`" for i in group)
-                    issue_str = " | ".join(set(" | ".join(i["issues"]) for i in group))
-                    lines.append(f"  • *{len(group)}x {model}:* {ips}")
-                    lines.append(f"    _{issue_str}_")
+            if approvable:
+                by_model: dict = defaultdict(list)
+                for i in approvable:
+                    by_model[i["model"]].append(i)
+                lines.append(f"\n*🔴 Firmware Restart Recommended ({len(approvable)} miners)*")
+                for model, group in by_model.items():
+                    if len(group) == 1:
+                        i = group[0]
+                        lines.append(f"  • `{i['ip']}` {model} — HR: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
+                    else:
+                        ips = ", ".join(f"`{i['ip']}`" for i in group)
+                        issue_str = " | ".join(set(" | ".join(i["issues"]) for i in group))
+                        lines.append(f"  • *{len(group)}x {model}:* {ips}")
+                        lines.append(f"    _{issue_str}_")
+
+            if dead_mixed:
+                lines.append(f"\n*🔴 Known Dead Boards — Physical Inspection Required ({len(dead_mixed)} miners)*")
+                lines.append("  ⚠️ Restart already attempted — software cannot fix this.")
+                for i in dead_mixed:
+                    lines.append(f"  • `{i['ip']}` {i['model']} — needs physical board inspection")
 
         if phys_cycles:
             from collections import defaultdict
