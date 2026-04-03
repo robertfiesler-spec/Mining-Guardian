@@ -1984,7 +1984,7 @@ class SlackNotifier:
         if issues:
             actionable_count = sum(1 for i in issues if i["action"] in ("PDU_CYCLE","RESTART","RESTART_CHECK_BOARDS"))
             if actionable_count > 0:
-                lines.append(f"\n_⬇️ *{actionable_count} action(s) pending* — select miners below._")
+                lines.append(f"\n_⬇️ *{actionable_count} action(s) pending* — reply in thread to approve._")
 
         # AMS notifications section — exclude miners already flagged in main report
         if ams_notifs:
@@ -2065,61 +2065,44 @@ class SlackNotifier:
         return thread_ts
 
     def _post_miner_selection(self, client, thread_ts: str, actionable: list) -> None:
-        """Post an interactive Block Kit message in the scan thread.
+        """Post a numbered miner list in the thread for selective approval.
 
-        Shows each actionable miner as a checkbox (default: all checked).
-        Operator unchecks miners to skip, then hits Approve Selected or Deny All.
+        Since OpenClaw owns Socket Mode, Block Kit buttons are intercepted and
+        return 'not authorized'. Instead we post a plain numbered list and the
+        operator replies with: approve 1,3 | approve .36,.46 | APPROVE | DENY
         """
         ACTION_ICONS  = {"RESTART": "🔄", "PDU_CYCLE": "🔌", "RESTART_CHECK_BOARDS": "🔴"}
         ACTION_LABELS = {"RESTART": "Firmware Restart", "PDU_CYCLE": "PDU Power Cycle",
                          "RESTART_CHECK_BOARDS": "Dead Board Restart"}
 
-        blocks = [
-            {"type": "section",
-             "text": {"type": "mrkdwn",
-                      "text": "*Select miners to action* — all checked by default. Uncheck to skip."}},
-            {"type": "divider"},
-        ]
+        lines = [f"*{len(actionable)} action(s) pending — reply to approve:*",
+                 "_• `APPROVE` — approve all_",
+                 "_• `DENY` — deny all_",
+                 "_• `approve 1,3` — approve by number_",
+                 "_• `approve .36,.46` — approve by IP suffix_",
+                 ""]
 
-        options = []
-        for issue in actionable:
+        for idx, issue in enumerate(actionable, 1):
             icon  = ACTION_ICONS.get(issue["action"], "⚡")
             label = ACTION_LABELS.get(issue["action"], issue["action"])
-            loc   = issue.get("map_location") or "—"
+            loc   = issue.get("map_location") or "not mapped"
             hr    = issue.get("hashrate_pct", "?")
             temp  = issue.get("temp_chip", "?")
-            options.append({
-                "text":        {"type": "mrkdwn", "text": f"{icon} *{issue['ip']}* — {issue['model']}"},
-                "description": {"type": "mrkdwn", "text": f"{label} | {loc} | HR: {hr}% | {temp}°C"},
-                "value":       str(issue["id"]),
-            })
-
-        # Slack limits checkboxes to 10 per block
-        for i in range(0, len(options), 10):
-            chunk = options[i:i+10]
-            blocks.append({
-                "type": "actions", "block_id": f"miner_checks_{i}",
-                "elements": [{"type": "checkboxes", "action_id": f"miner_select_{i}",
-                               "initial_options": chunk, "options": chunk}]
-            })
-
-        blocks += [
-            {"type": "divider"},
-            {"type": "actions", "block_id": "approval_buttons",
-             "elements": [
-                 {"type": "button", "text": {"type": "plain_text", "text": "✅ Approve Selected", "emoji": True},
-                  "style": "primary", "action_id": "approve_selected", "value": thread_ts},
-                 {"type": "button", "text": {"type": "plain_text", "text": "❌ Deny All", "emoji": True},
-                  "style": "danger", "action_id": "deny_all", "value": thread_ts},
-             ]}
-        ]
+            lines.append(
+                f"*{idx}.* {icon} `{issue['ip']}` — {issue['model']}\n"
+                f"    {label} | {loc} | HR: {hr}% | {temp}°C"
+            )
 
         try:
-            client.chat_postMessage(channel=self.channel_id, thread_ts=thread_ts,
-                                    text="Select miners to approve:", blocks=blocks)
-            logger.info("Posted miner selection UI (%d miners) thread=%s", len(actionable), thread_ts)
+            client.chat_postMessage(
+                channel=self.channel_id,
+                thread_ts=thread_ts,
+                text="\n".join(lines)
+            )
+            logger.info("Posted miner selection list (%d miners) thread=%s",
+                        len(actionable), thread_ts)
         except Exception as e:
-            logger.warning("Failed to post miner selection UI: %s", e)
+            logger.warning("Failed to post miner selection list: %s", e)
 
 
 class MiningGuardian:
