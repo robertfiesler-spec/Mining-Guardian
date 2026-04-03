@@ -26,3 +26,5 @@ config.json
 
 logs/
 ams_api_spec.json
+*.rtfd
+git hub paswords*
