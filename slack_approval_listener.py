@@ -105,11 +105,21 @@ class ApprovalListener:
                 self._handle_deny_all(thread_ts, user_name, user_id, payload)
 
     def _handle_approve_selected(self, thread_ts, selected_ids, user_name, user_id, payload):
-        """Call /approve_selected with the checked miner IDs."""
+        """Post miner history context, then call /approve_selected."""
         if not selected_ids:
-            # Nothing checked — treat as deny all
             self._handle_deny_all(thread_ts, user_name, user_id, payload)
             return
+
+        # Post pre-approval context for each selected miner
+        context = self._build_miner_context(selected_ids)
+        if context:
+            try:
+                self.client.chat_postMessage(
+                    channel=CHANNEL_ID, thread_ts=thread_ts,
+                    text=f"*📋 Pre-Approval Context*\n{context}"
+                )
+            except Exception:
+                pass
 
         resp = requests.post(f"{APPROVAL_API}/approve_selected", json={
             "thread_ts": thread_ts,
@@ -163,7 +173,103 @@ class ApprovalListener:
         except Exception as e:
             logger.warning("Could not disable buttons: %s", e)
 
-    # ── Text fallback polling ─────────────────────────────────────────────────
+    def _build_miner_context(self, miner_ids: list) -> str:
+        """Pull recent history for selected miners to inform the approval decision."""
+        lines = []
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            for mid in miner_ids[:8]:  # cap at 8 to keep message readable
+                # Flag count in last 7 days
+                flags = conn.execute("""
+                    SELECT COUNT(*) as cnt, AVG(temp_chip) as avg_temp,
+                           AVG(hashrate_pct) as avg_hr, GROUP_CONCAT(DISTINCT action) as actions
+                    FROM miner_readings
+                    WHERE miner_id = ? AND action IS NOT NULL AND action != 'MONITOR'
+                    AND scanned_at >= datetime('now','-7 days')
+                """, (mid,)).fetchone()
+
+                # Last audit log entry
+                last_action = conn.execute("""
+                    SELECT action_taken, decision, approved_by, timestamp
+                    FROM action_audit_log WHERE miner_id = ?
+                    ORDER BY timestamp DESC LIMIT 1
+                """, (mid,)).fetchone()
+
+                # Current IP
+                current = conn.execute("""
+                    SELECT ip, model FROM miner_readings WHERE miner_id = ?
+                    ORDER BY id DESC LIMIT 1
+                """, (mid,)).fetchone()
+
+                if current:
+                    ip    = current["ip"]
+                    model = current["model"] or "?"
+                    cnt   = flags["cnt"] if flags else 0
+                    line  = f"  • `{ip}` ({model}) — flagged *{cnt}x* in 7 days"
+                    if flags and flags["avg_hr"]:
+                        line += f" | avg HR: {flags['avg_hr']:.0f}%"
+                    if last_action:
+                        ago = last_action["timestamp"][:16]
+                        line += f" | last action: {last_action['action_taken']} {last_action['decision']} ({ago})"
+                    lines.append(line)
+            conn.close()
+        except Exception as e:
+            logger.warning("Could not build miner context: %s", e)
+        return "\n".join(lines)
+
+    def _check_escalation(self) -> None:
+        """DM the bot owner if the same miner has been flagged 3+ consecutive scans."""
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+
+            # Find miners flagged in the last 3 consecutive scans
+            recent_scans = conn.execute("""
+                SELECT id FROM scans ORDER BY id DESC LIMIT 3
+            """).fetchall()
+
+            if len(recent_scans) < 3:
+                conn.close()
+                return
+
+            scan_ids = [str(s["id"]) for s in recent_scans]
+            placeholders = ",".join("?" * len(scan_ids))
+
+            # Miners flagged in ALL 3 recent scans
+            persistent = conn.execute(f"""
+                SELECT miner_id, ip, model, COUNT(DISTINCT scan_id) as consecutive,
+                       AVG(temp_chip) as avg_temp, AVG(hashrate_pct) as avg_hr,
+                       GROUP_CONCAT(DISTINCT action) as actions
+                FROM miner_readings
+                WHERE scan_id IN ({placeholders})
+                AND action IS NOT NULL AND action != 'MONITOR'
+                GROUP BY miner_id
+                HAVING consecutive = 3
+            """, scan_ids).fetchall()
+
+            conn.close()
+
+            for m in persistent:
+                escalation_key = f"escalated:{m['miner_id']}"
+                if escalation_key in self.processed_messages:
+                    continue  # already escalated recently
+
+                msg = (
+                    f"🚨 *Persistent Issue — {m['ip']}* ({m['model']})\n"
+                    f"Flagged in 3 consecutive scans — avg HR: {m['avg_hr']:.0f}% | "
+                    f"avg temp: {m['avg_temp']:.0f}°C | actions: {m['actions']}\n"
+                    f"Check pending approvals in <#{CHANNEL_ID}>"
+                )
+                # Post in main channel as an escalation notice
+                self.client.chat_postMessage(channel=CHANNEL_ID, text=msg)
+                self.processed_messages.add(escalation_key)
+                logger.info("Escalation posted for persistent miner %s", m["ip"])
+
+        except Exception as e:
+            logger.warning("Escalation check failed: %s", e)
+
+
     # Still poll for plain "APPROVE" / "DENY" text replies as a fallback.
 
     def _check_thread_replies(self, thread_ts):
@@ -209,12 +315,17 @@ class ApprovalListener:
 
     def run(self):
         logger.info("Slack Approval Listener started — polling + Block Kit ready")
+        check_count = 0
         while True:
             try:
                 for thread_ts in self._get_pending_threads():
                     action, user_name, user_id = self._check_thread_replies(thread_ts)
                     if action:
                         self._execute_text_approval(thread_ts, action, user_name, user_id)
+                # Escalation check every 6 cycles (~1 min)
+                check_count += 1
+                if check_count % 6 == 0:
+                    self._check_escalation()
             except Exception as e:
                 logger.error("Listener loop error: %s", e)
             time.sleep(POLL_INTERVAL)
