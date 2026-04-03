@@ -210,15 +210,305 @@ class CommandHandler:
         except Exception as e:
             self._reply(channel, thread_ts, f"BTC price unavailable: {e}")
 
-    def cmd_ask_llm(self, channel, thread_ts, question):
-        """Forward a question to Claude API with fleet context."""
+    def _build_fleet_context(self) -> str:
+        """Pull current fleet state to inject into every LLM question."""
         try:
+            conn = self._get_db()
+            # Latest scan summary
+            scan = conn.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+            # Top 10 most flagged miners with current state
+            miners = conn.execute("""
+                SELECT r.miner_id, r.ip, r.model, r.status, r.hashrate_pct,
+                       r.temp_chip, r.current_profile, r.action, r.firmware_manufacturer,
+                       r.map_location,
+                       COUNT(h.id) as total_flags
+                FROM miner_readings r
+                LEFT JOIN miner_readings h ON h.miner_id = r.miner_id
+                    AND h.action IS NOT NULL AND h.action != 'MONITOR'
+                WHERE r.id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+                GROUP BY r.miner_id ORDER BY total_flags DESC LIMIT 15
+            """).fetchall()
+            # Known dead boards
+            dead = conn.execute(
+                "SELECT miner_id, ip, model, board_indices FROM known_dead_boards WHERE resolved_at IS NULL"
+            ).fetchall()
+            # Recent audit actions
+            recent = conn.execute("""
+                SELECT miner_id, ip, action_taken, decision, timestamp
+                FROM action_audit_log ORDER BY timestamp DESC LIMIT 10
+            """).fetchall()
+            # Knowledge patterns
+            conn.close()
+            lines = ["CURRENT FLEET STATE:"]
+            if scan:
+                lines.append(f"Latest scan: {scan['total_miners']} miners, "
+                             f"{scan['online']} online, {scan['offline']} offline, "
+                             f"{scan['issues']} issues")
+            lines.append("\nMINER STATUS (most flagged first):")
+            for m in miners:
+                lines.append(f"  {m['ip']} ({m['model']}) — status:{m['status']} "
+                             f"HR:{m['hashrate_pct']}% temp:{m['temp_chip']}°C "
+                             f"profile:{m['current_profile']} flags:{m['total_flags']} "
+                             f"location:{m['map_location'] or 'unmapped'} "
+                             f"action:{m['action'] or 'OK'}")
+            if dead:
+                lines.append("\nKNOWN DEAD BOARDS:")
+                for d in dead:
+                    lines.append(f"  {d['ip']} ({d['model']}) — boards {d['board_indices']}")
+            if recent:
+                lines.append("\nRECENT ACTIONS:")
+                for a in recent:
+                    lines.append(f"  {a['timestamp'][:16]} {a['ip']} — "
+                                f"{a['action_taken']} {a['decision']}")
+            try:
+                from knowledge_manager import KnowledgeManager
+                km = KnowledgeManager()
+                patterns = km.knowledge.get("patterns", [])
+                if patterns:
+                    lines.append("\nLEARNED PATTERNS:")
+                    for p in patterns[:5]:
+                        lines.append(f"  • {p}")
+            except Exception:
+                pass
+            return "\n".join(lines)
+        except Exception as e:
+            logger.warning("Could not build fleet context: %s", e)
+            return ""
+
+    def _get_miner_deep_history(self, ip_or_id: str) -> str:
+        """Pull full history for a specific miner to answer questions about it."""
+        try:
+            conn = self._get_db()
+            # Resolve to miner_id and ip
+            row = conn.execute(
+                "SELECT miner_id, ip, model FROM miner_readings "
+                "WHERE ip=? OR miner_id=? ORDER BY id DESC LIMIT 1",
+                (ip_or_id, ip_or_id)
+            ).fetchone()
+            if not row:
+                conn.close()
+                return f"No miner found matching '{ip_or_id}'"
+
+            mid   = row["miner_id"]
+            ip    = row["ip"]
+            model = row["model"]
+
+            # Flag history over time
+            flags = conn.execute("""
+                SELECT DATE(scanned_at) as day, action, COUNT(*) as cnt,
+                       AVG(hashrate_pct) as avg_hr, AVG(temp_chip) as avg_temp
+                FROM miner_readings
+                WHERE miner_id=? AND action IS NOT NULL AND action!='MONITOR'
+                GROUP BY DATE(scanned_at), action
+                ORDER BY day DESC LIMIT 14
+            """, (mid,)).fetchall()
+
+            # Audit history
+            audit = conn.execute("""
+                SELECT action_taken, decision, approved_by, timestamp, notes
+                FROM action_audit_log WHERE miner_id=?
+                ORDER BY timestamp DESC LIMIT 10
+            """, (mid,)).fetchall()
+
+            # Dead board history
+            dead = conn.execute(
+                "SELECT board_indices, first_seen, restart_result, resolved_at "
+                "FROM known_dead_boards WHERE miner_id=? ORDER BY first_seen DESC LIMIT 5",
+                (mid,)
+            ).fetchall()
+
+            # Most recent log snippets
+            logs = conn.execute("""
+                SELECT health_status, collected_at, content FROM miner_logs
+                WHERE miner_id=? ORDER BY id DESC LIMIT 3
+            """, (mid,)).fetchall()
+
+            conn.close()
+
+            lines = [f"MINER DEEP HISTORY: {ip} ({model}) ID={mid}"]
+            lines.append(f"\nFLAG HISTORY (last 14 days):")
+            if flags:
+                for f in flags:
+                    lines.append(f"  {f['day']}: {f['action']} x{f['cnt']} — "
+                                f"avg HR:{f['avg_hr']:.0f}% temp:{f['avg_temp']:.0f}°C")
+            else:
+                lines.append("  No flags in last 14 days")
+
+            lines.append(f"\nAUDIT TRAIL (last 10 actions):")
+            if audit:
+                for a in audit:
+                    lines.append(f"  {a['timestamp'][:16]}: {a['action_taken']} → "
+                                f"{a['decision']} by {a['approved_by'] or 'auto'}")
+            else:
+                lines.append("  No actions taken yet")
+
+            if dead:
+                lines.append(f"\nDEAD BOARD HISTORY:")
+                for d in dead:
+                    status = "resolved" if d["resolved_at"] else "UNRESOLVED"
+                    lines.append(f"  Boards {d['board_indices']} — first seen {d['first_seen'][:10]} "
+                                f"— restart result: {d['restart_result'] or 'N/A'} — {status}")
+
+            if logs:
+                lines.append(f"\nRECENT LOG SNIPPETS:")
+                for log in logs:
+                    snippet = log["content"][:300].replace("\n", " ")
+                    lines.append(f"  [{log['collected_at'][:16]} {log['health_status']}]: {snippet}")
+
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Could not retrieve history for {ip_or_id}: {e}"
+
+    def cmd_ask_llm(self, channel, thread_ts, question):
+        """
+        Intelligent fleet Q&A — automatically pulls relevant context before asking the LLM.
+
+        If question mentions a specific IP or miner, pulls that miner's full history.
+        Always includes current fleet state and learned patterns as context.
+        Uses Claude API for best answer quality.
+        """
+        self._reply(channel, thread_ts, "_🧠 Thinking..._")
+
+        try:
+            # Build system context
+            fleet_ctx = self._build_fleet_context()
+
+            # Check if question references a specific miner IP
+            ip_match = re.search(r'192\.168\.\d+\.(\d+)|\.\d{2,3}\b', question)
+            miner_ctx = ""
+            if ip_match:
+                # Extract the full IP if present, else look up by suffix
+                full_ip = re.search(r'192\.168\.\d+\.\d+', question)
+                lookup  = full_ip.group(0) if full_ip else ip_match.group(0).lstrip(".")
+                miner_ctx = f"\n\n{self._get_miner_deep_history(lookup)}"
+
+            # Build the full prompt
+            system = (
+                "You are Mining Guardian AI, the fleet intelligence system for BiXBiT USA "
+                "in Fort Worth, TX. You have full access to real-time fleet data, miner history, "
+                "audit logs, and learned patterns. All cooling is liquid — hydro racks and "
+                "immersion tank. No air cooling. Answer the operator's question directly and "
+                "specifically using the data provided. Be concise but complete. "
+                "If recommending an action, say exactly which miner IPs and what to do."
+            )
+
+            prompt = (
+                f"{fleet_ctx}"
+                f"{miner_ctx}"
+                f"\n\nOPERATOR QUESTION: {question}"
+                f"\n\nProvide a direct, specific answer using the fleet data above."
+            )
+
             from llm_analyzer import LLMAnalyzer
             analyzer = LLMAnalyzer()
-            answer = analyzer.deep_analyze(f"Operator question: {question}\n\nAnswer concisely.")
+
+            # Prefer Claude API for conversational questions (faster, smarter)
+            import os
+            anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+            if anthropic_key:
+                resp = requests.post("https://api.anthropic.com/v1/messages", json={
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 800,
+                    "system": system,
+                    "messages": [{"role": "user", "content": prompt}]
+                }, headers={
+                    "x-api-key": anthropic_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json"
+                }, timeout=30)
+                answer = resp.json()["content"][0]["text"]
+            else:
+                # Fallback to local Ollama
+                answer, _ = analyzer._query_llm(f"{system}\n\n{prompt}")
+
             self._reply(channel, thread_ts, f"*🧠 Mining Guardian AI:*\n{answer[:2000]}")
+
         except Exception as e:
-            self._reply(channel, thread_ts, f"LLM query failed: {e}")
+            logger.error("LLM query failed: %s", e)
+            self._reply(channel, thread_ts, f"❌ LLM query failed: {e}")
+
+    def cmd_overnight_report(self, channel, thread_ts):
+        """Summary of what happened overnight — auto actions, recoveries, failures."""
+        conn = self._get_db()
+        from datetime import timedelta
+        since = (datetime.now() - timedelta(hours=10)).isoformat()
+        actions = conn.execute("""
+            SELECT miner_id, ip, model, action_taken, decision, approved_by, timestamp
+            FROM action_audit_log WHERE timestamp >= ? ORDER BY timestamp
+        """, (since,)).fetchall()
+        conn.close()
+        if not actions:
+            self._reply(channel, thread_ts, "No actions taken in the last 10 hours.")
+            return
+        auto    = [a for a in actions if a["approved_by"] == "Mining Guardian (Overnight Auto)"]
+        manual  = [a for a in actions if a["approved_by"] != "Mining Guardian (Overnight Auto)"]
+        lines   = [f"*🌙 Overnight Summary (last 10h)*"]
+        if auto:
+            lines.append(f"\n*Auto-executed ({len(auto)}):*")
+            for a in auto:
+                lines.append(f"  • `{a['ip']}` — {a['action_taken']} {a['decision']} "
+                             f"@ {a['timestamp'][11:16]}")
+        if manual:
+            lines.append(f"\n*Operator actions ({len(manual)}):*")
+            for a in manual:
+                lines.append(f"  • `{a['ip']}` — {a['action_taken']} {a['decision']} "
+                             f"by {a['approved_by']} @ {a['timestamp'][11:16]}")
+        self._reply(channel, thread_ts, "\n".join(lines))
+
+    def cmd_predict(self, channel, thread_ts):
+        """Ask the LLM to predict which miners are most likely to fail next."""
+        self._reply(channel, thread_ts, "_🔮 Analyzing failure risk patterns..._")
+        fleet_ctx = self._build_fleet_context()
+        prompt = (
+            f"{fleet_ctx}\n\n"
+            "Based on the flag history, hashrate trends, temperature patterns, and known issues above, "
+            "which 3-5 miners are most likely to need attention in the next 24-48 hours? "
+            "For each one explain why — what pattern is concerning. Be specific with IPs."
+        )
+        self.cmd_ask_llm(channel, thread_ts, prompt)
+
+    def cmd_audit(self, channel, thread_ts):
+        """Show recent audit log entries."""
+        conn = self._get_db()
+        rows = conn.execute("""
+            SELECT ip, model, action_taken, decision, approved_by, timestamp
+            FROM action_audit_log ORDER BY timestamp DESC LIMIT 10
+        """).fetchall()
+        conn.close()
+        if not rows:
+            self._reply(channel, thread_ts, "No audit entries yet.")
+            return
+        lines = [f"*📋 Recent Actions (last 10)*"]
+        for r in rows:
+            icon = "✅" if r["decision"] in ("APPROVED","AUTO_OVERNIGHT") else "❌"
+            lines.append(f"  {icon} `{r['ip']}` {r['action_taken']} → {r['decision']} "
+                        f"by {r['approved_by'] or 'auto'} @ {r['timestamp'][5:16]}")
+        self._reply(channel, thread_ts, "\n".join(lines))
+
+    def cmd_help(self, channel, thread_ts):
+        """List all available commands."""
+        lines = [
+            "*🤖 Mining Guardian Commands*",
+            "",
+            "*Quick commands:*",
+            "  `status` — fleet overview",
+            "  `hot` — miners running warm",
+            "  `dead` — known dead boards",
+            "  `btc` — Bitcoin price + revenue",
+            "  `knowledge` — what AI has learned",
+            "  `audit` — recent actions taken",
+            "  `overnight` — what happened overnight",
+            "  `predict` — which miners might fail next",
+            "  `miner 192.168.188.36` — deep dive on one miner",
+            "",
+            "*Ask anything:*",
+            "  _why does .36 keep failing?_",
+            "  _what's wrong with miner .195?_",
+            "  _should I lower the profile on .46?_",
+            "  _is the high return temp causing issues?_",
+            "  _which miners have the worst history this week?_",
+        ]
+        self._reply(channel, thread_ts, "\n".join(lines))
 
     def _handle_message(self, msg):
         """Route a message to the right command handler."""
@@ -250,8 +540,18 @@ class CommandHandler:
             self.cmd_knowledge(channel, thread_ts)
         elif lower in ("btc", "/btc", "bitcoin", "price"):
             self.cmd_btc(channel, thread_ts)
+        elif lower.startswith(("history ", "why ", "what's wrong with ", "tell me about ")):
+            # Extract IP from the question and ask LLM with full history
+            self.cmd_ask_llm(channel, thread_ts, text)
+        elif lower in ("overnight", "what happened overnight", "overnight report"):
+            self.cmd_overnight_report(channel, thread_ts)
+        elif lower in ("predict", "predictions", "who's next", "which miner will fail"):
+            self.cmd_predict(channel, thread_ts)
+        elif lower in ("audit", "recent actions", "what was done"):
+            self.cmd_audit(channel, thread_ts)
+        elif lower in ("help", "/help", "commands"):
+            self.cmd_help(channel, thread_ts)
         else:
-            # Anything else — send to the LLM as a question
             self.cmd_ask_llm(channel, thread_ts, text)
 
     def run(self):
