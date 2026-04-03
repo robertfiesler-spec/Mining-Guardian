@@ -12,8 +12,12 @@ Runs on: http://localhost:8686
 import sqlite3
 import json
 import logging
+import hashlib
+import hmac
+import time
+import os
 from datetime import datetime
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -21,6 +25,7 @@ logger = logging.getLogger("approval_api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 DB_PATH = "guardian.db"
+SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 app = FastAPI(title="Mining Guardian Approval API", version="1.0.0")
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
@@ -153,6 +158,138 @@ async def deny_actions(request: Request):
     conn.close()
     logger.info("DENIED: %d actions for thread %s by %s", len(pending), thread_ts, user)
     return {"status": "denied", "count": len(pending)}
+
+
+@app.post("/approve_selected")
+async def approve_selected_actions(request: Request):
+    """
+    Called when operator clicks 'Approve Selected' in the Block Kit UI.
+    Expects JSON: {"thread_ts": "...", "miner_ids": ["53476", "53477"],
+                   "user": "...", "user_id": "..."}
+    Only approves the miners in miner_ids — others remain PENDING (effectively denied).
+    """
+    body = await request.json()
+    thread_ts  = body.get("thread_ts")
+    miner_ids  = [str(m) for m in body.get("miner_ids", [])]
+    user       = body.get("user", "unknown")
+    user_id    = body.get("user_id", "")
+
+    if not thread_ts:
+        return {"error": "thread_ts required"}
+
+    conn = get_db()
+    all_pending = conn.execute(
+        "SELECT * FROM pending_approvals WHERE thread_ts = ? AND status = 'PENDING'",
+        (thread_ts,)
+    ).fetchall()
+
+    now = datetime.now().isoformat()
+    approved, denied = [], []
+
+    for row in all_pending:
+        action = dict(row)
+        if str(action["miner_id"]) in miner_ids:
+            conn.execute(
+                "UPDATE pending_approvals SET status='APPROVED', responded_at=? WHERE id=?",
+                (now, action["id"])
+            )
+            conn.execute("""
+                INSERT INTO action_audit_log
+                (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken,
+                 decision, approved_by, slack_user_id, notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (now, now[:10], action["scan_id"], action["miner_id"], action["ip"],
+                  action["model"], action["problem"], action["action_type"],
+                  "APPROVED", user, user_id, f"Selectively approved via Slack thread {thread_ts}"))
+            approved.append({"miner_id": action["miner_id"], "ip": action["ip"],
+                             "action": action["action_type"]})
+        else:
+            # Not selected — mark as denied
+            conn.execute(
+                "UPDATE pending_approvals SET status='DENIED', responded_at=? WHERE id=?",
+                (now, action["id"])
+            )
+            conn.execute("""
+                INSERT INTO action_audit_log
+                (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken,
+                 decision, approved_by, slack_user_id, notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (now, now[:10], action["scan_id"], action["miner_id"], action["ip"],
+                  action["model"], action["problem"], action["action_type"],
+                  "DENIED", user, user_id, f"Skipped in selective approval for thread {thread_ts}"))
+            denied.append({"miner_id": action["miner_id"], "ip": action["ip"]})
+
+    conn.commit()
+    conn.close()
+
+    # Execute only the approved ones
+    if approved:
+        try:
+            import mining_guardian
+            cfg = json.load(open("config.json"))
+            g = mining_guardian.MiningGuardian(
+                mining_guardian.GuardianConfig(**{
+                    k: v for k, v in cfg.items()
+                    if k in mining_guardian.GuardianConfig.__dataclass_fields__
+                })
+            )
+            for r in approved:
+                issue = {"id": r["miner_id"], "ip": r["ip"], "model": ""}
+                if r["action"] == "RESTART":
+                    g.execute_restart(issue)
+                elif r["action"] == "PDU_CYCLE":
+                    g.execute_pdu_cycle(issue)
+                elif r["action"] == "RESTART_CHECK_BOARDS":
+                    g.execute_board_restart(issue)
+        except Exception as e:
+            logger.error("Error executing selected approvals: %s", e)
+            return {"status": "approved_with_errors", "approved": approved,
+                    "denied": denied, "error": str(e)}
+
+    logger.info("Selective approve by %s — %d approved, %d skipped (thread %s)",
+                user, len(approved), len(denied), thread_ts)
+    return {"status": "ok", "approved_count": len(approved),
+            "denied_count": len(denied), "approved": approved, "denied": denied}
+
+
+
+@app.post("/slack/actions")
+async def slack_interactive(request: Request):
+    """
+    Receives interactive Block Kit payloads from Slack (button clicks).
+    Publicly routed via Cloudflare tunnel: slack.fieslerfamily.com/slack/actions
+    Must respond within 3 seconds — dispatches to background thread.
+    """
+    body_bytes = await request.body()
+    body_str   = body_bytes.decode("utf-8")
+
+    # Verify Slack signature
+    if SLACK_SIGNING_SECRET:
+        ts  = request.headers.get("X-Slack-Request-Timestamp", "")
+        sig = request.headers.get("X-Slack-Signature", "")
+        base     = f"v0:{ts}:{body_str}"
+        expected = "v0=" + hmac.new(
+            SLACK_SIGNING_SECRET.encode(), base.encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            logger.warning("Invalid Slack signature on /slack/actions")
+            return Response(status_code=403)
+
+    from urllib.parse import parse_qs
+    parsed      = parse_qs(body_str)
+    payload_str = parsed.get("payload", ["{}"])[0]
+    payload     = json.loads(payload_str)
+
+    import threading
+    def dispatch():
+        try:
+            from slack_approval_listener import ApprovalListener
+            ApprovalListener().handle_block_action(payload)
+        except Exception as e:
+            logger.error("Block action dispatch error: %s", e)
+
+    threading.Thread(target=dispatch, daemon=True).start()
+    return Response(status_code=200)
 
 
 @app.get("/pending")
