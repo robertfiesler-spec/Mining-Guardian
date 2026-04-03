@@ -1,28 +1,30 @@
 # Mining Guardian
 
-Autonomous Bitcoin mining fleet monitoring system for BiXBiT USA.
+Autonomous Bitcoin mining fleet monitoring system for BiXBiT USA in Fort Worth, TX.
 Monitors 49+ miners across liquid-cooled racks and an immersion tank,
-diagnoses problems with a two-tier AI system, and executes approved
-actions via Slack — all running 24/7 with no Mac required.
+diagnoses problems with a two-tier AI system, and manages the full action
+lifecycle — from detection through approval, execution, ticket creation,
+and suppression — all running 24/7 with no Mac required.
 
 ---
 
 ## Architecture
 
 ```
-Hostinger VPS (187.124.247.182)
-  ├── Mining Guardian (systemd)     — scans fleet every 5 min
-  ├── Dashboard API (systemd)       — Retool data + chart pages
-  ├── Approval API (systemd)        — APPROVE/DENY webhook
-  ├── Slack Listener (systemd)      — polls threads for APPROVE/DENY
-  ├── Slack Commands (systemd)      — interactive bot
-  └── Cloudflare Tunnel (systemd)   — dashboard.fieslerfamily.com
+Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83)
+  ├── mining-guardian (systemd)         — scans fleet every 5 min
+  ├── dashboard-api (systemd :8585)     — Retool data + chart pages
+  ├── approval-api (systemd :8686)      — APPROVE/DENY execution
+  ├── slack-listener (systemd)          — polls threads for text approvals + escalation
+  ├── slack-commands (systemd)          — fleet intelligence bot
+  ├── overnight-automation (systemd)    — autonomous low-risk actions 10pm–6am
+  └── cloudflared (systemd)             — dashboard.fieslerfamily.com tunnel
 
-Windows PC at Facility (Tailscale 100.110.87.1)
-  ├── Tailscale gateway             — routes VPS to 192.168.188.0/24
-  └── Ollama + Qwen2.5 32B (4090)  — local LLM on RTX 4090
+Windows PC at Facility (Tailscale 100.110.87.1 / robs-pc)
+  ├── Tailscale gateway             — routes 192.168.188.0/24 subnet to VPS
+  └── Ollama + Qwen2.5 32B (4090)  — local LLM on RTX 4090, port 11434
 
-Anthropic Claude API               — weekly training + knowledge merges
+Anthropic Claude API               — conversational Q&A, weekly training, knowledge merges
 ```
 
 ---
@@ -31,11 +33,12 @@ Anthropic Claude API               — weekly training + knowledge merges
 
 | Tier | Model | Hardware | Used For | Cost |
 |------|-------|----------|----------|------|
-| Local | Qwen2.5 32B Q4_K_M | RTX 4090 (24GB VRAM) | Every scan, Slack commands | Free |
-| Cloud | Claude Sonnet | Anthropic API | Weekly training, knowledge merges | ~$1-2/mo |
+| Local | Qwen2.5 32B Q4_K_M | RTX 4090 (24GB VRAM) | Every scan analysis (~4.6s) | Free |
+| Cloud | Claude Sonnet | Anthropic API | Fleet Q&A, weekly training, merges | ~$1-2/mo |
 
-Ollama on the VPS is stopped to save CPU. All LLM queries route to the
-Windows PC 4090 over Tailscale at http://100.110.87.1:11434.
+- Ollama on VPS is stopped to save CPU — all LLM routes to Windows PC 4090 over Tailscale
+- Fallback: llama3.1:8b still on VPS (stopped, not deleted)
+- Knowledge file updates every scan, weekly deep training every Sunday 3am
 
 ---
 
@@ -51,119 +54,128 @@ Windows PC 4090 over Tailscale at http://100.110.87.1:11434.
 
 - All cooling is liquid (hydro racks + immersion tank B100). No air cooling.
 - Temp thresholds: 🟡 Yellow 76°C, 🔴 Red 86°C (all models)
-- Model aliases mapped in config.json (AMS reports inconsistent names)
+- PDUs: orient_RPDU 163 @ 192.168.188.15, 164 @ 192.168.188.16
 
 ---
 
-## Services (VPS — all systemd, all auto-start on boot)
+## Services (VPS — all systemd, auto-start on boot)
 
 | Service | Port | Description |
 |---------|------|-------------|
-| mining-guardian | — | Fleet scanner, evaluator, Slack reporter |
-| dashboard-api | 8585 | REST API + Retool chart pages |
-| approval-api | 8686 | APPROVE/DENY webhook |
-| slack-listener | — | Polls #mining-guardian for APPROVE/DENY replies |
-| slack-commands | — | Interactive Slack bot |
-| cloudflared | — | Tunnel: dashboard.fieslerfamily.com → VPS:8585 |
-| ollama | — | STOPPED (LLM runs on Windows PC 4090) |
+| mining-guardian | — | Scans fleet every 5 min, evaluates all miners |
+| dashboard-api | 8585 | REST API for Retool + embedded chart HTML pages |
+| approval-api | 8686 | Handles APPROVE/DENY/approve_selected calls |
+| slack-listener | — | Polls threads for text approvals, escalation alerts |
+| slack-commands | — | Conversational fleet intelligence bot |
+| overnight-automation | — | Auto-executes low-risk actions 10pm–6am |
+| cloudflared | — | Permanent tunnel: dashboard.fieslerfamily.com → :8585 |
 
 ---
 
-## Cloudflare Tunnel
+## Approval Flow
 
-Tunnel ID: `2530d257-66be-4bd4-a056-13c12585c86f`
-- `dashboard.fieslerfamily.com` → `localhost:8585` (Retool dashboard)
-- `slack.fieslerfamily.com` → `localhost:8686` (approval webhook)
+Scan posts to Slack with a numbered miner list in thread. Reply:
+- `APPROVE` — approve all pending actions
+- `DENY` — deny all
+- `approve 1,3` — approve miners 1 and 3 by number
+- `approve .36,.46` — approve by IP suffix
 
-Tunnel runs on VPS via systemd. Mac is no longer required.
-
----
-
-## Slack Commands
-
-Type any of these in **#mining-guardian**:
-
-| Command | Response |
-|---------|----------|
-| `status` | Fleet overview — online/offline/issues |
-| `miner 192.168.188.x` | Detailed lookup for a specific miner |
-| `hot` | Miners in yellow or red temp zone |
-| `dead` | Known dead boards (suppressed from scan spam) |
-| `btc` | Current Bitcoin price + estimated daily revenue |
-| `knowledge` | What the AI has learned — patterns, insights, top flagged |
-| Anything else | Forwarded to Qwen 32B with full fleet context |
+OpenClaw owns Socket Mode — Block Kit buttons are not used (conflict).
+Text-based polling runs every 15 seconds.
 
 ---
 
-## Scan Flow (every 5 minutes)
+## Dead Board Lifecycle
 
-1. Poll PDUs (163, 164) + Immersion Tank B100 + HVAC for facility data
-2. Fetch weather (Fort Worth, TX)
-3. Scan fleet via AMS WebSocket API
-4. Evaluate each miner: hashrate vs active profile, chip temp, board count
-5. Post to Slack — throttled to **1 message per hour**
-6. Save scan to SQLite (`guardian.db`)
-7. Send flagged miners to Qwen 32B on 4090 for LLM analysis
-8. Update `knowledge.json` with new insights
-9. Operator replies **APPROVE** or **DENY** in Slack thread
+1. Dead board detected → flagged as `RESTART_CHECK_BOARDS`
+2. Operator approves → restart executed, logs collected before + after
+3. Board still dead → **AMS ticket auto-created** (priority: high)
+4. **Next Slack report** → one-time notice: ticket created, miner removed
+5. **All future reports** → miner silently suppressed
+6. Board physically repaired → resolve in AMS → monitoring resumes
 
----
-
-## AMS-Down Detection
-
-When all 49 miners report offline = AMS is down, not a real fleet issue.
-Mining Guardian sends **one clean hourly message** with weather + mechanical data only.
-No false alarm spam. Normal scanning resumes automatically when AMS returns.
+Dead board miners are **never** shown in the approval queue.
 
 ---
 
-## Dead Board Handling
+## Overnight Automation (10pm–6am)
 
-1. Dead board detected → flag as `RESTART_CHECK_BOARDS`
-2. Operator approves → collect pre-restart logs → restart → monitor boards
-3. Board recovered → resolved, monitoring continues
-4. Still dead after restart → register in `known_dead_boards` table → create ticket → **stop reflagging**
+| Risk | Action | Criteria | Auto-execute |
+|------|--------|----------|--------------|
+| AUTO | Firmware restart | First attempt in 24h, no board issues | ✅ Yes |
+| AUTO | PDU cycle | First attempt, PDU assigned | ✅ Yes |
+| HOLD | Any restart | Already restarted tonight | ⏸ Skip |
+| MANUAL | Board restart | Dead hashboard detected | ❌ Never |
+| MANUAL | Physical cycle | No PDU assigned | ❌ Never |
+
+At 6am when window closes → posts summary via OpenClaw to Slack.
+Morning briefing cron fires at 7am daily with full overnight report.
 
 ---
 
-## Log Collection
+## Slack Commands (type in #mining-guardian)
 
-| When | What |
-|------|------|
-| Daily (all miners) | Once per day per miner — good and bad — for LLM learning |
-| Pre-restart | Collected before every restart for baseline comparison |
-| Post-restart | Collected after stabilization to verify board recovery |
+| Command | What it does |
+|---------|-------------|
+| `status` | Current fleet overview |
+| `hot` | Miners in yellow/red temp zone |
+| `dead` | Known dead boards |
+| `btc` | Bitcoin price + revenue estimate |
+| `knowledge` | What AI has learned |
+| `audit` | Last 10 actions taken |
+| `overnight` | What happened overnight |
+| `predict` | Which miners are most likely to fail next |
+| `miner 192.168.188.36` | Deep dive on one miner |
+| Any question | Fleet-aware AI answer with full history context |
 
-No duplicates — daily limit prevents log spam and resource waste.
+AI answers include: current fleet state, 14-day miner history, audit trail,
+dead board records, learned patterns, and log snippets for named miners.
 
 ---
 
 ## Knowledge System
 
-`knowledge.json` is the LLM's persistent memory — gitignored but backed up daily.
-
-- Updated after **every scan** with fleet stats, miner flag counts, issue history
-- LLM insights saved **back** into knowledge (feedback loop)
-- Every LLM prompt includes accumulated knowledge as context
-- **Weekly deep training** via Claude API (cron: Sundays 3am)
-- **Daily backup** to GitHub as `knowledge_backup.json` (cron: daily 4am)
-- **Federated merge** across sites via `combine_knowledge.py` — LLM synthesizes
-  knowledge from multiple Guardian deployments into a master file
-
-Current state: 58 miners tracked, 24 known issues, 9 confirmed patterns.
+- `knowledge.json` (gitignored) — updates every scan
+- `knowledge_backup.json` (tracked) — pushed to GitHub daily at 4am
+- 58 miners tracked, 32 known issues, 7 confirmed patterns
+- Weekly deep training via Claude API every Sunday at 3am
+- Deduplication runs on every save — no duplicate patterns
+- `combine_knowledge.py` — federated multi-site knowledge merger (future)
 
 ---
 
-## Facility
+## Retool Dashboard (dashboard.fieslerfamily.com)
 
-| Device | IP | Description |
-|--------|----|-------------|
-| PDU 163 (orient_RPDU) | 192.168.188.15 | 2U hydro rack power |
-| PDU 164 (orient_RPDU) | 192.168.188.16 | Bitmain hydro / S21 EXP Hydro |
-| Immersion Tank B100 | 192.168.188.20 | Fog Hashing B100, 20 outlets |
-| HVAC | 192.168.188.235 | Cooling system monitoring |
+Layout: Stat tiles → Currently Flagged table → ⚡ Warehouse Power iFrame → 🌡️ Environment iFrame → 🧠 AI Insights iFrame
 
-Tank B100: Port 19 = miner 64345, Port 20 = miner 64346, Port 22 = tank cooling system (6.8 kW hardwired).
+- Environment chart: downsampled to 4 points/day (6h buckets) — clean 20-point 5-day trend
+- Power chart: live PDU + tank readings, 30s refresh
+- AI Insights: last 20 LLM analyses with miner IDs and response times
+- Stat tiles: fleet totals, online/offline, issue count
+
+---
+
+## Cron Jobs (VPS)
+
+```
+0 3 * * 0   weekly_train.py         — Deep training via Claude API (Sundays 3am)
+0 4 * * *   backup_knowledge.py     — Push knowledge_backup.json to GitHub (daily 4am)
+0 7 * * *   morning_briefing.py     — Daily briefing to Slack (7am)
+```
+
+---
+
+## Backup System
+
+**Big-Bobby-T9 drive** (Mac cron every 5 min when Mac is on):
+- `guardian.db` — rolling 12 copies + daily snapshots (30 days)
+- `knowledge.json` — rolling 12 copies
+- `config.json` + `.env` — latest only
+- Location: `/Volumes/Big-Bobby-T9/Bixbit USA/Mining Guardian Backups/`
+
+**GitHub:**
+- `knowledge_backup.json` — daily 4am push from VPS
+- All code — on every push
 
 ---
 
@@ -172,53 +184,41 @@ Tank B100: Port 19 = miner 64345, Port 20 = miner 64346, Port 22 = tank cooling 
 | File | Purpose |
 |------|---------|
 | `mining_guardian.py` | Main scanner, evaluator, Slack reporter |
-| `dashboard_api.py` | REST API + chart HTML pages (power, environment, LLM insights) |
-| `approval_api.py` | APPROVE/DENY webhook handler |
-| `slack_approval_listener.py` | Polls Slack threads, triggers approval API |
-| `slack_command_handler.py` | Interactive Slack bot (status, btc, knowledge, etc.) |
-| `llm_analyzer.py` | Two-tier LLM: Ollama (local) + Claude API (deep analysis) |
-| `knowledge_manager.py` | Persistent `knowledge.json` manager |
-| `facility_monitor.py` | PDU + immersion tank + HVAC polling |
-| `combine_knowledge.py` | Federated knowledge merger across Guardian sites |
-| `weekly_train.py` | Weekly deep training via Claude API (cron: Sun 3am) |
-| `backup_knowledge.py` | Daily knowledge backup to GitHub (cron: daily 4am) |
-| `train_llm.py` | One-shot training pass on historical CGMiner logs |
-| `train_llm_pass2.py` | One-shot training pass on scan readings + AMS notifications |
+| `dashboard_api.py` | REST API + chart HTML pages |
+| `approval_api.py` | APPROVE/DENY + approve_selected endpoints |
+| `slack_approval_listener.py` | Text-based polling approval handler |
+| `slack_command_handler.py` | Conversational fleet intelligence bot |
+| `overnight_automation.py` | Autonomous overnight action engine |
+| `morning_briefing.py` | Daily 7am Slack briefing |
+| `llm_analyzer.py` | Two-tier LLM: Ollama + Claude API |
+| `knowledge_manager.py` | Persistent knowledge.json (dedup on save) |
+| `hashrate_evaluation.py` | Three-tier hashrate evaluation engine |
+| `facility_monitor.py` | PDU + tank polling |
+| `hvac_client.py` | HVAC/mechanical system client |
+| `container_monitor.py` | Built, NOT active — waiting for BiXBiT access |
+| `combine_knowledge.py` | Federated multi-site knowledge merger |
+| `weekly_train.py` | Weekly deep training via Claude API |
+| `backup_knowledge.py` | Daily knowledge backup to GitHub |
 | `config.json` | Runtime config + profile map (gitignored) |
-| `config_template.json` | Template for config.json — **never cp over live config.json** |
 | `knowledge.json` | LLM persistent memory (gitignored) |
-| `knowledge_backup.json` | Tracked backup of knowledge.json (pushed to GitHub daily) |
+| `knowledge_backup.json` | Tracked backup pushed to GitHub daily |
 
 ---
 
-## Infrastructure
+## Pending / Upcoming
 
-| Component | Details |
-|-----------|---------|
-| VPS | Hostinger KVM 8, 32GB RAM, 8 vCPU, Ubuntu 24.04, $25.99/mo |
-| VPS IP | 187.124.247.182 (public), 100.106.123.83 (Tailscale) |
-| GPU PC | Windows, RTX 4090 24GB VRAM, 32GB RAM, Tailscale 100.110.87.1 |
-| Ollama model | qwen2.5:32b-instruct-q4_K_M (20GB, runs on 4090 VRAM) |
-| Fallback model | llama3.1:8b on VPS (stopped, kept as backup) |
-| Database | SQLite `guardian.db` — 27-field miner_readings + audit log |
-| Retool | dashboard.fieslerfamily.com via Cloudflare tunnel on VPS |
+- Repair shop data ingestion — 1M+ data points from partner (waiting)
+- Mac Mini on-site deployment — will replace VPS (delayed ~1 month)
+- Auradine AH3880 direct API (port 8443) — third firmware path TBD
+- Container monitoring — built, waiting for BiXBiT access grant
 
 ---
 
-## Cron Jobs (VPS)
+## Important Notes
 
-```
-0 3 * * 0   weekly_train.py       # Deep training via Claude API — Sundays 3am
-0 4 * * *   backup_knowledge.py   # Push knowledge_backup.json to GitHub — daily 4am
-```
-
----
-
-## Planned / Upcoming
-
-- Repair shop data ingestion — 1M+ data points + logs from partner repair shop
-- Mac Mini on-site deployment (delayed) — will replace VPS as primary Guardian host
-- Auradine AH3880 direct API (port 8443) — third firmware API path TBD
-- Container monitoring (BiXBiT access pending) — supply/return temps, flow rate, PUE
-- Daily morning report — 7am Slack summary of overnight events
-- Retool approve/deny buttons (Phase 3) — requires OpenClaw on Mac Mini
+- **Never** `cp config_template.json` over `config.json` on VPS — loses credentials
+- OpenClaw owns Socket Mode — don't run Bolt/slack-bolt in listener (conflict)
+- Windows PC must stay on — it's the Tailscale gateway AND the 4090 LLM
+- Pool management and miner settings are out of scope (security policy)
+- AMS API docs: https://api-staging.dev.bixbit.io/api/doc/index.html
+- Slack channel: #mining-guardian (ID: C0AQ8SE1448, private — needs groups:history)
