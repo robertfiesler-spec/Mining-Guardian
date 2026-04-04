@@ -121,35 +121,77 @@ class LLMAnalyzer:
             return f"LLM error: {e}", 0
 
     def _query_claude(self, prompt: str) -> tuple:
-        """Send prompt to Claude API for deep analysis. Used for weekly training and knowledge merge."""
+        """Send prompt to Claude API for deep analysis (weekly training, knowledge merge).
+
+        Returns (response_text, duration_ms, model_used).
+        Does NOT fall back to Ollama — callers that need a fallback must handle it
+        explicitly. Falling back silently here caused two bugs:
+          1. Scan loop could block for 300s on Ollama during Claude outages
+          2. model_used in llm_analysis was logged as Claude even when Ollama ran
+
+        Bug fix #3: includes accumulated fleet knowledge context so the Claude
+        path has the same operational memory as the Ollama path.
+        """
         if not CLAUDE_API_KEY:
-            logger.warning("Claude API key not set — falling back to Ollama")
-            return self._query_llm(prompt)
+            logger.warning("Claude API key not set — returning empty, no Ollama fallback")
+            return "", 0, self.model
+
+        # Load fleet knowledge context — same as _query_llm does
+        knowledge_context = ""
+        try:
+            from knowledge_manager import KnowledgeManager
+            km = KnowledgeManager()
+            knowledge_context = km.build_context_prompt()
+        except Exception:
+            pass
+
+        full_prompt = (
+            f"{SYSTEM_PROMPT}\n\n{knowledge_context}\n\n{prompt}"
+            if knowledge_context else
+            f"{SYSTEM_PROMPT}\n\n{prompt}"
+        )
+
         try:
             start = datetime.now()
             resp = requests.post("https://api.anthropic.com/v1/messages", json={
                 "model": CLAUDE_MODEL,
                 "max_tokens": 4096,
-                "messages": [{"role": "user", "content": f"{SYSTEM_PROMPT}\n\n{prompt}"}]
+                "messages": [{"role": "user", "content": full_prompt}]
             }, headers={
                 "x-api-key": CLAUDE_API_KEY,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json"
             }, timeout=120)
             elapsed = int((datetime.now() - start).total_seconds() * 1000)
+            resp.raise_for_status()
             data = resp.json()
-            text = data.get("content", [{}])[0].get("text", "")
-            logger.info("Claude analysis complete (%dms, %d chars)", elapsed, len(text))
-            return text, elapsed
+            # Safely extract text block
+            for block in data.get("content", []):
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block["text"]
+                    logger.info("Claude analysis complete (%dms, %d chars)", elapsed, len(text))
+                    return text, elapsed, CLAUDE_MODEL
+            logger.error("Claude returned no text block: %s", list(data.keys()))
+            return "", elapsed, CLAUDE_MODEL
+        except requests.exceptions.Timeout:
+            logger.error("Claude API timed out after 120s — no fallback")
+            return "", 0, CLAUDE_MODEL
+        except requests.exceptions.HTTPError as e:
+            logger.error("Claude API HTTP %s — no fallback: %s",
+                         e.response.status_code, e.response.text[:200])
+            return "", 0, CLAUDE_MODEL
         except Exception as e:
-            logger.error("Claude API failed: %s — falling back to Ollama", e)
-            return self._query_llm(prompt)
+            logger.error("Claude API error — no fallback: %s", e)
+            return "", 0, CLAUDE_MODEL
 
     def deep_analyze(self, prompt: str) -> str:
-        """Use Claude API for deep analysis (weekly training, knowledge merge). Falls back to Ollama."""
-        response, duration = self._query_claude(prompt)
+        """Use Claude API for deep analysis (weekly training, knowledge merge).
+
+        Bug fix #2: records the model that actually ran, not just whether the
+        API key is set. If Claude fails, model_used reflects that correctly.
+        """
+        response, duration, model_used = self._query_claude(prompt)
         conn = sqlite3.connect(self.db_path)
-        model_used = CLAUDE_MODEL if CLAUDE_API_KEY else self.model
         conn.execute("""
             INSERT INTO llm_analysis
             (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
