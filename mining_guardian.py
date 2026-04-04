@@ -1102,8 +1102,7 @@ class OpenClawNotifier:
             parts.append(f"{len(phys_oc)} offline miner(s) need physical power cycle at facility")
         if temp_oc:
             parts.append(f"{len(temp_oc)} miner(s) have critical chip temps (86°C+)")
-        if monitors_oc:
-            parts.append(f"{len(monitors_oc)} miner(s) running warm (76–85°C), monitoring")
+        # Yellow zone miners omitted from summary — stored in DB for learning only
         summary = ". ".join(parts) + "." if parts else "All miners operating normally."
         payload = {
             "source":     "mining_guardian",
@@ -2677,7 +2676,7 @@ class SlackNotifier:
             lines.append("  Options: [1] Restart  [2] Lower power  [3] Raise cooling")
 
         if monitors:
-            lines.append(f"\n*🟡 Running Warm — {len(monitors)} miners in yellow zone (76–85°C)*")
+            pass  # Yellow temp miners logged to DB for learning — not shown in Slack
 
         if issues:
             actionable_count = sum(1 for i in issues if i["action"] in ("PDU_CYCLE","RESTART","RESTART_CHECK_BOARDS"))
