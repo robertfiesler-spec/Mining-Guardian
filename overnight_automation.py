@@ -86,13 +86,14 @@ def get_restart_count_tonight(miner_id: str) -> int:
         window_start = now.replace(hour=WINDOW_START_HOUR, minute=0, second=0)
 
     conn = get_db()
-    # Check both AUTO_OVERNIGHT decision AND approved_by — overnight uses approve_selected
-    # which logs as APPROVED with approved_by='Mining Guardian (Overnight Auto)'
+    # Bug fix: overnight actions are logged with decision='AUTO_OVERNIGHT',
+    # not 'APPROVED'. Match what execute_auto_action actually writes.
     row = conn.execute("""
         SELECT COUNT(*) as cnt FROM action_audit_log
         WHERE miner_id=?
           AND approved_by='Mining Guardian (Overnight Auto)'
-          AND decision='APPROVED'
+          AND decision='AUTO_OVERNIGHT'
+          AND action_taken IN ('RESTART', 'PDU_CYCLE')
           AND timestamp >= ?
     """, (miner_id, window_start.isoformat())).fetchone()
     conn.close()
@@ -160,32 +161,47 @@ def execute_auto_action(action: dict) -> dict:
                 if k in mining_guardian.GuardianConfig.__dataclass_fields__
             })
         )
-        issue = {"id": action["miner_id"], "ip": action["ip"], "model": action.get("model", "")}
+        issue = {
+            "id":    action["miner_id"],
+            "ip":    action["ip"],
+            "model": action.get("model", ""),
+            # Bug fix: pass PDU metadata so execute_pdu_cycle doesn't
+            # silently no-op due to missing pdu_id/outlet fields
+            "pdu_id":  action.get("pdu_id"),
+            "outlet":  action.get("outlet"),
+        }
+        success = False
         if action["action_type"] == "RESTART":
             g.execute_restart(issue)
+            success = True
         elif action["action_type"] == "PDU_CYCLE":
+            if not action.get("pdu_id") or not action.get("outlet"):
+                raise ValueError(
+                    f"PDU_CYCLE missing pdu_id/outlet for miner {action['miner_id']}"
+                )
             g.execute_pdu_cycle(issue)
+            success = True
 
-        # Log directly to audit trail with AUTO_OVERNIGHT decision
-        now = datetime.now()
-        conn = get_db()
-        conn.execute("""
-            INSERT INTO action_audit_log
-            (timestamp, date, scan_id, miner_id, ip, model, problem,
-             action_taken, decision, approved_by, slack_user_id, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (now.isoformat(), now.strftime("%Y-%m-%d"), action.get("scan_id"),
-              action["miner_id"], action["ip"], action.get("model"),
-              action.get("problem"), action["action_type"],
-              "AUTO_OVERNIGHT", "Mining Guardian (Overnight Auto)", "AUTO_OVERNIGHT",
-              "Auto-executed during overnight window"))
-        # Mark the pending approval as approved so it doesn't show again
-        conn.execute(
-            "UPDATE pending_approvals SET status='APPROVED', responded_at=? WHERE id=?",
-            (now.isoformat(), action["id"])
-        )
-        conn.commit()
-        conn.close()
+        # Only log to audit trail if the action actually executed
+        if success:
+            now = datetime.now()
+            conn = get_db()
+            conn.execute("""
+                INSERT INTO action_audit_log
+                (timestamp, date, scan_id, miner_id, ip, model, problem,
+                 action_taken, decision, approved_by, slack_user_id, notes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (now.isoformat(), now.strftime("%Y-%m-%d"), action.get("scan_id"),
+                  action["miner_id"], action["ip"], action.get("model"),
+                  action.get("problem"), action["action_type"],
+                  "AUTO_OVERNIGHT", "Mining Guardian (Overnight Auto)", "AUTO_OVERNIGHT",
+                  "Auto-executed during overnight window"))
+            conn.execute(
+                "UPDATE pending_approvals SET status='APPROVED', responded_at=? WHERE id=?",
+                (now.isoformat(), action["id"])
+            )
+            conn.commit()
+            conn.close()
 
         logger.info("AUTO executed: %s for miner %s (%s)",
                     action["action_type"], action["miner_id"], action["ip"])
@@ -196,9 +212,32 @@ def execute_auto_action(action: dict) -> dict:
 
 
 def log_skip(action: dict, reason: str) -> None:
-    """Log a HOLD decision — leave pending approval as PENDING for morning queue."""
-    now = datetime.now()
+    """Log a HOLD decision once per overnight window — leave pending approval as
+    PENDING for morning queue. Deduplicates so the same hold isn't written
+    repeatedly every 5-minute poll cycle."""
     conn = get_db()
+
+    # Bug fix: only insert if we haven't already logged a HELD_OVERNIGHT row
+    # for this miner+action in the current overnight window
+    now = datetime.now()
+    if now.hour < WINDOW_END_HOUR:
+        window_start = now.replace(hour=WINDOW_START_HOUR, minute=0,
+                                   second=0) - timedelta(days=1)
+    else:
+        window_start = now.replace(hour=WINDOW_START_HOUR, minute=0, second=0)
+
+    existing = conn.execute("""
+        SELECT id FROM action_audit_log
+        WHERE miner_id=? AND decision='HELD_OVERNIGHT'
+          AND action_taken=? AND timestamp >= ?
+        LIMIT 1
+    """, (action["miner_id"], action["action_type"],
+          window_start.isoformat())).fetchone()
+
+    if existing:
+        conn.close()
+        return  # Already logged this hold tonight — skip
+
     conn.execute("""
         INSERT INTO action_audit_log
         (timestamp, date, scan_id, miner_id, ip, model, problem,
