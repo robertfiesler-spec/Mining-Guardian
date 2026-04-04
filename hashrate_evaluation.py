@@ -65,6 +65,18 @@ class MinerSpecsLoader:
             return entry.get("default_rated_watts")
         return None
 
+    def get_boards(self, ams_model_code: str, fallback: int = 3) -> int:
+        """Return the expected hashboard count for a model.
+
+        Uses the 'boards' field from miner_specs.json when available.
+        Falls back to the provided default (3) for unknown models.
+        AH3880 (Auradine) is 2 boards; all standard Antminer/BiXBiT are 3.
+        """
+        entry = self._specs.get(ams_model_code)
+        if entry:
+            return int(entry.get("boards", fallback))
+        return fallback
+
     def get_profile_map(self, ams_model_code: str) -> dict:
         """Return named profile → TH/s map for mode-based miners (e.g. AH3880)."""
         entry = self._specs.get(ams_model_code)

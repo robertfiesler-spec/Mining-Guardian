@@ -2833,7 +2833,7 @@ class MiningGuardian:
     # ── Per-miner analysis ────────────────────────────────────
 
     @staticmethod
-    def _analyze_chains(chains: list) -> dict:
+    def _analyze_chains(chains: list, expected_boards: int = 3) -> dict:
         """
         Analyse per-hashboard chain data from AMS.
         Returns a dict with:
@@ -2842,23 +2842,25 @@ class MiningGuardian:
           dead_boards       — boards with rate == 0 or None
           dead_indices      — list of dead board index numbers
           chain_rates_ths   — list of per-board rates in TH/s
-          expected_boards   — estimated expected board count
+          expected_boards   — expected board count for this model (2 or 3)
           pct_capacity      — hashrate as % of full-board capacity
+
+        Bug fix: expected_boards is now a parameter so 2-board models like
+        the AH3880 are reported correctly. Callers should pass the value from
+        miner_specs.json; defaults to 3 for backward compatibility.
         """
         if not chains:
             return {"total_boards": 0, "active_boards": 0, "dead_boards": 0,
                     "dead_indices": [], "chain_rates_ths": [], "pct_capacity": None,
-                    "expected_boards": 0}
+                    "expected_boards": expected_boards}
 
         rates_mhs    = [c.get("rate", 0) or 0 for c in chains]
         dead_indices = [chains[i].get("index", i) for i, r in enumerate(rates_mhs) if r < 1000]
         active       = [r for r in rates_mhs if r >= 1000]
         rates_ths    = [round(r / 1000, 1) for r in rates_mhs]
 
-        # Expected board count — standard miners have 3 boards
-        expected     = 3
         avg_active   = (sum(active) / len(active)) if active else 0
-        pct_capacity = round((len(active) / expected) * 100, 1) if expected > 0 else None
+        pct_capacity = round((len(active) / expected_boards) * 100, 1) if expected_boards > 0 else None
 
         return {
             "total_boards":    len(chains),
@@ -2867,7 +2869,7 @@ class MiningGuardian:
             "dead_indices":    dead_indices,
             "chain_rates_ths": rates_ths,
             "avg_active_ths":  round(avg_active / 1000, 1),
-            "expected_boards": expected,
+            "expected_boards": expected_boards,
             "pct_capacity":    pct_capacity,
         }
 
@@ -2952,7 +2954,10 @@ class MiningGuardian:
 
         # ── HASHBOARD check (always evaluated when online) ───────────────
         chains     = miner.get("chains", []) or []
-        chain_info = self._analyze_chains(chains)
+        # Bug fix: look up correct board count from specs — AH3880 has 2, not 3
+        model_code = miner.get("model", "")
+        expected_boards = self.specs.get_boards(model_code, fallback=3)
+        chain_info = self._analyze_chains(chains, expected_boards=expected_boards)
 
         if chain_info["dead_boards"] > 0:
             # Check if this miner already has known dead boards — skip reflagging
@@ -3318,6 +3323,12 @@ class MiningGuardian:
 
         # ── Step 2: Restart via AMS ───────────────────────────────────────
         logger.info("[%s] Step 2 — sending restart via AMS", miner_id)
+
+        # Bug fix: respect dry_run in the dead-board path too
+        if self.config.dry_run:
+            logger.info("[%s] DRY RUN — dead-board restart skipped (set dry_run: false to enable)", miner_id)
+            return
+
         try:
             self.ams.reboot_miner([miner_id])
             self.db.record_restart(
@@ -3354,7 +3365,7 @@ class MiningGuardian:
         # ── Step 6: Compare board states ─────────────────────────────────
         logger.info("[%s] Step 6 — comparing board states", miner_id)
         post_chains    = post_miner.get("chains", []) or []
-        post_info      = self._analyze_chains(post_chains)
+        post_info      = self._analyze_chains(post_chains, expected_boards=chain_info.get("expected_boards", 3))
         still_dead     = post_info.get("dead_boards", 0)
         still_dead_idx = post_info.get("dead_indices", [])
         recovered_idx  = [i for i in dead_idx if i not in still_dead_idx]
@@ -3505,6 +3516,11 @@ class MiningGuardian:
 
         logger.info("[%s] Executing approved firmware restart for %s @ %s", miner_id, model, ip)
 
+        # Bug fix: respect dry_run — log intent but do not touch AMS
+        if self.config.dry_run:
+            logger.info("[%s] DRY RUN — firmware restart skipped (set dry_run: false to enable)", miner_id)
+            return
+
         # Step 1 — collect pre-restart logs (skip silently if offline/unavailable)
         self._collect_logs_nonblocking(miner_id, model, "pre-restart")
 
@@ -3541,6 +3557,11 @@ class MiningGuardian:
         logger.info("[%s] Executing approved PDU power cycle — PDU %s outlet %s",
                     miner_id, pdu_id, outlet)
 
+        # Bug fix: respect dry_run — log intent but do not touch AMS or PDU
+        if self.config.dry_run:
+            logger.info("[%s] DRY RUN — PDU cycle skipped (set dry_run: false to enable)", miner_id)
+            return
+
         # Step 1 — collect pre-restart logs (skip silently if offline/unavailable)
         self._collect_logs_nonblocking(miner_id, model, "pre-pdu-cycle")
 
@@ -3559,7 +3580,8 @@ class MiningGuardian:
                       wx: Optional[Dict] = None,
                       ams_notifs: Optional[List[Dict]] = None,
                       facility=None,
-                      hvac=None) -> None:
+                      hvac=None,
+                      dry_run: bool = False) -> None:
         now      = datetime.now().strftime("%Y-%m-%d %H:%M")
         online   = sum(1 for m in miners if m.get("status") == "online")
         offline  = len(miners) - online
@@ -3658,7 +3680,7 @@ class MiningGuardian:
 
         healthy = len(miners) - len(issues)
         print(f"\n  ✅ Healthy: {healthy} miners within normal parameters")
-        print(f"  {'[DRY RUN — no actions taken]' if True else ''}")
+        print(f"  {'[DRY RUN — no actions taken]' if dry_run else '[LIVE — actions will execute]'}")
 
         # ── Facility infrastructure section ──────────────────────────────
         if facility is not None:
@@ -3787,7 +3809,8 @@ class MiningGuardian:
             return {"scanned": len(miners), "issues": 0, "ams_down": True}
 
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
-        self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot)
+        self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot,
+                           dry_run=self.config.dry_run)
         scan_id   = self.db.save_scan(miners, issues)
         self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
