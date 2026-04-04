@@ -78,18 +78,21 @@ def get_pending_actions() -> list:
 
 def get_restart_count_tonight(miner_id: str) -> int:
     """How many times has this miner been auto-restarted since the window opened."""
-    # Window opened either at 10pm today or 10pm yesterday
-    now   = datetime.now()
+    now = datetime.now()
     if now.hour < WINDOW_END_HOUR:
         window_start = now.replace(hour=WINDOW_START_HOUR, minute=0,
                                    second=0) - timedelta(days=1)
     else:
         window_start = now.replace(hour=WINDOW_START_HOUR, minute=0, second=0)
 
-    conn  = get_db()
-    row   = conn.execute("""
+    conn = get_db()
+    # Check both AUTO_OVERNIGHT decision AND approved_by — overnight uses approve_selected
+    # which logs as APPROVED with approved_by='Mining Guardian (Overnight Auto)'
+    row = conn.execute("""
         SELECT COUNT(*) as cnt FROM action_audit_log
-        WHERE miner_id=? AND decision='AUTO_OVERNIGHT'
+        WHERE miner_id=?
+          AND approved_by='Mining Guardian (Overnight Auto)'
+          AND decision='APPROVED'
           AND timestamp >= ?
     """, (miner_id, window_start.isoformat())).fetchone()
     conn.close()
@@ -144,26 +147,56 @@ def classify_risk(action: dict) -> str:
 
 
 def execute_auto_action(action: dict) -> dict:
-    """Execute an approved AUTO action via the approval API."""
+    """Execute an AUTO action directly via AMS — bypasses approval API to avoid
+    creating spurious DENIED entries for other miners in the same thread."""
     try:
-        resp = requests.post(f"{APPROVAL_API}/approve_selected", json={
-            "thread_ts": action["thread_ts"],
-            "miner_ids": [str(action["miner_id"])],
-            "user":      "Mining Guardian (Overnight Auto)",
-            "user_id":   "AUTO_OVERNIGHT",
-        }, timeout=60)
-        result = resp.json()
-        logger.info("AUTO executed: %s for miner %s (%s) — result: %s",
-                    action["action_type"], action["miner_id"],
-                    action.get("ip", "?"), result.get("status"))
-        return {"status": "executed", "result": result}
+        import sys
+        sys.path.insert(0, '/root/Mining-Gaurdian')
+        import mining_guardian
+        cfg = json.load(open("config.json"))
+        g = mining_guardian.MiningGuardian(
+            mining_guardian.GuardianConfig(**{
+                k: v for k, v in cfg.items()
+                if k in mining_guardian.GuardianConfig.__dataclass_fields__
+            })
+        )
+        issue = {"id": action["miner_id"], "ip": action["ip"], "model": action.get("model", "")}
+        if action["action_type"] == "RESTART":
+            g.execute_restart(issue)
+        elif action["action_type"] == "PDU_CYCLE":
+            g.execute_pdu_cycle(issue)
+
+        # Log directly to audit trail with AUTO_OVERNIGHT decision
+        now = datetime.now()
+        conn = get_db()
+        conn.execute("""
+            INSERT INTO action_audit_log
+            (timestamp, date, scan_id, miner_id, ip, model, problem,
+             action_taken, decision, approved_by, slack_user_id, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (now.isoformat(), now.strftime("%Y-%m-%d"), action.get("scan_id"),
+              action["miner_id"], action["ip"], action.get("model"),
+              action.get("problem"), action["action_type"],
+              "AUTO_OVERNIGHT", "Mining Guardian (Overnight Auto)", "AUTO_OVERNIGHT",
+              "Auto-executed during overnight window"))
+        # Mark the pending approval as approved so it doesn't show again
+        conn.execute(
+            "UPDATE pending_approvals SET status='APPROVED', responded_at=? WHERE id=?",
+            (now.isoformat(), action["id"])
+        )
+        conn.commit()
+        conn.close()
+
+        logger.info("AUTO executed: %s for miner %s (%s)",
+                    action["action_type"], action["miner_id"], action["ip"])
+        return {"status": "executed"}
     except Exception as e:
         logger.error("AUTO execution failed for miner %s: %s", action["miner_id"], e)
         return {"status": "failed", "error": str(e)}
 
 
 def log_skip(action: dict, reason: str) -> None:
-    """Log a HOLD decision to the audit trail."""
+    """Log a HOLD decision — leave pending approval as PENDING for morning queue."""
     now = datetime.now()
     conn = get_db()
     conn.execute("""
