@@ -25,24 +25,48 @@ DB_PATH = "guardian.db"
 
 
 def query_claude(prompt: str) -> str:
-    """Send prompt to Claude API."""
+    """Send prompt to Claude API with proper error handling."""
     logger.info("Sending to Claude (%d chars)...", len(prompt))
-    resp = requests.post("https://api.anthropic.com/v1/messages", json={
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 4096,
-        "messages": [{"role": "user", "content": prompt}]
-    }, headers={
-        "x-api-key": CLAUDE_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json"
-    }, timeout=120)
-    data = resp.json()
-    if "content" in data:
-        text = data["content"][0]["text"]
-        logger.info("Claude responded (%d chars)", len(text))
-        return text
-    else:
-        logger.error("Claude error: %s", data.get("error", data))
+    try:
+        resp = requests.post("https://api.anthropic.com/v1/messages", json={
+            "model": "claude-sonnet-4-6",
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt}]
+        }, headers={
+            "x-api-key": CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        }, timeout=120)
+
+        # Bug fix: raise on HTTP errors (401, 429, 5xx) before trying to parse JSON
+        resp.raise_for_status()
+
+        data = resp.json()
+
+        # Bug fix: safely extract text — don't assume content[0] exists or is type "text"
+        content_blocks = data.get("content", [])
+        for block in content_blocks:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block["text"]
+                logger.info("Claude responded (%d chars)", len(text))
+                return text
+
+        # API returned success but no text block — log the shape for debugging
+        logger.error("Claude returned no text block. Response keys: %s, error: %s",
+                     list(data.keys()), data.get("error", "none"))
+        return ""
+
+    except requests.exceptions.Timeout:
+        logger.error("Claude API request timed out after 120s")
+        return ""
+    except requests.exceptions.HTTPError as e:
+        logger.error("Claude API HTTP error %s: %s", e.response.status_code, e.response.text[:200])
+        return ""
+    except requests.exceptions.RequestException as e:
+        logger.error("Claude API network error: %s", e)
+        return ""
+    except (KeyError, IndexError, ValueError) as e:
+        logger.error("Claude API response parse error: %s", e)
         return ""
 
 
@@ -109,50 +133,127 @@ def gather_fleet_data():
         "weather": [dict(w) for w in weather],
     }
 
-def build_prompts(data):
-    """Build prompts for Claude — split into batches to stay within context limits."""
-    prompts = []
+def _safe_fmt(value, fmt=".0f", fallback="?") -> str:
+    """Format a value that may be None/NULL from SQL aggregates."""
+    if value is None:
+        return fallback
+    try:
+        return format(float(value), fmt)
+    except (TypeError, ValueError):
+        return fallback
 
-    # Prompt 1: Fleet-wide analysis
-    p1 = ["You are Mining Guardian AI analyzing a Bitcoin mining fleet at BiXBiT USA in Fort Worth, TX.",
-          "All cooling is liquid (hydro racks + immersion tank). No air cooling.",
-          "Analyze this fleet data and provide insights.\n",
-          f"FLEET: {len(data['miners'])} miners total\n"]
 
-    for m in data["miners"]:
-        profiles = m["profiles_seen"] or "none"
-        p1.append(f"Miner {m['miner_id']} ({m['model']}) @ {m['ip']} | "
-                  f"FW: {m['firmware_manufacturer'] or '?'} | "
-                  f"Scans: {m['total_scans']} | Flagged: {m['times_flagged']}x | "
-                  f"HR avg={m['avg_hr']:.0f}% min={m['min_hr']:.0f}% max={m['max_hr']:.0f}% | "
-                  f"Temp avg={m['avg_temp']:.0f}°C max={m['max_temp']:.0f}°C | "
-                  f"Actions: {m['actions_seen'] or 'none'} | Profiles: {profiles[:80]}")
+def build_prompts(data, max_chars: int = 80000):
+    """Build prompts chunked by miner count so each stays within context limits.
 
-    p1.append("\nAMS NOTIFICATIONS (top 50):")
+    Prioritizes the most problematic miners first (ordered by times_flagged DESC
+    from gather_fleet_data). If the full fleet doesn't fit in one prompt, the
+    fleet is split into batches — each batch gets its own Claude call.
+    Each batch always includes the full context header (notifications, audit,
+    weather, dead boards) so Claude has the environmental picture.
+    """
+    # Build the static context block once — included in every batch
+    context_lines = [
+        "You are Mining Guardian AI analyzing a Bitcoin mining fleet at BiXBiT USA in Fort Worth, TX.",
+        "All cooling is liquid (hydro racks + immersion tank). No air cooling.",
+        "Chip temp zones: GREEN <76°C | YELLOW 76-85°C | RED 86°C+.",
+        "",
+        "AMS NOTIFICATIONS (top issues by frequency):",
+    ]
     for n in data["notifications"]:
-        p1.append(f"  {n['miner_ip']} | {n['key']} ({n['alert_level']}): {n['cnt']}x")
+        context_lines.append(f"  {n['miner_ip']} | {n['key']} ({n['alert_level']}): {n['cnt']}x")
 
-    p1.append("\nAUDIT LOG (last 30 approved/denied actions):")
+    context_lines.append("\nRECENT AUDIT LOG (last 30 actions):")
     for a in data["audit"]:
-        p1.append(f"  Miner {a['miner_id']} @ {a['ip']} | {a['action_taken']} | {a['decision']} | {a['problem'][:100]}")
+        problem = (a["problem"] or "")[:100]
+        context_lines.append(
+            f"  Miner {a['miner_id']} @ {a['ip']} | "
+            f"{a['action_taken']} | {a['decision']} | {problem}"
+        )
 
-    p1.append("\nWEATHER (last 7 days):")
+    context_lines.append("\nWEATHER (last 7 days Fort Worth TX):")
     for w in data["weather"]:
-        p1.append(f"  {w['day']}: avg {w['avg_temp']:.0f}°F, humidity {w['avg_hum']:.0f}%")
+        context_lines.append(
+            f"  {w['day']}: avg {_safe_fmt(w['avg_temp'])}°F, "
+            f"humidity {_safe_fmt(w['avg_hum'])}%"
+        )
 
-    p1.append("\nDEAD BOARDS:")
+    context_lines.append("\nKNOWN DEAD BOARDS (unresolved):")
     for d in data["dead_boards"]:
-        p1.append(f"  Miner {d['miner_id']} @ {d['ip']} — boards: {d['board_indices']}")
+        context_lines.append(
+            f"  Miner {d['miner_id']} @ {d['ip']} — boards: {d['board_indices']}"
+        )
 
-    p1.append("\nProvide:")
-    p1.append("1. FLEET HEALTH SCORE (1-10) with justification")
-    p1.append("2. TOP 5 PROBLEM MINERS — what's wrong and what to do")
-    p1.append("3. PATTERNS — recurring issues, correlations between miners/models/temps/weather")
-    p1.append("4. ROOT CAUSES — distinguish hardware failures from firmware glitches from environmental issues")
-    p1.append("5. RECOMMENDATIONS — prioritized action list for the operator")
-    p1.append("6. PREDICTIONS — which miners are likely to fail next based on trends")
+    context_block = "\n".join(context_lines)
 
-    prompts.append("\n".join(p1))
+    # Analysis request — appended to every batch
+    request_block = (
+        "\n\nAnalyze the miners above and provide:\n"
+        "1. FLEET HEALTH SCORE (1-10) with justification\n"
+        "2. TOP PROBLEM MINERS — what's wrong and what to do\n"
+        "3. PATTERNS — recurring issues, correlations\n"
+        "4. ROOT CAUSES — hardware vs firmware vs environmental\n"
+        "5. RECOMMENDATIONS — prioritized action list\n"
+        "6. PREDICTIONS — which miners are likely to fail next"
+    )
+
+    # Build per-miner lines — Bug fix: use _safe_fmt so NULL aggregates don't crash
+    miner_lines = []
+    for m in data["miners"]:
+        profiles = (m["profiles_seen"] or "none")[:80]
+        line = (
+            f"Miner {m['miner_id']} ({m['model']}) @ {m['ip']} | "
+            f"FW: {m['firmware_manufacturer'] or '?'} | "
+            f"Scans: {m['total_scans']} | Flagged: {m['times_flagged']}x | "
+            f"HR avg={_safe_fmt(m['avg_hr'])}% "
+            f"min={_safe_fmt(m['min_hr'])}% "
+            f"max={_safe_fmt(m['max_hr'])}% | "
+            f"Temp avg={_safe_fmt(m['avg_temp'])}°C "
+            f"max={_safe_fmt(m['max_temp'])}°C | "
+            f"Actions: {m['actions_seen'] or 'none'} | "
+            f"Profiles: {profiles}"
+        )
+        miner_lines.append(line)
+
+    # Chunk miners so each prompt stays under max_chars
+    # Static overhead = context_block + request_block + header line
+    static_overhead = len(context_block) + len(request_block) + 200
+    budget_per_batch = max_chars - static_overhead
+
+    prompts = []
+    batch_start = 0
+    total_miners = len(miner_lines)
+
+    while batch_start < total_miners:
+        # Greedily pack miners into this batch
+        batch_lines = []
+        batch_chars = 0
+        i = batch_start
+        while i < total_miners:
+            line_len = len(miner_lines[i]) + 1  # +1 for newline
+            if batch_chars + line_len > budget_per_batch and batch_lines:
+                break  # batch full — stop before this miner
+            batch_lines.append(miner_lines[i])
+            batch_chars += line_len
+            i += 1
+
+        batch_end = batch_start + len(batch_lines)
+        header = (
+            f"FLEET: {total_miners} miners total "
+            f"(showing {batch_start + 1}–{batch_end}, "
+            f"ordered by most flagged first)\n"
+        )
+        prompt = (
+            context_block + "\n\n" +
+            header +
+            "\n".join(batch_lines) +
+            request_block
+        )
+        prompts.append(prompt)
+        logger.info("Batch %d: miners %d-%d (%d chars)",
+                    len(prompts), batch_start + 1, batch_end, len(prompt))
+        batch_start = batch_end
+
     return prompts
 
 def main():
