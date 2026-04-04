@@ -213,11 +213,30 @@ class LLMAnalyzer:
     def analyze_single_miner(self, scan_id: int, miner_id: str,
                              ip: str, model: str, problem: str,
                              logs: Optional[Dict] = None) -> str:
-        """Deep analysis of a single miner with its logs."""
+        """Deep analysis of a single miner with its full logs.
+
+        Logs are sectioned — boot/init, mid-operation sample, recent tail —
+        so the LLM sees the full picture without a hard char truncation.
+        """
         prompt = (f"Deep analysis needed for miner {miner_id} ({model}) @ {ip}:\n"
                   f"Problem: {problem}\n")
         if logs:
-            prompt += f"\nMiner logs:\n{json.dumps(logs, indent=2)[:3000]}\n"
+            for filename, content in logs.items():
+                if not content:
+                    continue
+                if len(content) > 16000:
+                    boot   = content[:8000]
+                    mid_s  = len(content) // 2
+                    mid    = content[mid_s:mid_s + 4000]
+                    tail   = content[-4000:]
+                    sectioned = (
+                        f"[BOOT/INIT — first 8000 chars]\n{boot}\n"
+                        f"[MID-OPERATION SAMPLE]\n{mid}\n"
+                        f"[RECENT TAIL — last 4000 chars]\n{tail}"
+                    )
+                else:
+                    sectioned = content
+                prompt += f"\n--- {filename} ---\n{sectioned}\n"
         prompt += "\nProvide detailed diagnosis with root cause and recommended fix."
 
         response, duration = self._query_llm(prompt)
@@ -228,7 +247,7 @@ class LLMAnalyzer:
             (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (scan_id, datetime.now().isoformat(), miner_id, ip,
-              prompt, response, self.model, duration))
+              prompt[:5000], response, self.model, duration))
         conn.commit()
         conn.close()
 

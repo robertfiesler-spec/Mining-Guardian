@@ -57,9 +57,25 @@ def train_on_logs():
         # Build a summary of this miner's log history
         log_excerpts = []
         for l in miner_logs[:5]:  # max 5 logs per miner
-            excerpt = l["content"][:2000] if l["content"] else "(empty)"
+            content = l["content"] or "(empty)"
+            # Full log — no truncation. We section it so the LLM gets structured data:
+            # Boot header (EEPROM, hardware identity, PSU, chip counts) — first 8000 chars
+            # Steady-state operations (chip hashrate, PSU voltage, system health) — middle sample
+            # Recent tail — last 4000 chars (most recent events)
+            if len(content) > 16000:
+                boot_section = content[:8000]
+                mid_start = len(content) // 2
+                mid_section = content[mid_start:mid_start + 4000]
+                tail_section = content[-4000:]
+                full_excerpt = (
+                    f"[BOOT/INIT]\n{boot_section}\n"
+                    f"[MID-OPERATION SAMPLE]\n{mid_section}\n"
+                    f"[RECENT TAIL]\n{tail_section}"
+                )
+            else:
+                full_excerpt = content
             log_excerpts.append(
-                f"[{l['collected_at'][:16]}] {l['log_file']} ({l['health_status']}):\n{excerpt}"
+                f"[{l['collected_at'][:16]}] {l['log_file']} ({l['health_status']}):\n{full_excerpt}"
             )
 
         prompt = (
