@@ -1810,26 +1810,39 @@ class GuardianDB:
 
     def save_logs(self, miner_id: str, model: str, health_status: str,
                   log_files: Dict[str, str]) -> None:
-        """Store extracted log file contents and parse hardware identity from miner.log."""
-        now = datetime.now().isoformat()
-        rows = [
-            (now, miner_id, model, health_status, filename, content)
-            for filename, content in log_files.items()
-        ]
-        with self._connect() as conn:
-            conn.executemany(
-                "INSERT INTO miner_logs "
-                "(collected_at, miner_id, model, health_status, log_file, content) "
-                "VALUES (?,?,?,?,?,?)",
-                rows
-            )
-        logger.info("Saved %s log files for miner %s (%s)", len(rows), miner_id, health_status)
+        """Store extracted log file contents and parse all structured data from miner.log.
 
-        # Parse hardware identity from miner.log automatically
+        Deduplicates by (miner_id, log_file) — same file is never stored twice.
+        Hardware identity is parsed and upserted permanently.
+        Per-chip hashrate, PSU voltage, system health parsed into structured tables.
+        """
+        now = datetime.now().isoformat()
+        saved = 0
+        with self._connect() as conn:
+            for filename, content in log_files.items():
+                # Dedup check — skip if this exact file was already stored
+                existing = conn.execute(
+                    "SELECT id FROM miner_logs WHERE miner_id=? AND log_file=?",
+                    (miner_id, filename)
+                ).fetchone()
+                if existing:
+                    logger.debug("[%s] Log already stored: %s — skipping", miner_id, filename)
+                    continue
+                conn.execute(
+                    "INSERT INTO miner_logs "
+                    "(collected_at, miner_id, model, health_status, log_file, content) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (now, miner_id, model, health_status, filename, content)
+                )
+                saved += 1
+
+        if saved:
+            logger.info("Saved %s new log files for miner %s (%s)", saved, miner_id, health_status)
+
+        # Parse hardware identity and structured data from miner.log automatically
         for filename, content in log_files.items():
             if "miner.log" in filename and content:
                 try:
-                    # Get ip/mac from latest miner_readings
                     with self._connect() as conn:
                         row = conn.execute(
                             "SELECT ip, mac FROM miner_readings WHERE miner_id=? ORDER BY id DESC LIMIT 1",
@@ -1837,11 +1850,12 @@ class GuardianDB:
                         ).fetchone()
                     ip  = row["ip"] if row else ""
                     mac = row["mac"] if row else ""
-                    boards = self.parse_and_save_hardware(miner_id, ip, mac, content, filename)
-                    if boards:
-                        logger.info("[%s] Hardware identity extracted: %s boards", miner_id, boards)
+                    # Hardware identity — parse once, upsert permanently
+                    self.parse_and_save_hardware(miner_id, ip, mac, content, filename)
+                    # Parse per-chip data and other structured log data
+                    self.parse_log_metrics(miner_id, ip, content, filename)
                 except Exception as e:
-                    logger.warning("[%s] Hardware parse failed: %s", miner_id, e)
+                    logger.warning("[%s] Log parse failed: %s", miner_id, e)
 
     def purge_old_logs(self, days: int = 7) -> int:
         """Delete miner log entries older than N days. Returns count deleted.
@@ -2191,6 +2205,153 @@ class GuardianDB:
                 (miner_id,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def parse_log_metrics(self, miner_id: str, ip: str,
+                          log_content: str, log_source: str) -> None:
+        """Parse structured metrics from miner.log that aren't available via AMS.
+
+        Extracts and stores:
+        1. Per-chip hashrate vs target (the [chip_idx  actual  target] lines)
+           - 126 chips per miner, logged every ~30 seconds
+           - Key for detecting individual failing chips before board dies
+        2. PSU voltage and estimated power over time
+        3. CPU/memory system health over time
+        4. Chain attach/detach events with timestamps
+
+        All data is stored in log_metrics table for trending and AI analysis.
+        """
+        import re
+
+        now = datetime.now().isoformat()
+        rows = []
+
+        # Per-chip hashrate lines: [chip_idx  actual  target] format
+        # Example: [  0  97.69 121.47][  1  98.62 121.47]...
+        chip_line_pattern = re.compile(
+            r'\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\] INFO: '
+            r'((?:\[\s*\d+\s+[\d.]+\s+[\d.]+\]\s*)+)'
+        )
+
+        # PSU voltage line: "Psu current voltage 14.70V, sample voltage 14.57V, power estimated 4632W"
+        psu_pattern = re.compile(
+            r'\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\] INFO: '
+            r'Psu current voltage ([\d.]+)V, sample voltage ([\d.]+)V, power estimated (\d+)W'
+        )
+
+        # System health: "Total cpu: 79.65%, miner cpu: 44.16%, free mem: 158 MB, miner mem: 30 MB"
+        sys_pattern = re.compile(
+            r'\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\] INFO: '
+            r'Total cpu: ([\d.]+)%, miner cpu: ([\d.]+)%, free mem: (\d+) MB, miner mem: (\d+) MB'
+        )
+
+        # Chain attach/detach events
+        chain_event_pattern = re.compile(
+            r'\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\] '
+            r'(INFO|WARN): Chain\[(\d+)\] (attached|detached)'
+        )
+
+        # Ensure log_metrics table exists
+        with self._connect() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS log_metrics (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    log_timestamp   TEXT,
+                    metric_type     TEXT    NOT NULL,
+                    board_index     INTEGER,
+                    chip_index      INTEGER,
+                    value_1         REAL,
+                    value_2         REAL,
+                    value_3         REAL,
+                    value_4         REAL,
+                    text_value      TEXT,
+                    log_source      TEXT,
+                    recorded_at     TEXT    NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_log_metrics_miner
+                    ON log_metrics(miner_id, log_timestamp)
+            """)
+
+        # Parse PSU readings
+        psu_rows = []
+        for m in psu_pattern.finditer(log_content):
+            psu_rows.append((
+                miner_id, ip, m.group(1), "psu_voltage",
+                None, None,
+                float(m.group(2)),   # current voltage
+                float(m.group(3)),   # sample voltage
+                float(m.group(4)),   # power watts
+                None, None,
+                log_source, now
+            ))
+
+        # Parse system health readings
+        sys_rows = []
+        for m in sys_pattern.finditer(log_content):
+            sys_rows.append((
+                miner_id, ip, m.group(1), "system_health",
+                None, None,
+                float(m.group(2)),   # total cpu %
+                float(m.group(3)),   # miner cpu %
+                float(m.group(4)),   # free mem MB
+                float(m.group(5)),   # miner mem MB
+                None,
+                log_source, now
+            ))
+
+        # Parse chain events
+        event_rows = []
+        for m in chain_event_pattern.finditer(log_content):
+            event_rows.append((
+                miner_id, ip, m.group(1), "chain_event",
+                int(m.group(3)), None,
+                None, None, None, None,
+                m.group(4),  # "attached" or "detached"
+                log_source, now
+            ))
+
+        # Parse per-chip hashrate (sample every 10th occurrence to avoid DB explosion)
+        # Full 5MB log has thousands of these — we sample to keep DB manageable
+        chip_rows = []
+        chip_line_count = 0
+        chip_entry_pattern = re.compile(r'\[\s*(\d+)\s+([\d.]+)\s+([\d.]+)\]')
+
+        for m in chip_line_pattern.finditer(log_content):
+            chip_line_count += 1
+            if chip_line_count % 10 != 0:  # sample every 10th timestamp
+                continue
+            timestamp = m.group(1)
+            line_data = m.group(2)
+            for chip_m in chip_entry_pattern.finditer(line_data):
+                chip_rows.append((
+                    miner_id, ip, timestamp, "chip_hashrate",
+                    None, int(chip_m.group(1)),
+                    float(chip_m.group(2)),   # actual TH/s
+                    float(chip_m.group(3)),   # target TH/s
+                    None, None, None,
+                    log_source, now
+                ))
+
+        all_rows = psu_rows + sys_rows + event_rows + chip_rows
+        if not all_rows:
+            return
+
+        with self._connect() as conn:
+            conn.executemany("""
+                INSERT INTO log_metrics
+                (miner_id, ip, log_timestamp, metric_type,
+                 board_index, chip_index,
+                 value_1, value_2, value_3, value_4, text_value,
+                 log_source, recorded_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, all_rows)
+
+        logger.info("[%s] Log metrics parsed: %d PSU + %d sys + %d events + %d chip samples",
+                    miner_id, len(psu_rows), len(sys_rows),
+                    len(event_rows), len(chip_rows))
 
     def last_log_collected(self, miner_id: str) -> Optional[datetime]:
         """Return datetime of last log collection for this miner, or None."""
@@ -3519,14 +3680,23 @@ class MiningGuardian:
     # ── Main entry ────────────────────────────────────────────
 
     def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
-        """Download logs once per day for ALL miners (good or bad) for LLM learning."""
+        """Download logs for all online miners.
+
+        Schedule: Every 6 hours per miner (not daily — logs rotate and contain
+        rich per-chip data, PSU readings, and system health we want frequently).
+
+        AMS only exposes logs that are already exported — we download the most
+        recent ready zip. If no new zip is available since last collection, skip.
+
+        Log content is kept for 30 days then purged. Hardware identity parsed
+        from miner.log is permanent and never purged.
+        """
         if not self.config.collect_logs:
             logger.debug("Log collection disabled — set collect_logs: true in config to enable")
             return
 
         now = datetime.now()
-        collected = 0
-        daily_seconds = 86400  # 24 hours
+        collection_interval_seconds = 6 * 3600  # 6 hours
 
         for miner in miners:
             miner_id  = str(miner.get("id", ""))
@@ -3534,16 +3704,16 @@ class MiningGuardian:
             profile_s = miner.get("currentProfile", "")
             if "TH/s" in profile_s and miner.get("name") and miner.get("name") != model:
                 model = miner["name"]
-            status    = miner.get("status", "unknown")
+            status = miner.get("status", "unknown")
 
             # Skip offline miners — no connection means no logs available
             if status == "offline":
                 continue
 
-            # Once per day for ALL miners — no duplicates
+            # Collect every 6 hours per miner
             last = self.db.last_log_collected(miner_id)
-            if last is not None and (now - last).total_seconds() < daily_seconds:
-                continue  # Already collected today
+            if last is not None and (now - last).total_seconds() < collection_interval_seconds:
+                continue
 
             flagged = miner_id in {i["id"] for i in issues}
             health_status = "flagged" if flagged else "healthy"
@@ -3552,12 +3722,9 @@ class MiningGuardian:
                 log_files = self.ams.collect_miner_logs(int(miner_id))
                 if log_files:
                     self.db.save_logs(miner_id, model, health_status, log_files)
-                    collected += 1
+                    logger.info("[%s] Logs collected: %s files", miner_id, len(log_files))
             except Exception as e:
                 logger.warning("Log collection failed for miner %s: %s", miner_id, e)
-
-        if collected:
-            logger.info("Log collection complete — %s miners logged", collected)
 
     def run_once(self) -> Dict[str, Any]:
         # ── Poll facility infrastructure first ───────────────────────────
@@ -3624,7 +3791,7 @@ class MiningGuardian:
         self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_miner_state_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_ams_extended(scan_id, datetime.now().isoformat(), miners)
-        self.db.purge_old_logs(days=7)
+        self.db.purge_old_logs(days=30)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
 
