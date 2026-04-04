@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/project/.claude/checkpoints/2026-01-25-session.md",
+    "content": "# Checkpoint\n\nSession state."
+  }
+}

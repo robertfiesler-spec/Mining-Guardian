@@ -1,0 +1,298 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Dev Toolkit Configuration",
+  "description": "Configuration for James's AI Dev Toolkit",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Config version"
+    },
+    "stack": {
+      "type": "object",
+      "description": "Technology stack settings",
+      "properties": {
+        "framework": {
+          "type": "string",
+          "enum": ["nextjs", "remix", "vite", "cra"],
+          "default": "nextjs"
+        },
+        "language": {
+          "type": "string",
+          "enum": ["typescript", "javascript"],
+          "default": "typescript"
+        },
+        "styling": {
+          "type": "string",
+          "enum": ["tailwind", "css-modules", "styled-components", "emotion"],
+          "default": "tailwind"
+        },
+        "testing": {
+          "type": "string",
+          "enum": ["vitest", "jest"],
+          "default": "vitest"
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "description": "Rules configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable all rules"
+        },
+        "strict": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enforce strict mode for all rules"
+        },
+        "files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of rule files to load"
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "description": "Skills configuration",
+      "properties": {
+        "autoTrigger": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically trigger skills based on context"
+        },
+        "enabled": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "react-patterns",
+              "accessibility",
+              "data-fetching",
+              "ui-design",
+              "security",
+              "testing",
+              "napkin",
+              "pyramid-summary"
+            ]
+          },
+          "description": "List of enabled skills"
+        }
+      }
+    },
+    "commands": {
+      "type": "object",
+      "description": "Command-specific settings",
+      "properties": {
+        "review": {
+          "type": "object",
+          "properties": {
+            "autoFix": {
+              "type": "boolean",
+              "default": false,
+              "description": "Automatically fix issues without asking"
+            },
+            "severity": {
+              "type": "string",
+              "enum": ["critical", "serious", "moderate", "minor"],
+              "default": "serious",
+              "description": "Minimum severity to report"
+            }
+          }
+        },
+        "create-pr": {
+          "type": "object",
+          "properties": {
+            "template": {
+              "type": "string",
+              "enum": ["emoji", "minimal", "detailed"],
+              "default": "emoji"
+            },
+            "slackNotify": {
+              "type": "boolean",
+              "default": false
+            },
+            "slackChannel": {
+              "type": ["string", "null"],
+              "default": null
+            }
+          }
+        },
+        "deploy": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "type": "string",
+              "enum": ["preview", "production", "staging"],
+              "default": "preview"
+            },
+            "skipChecks": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Lifecycle hooks",
+      "properties": {
+        "pre-commit": { "type": "boolean", "default": true },
+        "pre-push": { "type": "boolean", "default": true },
+        "post-checkout": { "type": "boolean", "default": false },
+        "on-file-create": { "type": "boolean", "default": true },
+        "on-error": { "type": "boolean", "default": true }
+      }
+    },
+    "formatting": {
+      "type": "object",
+      "description": "Code formatting preferences",
+      "properties": {
+        "lineWidth": { "type": "integer", "default": 100 },
+        "indentSize": { "type": "integer", "default": 2 },
+        "quotes": { "type": "string", "enum": ["single", "double"], "default": "single" },
+        "semicolons": { "type": "boolean", "default": true },
+        "trailingComma": { "type": "string", "enum": ["none", "es5", "all"], "default": "es5" }
+      }
+    },
+    "git": {
+      "type": "object",
+      "description": "Git workflow settings",
+      "properties": {
+        "commitFormat": { "type": "string" },
+        "allowedTypes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "requireScope": { "type": "boolean", "default": false }
+      }
+    },
+    "claude": {
+      "type": "object",
+      "description": "Claude behavior settings",
+      "properties": {
+        "outputStyle": {
+          "type": "string",
+          "enum": ["concise", "explanatory", "learning", "teaching"],
+          "default": "concise",
+          "description": "How Claude explains changes: concise (minimal), explanatory (why behind changes), learning (detailed for understanding), teaching (quizzes you after)"
+        },
+        "preferSubagents": {
+          "type": "boolean",
+          "default": false,
+          "description": "Prefer spawning subagents for complex tasks"
+        }
+      }
+    },
+    "tokenBudget": {
+      "type": "object",
+      "description": "Token budget tracking for toolkit components",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable token budget checking"
+        },
+        "estimator": {
+          "type": "string",
+          "enum": ["chars_div_4"],
+          "default": "chars_div_4",
+          "description": "Token estimation method"
+        },
+        "baselineFile": {
+          "type": "string",
+          "default": ".claude/state/token-baseline.json",
+          "description": "Path to baseline snapshot file"
+        },
+        "thresholds": {
+          "type": "object",
+          "description": "Token limits per component type and aggregate",
+          "properties": {
+            "claudeMd": { "type": "integer", "default": 8000, "description": "Max tokens for CLAUDE.md" },
+            "command": { "type": "integer", "default": 8000, "description": "Max tokens per command file" },
+            "agent": { "type": "integer", "default": 4000, "description": "Max tokens per agent file" },
+            "skill": { "type": "integer", "default": 4000, "description": "Max tokens per skill file" },
+            "rule": { "type": "integer", "default": 3000, "description": "Max tokens per rule file" },
+            "hookConfig": { "type": "integer", "default": 2000, "description": "Max tokens per hook config" },
+            "totalAlwaysLoaded": { "type": "integer", "default": 35000, "description": "Max tokens for all always-loaded content" },
+            "totalCommands": { "type": "integer", "default": 100000, "description": "Max tokens for all commands combined" },
+            "totalAgents": { "type": "integer", "default": 15000, "description": "Max tokens for all agents combined" },
+            "totalSkills": { "type": "integer", "default": 20000, "description": "Max tokens for all skills combined" },
+            "totalRules": { "type": "integer", "default": 6000, "description": "Max tokens for all rules combined" }
+          }
+        },
+        "warnAtPercent": {
+          "type": "integer",
+          "default": 80,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Warn when usage reaches this percentage of threshold"
+        },
+        "failAtPercent": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Fail when usage reaches this percentage of threshold"
+        }
+      }
+    },
+    "acs": {
+      "type": "object",
+      "description": "Agent Cognition System integration (optional cross-project memory)",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable ACS integration when ACS_URL is set. Set to false as a kill switch."
+        },
+        "url": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "ACS base URL (e.g., http://localhost:3000). Overridden by ACS_URL env var."
+        },
+        "tenantId": {
+          "type": "string",
+          "default": "default",
+          "description": "Tenant ID for multi-tenant ACS isolation."
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "default": 5000,
+          "minimum": 1000,
+          "maximum": 30000,
+          "description": "Request timeout in milliseconds."
+        },
+        "queryOnIterate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Query ACS for relevant context when /iterate starts a new item."
+        },
+        "storeOnLearn": {
+          "type": "boolean",
+          "default": true,
+          "description": "Store learnings in ACS when /learn creates a new rule."
+        },
+        "queryOnLoop": {
+          "type": "boolean",
+          "default": true,
+          "description": "Query ACS at the start of each /ai-loop iteration."
+        },
+        "queryOnPipeline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Query ACS before spawning pipeline nodes."
+        },
+        "debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log ACS operations to stderr for debugging."
+        }
+      }
+    }
+  }
+}

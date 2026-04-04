@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/project/src/utils/debug.ts",
+    "old_string": "return result;",
+    "new_string": "console.warn('warning:', result);\nreturn result;"
+  }
+}

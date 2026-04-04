@@ -1,0 +1,8 @@
+{
+  "tool_name": "Task",
+  "tool_input": {
+    "description": "Review code changes",
+    "prompt": "Review the recent changes in src/auth/ for security issues",
+    "subagent_type": "project-starter:code-reviewer"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "tool_name": "Task",
+  "tool_input": {
+    "description": "Explore the codebase",
+    "prompt": "Find all authentication-related files in the project",
+    "subagent_type": "Explore"
+  }
+}

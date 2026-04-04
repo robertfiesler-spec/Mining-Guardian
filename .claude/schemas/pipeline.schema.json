@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/pipeline.schema.json",
+  "title": "Pipeline Definition",
+  "description": "Graph-based orchestration pipeline for AI Dev Toolkit",
+  "type": "object",
+  "required": ["pipeline", "version", "nodes"],
+  "properties": {
+    "pipeline": {
+      "type": "string",
+      "description": "Pipeline name (kebab-case identifier)",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Pipeline definition version",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable pipeline description"
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Pipeline nodes (tasks, gates, etc.)",
+      "items": { "$ref": "#/$defs/node" },
+      "minItems": 1
+    },
+    "env": {
+      "type": "object",
+      "description": "Environment variables passed to all nodes",
+      "additionalProperties": { "type": "string" }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata",
+      "properties": {
+        "author": { "type": "string" },
+        "created": { "type": "string", "format": "date-time" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique node identifier (kebab-case)",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["task", "plan", "gate", "shell"],
+          "description": "Node execution type"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable node name"
+        },
+        "command": {
+          "type": "string",
+          "description": "Command to execute (required for task/shell nodes)"
+        },
+        "backend": {
+          "type": "string",
+          "enum": ["claude-code", "cursor", "shell", "manual"],
+          "default": "shell",
+          "description": "Execution backend for the node"
+        },
+        "depends": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Node IDs this node depends on (must complete before this runs)"
+        },
+        "condition": {
+          "type": "object",
+          "description": "Conditional execution based on upstream node results",
+          "properties": {
+            "on_success": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Only run if ALL listed nodes succeeded"
+            },
+            "on_failure": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Only run if ANY listed node failed"
+            }
+          },
+          "additionalProperties": false
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds (0 = no timeout)",
+          "minimum": 0,
+          "default": 0
+        },
+        "retry": {
+          "type": "object",
+          "description": "Retry configuration for failed nodes",
+          "properties": {
+            "max_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "Maximum execution attempts (1 = no retry)"
+            },
+            "delay_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 5,
+              "description": "Delay between retry attempts"
+            }
+          },
+          "additionalProperties": false
+        },
+        "env": {
+          "type": "object",
+          "description": "Node-specific environment variables (merged with pipeline env)",
+          "additionalProperties": { "type": "string" }
+        },
+        "plan_path": {
+          "type": "string",
+          "description": "Path to plan JSON file (required for type=plan nodes)"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Approval prompt text (for type=gate nodes)"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "task" } },
+            "required": ["type"]
+          },
+          "then": { "required": ["command"] }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "shell" } },
+            "required": ["type"]
+          },
+          "then": { "required": ["command"] }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "plan" } },
+            "required": ["type"]
+          },
+          "then": { "required": ["plan_path"] }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

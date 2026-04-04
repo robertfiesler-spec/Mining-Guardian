@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/prd.schema.json",
+  "title": "PRD (Product Requirements Document)",
+  "description": "Machine-readable plan format for autonomous execution",
+  "type": "object",
+  "required": ["feature", "branch", "status", "created", "stories"],
+  "properties": {
+    "feature": {
+      "type": "string",
+      "description": "Feature name (kebab-case)"
+    },
+    "branch": {
+      "type": "string",
+      "description": "Git branch name for this feature"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["planning", "in_progress", "blocked", "complete"],
+      "description": "Overall plan status"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of plan creation"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of last update"
+    },
+    "source": {
+      "type": "string",
+      "description": "Path to the human-readable markdown Plan"
+    },
+    "stories": {
+      "type": "array",
+      "description": "User stories to implement",
+      "items": {
+        "$ref": "#/$defs/story"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata",
+      "properties": {
+        "author": { "type": "string" },
+        "iteration_count": { "type": "integer" },
+        "last_iteration": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "$defs": {
+    "story": {
+      "type": "object",
+      "required": ["id", "title", "type", "priority", "passes"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique story identifier (e.g., US-1)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Brief story title"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Setup",
+            "API",
+            "UI",
+            "Data",
+            "Test",
+            "E2E",
+            "Refactor",
+            "Fix",
+            "Docs",
+            "Deploy"
+          ],
+          "description": "Story type for agent routing"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Execution priority (1 = highest)"
+        },
+        "passes": {
+          "type": "boolean",
+          "description": "Whether this story has been completed"
+        },
+        "files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Files to create or modify"
+        },
+        "acceptance": {
+          "type": "string",
+          "description": "How to verify this story is complete"
+        },
+        "depends": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Story IDs this depends on"
+        },
+        "reuse": {
+          "type": "array",
+          "description": "Existing code to reuse or extend for this story",
+          "items": {
+            "type": "object",
+            "required": ["path", "what", "how"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path of existing code to reuse"
+              },
+              "what": {
+                "type": "string",
+                "description": "What to reuse (component, hook, pattern, utility)"
+              },
+              "how": {
+                "type": "string",
+                "enum": ["import", "extend", "copy-and-adapt", "follow-pattern"],
+                "description": "How to reuse: import directly, extend/wrap, copy and adapt, or follow as pattern"
+              }
+            }
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicit DO NOT recreate directives and reuse requirements"
+        },
+        "commit": {
+          "type": "string",
+          "description": "Git commit hash when completed"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this story was completed"
+        }
+      }
+    }
+  }
+}

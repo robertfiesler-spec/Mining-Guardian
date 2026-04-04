@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/project/CLAUDE.md",
+    "content": "# Claude Instructions\n\nProject-specific instructions."
+  }
+}

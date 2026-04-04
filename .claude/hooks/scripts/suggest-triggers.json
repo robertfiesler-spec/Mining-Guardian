@@ -1,0 +1,598 @@
+{
+  "_generated": "2026-04-04T20:46:33.222Z",
+  "_source": "/Users/BigBobby/Documents/GitHub/AI Toolkit/commands",
+  "triggers": [
+    {
+      "command": "ai-loop-test",
+      "signal": "file_extension",
+      "value": ".sh",
+      "min_edits": 2,
+      "cooldown": 30,
+      "message": "Modified loop scripts? `/ai-loop-test` validates shell plumbing without any AI calls or network access"
+    },
+    {
+      "command": "ai-loop-test",
+      "signal": "session_start",
+      "condition": "uncommitted_changes",
+      "cooldown": 60,
+      "message": "Changes to loop infrastructure? `/ai-loop-test` sanity-checks it before merging"
+    },
+    {
+      "command": "ai-loop",
+      "signal": "session_start",
+      "condition": "stalled_loop",
+      "message": "Loop stalled — same story repeated without progress. Run `cat .claude/state/loop-diagnostics.jsonl | jq .` to see iteration details, then fix the blocker before restarting `/ai-loop`"
+    },
+    {
+      "command": "check-agent-readiness",
+      "signal": "session_start",
+      "condition": "no_agent_context",
+      "message": "No agent context file found — run `/check-agent-readiness` to audit this repo"
+    },
+    {
+      "command": "checkpoint",
+      "signal": "total_tool_calls",
+      "value": 40,
+      "cooldown": 60,
+      "message": "Long session — `/checkpoint` saves progress for safe resumption"
+    },
+    {
+      "command": "compliance-check",
+      "signal": "total_tool_calls",
+      "value": 50,
+      "cooldown": 45,
+      "message": "Extended session — `/compliance-check` to validate patterns and complexity"
+    },
+    {
+      "command": "compliance-check",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 6,
+      "cooldown": 30,
+      "message": "Heavy React edits — `/compliance-check` to verify skill compliance"
+    },
+    {
+      "command": "create-commit",
+      "signal": "edits_since_commit",
+      "value": 8,
+      "cooldown": 30,
+      "message": "Consider `/create-commit` to checkpoint your work"
+    },
+    {
+      "command": "create-plan",
+      "signal": "session_start",
+      "condition": "no_plan_many_edits",
+      "message": "No active plan — `/create-plan` structures your work into trackable stories"
+    },
+    {
+      "command": "create-pr",
+      "signal": "edits_since_commit",
+      "value": 0,
+      "cooldown": 60,
+      "message": "All changes committed — `/create-pr` generates a structured pull request"
+    },
+    {
+      "command": "create-skill",
+      "signal": "session_start",
+      "condition": "staged_learnings",
+      "cooldown": 60,
+      "message": "Have staged learnings ready to promote? `/create-skill` scaffolds a new skill from toolkit patterns"
+    },
+    {
+      "command": "create-skill",
+      "signal": "total_tool_calls",
+      "value": 35,
+      "cooldown": 60,
+      "message": "Discovering reusable patterns this session? `/create-skill` formalizes them into a loadable skill"
+    },
+    {
+      "command": "create-todo",
+      "signal": "total_tool_calls",
+      "value": 40,
+      "cooldown": 60,
+      "message": "Long session with no TODO tracking — `/create-todo` to capture items for later"
+    },
+    {
+      "command": "create-todo",
+      "signal": "session_start",
+      "condition": "has_todos_or_issues",
+      "message": "You have open TODOs — `/next` to prioritize or `/create-todo` to add more"
+    },
+    {
+      "command": "dashboard",
+      "signal": "session_start",
+      "condition": "no_plan_many_edits",
+      "message": "Multiple projects may have pending work -- `/dashboard` for a cross-project view"
+    },
+    {
+      "command": "debug-browser",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 3,
+      "cooldown": 30,
+      "message": "Editing React components? `/debug-browser` captures console errors and network failures live from the app"
+    },
+    {
+      "command": "debug-browser",
+      "signal": "session_start",
+      "condition": "no_plan_many_edits",
+      "cooldown": 60,
+      "message": "UI issues to investigate? `/debug-browser` opens an interactive browser session to capture runtime errors"
+    },
+    {
+      "command": "debug",
+      "signal": "file_extension",
+      "value": ".ts",
+      "min_edits": 5,
+      "cooldown": 30,
+      "message": "Many edits to the same area — `/debug` offers structured hypothesis-driven debugging"
+    },
+    {
+      "command": "deploy",
+      "signal": "total_tool_calls",
+      "value": 35,
+      "cooldown": 90,
+      "message": "Feature looking solid? `/deploy` for a Vercel preview URL"
+    },
+    {
+      "command": "deploy",
+      "signal": "session_start",
+      "condition": "uncommitted_changes",
+      "message": "Uncommitted changes from last session — commit and `/deploy` when ready"
+    },
+    {
+      "command": "deploy",
+      "signal": "file_extension",
+      "value": ".sql,.prisma",
+      "cooldown": 120,
+      "message": "Migration files detected — `/deploy` runs migration safety checks before deploying"
+    },
+    {
+      "command": "design-check",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 3,
+      "cooldown": 25,
+      "message": "Edited React components — `/design-check` validates design system compliance"
+    },
+    {
+      "command": "deslop",
+      "signal": "edits_since_commit",
+      "value": 20,
+      "cooldown": 60,
+      "message": "Large AI-assisted session — `/deslop` to remove unnecessary comments and defensive code"
+    },
+    {
+      "command": "deslop",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 8,
+      "cooldown": 45,
+      "message": "Many component edits — `/deslop` to clean up AI-generated patterns before committing"
+    },
+    {
+      "command": "docs-check",
+      "signal": "edits_since_commit",
+      "value": 10,
+      "cooldown": 30,
+      "message": "Added or changed features? `/docs-check` audits CLAUDE.md and README.md for drift vs actual files"
+    },
+    {
+      "command": "docs-check",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 90,
+      "message": "Working on features? `/docs-check` catches phantom entries and undocumented items before they ship"
+    },
+    {
+      "command": "dogfood",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 6,
+      "cooldown": 45,
+      "message": "Lots of UI changes? `/dogfood` runs systematic QA with screenshots and repro evidence"
+    },
+    {
+      "command": "dogfood",
+      "signal": "edits_since_commit",
+      "value": 15,
+      "cooldown": 45,
+      "message": "Major changes in flight — `/dogfood` exploratory-tests the running app to catch bugs before PR"
+    },
+    {
+      "command": "evolve",
+      "signal": "session_start",
+      "condition": "staged_learnings",
+      "message": "Staged learnings ready for review — `/evolve` proposes promotions to permanent rules"
+    },
+    {
+      "command": "guide",
+      "signal": "session_start",
+      "condition": "first_session",
+      "message": "New to the toolkit? Run `/guide` for a quick orientation."
+    },
+    {
+      "command": "guide",
+      "signal": "total_tool_calls",
+      "value": 2,
+      "cooldown": 86400,
+      "message": "Need help finding commands? Try `/guide`."
+    },
+    {
+      "command": "init",
+      "signal": "session_start",
+      "condition": "no_agent_context",
+      "message": "No CLAUDE.md found — `/init` generates one from a template for this project type"
+    },
+    {
+      "command": "iterate",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "message": "Incomplete plan found — run `/iterate` to continue"
+    },
+    {
+      "command": "kickoff",
+      "signal": "session_start",
+      "condition": "no_agent_context",
+      "message": "No project context loaded — run `/kickoff` to initialize the session"
+    },
+    {
+      "command": "learn",
+      "signal": "edits_since_commit",
+      "value": 15,
+      "cooldown": 45,
+      "message": "Long session — `/learn` to extract reusable patterns before context clears"
+    },
+    {
+      "command": "learn",
+      "signal": "session_start",
+      "condition": "staged_learnings",
+      "message": "Staged learnings from last session — run `/learn` or `/evolve` to promote them"
+    },
+    {
+      "command": "log-skill",
+      "signal": "total_tool_calls",
+      "value": 20,
+      "cooldown": 60,
+      "message": "Using a toolkit skill heavily this session? `/log-skill` records it to ~/.ai/events.jsonl for PAOPAIA tracking"
+    },
+    {
+      "command": "memory-clean",
+      "signal": "session_start",
+      "condition": "staged_learnings",
+      "cooldown": 120,
+      "message": "Memory entries piling up? `/memory-clean` archives old entries (default 30 days) to keep context lean"
+    },
+    {
+      "command": "memory-clean",
+      "signal": "total_tool_calls",
+      "value": 50,
+      "cooldown": 120,
+      "message": "Long-running project? `/memory-clean` prunes stale memory so future sessions load faster"
+    },
+    {
+      "command": "mode",
+      "signal": "total_tool_calls",
+      "value": 35,
+      "cooldown": 60,
+      "message": "Consider `/mode` to optimize your workflow (dev, review, debug, deploy, research, orchestrate)"
+    },
+    {
+      "command": "monitor",
+      "signal": "total_tool_calls",
+      "value": 15,
+      "cooldown": 30,
+      "message": "Running parallel agents? `/monitor` launches a TUI dashboard to track all active sessions"
+    },
+    {
+      "command": "monitor",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 120,
+      "message": "Have agents running? `/monitor` shows real-time progress across all worktrees"
+    },
+    {
+      "command": "multitask",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 60,
+      "message": "Large plan to execute? `/multitask` runs parallel agents on isolated worktrees for concurrent development"
+    },
+    {
+      "command": "multitask",
+      "signal": "total_tool_calls",
+      "value": 25,
+      "cooldown": 60,
+      "message": "Complex session — `/multitask` can parallelize independent features across worktrees"
+    },
+    {
+      "command": "next",
+      "signal": "session_start",
+      "condition": "has_todos_or_issues",
+      "message": "Have TODOs or open issues — `/next` to see what to work on"
+    },
+    {
+      "command": "next",
+      "signal": "total_tool_calls",
+      "value": 5,
+      "cooldown": 120,
+      "message": "Not sure what to tackle? `/next` suggests your top priorities"
+    },
+    {
+      "command": "orchestrate",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 60,
+      "message": "Ready to execute a plan at scale? `/orchestrate` spawns parallel agents to tackle it concurrently"
+    },
+    {
+      "command": "orchestrate",
+      "signal": "session_start",
+      "condition": "no_plan_many_edits",
+      "cooldown": 60,
+      "message": "Working on a big feature? `/orchestrate` can split it across parallel worktree agents"
+    },
+    {
+      "command": "pipeline",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 60,
+      "message": "Plan with dependent tasks? `/pipeline` executes them as a DAG with parallel dispatch and checkpointing"
+    },
+    {
+      "command": "pipeline",
+      "signal": "edits_since_commit",
+      "value": 20,
+      "cooldown": 45,
+      "message": "Many changes in flight — `/pipeline` can orchestrate complex multi-step workflows with resume support"
+    },
+    {
+      "command": "plan-status",
+      "signal": "edits_since_commit",
+      "value": 8,
+      "cooldown": 30,
+      "message": "Editing shared files? `/plan-status` shows file claims and detects conflicts across active plans"
+    },
+    {
+      "command": "plan-status",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 90,
+      "message": "Multiple plans active? `/plan-status` checks for file ownership conflicts before you start"
+    },
+    {
+      "command": "plan",
+      "signal": "total_tool_calls",
+      "value": 8,
+      "cooldown": 60,
+      "message": "Working without a plan? `/plan` breaks the feature into dependency-ordered tasks"
+    },
+    {
+      "command": "plan",
+      "signal": "session_start",
+      "condition": "no_plan_many_edits",
+      "message": "Many edits with no plan — `/plan` to scope the work before continuing"
+    },
+    {
+      "command": "pre-commit-check",
+      "signal": "edits_since_commit",
+      "value": 5,
+      "cooldown": 30,
+      "message": "Ready to commit? `/pre-commit-check` verifies coverage, techdebt, and docs first"
+    },
+    {
+      "command": "pre-commit-check",
+      "signal": "file_extension",
+      "value": ".ts",
+      "min_edits": 4,
+      "cooldown": 30,
+      "message": "TypeScript changes ready — `/pre-commit-check` before committing"
+    },
+    {
+      "command": "pre-pr-check",
+      "signal": "edits_since_commit",
+      "value": 15,
+      "cooldown": 30,
+      "message": "Many uncommitted changes — `/pre-pr-check` validates before PR"
+    },
+    {
+      "command": "rams",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 3,
+      "cooldown": 25,
+      "message": "React component edits — `/rams` for accessibility + visual design audit"
+    },
+    {
+      "command": "remind",
+      "signal": "total_tool_calls",
+      "value": 40,
+      "cooldown": 45,
+      "message": "Deep into the session — `/remind` for a quick recap of goals and progress"
+    },
+    {
+      "command": "review",
+      "signal": "edits_since_commit",
+      "value": 12,
+      "cooldown": 30,
+      "message": "Many uncommitted edits — `/review` to catch issues before committing"
+    },
+    {
+      "command": "review",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 5,
+      "cooldown": 25,
+      "message": "Multiple component edits — `/review` for accessibility + quality check"
+    },
+    {
+      "command": "scrap",
+      "signal": "total_tool_calls",
+      "value": 30,
+      "cooldown": 60,
+      "message": "Lots of back-and-forth — `/scrap` to discard and restart with a cleaner approach"
+    },
+    {
+      "command": "scrap",
+      "signal": "edits_since_commit",
+      "value": 25,
+      "cooldown": 60,
+      "message": "Many edits without a clean commit — `/scrap` if the current approach isn't working"
+    },
+    {
+      "command": "security-check",
+      "signal": "file_extension",
+      "value": ".ts",
+      "min_edits": 5,
+      "cooldown": 30,
+      "message": "Multiple source file edits — `/security-check` to scan for vulnerabilities"
+    },
+    {
+      "command": "security-check",
+      "signal": "edits_since_commit",
+      "value": 10,
+      "cooldown": 45,
+      "message": "Significant changes — `/security-check --owasp` for OWASP Top 10 audit before PR"
+    },
+    {
+      "command": "status",
+      "signal": "edits_since_commit",
+      "value": 10,
+      "cooldown": 30,
+      "message": "Many edits since last commit — `/status` to review progress"
+    },
+    {
+      "command": "status",
+      "signal": "total_tool_calls",
+      "value": 25,
+      "cooldown": 30,
+      "message": "Mid-session — `/status` for a quick progress check"
+    },
+    {
+      "command": "status",
+      "signal": "session_start",
+      "condition": "uncommitted_changes",
+      "message": "Uncommitted changes from a previous session — `/status --history` to see what happened"
+    },
+    {
+      "command": "status",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "message": "Active plan with pending stories — `/status --history` for a session summary"
+    },
+    {
+      "command": "summarize",
+      "signal": "session_start",
+      "condition": "no_pyramid_large_project",
+      "cooldown": 120,
+      "message": "Large project with no pyramid summaries — `/summarize` generates multi-level context for leaner sessions"
+    },
+    {
+      "command": "summarize",
+      "signal": "total_tool_calls",
+      "value": 30,
+      "cooldown": 60,
+      "message": "Deep into a codebase? `/summarize` captures multi-resolution snapshots to keep future sessions lean"
+    },
+    {
+      "command": "tasks-cleanup",
+      "signal": "total_tool_calls",
+      "value": 40,
+      "cooldown": 60,
+      "message": "Lots of completed tasks? `/tasks-cleanup` archives them to keep the list tidy"
+    },
+    {
+      "command": "tasks-cleanup",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 120,
+      "message": "Task list getting long? `/tasks-cleanup` removes archived tasks so current work stays visible"
+    },
+    {
+      "command": "tdd",
+      "signal": "file_extension",
+      "value": ".test.ts",
+      "min_edits": 1,
+      "cooldown": 30,
+      "message": "Editing tests — `/tdd` structures red-green-refactor cycles"
+    },
+    {
+      "command": "techdebt",
+      "signal": "edits_since_commit",
+      "value": 15,
+      "cooldown": 45,
+      "message": "Large changeset — `/techdebt` to check for duplication before committing"
+    },
+    {
+      "command": "token-budget",
+      "signal": "total_tool_calls",
+      "value": 40,
+      "cooldown": 60,
+      "message": "Context growing large — `/token-budget` to check which toolkit components are heaviest"
+    },
+    {
+      "command": "token-budget",
+      "signal": "edits_since_commit",
+      "value": 20,
+      "cooldown": 60,
+      "message": "Long session — `/token-budget` to verify context costs before continuing"
+    },
+    {
+      "command": "update-toolkit",
+      "signal": "session_start",
+      "condition": "no_agent_context",
+      "message": "Starting a new project session — `/update-toolkit` to pull the latest toolkit improvements"
+    },
+    {
+      "command": "verify-visual",
+      "signal": "file_extension",
+      "value": ".tsx",
+      "min_edits": 3,
+      "cooldown": 30,
+      "message": "UI components changed — `/verify-visual` to catch rendering issues with screenshots"
+    },
+    {
+      "command": "verify-visual",
+      "signal": "file_extension",
+      "value": ".css",
+      "min_edits": 2,
+      "cooldown": 30,
+      "message": "Styles changed — `/verify-visual` for visual regression check"
+    },
+    {
+      "command": "verify",
+      "signal": "file_extension",
+      "value": ".ts",
+      "min_edits": 5,
+      "cooldown": 20,
+      "message": "Verify changes with `/verify`"
+    },
+    {
+      "command": "version",
+      "signal": "session_start",
+      "condition": "no_agent_context",
+      "message": "New session — `/version` to confirm which toolkit version is active"
+    },
+    {
+      "command": "worktree",
+      "signal": "session_start",
+      "condition": "incomplete_plan",
+      "cooldown": 60,
+      "message": "Starting feature work? `/worktree` creates an isolated branch with deps + env symlinks pre-configured"
+    },
+    {
+      "command": "worktree",
+      "signal": "session_start",
+      "condition": "uncommitted_changes",
+      "cooldown": 60,
+      "message": "Working on a new feature? `/worktree` isolates it from main so experiments stay clean"
+    },
+    {
+      "command": "wrap-up",
+      "signal": "total_tool_calls",
+      "value": 60,
+      "cooldown": 60,
+      "message": "Long session — consider `/wrap-up` to capture learnings before ending"
+    }
+  ]
+}

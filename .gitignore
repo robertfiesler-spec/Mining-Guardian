@@ -37,3 +37,19 @@ ams_api_spec.json
 
 # LaunchAgent plist (machine-specific)
 com.bixbit.mining-guardian.plist
+
+# AI Toolkit
+.claude/.toolkit-manifest.json
+.claude/.toolkit-version
+.claude/checkpoints/
+.claude/state/
+.claude/.backups/
+.claude/settings.local.json
+.claude/config.local.json
+.claude/command-history.log
+.claude/tui/node_modules/
+.claude/tui/dist/
+.claude/visual/current/
+.claude/visual/diffs/
+.claude/pyramid/
+.ai/

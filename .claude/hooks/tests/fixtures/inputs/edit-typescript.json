@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/project/src/utils/auth.ts",
+    "old_string": "const token = getToken();",
+    "new_string": "const token = await getToken();"
+  }
+}

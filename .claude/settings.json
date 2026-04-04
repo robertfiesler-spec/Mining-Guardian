@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-tool-use/agent-register.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-tool-use/tmux-reminder.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-tool-use/block-md-creation.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/pre-tool-use/git-push-review.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-tool-use/prettier-format.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/scripts/console-log-guard.sh --check"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/stop/agent-deregister.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/scripts/console-log-guard.sh --audit"
+          }
+        ]
+      }
+    ]
+  },
+
+  "permissions": {
+    "allow": [
+      "Bash(npm install*)",
+      "Bash(npm run*)",
+      "Bash(npx *)",
+      "Bash(pnpm *)",
+      "Bash(yarn *)",
+      "Bash(bun *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git checkout*)",
+      "Bash(git switch*)",
+      "Bash(git fetch*)",
+      "Bash(git pull*)",
+      "Bash(git push*)",
+      "Bash(git stash*)",
+      "Bash(gh *)",
+      "Bash(vitest*)",
+      "Bash(jest*)",
+      "Bash(playwright*)",
+      "Bash(tsc*)",
+      "Bash(eslint*)",
+      "Bash(prettier*)",
+      "Bash(ls*)",
+      "Bash(pwd)",
+      "Bash(which *)",
+      "Bash(cat *)",
+      "Bash(mkdir *)",
+      "Bash(rm -rf node_modules)",
+      "Bash(rm -rf .next)",
+      "Bash(rm -rf dist)",
+      "Bash(rm -rf build)",
+      "Edit",
+      "Write"
+    ]
+  },
+
+  "extraKnownMarketplaces": {
+    "anthropics-claude-code": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-code"
+      }
+    },
+    "mixedbread-ai-mgrep": {
+      "source": {
+        "source": "github",
+        "repo": "mixedbread-ai/mgrep"
+      }
+    }
+  },
+
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "hookify@claude-plugins-official": true,
+    "commit-commands@anthropics-claude-code": true,
+    "code-review@anthropics-claude-code": true,
+    "pr-review-toolkit@anthropics-claude-code": true,
+    "security-guidance@anthropics-claude-code": true,
+    "frontend-design@anthropics-claude-code": true,
+    "mgrep@mixedbread-ai-mgrep": true
+  }
+}

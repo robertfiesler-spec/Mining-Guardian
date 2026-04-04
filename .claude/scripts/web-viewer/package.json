@@ -1,0 +1,33 @@
+{
+  "name": "@claude/web-viewer",
+  "version": "1.0.0",
+  "description": "Web-based monitoring dashboard for Claude Code multitask orchestration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:harness": "tsx scripts/mock-data.ts",
+    "mock": "tsx scripts/mock-server.ts"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "chokidar": "^3.5.3",
+    "ansi-to-html": "^0.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

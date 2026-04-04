@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/project/docs/random-notes.md",
+    "content": "# Random Notes\n\nSome notes."
+  }
+}

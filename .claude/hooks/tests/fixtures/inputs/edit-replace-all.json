@@ -1,0 +1,9 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/project/src/components/Button.tsx",
+    "old_string": "className",
+    "new_string": "class",
+    "replace_all": true
+  }
+}

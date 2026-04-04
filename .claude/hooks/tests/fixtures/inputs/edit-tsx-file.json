@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/project/src/components/Button.tsx",
+    "old_string": "return <button>{label}</button>;",
+    "new_string": "return <button className=\"btn\">{label}</button>;"
+  }
+}

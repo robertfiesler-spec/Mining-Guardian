@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Real-time dashboard for Claude multitask autonomous execution">
+  <title>Claude Multitask Dashboard</title>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/styles/theme.css">
+  <link rel="stylesheet" href="/styles/main.css">
+  <link rel="stylesheet" href="/styles/components.css">
+</head>
+<body>
+  <!-- Main Application Container -->
+  <div id="app" class="app-container">
+
+    <!-- Header Section -->
+    <header class="app-header">
+      <div class="header-content">
+        <h1 class="app-title">
+          <span class="title-icon">🤖</span>
+          Claude Multitask Dashboard
+        </h1>
+
+        <!-- Header Controls -->
+        <div class="header-controls">
+          <button
+            type="button"
+            class="theme-toggle"
+            id="theme-toggle"
+            aria-label="Toggle neon theme"
+            title="Toggle neon theme"
+          >⚡</button>
+
+          <!-- Connection Status -->
+          <div class="connection-status" id="connection-status">
+            <span class="status-indicator" id="status-indicator"></span>
+            <span class="status-text" id="status-text">Connecting...</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+
+      <!-- Cost Metrics Section -->
+      <section class="metrics-section" aria-labelledby="metrics-heading">
+        <h2 id="metrics-heading" class="section-title">Cost Metrics</h2>
+        <div class="metrics-grid" id="metrics-grid">
+
+          <article class="metric-card">
+            <h3 class="metric-label">Today</h3>
+            <p class="metric-value" id="cost-today">$0.00</p>
+          </article>
+
+          <article class="metric-card">
+            <h3 class="metric-label">This Session</h3>
+            <p class="metric-value" id="cost-session">$0.00</p>
+          </article>
+
+          <article class="metric-card">
+            <h3 class="metric-label">7 Days</h3>
+            <p class="metric-value" id="cost-7day">$0.00</p>
+          </article>
+
+          <article class="metric-card">
+            <h3 class="metric-label">30 Days</h3>
+            <p class="metric-value" id="cost-30day">$0.00</p>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- Agent Summary Section -->
+      <section class="agent-summary-section" aria-labelledby="agent-summary-heading">
+        <h2 id="agent-summary-heading" class="section-title">Agent Overview</h2>
+        <div class="agent-summary-grid" id="agent-summary">
+
+          <div class="summary-stat">
+            <span class="stat-label">Active</span>
+            <span class="stat-value stat-active" id="agents-active">0</span>
+          </div>
+
+          <div class="summary-stat">
+            <span class="stat-label">Pending</span>
+            <span class="stat-value stat-pending" id="agents-pending">0</span>
+          </div>
+
+          <div class="summary-stat">
+            <span class="stat-label">Completed</span>
+            <span class="stat-value stat-completed" id="agents-completed">0</span>
+          </div>
+
+          <div class="summary-stat">
+            <span class="stat-label">Errors</span>
+            <span class="stat-value stat-error" id="agents-error">0</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Instance Health Section -->
+      <section class="health-summary-section" aria-labelledby="health-summary-heading">
+        <h2 id="health-summary-heading" class="section-title">Instance Health</h2>
+        <div class="agent-summary-grid" id="health-summary">
+
+          <div class="summary-stat">
+            <span class="stat-label">Healthy</span>
+            <span class="stat-value stat-active" id="instances-healthy">0</span>
+          </div>
+
+          <div class="summary-stat">
+            <span class="stat-label">Stale</span>
+            <span class="stat-value stat-pending" id="instances-stale">0</span>
+          </div>
+
+          <div class="summary-stat">
+            <span class="stat-label">Crashed</span>
+            <span class="stat-value stat-error" id="instances-crashed">0</span>
+          </div>
+
+          <div class="summary-stat">
+            <span class="stat-label">Total Runtime</span>
+            <span class="stat-value" id="total-runtime">0s</span>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Instance Process Cards -->
+      <section class="process-section" aria-labelledby="process-heading">
+        <h2 id="process-heading" class="section-title">Instance Processes</h2>
+        <div class="process-grid" id="process-grid">
+          <div class="empty-state">
+            <p>No active instances</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Active Agents Grid -->
+      <section class="agents-section" aria-labelledby="agents-heading">
+        <h2 id="agents-heading" class="section-title">Active Agents</h2>
+        <div class="agents-grid" id="agents-grid">
+          <!-- Agent cards will be dynamically inserted here -->
+          <div class="empty-state" id="agents-empty">
+            <p>No active agents</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Plan Progress Section -->
+      <section class="plan-section" aria-labelledby="plan-heading">
+        <h2 id="plan-heading" class="section-title">Plan Progress</h2>
+        <div class="plan-container" id="plan-container">
+
+          <!-- Plan Header -->
+          <div class="plan-header" id="plan-header">
+            <div class="plan-info">
+              <h3 class="plan-name" id="plan-name">No active plan</h3>
+              <p class="plan-branch" id="plan-branch"></p>
+            </div>
+            <div class="plan-progress-bar-container">
+              <div class="progress-bar">
+                <div class="progress-fill" id="plan-progress-fill" style="width: 0%"></div>
+              </div>
+              <span class="progress-text" id="plan-progress-text">0 / 0 stories</span>
+            </div>
+          </div>
+
+          <!-- Current Story -->
+          <div class="current-story" id="current-story">
+            <!-- Current story details will be inserted here -->
+          </div>
+
+          <!-- Story Checklist -->
+          <div class="story-checklist" id="story-checklist">
+            <h4 class="checklist-title">Stories</h4>
+            <ul class="story-list" id="story-list">
+              <!-- Story items will be dynamically inserted here -->
+            </ul>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Instance Logs Section -->
+      <section class="logs-section" aria-labelledby="logs-heading">
+        <h2 id="logs-heading" class="section-title">Instance Logs</h2>
+
+        <!-- Instance Tabs -->
+        <div class="instance-tabs" id="instance-tabs" role="tablist">
+          <!-- Instance tabs will be dynamically inserted here -->
+        </div>
+
+        <!-- Log Viewer -->
+        <div class="log-viewer-container">
+          <div class="log-viewer" id="log-viewer" role="tabpanel" aria-labelledby="active-instance-tab">
+            <div class="log-content" id="log-content">
+              <div class="empty-state">
+                <p>No logs available</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Log Controls -->
+          <div class="log-controls">
+            <div class="log-controls-left">
+              <input
+                type="text"
+                id="log-search"
+                class="log-search-input"
+                placeholder="Search logs..."
+                aria-label="Search log lines"
+              >
+              <select
+                id="log-level-filter"
+                class="log-filter-select"
+                aria-label="Filter by log level"
+              >
+                <option value="all">All Levels</option>
+                <option value="error">Error</option>
+                <option value="warning">Warning</option>
+                <option value="info">Info</option>
+              </select>
+            </div>
+            <div class="log-controls-right">
+              <button
+                type="button"
+                class="btn-secondary"
+                id="clear-logs"
+                aria-label="Clear log viewer"
+              >
+                Clear
+              </button>
+              <label class="toggle-label">
+                <input
+                  type="checkbox"
+                  id="auto-scroll"
+                  checked
+                  aria-label="Enable auto-scroll for logs"
+                >
+                <span>Auto-scroll</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p class="footer-text">
+        Claude Code Web Viewer
+        <span class="separator">•</span>
+        Last updated: <time id="last-update" datetime="">Never</time>
+      </p>
+    </footer>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">Connecting to server...</p>
+      <p class="loading-subtext" id="loading-subtext"></p>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="error-modal hidden" id="error-modal" role="dialog" aria-labelledby="error-title">
+      <div class="modal-content">
+        <h3 id="error-title" class="modal-title">Connection Error</h3>
+        <p class="modal-message" id="error-message"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary hidden" id="error-retry">Retry Connection</button>
+          <button type="button" class="btn-primary" id="error-dismiss">Dismiss</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/formatters.js"></script>
+  <script src="/js/websocket.js"></script>
+  <script src="/js/agent-panel.js"></script>
+  <script src="/js/dashboard.js"></script>
+  <script src="/js/process-panel.js"></script>
+  <script src="/js/log-viewer.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "tool_input": {
+    "file_path": "/project/test.txt",
+    "content": "test content"
+  }
+}

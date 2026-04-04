@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/project/README.md",
+    "content": "# Project Title\n\nProject description."
+  }
+}

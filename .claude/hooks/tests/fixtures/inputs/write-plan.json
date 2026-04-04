@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/project/docs/plans/feature-plan.md",
+    "content": "# Feature Plan\n\nImplementation steps."
+  }
+}

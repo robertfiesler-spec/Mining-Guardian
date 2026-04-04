@@ -1,0 +1,8 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/project/package.json",
+    "old_string": "\"version\": \"1.0.0\"",
+    "new_string": "\"version\": \"1.0.1\""
+  }
+}
