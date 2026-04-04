@@ -1456,8 +1456,7 @@ class GuardianDB:
                     accepted        INTEGER,
                     rejected        INTEGER,
                     accepted_diff   REAL,
-                    rejected_diff   REAL,
-                    difficulty      TEXT
+                    rejected_diff   REAL,                    difficulty      TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_pool_miner
@@ -2003,9 +2002,12 @@ class GuardianDB:
                     scan_id, scanned_at, miner_id, ip,
                     pool.get("priority", 0), pool.get("url", ""),
                     pool.get("user", ""), pool.get("poolType", ""),
-                    pool.get("status", ""), pool.get("accepted", 0),
-                    pool.get("rejected", 0), pool.get("acceptedDiff", 0),
-                    pool.get("rejectedDiff", 0), pool.get("diff", ""),
+                    pool.get("status", ""),
+                    int(pool.get("accepted", 0) or 0),
+                    int(pool.get("rejected", 0) or 0),
+                    float(pool.get("acceptedDiff", 0) or 0),
+                    float(pool.get("rejectedDiff", 0) or 0),
+                    pool.get("diff", ""),
                 ))
         if not rows:
             return
