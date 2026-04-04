@@ -348,13 +348,14 @@ def metrics():
             except (ValueError, TypeError):
                 hr = 0.0
 
-            temp = m["temp_chip"] if m["temp_chip"] is not None else -1
+            temp = m["temp_chip"] if (m["temp_chip"] is not None and m["temp_chip"] >= 0) else float('nan')
             pdu  = m["pdu_power"] if m["pdu_power"] is not None else 0.0
             flag = 1 if m["issue"] else 0
             dead = 1 if ip in dead_board_ips else 0
 
             g_hashrate_pct.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(hr)
-            g_temp_chip.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(temp)
+            if not (temp != temp):  # skip NaN temps — offline miners have no valid reading
+                g_temp_chip.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(temp)
             g_pdu_power_kw.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(pdu)
             g_flagged.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(flag)
             g_dead_boards.labels(miner_ip=ip, model=mdl, site=SITE).set(dead)
