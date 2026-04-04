@@ -1409,6 +1409,7 @@ class GuardianDB:
                     restart_attempted TEXT,
                     restart_result  TEXT,
                     ticket_created  TEXT,
+                    ticket_noticed_at TEXT,
                     resolved_at     TEXT,
                     notes           TEXT
                 );
@@ -1945,17 +1946,35 @@ class GuardianDB:
         logger.info("[%s] AMS ticket recorded: %s", miner_id, ticket_id or now)
 
     def get_newly_ticketed(self) -> list:
-        """Return dead board miners whose ticket was just created in the last scan cycle."""
-        cutoff = (datetime.now() - timedelta(minutes=6)).isoformat()
+        """Return dead board miners whose ticket was created but not yet noticed in Slack.
+
+        Bug fix: ticket_created stores the ticket ID string (e.g. '2661'), not a
+        timestamp — comparing it against a datetime cutoff always matched because
+        '2661' > '2026-...' alphabetically, so the notice showed every scan forever.
+        Now we track ticket_noticed_at separately. Only rows where ticket_noticed_at
+        IS NULL are returned — marking them noticed happens immediately after posting.
+        """
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT miner_id, ip, model, board_indices, ticket_created "
                 "FROM known_dead_boards "
                 "WHERE resolved_at IS NULL AND ticket_created IS NOT NULL "
-                "AND ticket_created >= ?",
-                (cutoff,)
+                "AND ticket_noticed_at IS NULL"
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def mark_ticket_noticed(self, miner_ids: list) -> None:
+        """Mark tickets as noticed in Slack — won't appear in future reports."""
+        if not miner_ids:
+            return
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            for miner_id in miner_ids:
+                conn.execute(
+                    "UPDATE known_dead_boards SET ticket_noticed_at=? "
+                    "WHERE miner_id=? AND resolved_at IS NULL",
+                    (now, miner_id)
+                )
 
     def resolve_dead_boards(self, miner_id: str):
         """Mark dead boards as resolved (boards recovered after restart or repair)."""
@@ -2633,8 +2652,10 @@ class SlackNotifier:
             if newly_ticketed:
                 lines.append(f"\n*🎫 AMS Tickets Created ({len(newly_ticketed)})*")
                 for t in newly_ticketed:
-                    lines.append(f"  • `{t['ip']}` ({t['model']}) — ticket created, removed from future reports")
+                    lines.append(f"  • `{t['ip']}` ({t['model']}) — ticket #{t['ticket_created']} created, removed from future reports")
                 lines.append("  _These miners will no longer appear in scan reports until resolved._")
+                # Mark as noticed so this block never shows again for these miners
+                db.mark_ticket_noticed([t['miner_id'] for t in newly_ticketed])
         except Exception:
             pass
 
