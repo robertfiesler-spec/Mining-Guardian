@@ -712,21 +712,29 @@ class AMSClient:
         return []
 
     def create_ticket(self, title: str, description: str = "",
-                      priority: str = "normal") -> Dict:
+                      priority: str = "normal",
+                      miner_ids: List[int] = None) -> Dict:
         """POST /ticket — create a new maintenance ticket.
 
         Args:
             title: Short description of the issue
             description: Full details
-            priority: "low", "normal", "high", or "critical"
-
-        Mining Guardian can auto-create tickets when miners are flagged
-        for physical intervention (no PDU assigned, needs manual visit).
+            priority: "low" (1), "normal" (3), "high" (2)
+            miner_ids: List of miner IDs to link to this ticket
         """
+        priority_map = {"low": 1, "high": 2, "normal": 3, "critical": 2}
+        priority_num = priority_map.get(priority, 3)
         token = self._ensure_token()
         resp  = self.session.post(
             f"{self.base_url}/ticket",
-            json={"title": title, "description": description, "priority": priority},
+            json={
+                "title":       title,
+                "description": description,
+                "priority":    priority_num,
+                "miners":      miner_ids or [],
+                "executorID":  0,
+                "statusID":    0,
+            },
             headers={"Authorization": f"Bearer {token}"},
             timeout=self.timeout,
         )
@@ -2849,7 +2857,8 @@ class MiningGuardian:
             ticket = self.ams.create_ticket(
                 title=title,
                 description=description,
-                priority="high"
+                priority="high",
+                miner_ids=[int(miner_id)]
             )
             ticket_id = ticket.get("id", "unknown")
             logger.info("[%s] AMS ticket created: %s", miner_id, ticket_id)
