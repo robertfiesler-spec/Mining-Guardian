@@ -34,7 +34,7 @@ logger = logging.getLogger("overnight")
 DB_PATH          = "guardian.db"
 APPROVAL_API     = "http://localhost:8686"
 OPENCLAW_WEBHOOK = os.getenv("OPENCLAW_WEBHOOK_URL", "http://localhost:18789/hooks")
-OPENCLAW_TOKEN   = "oyHS8MXeZmCRulnQWzs4r5qmEozOCr8Z"
+OPENCLAW_TOKEN   = os.getenv("OPENCLAW_TOKEN", "")
 
 # ── Overnight window (24h clock) ──────────────────────────────────────────────
 WINDOW_START_HOUR = 22   # 10pm

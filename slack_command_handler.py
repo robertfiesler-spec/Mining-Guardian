@@ -367,6 +367,12 @@ class CommandHandler:
         Always includes current fleet state and learned patterns as context.
         Uses Claude API for best answer quality.
         """
+        # Sanitize: cap length, strip control characters
+        question = question[:500].replace("\x00", "").strip()
+        if not question:
+            self._reply(channel, thread_ts, "Please ask a question.")
+            return
+
         self._reply(channel, thread_ts, "_🧠 Thinking..._")
 
         try:

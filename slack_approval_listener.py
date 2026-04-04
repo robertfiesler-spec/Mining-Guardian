@@ -31,6 +31,14 @@ APPROVAL_API    = "http://localhost:8686"
 DB_PATH         = "guardian.db"
 POLL_INTERVAL   = 15  # seconds — increased to avoid rate limiting
 
+# Authorized Slack user IDs — only these users can approve/deny actions.
+# Add user IDs from your Slack workspace (Settings → Members → click member → copy member ID).
+# Empty string = allow any workspace member (less secure but backward compatible).
+AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_SLACK_USER_IDS", "")
+AUTHORIZED_USER_IDS = set(
+    uid.strip() for uid in AUTHORIZED_USER_IDS_RAW.split(",") if uid.strip()
+)
+
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -139,6 +147,11 @@ class ApprovalListener:
                 text    = msg.get("text", "").strip()
                 user_id = msg.get("user", "")
                 upper   = text.upper()
+
+                # Authorization check — skip if user not in allowlist
+                if AUTHORIZED_USER_IDS and user_id not in AUTHORIZED_USER_IDS:
+                    logger.debug("Ignoring approval attempt from unauthorized user %s", user_id)
+                    continue
 
                 # Full approve/deny
                 if upper in ("APPROVE", "APPROVED", "YES", "Y"):

@@ -26,10 +26,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 DB_PATH = "guardian.db"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
+INTERNAL_API_SECRET  = os.environ.get("INTERNAL_API_SECRET", "")
+
+# Fail fast if Slack signature secret missing — the public endpoint is
+# unauthenticated without it and accessible via slack.fieslerfamily.com
+if not SLACK_SIGNING_SECRET:
+    import sys
+    logger.error("SLACK_SIGNING_SECRET not set — approval API refuses to start without it")
+    sys.exit(1)
+
 app = FastAPI(title="Mining Guardian Approval API", version="1.0.0")
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"],
-                   allow_methods=["*"], allow_headers=["*"])
+# Restrict CORS to known consumers only — not wildcard
+app.add_middleware(CORSMiddleware,
+                   allow_origins=["https://slack.fieslerfamily.com",
+                                   "https://dashboard.fieslerfamily.com",
+                                   "http://localhost:8585",
+                                   "http://127.0.0.1:8585"],
+                   allow_methods=["POST", "GET"],
+                   allow_headers=["*"])
 
 
 def get_db():
@@ -38,12 +53,27 @@ def get_db():
     return conn
 
 
+def verify_internal(request: Request) -> bool:
+    """Check X-Internal-Secret header on internal action endpoints.
+
+    Internal callers (slack_approval_listener, overnight_automation) must
+    send this header. If INTERNAL_API_SECRET is not configured, all internal
+    requests are accepted (backward compatible with existing deployments).
+    """
+    if not INTERNAL_API_SECRET:
+        return True  # not configured — open (backward compat)
+    provided = request.headers.get("X-Internal-Secret", "")
+    return hmac.compare_digest(provided, INTERNAL_API_SECRET)
+
+
 @app.post("/approve")
 async def approve_actions(request: Request):
     """
     Called by OpenClaw when operator replies APPROVE in Slack thread.
     Expects JSON: {"thread_ts": "...", "user": "...", "user_id": "..."}
     """
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
     body = await request.json()
     thread_ts = body.get("thread_ts")
     user = body.get("user", "unknown")
@@ -124,6 +154,8 @@ async def deny_actions(request: Request):
     Called by OpenClaw when operator replies DENY in Slack thread.
     Expects JSON: {"thread_ts": "...", "user": "...", "user_id": "..."}
     """
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
     body = await request.json()
     thread_ts = body.get("thread_ts")
     user = body.get("user", "unknown")
@@ -168,6 +200,8 @@ async def approve_selected_actions(request: Request):
                    "user": "...", "user_id": "..."}
     Only approves the miners in miner_ids — others remain PENDING (effectively denied).
     """
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
     body = await request.json()
     thread_ts  = body.get("thread_ts")
     miner_ids  = [str(m) for m in body.get("miner_ids", [])]
@@ -263,17 +297,25 @@ async def slack_interactive(request: Request):
     body_bytes = await request.body()
     body_str   = body_bytes.decode("utf-8")
 
-    # Verify Slack signature
-    if SLACK_SIGNING_SECRET:
-        ts  = request.headers.get("X-Slack-Request-Timestamp", "")
-        sig = request.headers.get("X-Slack-Signature", "")
-        base     = f"v0:{ts}:{body_str}"
-        expected = "v0=" + hmac.new(
-            SLACK_SIGNING_SECRET.encode(), base.encode(), hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            logger.warning("Invalid Slack signature on /slack/actions")
+    # Verify Slack signature — required (SLACK_SIGNING_SECRET checked at startup)
+    ts  = request.headers.get("X-Slack-Request-Timestamp", "")
+    sig = request.headers.get("X-Slack-Signature", "")
+
+    # Replay attack protection — reject requests older than 5 minutes
+    try:
+        if abs(time.time() - int(ts)) > 300:
+            logger.warning("Slack request timestamp too old — possible replay attack")
             return Response(status_code=403)
+    except (ValueError, TypeError):
+        return Response(status_code=403)
+
+    base     = f"v0:{ts}:{body_str}"
+    expected = "v0=" + hmac.new(
+        SLACK_SIGNING_SECRET.encode(), base.encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        logger.warning("Invalid Slack signature on /slack/actions")
+        return Response(status_code=403)
 
     from urllib.parse import parse_qs
     parsed      = parse_qs(body_str)
@@ -305,4 +347,4 @@ async def list_pending():
 
 if __name__ == "__main__":
     print("Mining Guardian Approval API — http://localhost:8686")
-    uvicorn.run(app, host="0.0.0.0", port=8686)
+    uvicorn.run(app, host="127.0.0.1", port=8686)

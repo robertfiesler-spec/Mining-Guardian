@@ -1,6 +1,5 @@
 """
-facility_monitor.py — Facility Infrastructure Monitor
-======================================================
+facility_monitor.py — Facility Infrastructure Monitor======================================================
 Polls all physical infrastructure in the BiXBiT USA warehouse:
   PDU 163 @ 192.168.188.15  — 2U rack (Auradines)
   PDU 164 @ 192.168.188.16  — Bitmain shoebox (S21 EXP Hydro)
@@ -27,9 +26,13 @@ Known PDU outlet → AMS miner ID assignments:
 """
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from pdu_client import PDUClient, PDUReading
 from immersion_client import ImmersionTankClient, TankReading
@@ -114,8 +117,10 @@ class FacilityMonitor:
     """
 
     def __init__(self):
-        self.pdu_163  = PDUClient('192.168.188.15', user='admin', password='admin')
-        self.pdu_164  = PDUClient('192.168.188.16', user='admin', password='admin')
+        pdu_user = os.getenv("PDU_USERNAME", "admin")
+        pdu_pass = os.getenv("PDU_PASSWORD", "admin")
+        self.pdu_163  = PDUClient('192.168.188.15', user=pdu_user, password=pdu_pass)
+        self.pdu_164  = PDUClient('192.168.188.16', user=pdu_user, password=pdu_pass)
         self.tank     = ImmersionTankClient('192.168.188.20')
         self._last_snapshot: Optional[FacilitySnapshot] = None
 

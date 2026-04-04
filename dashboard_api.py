@@ -16,6 +16,7 @@ Runs on: http://localhost:8585
 
 import sqlite3
 import os
+import html as html_lib
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, Query
@@ -260,7 +261,7 @@ LLM_INSIGHTS_HTML = """<!DOCTYPE html>
 </style>
 </head><body>
 <h1>AI Insights — LLM Analysis History</h1>
-<p class="sub">Ollama LLaMA 3.1 8B analyzing fleet patterns • Auto-refreshes every 5 min</p>
+<p class="sub">Qwen2.5 32B analyzing fleet patterns • Auto-refreshes every 5 min</p>
 <div class="cards" id="cards"></div>
 <p id="status">Loading...</p>
 <script>
@@ -302,6 +303,19 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def db_conn():
+    """Context manager for DB connections — guarantees close on exceptions."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 # ── Prometheus /metrics endpoint ─────────────────────────────
@@ -460,6 +474,10 @@ def miner_status(miner_ip: str):
 @app.get("/miner/status_html/{miner_ip}", response_class=HTMLResponse)
 def miner_status_html(miner_ip: str):
     """Styled HTML status page for a miner — embeddable in Grafana text panel as iframe."""
+    # Helper — escape all DB values before interpolating into HTML
+    def e(val) -> str:
+        return html_lib.escape(str(val)) if val is not None else ""
+
     conn = get_db()
     miner_ip_clean = miner_ip.replace("_", ".")
 
@@ -499,18 +517,18 @@ def miner_status_html(miner_ip: str):
             <div class="row">
                 <span class="label">Status</span>
                 <span class="badge" style="background:{status_color}">
-                    {current["status"].upper() if current["status"] else "UNKNOWN"}
+                    {e(current["status"]).upper() or "UNKNOWN"}
                 </span>
-                {f'<span class="badge" style="background:{action_color};margin-left:6px">{current["action"]}</span>' if current["action"] else ""}
+                {f'<span class="badge" style="background:{action_color};margin-left:6px">{e(current["action"])}</span>' if current["action"] else ""}
             </div>
-            <div class="row"><span class="label">Model</span><span>{current["model"] or "—"}</span></div>
-            <div class="row"><span class="label">Profile</span><span>{current["current_profile"] or "—"}</span></div>
-            <div class="row"><span class="label">Location</span><span>{current["map_location"] or "not mapped"}</span></div>
-            <div class="row"><span class="label">Hashrate</span><span>{current["hashrate_pct"]}%</span></div>
-            <div class="row"><span class="label">Chip Temp</span><span>{current["temp_chip"]}°C</span></div>
-            <div class="row"><span class="label">PDU Power</span><span>{current["pdu_power"]} kW</span></div>
-            <div class="row"><span class="label">Last Scan</span><span>{(current["scanned_at"] or "")[:16].replace("T"," ")}</span></div>
-            {f'<div class="issue-box">⚠️ {current["issue"]}</div>' if current["issue"] else '<div class="ok-box">✅ No active issues</div>'}
+            <div class="row"><span class="label">Model</span><span>{e(current["model"]) or "—"}</span></div>
+            <div class="row"><span class="label">Profile</span><span>{e(current["current_profile"]) or "—"}</span></div>
+            <div class="row"><span class="label">Location</span><span>{e(current["map_location"]) or "not mapped"}</span></div>
+            <div class="row"><span class="label">Hashrate</span><span>{e(current["hashrate_pct"])}%</span></div>
+            <div class="row"><span class="label">Chip Temp</span><span>{e(current["temp_chip"])}°C</span></div>
+            <div class="row"><span class="label">PDU Power</span><span>{e(current["pdu_power"])} kW</span></div>
+            <div class="row"><span class="label">Last Scan</span><span>{e(current["scanned_at"])[:16].replace("T"," ")}</span></div>
+            {f'<div class="issue-box">⚠️ {e(current["issue"])}</div>' if current["issue"] else '<div class="ok-box">✅ No active issues</div>'}
         </div>"""
     else:
         current_html = '<div class="current-block"><p style="color:#aaa">No data yet</p></div>'
@@ -520,9 +538,9 @@ def miner_status_html(miner_ip: str):
     if dead:
         dead_html = f"""
         <div class="dead-board-box">
-            🔴 <strong>Known Dead Boards:</strong> {dead["board_indices"]}<br>
-            First seen: {(dead["first_seen"] or "")[:16].replace("T"," ")} |
-            Ticket: {dead["ticket_created"] or "pending"}
+            🔴 <strong>Known Dead Boards:</strong> {e(dead["board_indices"])}<br>
+            First seen: {e(dead["first_seen"])[:16].replace("T"," ")} |
+            Ticket: {e(dead["ticket_created"]) or "pending"}
         </div>"""
 
     # Audit history table
@@ -530,13 +548,13 @@ def miner_status_html(miner_ip: str):
         rows_html = ""
         for h in history:
             dec_color = "#2ecc71" if h["decision"] == "APPROVED" else "#e74c3c" if h["decision"] == "DENIED" else "#f39c12"
-            ts = (h["timestamp"] or "")[:16].replace("T", " ")
+            ts = e(h["timestamp"])[:16].replace("T", " ")
             rows_html += f"""<tr>
                 <td>{ts}</td>
-                <td><span style="color:{dec_color};font-weight:600">{h["decision"]}</span></td>
-                <td>{h["action_taken"] or "—"}</td>
-                <td style="color:#aaa;font-size:11px">{h["approved_by"] or "—"}</td>
-                <td style="font-size:11px;max-width:300px;word-break:break-word">{h["problem"] or "—"}</td>
+                <td><span style="color:{dec_color};font-weight:600">{e(h["decision"])}</span></td>
+                <td>{e(h["action_taken"]) or "—"}</td>
+                <td style="color:#aaa;font-size:11px">{e(h["approved_by"]) or "—"}</td>
+                <td style="font-size:11px;max-width:300px;word-break:break-word">{e(h["problem"]) or "—"}</td>
             </tr>"""
         history_html = f"""
         <table>
@@ -577,6 +595,7 @@ def miner_status_html(miner_ip: str):
 <h3 style="margin-top:12px">Action History</h3>
 {history_html}
 </body></html>"""
+@app.get("/fleet/latest")
 def fleet_latest():
     """Latest scan summary — fleet status right now."""
     conn = get_db()
@@ -602,6 +621,7 @@ def fleet_latest():
 
 @app.get("/fleet/history")
 def fleet_history(days: int = 7):
+    days = min(max(days, 1), 90)
     """Scan history over the last N days."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
@@ -654,6 +674,7 @@ def miners_most_flagged(limit: int = 20):
 
 @app.get("/miners/{miner_id}/history")
 def miner_history(miner_id: str, days: int = 7):
+    days = min(max(days, 1), 90)
     """Full telemetry history for a specific miner."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
@@ -703,6 +724,7 @@ def temps_hot_miners():
 
 @app.get("/temps/history")
 def temps_history(days: int = 7):
+    days = min(max(days, 1), 90)
     """Average chip temp across fleet over time."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
@@ -725,6 +747,7 @@ def temps_history(days: int = 7):
 
 @app.get("/weather/history")
 def weather_history(days: int = 7):
+    days = min(max(days, 1), 90)
     """Ambient temp and humidity history."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
@@ -788,6 +811,7 @@ def facility_power_live():
 
 @app.get("/facility/environment_history")
 def environment_history(days: int = 5):
+    days = min(max(days, 1), 90)
     """Combined outside weather + HVAC temps for charting.
     Downsampled to 4 points per day (every 6 hours) for readability.
     Returns at most 20 data points over 5 days.
@@ -898,6 +922,9 @@ def restarts_recent(limit: int = 20):
 
 @app.get("/audit/log")
 def audit_log(days: int = None, miner_id: str = None, limit: int = 100):
+    if days is not None:
+        days = min(max(days, 1), 90)
+    limit = min(max(limit, 1), 500)
     """Permanent action audit log — every approval and denial ever recorded.
 
     Filterable by date range (days) and miner_id.
@@ -955,6 +982,7 @@ def audit_summary():
 
 @app.get("/llm/history")
 def llm_history(limit: int = 10):
+    limit = min(max(limit, 1), 500)
     """Recent LLM analysis results — proxied from VPS if local DB is empty."""
     conn = get_db()
     try:
@@ -1007,7 +1035,7 @@ def health():
     conn.close()
     return {
         "status": "online",
-        "db": DB_PATH,
+        "db": "guardian.db",  # path redacted — don't leak filesystem layout
         "total_scans": scan_count,
         "last_scan": latest[0] if latest else None,
     }

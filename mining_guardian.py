@@ -2444,6 +2444,19 @@ class SlackNotifier:
         self.channel_id  = channel_id or self.CHANNEL_ID
         self.bot_token   = bot_token
 
+    def post_to_channel(self, message: str) -> None:
+        """Post a plain message to the channel — used for board restart outcome notifications."""
+        try:
+            if self.bot_token:
+                from slack_sdk import WebClient
+                WebClient(token=self.bot_token).chat_postMessage(
+                    channel=self.channel_id, text=message
+                )
+            elif self.webhook_url:
+                requests.post(self.webhook_url, json={"text": message}, timeout=10)
+        except Exception as e:
+            logger.warning("post_to_channel failed: %s", e)
+
     def get_user_display_name(self, slack_user_id: str) -> Optional[str]:
         """Look up a Slack user's display name from their user ID.
 
@@ -2611,7 +2624,8 @@ class SlackNotifier:
             # Split into: has known dead boards (info only) vs approvable
             dead_board_miners = set()
             try:
-                with self._connect() as conn:
+                db_tmp = GuardianDB()
+                with db_tmp._connect() as conn:
                     rows = conn.execute(
                         "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL"
                     ).fetchall()
@@ -3246,7 +3260,7 @@ class MiningGuardian:
             logger.warning("[%s] Log collection failed (%s): %s — continuing", miner_id, label, e)
             return {}
 
-    def _wait_for_stable(self, miner_id: str) -> Optional[Dict]:
+    def _wait_for_stable(self, miner_id: str, ip: str) -> Optional[Dict]:
         """
         Two-phase wait after a restart.
 
@@ -3432,7 +3446,7 @@ class MiningGuardian:
 
         # ── Steps 3+4: Wait for stable (two-phase) ───────────────────────
         logger.info("[%s] Step 3+4 — waiting for stable operation", miner_id)
-        post_miner = self._wait_for_stable(miner_id)
+        post_miner = self._wait_for_stable(miner_id, ip)
 
         if post_miner is None:
             self._escalate_board_issue(
@@ -3651,7 +3665,7 @@ class MiningGuardian:
         # Step 2 — power cycle via AMS
         import time
         try:
-            self.ams.pdu_cycle(pdu_id, outlet)
+            self.ams.pdu_power_cycle(pdu_id, outlet)
             logger.info("[%s] PDU %s outlet %s — power cycled", miner_id, pdu_id, outlet)
         except Exception as e:
             logger.error("[%s] PDU cycle failed: %s", miner_id, e)
