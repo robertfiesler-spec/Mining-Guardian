@@ -32,8 +32,8 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("combine_knowledge")
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "llama3.1:8b"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate")
+MODEL      = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
 OUTPUT_PATH = "master_knowledge.json"
 
 # Use Claude API if available, fall back to Ollama
@@ -143,7 +143,14 @@ def query_llm(prompt: str) -> str:
             "prompt": prompt,
             "stream": False
         }, timeout=600)
-        return resp.json().get("response", "")
+        resp.raise_for_status()
+        result = resp.json().get("response", "")
+        if not result:
+            logger.error("Ollama returned empty response")
+        return result
+    except requests.exceptions.HTTPError as e:
+        logger.error("Ollama HTTP error %s: %s", e.response.status_code, e.response.text[:200])
+        return ""
     except Exception as e:
         logger.error("LLM query failed: %s", e)
         return ""
@@ -182,8 +189,10 @@ def build_master_knowledge(sites: List[Dict], llm_synthesis: str) -> Dict:
     all_insights = []
     for site in sites:
         for i in site["data"].get("known_issues", []):
-            i["source_site"] = site["name"]
-            all_insights.append(i)
+            # Copy before mutating — don't modify caller's data
+            insight = dict(i)
+            insight["source_site"] = site["name"]
+            all_insights.append(insight)
     all_insights.sort(key=lambda x: x.get("date", ""), reverse=True)
     master["known_issues"] = all_insights[:100]  # keep top 100
 

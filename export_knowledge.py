@@ -90,6 +90,7 @@ def export_knowledge(output_path: str = "knowledge.json") -> dict:
                action_taken, decision, approved_by
         FROM action_audit_log
         ORDER BY timestamp DESC
+        LIMIT 500
     """).fetchall()
 
     # ── Log patterns per model ─────────────────────────────────

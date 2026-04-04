@@ -56,9 +56,12 @@ def get_btc_price() -> tuple:
 def get_overnight_summary() -> dict:
     """Pull everything that happened since midnight."""
     conn   = get_db()
-    since  = datetime.now().replace(hour=0, minute=0, second=0).isoformat()
-    yesterday = (datetime.now() - timedelta(days=1)).replace(
-        hour=0, minute=0, second=0).isoformat()
+    # Use UTC consistently — rest of codebase stores timestamps in UTC
+    from datetime import timezone
+    now_utc   = datetime.now(timezone.utc)
+    since     = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    yesterday = (now_utc - timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0).isoformat()
 
     # Audit log — approved/denied actions overnight
     actions = conn.execute("""
@@ -168,12 +171,27 @@ def build_briefing(data: dict, btc_price: float) -> str:
         status  = "✅ Fleet healthy" if issues == 0 else f"⚠️ {issues} issue(s) active"
         lines.append(f"*Fleet:* {online} online / {offline} offline — {status}")
 
-    # BTC price + revenue estimate
+    # BTC price + revenue estimate using real fleet hashrate
     if btc_price:
-        # ~49 miners × avg 200W per miner = rough power, fleet does ~5000 TH/s
-        est_daily_btc  = 5000 * 86400 / (1e12 * 900)  # rough estimate
-        est_daily_usd  = est_daily_btc * btc_price
-        lines.append(f"*₿ BTC:* ${btc_price:,.0f} | Est. daily revenue: ~${est_daily_usd:,.0f}")
+        try:
+            conn_hr = get_db()
+            row = conn_hr.execute("""
+                SELECT SUM(hashrate_ths) as fleet_ths FROM (
+                    SELECT miner_id, MAX(id) as max_id
+                    FROM miner_readings WHERE status='online'
+                    GROUP BY miner_id
+                ) latest
+                JOIN miner_readings mr ON mr.id = latest.max_id
+            """).fetchone()
+            conn_hr.close()
+            fleet_ths = float(row["fleet_ths"] or 0) if row else 0
+        except Exception:
+            fleet_ths = 0
+        if fleet_ths <= 0:
+            fleet_ths = 5000  # fallback if DB unavailable
+        est_daily_btc = fleet_ths * 86400 / (1e12 * 900)
+        est_daily_usd = est_daily_btc * btc_price
+        lines.append(f"*₿ BTC:* ${btc_price:,.0f} | Est. daily revenue: ~${est_daily_usd:,.0f} ({fleet_ths:,.0f} TH/s)")
 
     # Overnight actions
     actions = data["actions"]

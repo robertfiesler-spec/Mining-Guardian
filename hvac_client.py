@@ -11,17 +11,20 @@ Architecture rule: This runs alongside AMS — not instead of it.
 
 import ssl
 import json
-import base64
-import subprocess
+import os
 import logging
+import requests
 from dataclasses import dataclass, field
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 ECLYPSE_URL  = "https://192.168.188.235"
-ECLYPSE_USER = "BigStar"
-ECLYPSE_PASS = "BigSt@r2020"
+ECLYPSE_USER = os.getenv("ECLYPSE_USER", "BigStar")
+ECLYPSE_PASS = os.getenv("ECLYPSE_PASS", "BigSt@r2020")
 BASE         = f"{ECLYPSE_URL}/api/rest/v1/protocols/bacnet/local/objects"
 
 
@@ -90,14 +93,25 @@ class HVACClient:
     }
 
     def _curl(self, url: str) -> Optional[dict]:
+        """Fetch a BACnet property from the Eclypse controller.
+        Uses requests instead of subprocess curl — proper error handling,
+        HTTP status codes, no shell injection risk.
+        TLS verification disabled because Eclypse uses a self-signed cert.
+        """
         try:
-            r = subprocess.run(
-                ["curl", "-sk", url, "-u", f"{ECLYPSE_USER}:{ECLYPSE_PASS}",
-                 "-L", "--max-time", "6"],
-                capture_output=True, text=True, timeout=8
+            r = requests.get(
+                url,
+                auth=(ECLYPSE_USER, ECLYPSE_PASS),
+                verify=False,
+                timeout=6
             )
-            return json.loads(r.stdout)
-        except Exception:
+            r.raise_for_status()
+            return r.json()
+        except requests.exceptions.RequestException as e:
+            logger.debug("HVAC request failed for %s: %s", url, e)
+            return None
+        except ValueError:
+            logger.debug("HVAC bad JSON from %s", url)
             return None
 
     def _get_prop(self, obj_type: str, oid: str, prop: str) -> Optional[str]:

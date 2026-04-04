@@ -12,6 +12,7 @@ Weekly training passes update it with deeper analysis.
 
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -53,8 +54,12 @@ class KnowledgeManager:
                 seen.append(p)
                 unique.append(p)
         self.knowledge["patterns"] = unique
-        with open(self.knowledge_path, "w") as f:
+        # Atomic write — write to temp file then replace so a crash mid-write
+        # never corrupts knowledge.json (which would silently reset to empty on next load)
+        tmp_path = self.knowledge_path + ".tmp"
+        with open(tmp_path, "w") as f:
             json.dump(self.knowledge, f, indent=2)
+        os.replace(tmp_path, self.knowledge_path)
         logger.info("Knowledge saved — %d known issues, %d patterns",
                      len(self.knowledge["known_issues"]),
                      len(self.knowledge["patterns"]))
