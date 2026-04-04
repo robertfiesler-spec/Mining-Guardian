@@ -34,6 +34,19 @@ g_pdu_power_kw  = Gauge("mining_guardian_pdu_power_kw",  "PDU outlet power draw 
 g_flagged       = Gauge("mining_guardian_flagged",       "1 if currently flagged",       ["miner_ip","model","site","map_location"])
 g_dead_boards   = Gauge("mining_guardian_dead_boards",   "Known dead hashboards count",  ["miner_ip","model","site"])
 
+# Per-board gauges (labels: miner_ip, board, site)
+g_board_rate    = Gauge("mining_guardian_board_rate_mhs",   "Board hashrate MH/s",       ["miner_ip","board","site"])
+g_board_voltage = Gauge("mining_guardian_board_voltage",    "Board voltage V",            ["miner_ip","board","site"])
+g_board_freq    = Gauge("mining_guardian_board_freq_mhz",   "Board frequency MHz",        ["miner_ip","board","site"])
+g_board_power   = Gauge("mining_guardian_board_power_w",    "Board consumption W",        ["miner_ip","board","site"])
+g_board_hwerr   = Gauge("mining_guardian_board_hw_errors",  "Board HW errors",            ["miner_ip","board","site"])
+g_board_temp    = Gauge("mining_guardian_board_temp_c",     "Board temp °C",              ["miner_ip","board","site"])
+
+# Pool gauges (labels: miner_ip, pool_url, site)
+g_pool_accepted = Gauge("mining_guardian_pool_accepted",    "Pool accepted shares",       ["miner_ip","pool_url","site"])
+g_pool_rejected = Gauge("mining_guardian_pool_rejected",    "Pool rejected shares",       ["miner_ip","pool_url","site"])
+g_pool_reject_rate = Gauge("mining_guardian_pool_reject_rate", "Pool rejection rate %",   ["miner_ip","pool_url","site"])
+
 # Fleet gauges
 g_fleet_online   = Gauge("mining_guardian_fleet_online",  "Miners online count",  ["site"])
 g_fleet_offline  = Gauge("mining_guardian_fleet_offline", "Miners offline count", ["site"])
@@ -345,6 +358,39 @@ def metrics():
             g_pdu_power_kw.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(pdu)
             g_flagged.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(flag)
             g_dead_boards.labels(miner_ip=ip, model=mdl, site=SITE).set(dead)
+
+    # Per-board chain readings from latest scan
+    if scan_id_row:
+        chains = conn.execute("""
+            SELECT ip, board_index, rate_mhs, voltage, freq_mhz,
+                   consumption_w, hw_errors, temp_board, temp_chip
+            FROM chain_readings WHERE scan_id = ?
+        """, (scan_id_row["id"],)).fetchall()
+        for c in chains:
+            ip    = c["ip"] or "unknown"
+            board = str(c["board_index"])
+            g_board_rate.labels(miner_ip=ip, board=board, site=SITE).set(c["rate_mhs"] or 0)
+            g_board_voltage.labels(miner_ip=ip, board=board, site=SITE).set(c["voltage"] or 0)
+            g_board_freq.labels(miner_ip=ip, board=board, site=SITE).set(c["freq_mhz"] or 0)
+            g_board_power.labels(miner_ip=ip, board=board, site=SITE).set(c["consumption_w"] or 0)
+            g_board_hwerr.labels(miner_ip=ip, board=board, site=SITE).set(c["hw_errors"] or 0)
+            g_board_temp.labels(miner_ip=ip, board=board, site=SITE).set(c["temp_board"] or 0)
+
+        # Per-pool readings from latest scan
+        pools = conn.execute("""
+            SELECT ip, pool_url, accepted, rejected
+            FROM pool_readings WHERE scan_id = ?
+        """, (scan_id_row["id"],)).fetchall()
+        for p in pools:
+            ip       = p["ip"] or "unknown"
+            pool_url = (p["pool_url"] or "unknown")[:60]  # truncate long URLs
+            accepted = p["accepted"] or 0
+            rejected = p["rejected"] or 0
+            total    = accepted + rejected
+            rej_rate = round((rejected / total) * 100, 2) if total > 0 else 0.0
+            g_pool_accepted.labels(miner_ip=ip, pool_url=pool_url, site=SITE).set(accepted)
+            g_pool_rejected.labels(miner_ip=ip, pool_url=pool_url, site=SITE).set(rejected)
+            g_pool_reject_rate.labels(miner_ip=ip, pool_url=pool_url, site=SITE).set(rej_rate)
 
     # Latest HVAC reading
     hvac = conn.execute(
