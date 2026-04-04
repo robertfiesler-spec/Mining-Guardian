@@ -171,6 +171,84 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
         GROUP BY key, alert_level ORDER BY cnt DESC
     """, (miner_id,)).fetchall()
 
+    # ── #3: Scan-to-scan delta analysis ──────────────────────────
+    # Show the LLM how this miner's metrics CHANGED over time,
+    # not just averages. A slow 30-day decline looks very different
+    # from a sudden single-scan drop. Both need different responses.
+    deltas = conn.execute("""
+        SELECT scanned_at,
+               hashrate_pct,
+               temp_chip,
+               pdu_power,
+               LAG(hashrate_pct) OVER (ORDER BY id) as prev_hr,
+               LAG(temp_chip)    OVER (ORDER BY id) as prev_temp,
+               issue,
+               action
+        FROM miner_readings
+        WHERE miner_id = ?
+        ORDER BY id DESC LIMIT 50
+    """, (miner_id,)).fetchall()
+
+    # Calculate scan-to-scan changes, flag significant swings
+    delta_analysis = []
+    for row in deltas:
+        r = dict(row)
+        if r["prev_hr"] is not None and r["hashrate_pct"] is not None:
+            hr_change = round(r["hashrate_pct"] - r["prev_hr"], 1)
+            temp_change = round((r["temp_chip"] or 0) - (r["prev_temp"] or 0), 1)
+            if abs(hr_change) >= 10 or abs(temp_change) >= 5 or r["action"]:
+                delta_analysis.append({
+                    "time": r["scanned_at"][:16],
+                    "hr_pct": r["hashrate_pct"],
+                    "hr_change": hr_change,
+                    "temp": r["temp_chip"],
+                    "temp_change": temp_change,
+                    "action": r["action"],
+                    "issue": (r["issue"] or "")[:80],
+                })
+
+    # ── #4: Restart outcome correlation ──────────────────────────
+    # For every restart in the audit log, find what the miner looked
+    # like BEFORE and AFTER. This tells the LLM whether restarts
+    # actually fixed problems or just masked them temporarily.
+    restart_outcomes = []
+    audit_rows = conn.execute("""
+        SELECT timestamp, action_taken, decision, problem
+        FROM action_audit_log
+        WHERE miner_id = ? AND action_taken IN ('RESTART','PDU_CYCLE','RESTART_CHECK_BOARDS')
+        AND decision = 'APPROVED'
+        ORDER BY timestamp DESC LIMIT 10
+    """, (miner_id,)).fetchall()
+
+    for restart in audit_rows:
+        ts = restart["timestamp"]
+        # Reading just before restart
+        before = conn.execute("""
+            SELECT hashrate_pct, temp_chip, issue, scanned_at
+            FROM miner_readings WHERE miner_id = ? AND scanned_at <= ?
+            ORDER BY scanned_at DESC LIMIT 1
+        """, (miner_id, ts)).fetchone()
+        # Reading 30 minutes after restart
+        after_ts = datetime.fromisoformat(ts) + timedelta(minutes=30)
+        after = conn.execute("""
+            SELECT hashrate_pct, temp_chip, issue, scanned_at
+            FROM miner_readings WHERE miner_id = ? AND scanned_at >= ?
+            ORDER BY scanned_at ASC LIMIT 1
+        """, (miner_id, after_ts.isoformat())).fetchone()
+
+        outcome = {
+            "restart_time": ts[:16],
+            "action": restart["action_taken"],
+            "problem": (restart["problem"] or "")[:100],
+            "before": dict(before) if before else None,
+            "after": dict(after) if after else None,
+        }
+        if before and after:
+            hr_recovery = round((after["hashrate_pct"] or 0) - (before["hashrate_pct"] or 0), 1)
+            outcome["hr_recovery"] = hr_recovery
+            outcome["resolved"] = hr_recovery > 20 and not after["issue"]
+        restart_outcomes.append(outcome)
+
     return {
         "scan": dict(scan) if scan else {},
         "chains": [dict(c) for c in chains],
@@ -185,6 +263,8 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
                   "health_status": l["health_status"],
                   "content": section_log(l["content"])} for l in logs],
         "ams": [dict(a) for a in ams],
+        "delta_analysis": delta_analysis,
+        "restart_outcomes": restart_outcomes,
     }
 
 
@@ -300,6 +380,41 @@ def build_miner_prompt(miner_id: str, profile: dict) -> str:
                 f"by {a['approved_by']} — {str(a['problem'])[:120]}"
             )
 
+    # ── #3: Scan-to-scan delta analysis ──────────────────────────
+    if profile.get("delta_analysis"):
+        lines.append(f"\n--- PERFORMANCE TREND (significant changes, last 50 scans) ---")
+        lines.append("Shows scan-to-scan changes ≥10% hashrate or ≥5°C temp swing:")
+        for d in profile["delta_analysis"][:20]:
+            hr_dir = "▲" if d["hr_change"] > 0 else "▼"
+            temp_dir = "▲" if d["temp_change"] > 0 else "▼"
+            lines.append(
+                f"  [{d['time']}] HR: {d['hr_pct']}% ({hr_dir}{abs(d['hr_change'])}%) | "
+                f"Temp: {d['temp']}°C ({temp_dir}{abs(d['temp_change'])}°C) | "
+                f"Action: {d['action'] or 'none'} | {d['issue']}"
+            )
+
+    # ── #4: Restart outcome correlation ──────────────────────────
+    if profile.get("restart_outcomes"):
+        lines.append(f"\n--- RESTART OUTCOMES (what actually happened after each restart) ---")
+        for r in profile["restart_outcomes"]:
+            resolved = r.get("resolved")
+            outcome_str = "✅ RESOLVED" if resolved else "❌ NOT RESOLVED" if resolved is False else "? UNKNOWN"
+            lines.append(f"  [{r['restart_time']}] {r['action']} — {outcome_str}")
+            lines.append(f"    Problem: {r['problem']}")
+            if r["before"]:
+                lines.append(
+                    f"    Before: HR={r['before'].get('hashrate_pct')}% "
+                    f"temp={r['before'].get('temp_chip')}°C"
+                )
+            if r["after"]:
+                lines.append(
+                    f"    After:  HR={r['after'].get('hashrate_pct')}% "
+                    f"temp={r['after'].get('temp_chip')}°C "
+                    f"(+{r.get('hr_recovery', '?')}% HR recovery)"
+                )
+                if r["after"].get("issue"):
+                    lines.append(f"    Still flagged after: {r['after']['issue'][:80]}")
+
     # Full logs — sectioned
     if profile["logs"]:
         lines.append(f"\n--- MINER LOGS ({len(profile['logs'])} files) ---")
@@ -319,6 +434,191 @@ def build_miner_prompt(miner_id: str, profile: dict) -> str:
         "5. What is your confidence level: is this HARDWARE failure, FIRMWARE issue, or ENVIRONMENTAL?\n"
         "6. What specific action should be taken? (restart / ticket / profile change / monitoring)\n"
         "Keep response concise — max 15 lines."
+    )
+
+    return "\n".join(lines)
+
+
+def get_cross_miner_correlations(conn) -> str:
+    """#5: Cross-miner correlation analysis.
+
+    Finds patterns ACROSS miners — shared hardware batches, common chip bins,
+    models that consistently underperform, board serials that appear in multiple
+    miners (swapped boards), and fleet-wide patterns by chip grade.
+    """
+    lines = ["=== CROSS-MINER CORRELATION ANALYSIS ==="]
+
+    # Group miners by chip bin — do certain bins fail more?
+    chip_bin_perf = conn.execute("""
+        SELECT h.chip_bin,
+               COUNT(DISTINCT h.miner_id) as miner_count,
+               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct,
+               ROUND(AVG(CASE WHEN mr.temp_chip > 0 THEN mr.temp_chip END), 1) as avg_temp,
+               SUM(CASE WHEN mr.action NOT IN ('MONITOR','') AND mr.action IS NOT NULL
+                   THEN 1 ELSE 0 END) as total_flags
+        FROM miner_hardware h
+        JOIN miner_readings mr ON h.miner_id = mr.miner_id
+        WHERE h.chip_bin IS NOT NULL
+        GROUP BY h.chip_bin
+        ORDER BY avg_hr_pct ASC
+    """).fetchall()
+    if chip_bin_perf:
+        lines.append("\n--- PERFORMANCE BY CHIP BIN GRADE ---")
+        lines.append("(Does chip quality grade predict performance?)")
+        for r in chip_bin_perf:
+            lines.append(
+                f"  Bin {r['chip_bin']}: {r['miner_count']} miners | "
+                f"avg HR={r['avg_hr_pct']}% | avg temp={r['avg_temp']}°C | "
+                f"total flags={r['total_flags']}"
+            )
+
+    # Group by chip die/technology — different silicon behaves differently
+    chip_die_perf = conn.execute("""
+        SELECT h.chip_die, h.chip_technology,
+               COUNT(DISTINCT h.miner_id) as miner_count,
+               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct,
+               SUM(CASE WHEN mr.action NOT IN ('MONITOR','') AND mr.action IS NOT NULL
+                   THEN 1 ELSE 0 END) as total_flags
+        FROM miner_hardware h
+        JOIN miner_readings mr ON h.miner_id = mr.miner_id
+        WHERE h.chip_die IS NOT NULL
+        GROUP BY h.chip_die, h.chip_technology
+        ORDER BY avg_hr_pct ASC
+    """).fetchall()
+    if chip_die_perf:
+        lines.append("\n--- PERFORMANCE BY CHIP DIE/TECHNOLOGY ---")
+        for r in chip_die_perf:
+            lines.append(
+                f"  Die={r['chip_die']} tech={r['chip_technology']}: "
+                f"{r['miner_count']} miners | avg HR={r['avg_hr_pct']}% | "
+                f"total flags={r['total_flags']}"
+            )
+
+    # Board serial batches — same SN prefix = same production batch
+    # Boards from same batch often fail together
+    serial_batch_perf = conn.execute("""
+        SELECT SUBSTR(h.serial_number, 1, 8) as sn_batch,
+               h.board_name,
+               COUNT(DISTINCT h.miner_id) as miner_count,
+               COUNT(*) as board_count,
+               ROUND(AVG(cr.rate_mhs), 0) as avg_rate_mhs,
+               SUM(cr.hw_errors) as total_hw_errors,
+               SUM(CASE WHEN cr.rate_mhs < 1000 THEN 1 ELSE 0 END) as dead_readings
+        FROM miner_hardware h
+        LEFT JOIN chain_readings cr ON h.miner_id = cr.miner_id
+            AND h.board_index = cr.board_index
+        WHERE h.serial_number IS NOT NULL
+        GROUP BY sn_batch, h.board_name
+        HAVING board_count > 1
+        ORDER BY total_hw_errors DESC, dead_readings DESC
+    """).fetchall()
+    if serial_batch_perf:
+        lines.append("\n--- BOARD SERIAL BATCHES (shared production runs) ---")
+        lines.append("(Boards from same batch often share failure modes)")
+        for r in serial_batch_perf:
+            lines.append(
+                f"  Batch {r['sn_batch']}... ({r['board_name']}): "
+                f"{r['board_count']} boards across {r['miner_count']} miners | "
+                f"avg rate={r['avg_rate_mhs']} MH/s | "
+                f"HW errors={r['total_hw_errors']} | dead readings={r['dead_readings']}"
+            )
+
+    # PCB version performance — newer PCB revisions may have fixed issues
+    pcb_perf = conn.execute("""
+        SELECT h.pcb_version, h.bom_version,
+               COUNT(DISTINCT h.miner_id) as miner_count,
+               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct,
+               SUM(CASE WHEN mr.action NOT IN ('MONITOR','') AND mr.action IS NOT NULL
+                   THEN 1 ELSE 0 END) as total_flags
+        FROM miner_hardware h
+        JOIN miner_readings mr ON h.miner_id = mr.miner_id
+        WHERE h.pcb_version IS NOT NULL
+        GROUP BY h.pcb_version, h.bom_version
+        ORDER BY avg_hr_pct ASC
+    """).fetchall()
+    if pcb_perf:
+        lines.append("\n--- PERFORMANCE BY PCB/BOM VERSION ---")
+        for r in pcb_perf:
+            lines.append(
+                f"  PCB={r['pcb_version']} BOM={r['bom_version']}: "
+                f"{r['miner_count']} miners | avg HR={r['avg_hr_pct']}% | "
+                f"total flags={r['total_flags']}"
+            )
+
+    # PSU version performance — different PSU firmware behavior
+    psu_perf = conn.execute("""
+        SELECT h.psu_version,
+               COUNT(DISTINCT h.miner_id) as miner_count,
+               ROUND(AVG(lm.value_1), 3) as avg_voltage,
+               ROUND(MIN(lm.value_1), 3) as min_voltage,
+               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct
+        FROM miner_hardware h
+        LEFT JOIN log_metrics lm ON h.miner_id = lm.miner_id
+            AND lm.metric_type = 'psu_voltage'
+        JOIN miner_readings mr ON h.miner_id = mr.miner_id
+        WHERE h.psu_version IS NOT NULL
+        GROUP BY h.psu_version
+        ORDER BY avg_voltage ASC
+    """).fetchall()
+    if psu_perf:
+        lines.append("\n--- PERFORMANCE BY PSU VERSION ---")
+        for r in psu_perf:
+            lines.append(
+                f"  PSU {r['psu_version']}: {r['miner_count']} miners | "
+                f"avg voltage={r['avg_voltage']}V min={r['min_voltage']}V | "
+                f"avg HR={r['avg_hr_pct']}%"
+            )
+
+    # Top flagged miners — the chronic problem cases
+    chronic = conn.execute("""
+        SELECT miner_id, ip, model,
+               COUNT(*) as scan_count,
+               SUM(CASE WHEN action NOT IN ('MONITOR','') AND action IS NOT NULL
+                   THEN 1 ELSE 0 END) as times_flagged,
+               ROUND(AVG(hashrate_pct), 1) as avg_hr,
+               GROUP_CONCAT(DISTINCT action) as actions
+        FROM miner_readings
+        GROUP BY miner_id
+        HAVING times_flagged > 5
+        ORDER BY times_flagged DESC LIMIT 15
+    """).fetchall()
+    if chronic:
+        lines.append("\n--- CHRONICALLY FLAGGED MINERS ---")
+        for r in chronic:
+            lines.append(
+                f"  Miner {r['miner_id']} ({r['model']}) @ {r['ip']}: "
+                f"flagged {r['times_flagged']}/{r['scan_count']} scans "
+                f"({round(r['times_flagged']/r['scan_count']*100,0):.0f}%) | "
+                f"avg HR={r['avg_hr']}% | actions: {r['actions']}"
+            )
+
+    # Restart effectiveness fleet-wide — do restarts actually work?
+    restart_stats = conn.execute("""
+        SELECT action_taken,
+               COUNT(*) as total,
+               SUM(CASE WHEN decision='APPROVED' THEN 1 ELSE 0 END) as approved,
+               SUM(CASE WHEN decision='DENIED' THEN 1 ELSE 0 END) as denied
+        FROM action_audit_log
+        GROUP BY action_taken
+        ORDER BY total DESC
+    """).fetchall()
+    if restart_stats:
+        lines.append("\n--- FLEET-WIDE ACTION STATISTICS ---")
+        for r in restart_stats:
+            lines.append(
+                f"  {r['action_taken']}: {r['total']} total | "
+                f"{r['approved']} approved | {r['denied']} denied"
+            )
+
+    lines.append(
+        "\n=== CROSS-MINER ANALYSIS REQUESTED ===\n"
+        "Based on the fleet-wide data above:\n"
+        "1. Which chip bin grades, PCB versions, or serial batches are underperforming?\n"
+        "2. Are there patterns suggesting a systematic hardware quality issue?\n"
+        "3. Which miners share the same failure mode and why?\n"
+        "4. Do restarts actually work, or are they masking deeper hardware issues?\n"
+        "5. What procurement or operational decisions does this data suggest?\n"
+        "Keep response to 15 lines max."
     )
 
     return "\n".join(lines)
@@ -422,13 +722,11 @@ def run_comprehensive_training():
         summary_lines = [
             f"Fleet summary after comprehensive analysis of {len(results)} miners:",
             f"Miners with issues: {sum(1 for r in results if r['flagged'] > 0)}",
-            f"Most flagged: {sorted(results, key=lambda x: x['flagged'], reverse=True)[:5]}",
-            "",
-            "Individual miner analyses:",
         ]
-        for r in results:
+        for r in sorted(results, key=lambda x: x['flagged'], reverse=True)[:10]:
             summary_lines.append(
-                f"Miner {r['miner_id']} ({r['model']}) @ {r['ip']}: {r['analysis'][:200]}"
+                f"Miner {r['miner_id']} ({r['model']}) @ {r['ip']}: "
+                f"flagged {r['flagged']}x — {r['analysis'][:150]}"
             )
         summary_prompt = (
             "\n".join(summary_lines) +
@@ -440,6 +738,18 @@ def run_comprehensive_training():
         logger.info("Fleet summary complete")
         print("\nFLEET SUMMARY:")
         print(fleet_summary)
+
+    # ── #5: Cross-miner correlation pass ─────────────────────────
+    logger.info("Running cross-miner correlation analysis...")
+    conn2 = sqlite3.connect(DB_PATH)
+    conn2.row_factory = sqlite3.Row
+    cross_miner_prompt = get_cross_miner_correlations(conn2)
+    conn2.close()
+    cross_response = analyzer.deep_analyze(cross_miner_prompt)
+    km.add_llm_insight(cross_response[:500], miner_id="fleet_cross_miner")
+    logger.info("Cross-miner analysis complete")
+    print("\nCROSS-MINER CORRELATIONS:")
+    print(cross_response)
 
     km.save()
     logger.info("=" * 60)
