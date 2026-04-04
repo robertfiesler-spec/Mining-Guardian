@@ -19,8 +19,38 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+# ── Prometheus metrics ────────────────────────────────────────
+from prometheus_client import (
+    Gauge, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
+)
+
+# Per-miner gauges (labels: miner_ip, model, site, map_location)
+g_hashrate_pct  = Gauge("mining_guardian_hashrate_pct",  "Hashrate % of rated",         ["miner_ip","model","site","map_location"])
+g_temp_chip     = Gauge("mining_guardian_temp_chip",     "Chip temperature °C",          ["miner_ip","model","site","map_location"])
+g_pdu_power_kw  = Gauge("mining_guardian_pdu_power_kw",  "PDU outlet power draw kW",    ["miner_ip","model","site","map_location"])
+g_flagged       = Gauge("mining_guardian_flagged",       "1 if currently flagged",       ["miner_ip","model","site","map_location"])
+g_dead_boards   = Gauge("mining_guardian_dead_boards",   "Known dead hashboards count",  ["miner_ip","model","site"])
+
+# Fleet gauges
+g_fleet_online   = Gauge("mining_guardian_fleet_online",  "Miners online count",  ["site"])
+g_fleet_offline  = Gauge("mining_guardian_fleet_offline", "Miners offline count", ["site"])
+g_fleet_issues   = Gauge("mining_guardian_fleet_issues",  "Miners with issues",   ["site"])
+
+# HVAC gauges
+g_hvac_supply    = Gauge("mining_guardian_hvac_supply_f",      "Supply water temp °F",       ["site"])
+g_hvac_return    = Gauge("mining_guardian_hvac_return_f",      "Return water temp °F",       ["site"])
+g_hvac_delta_t   = Gauge("mining_guardian_hvac_delta_t_f",     "Delta T °F",                 ["site"])
+g_hvac_pressure  = Gauge("mining_guardian_hvac_diff_pressure", "Differential pressure PSI",  ["site"])
+g_spray_pump     = Gauge("mining_guardian_spray_pump_on",      "Spray pump on 1/0",          ["site"])
+
+# Environment gauges
+g_outside_temp   = Gauge("mining_guardian_outside_temp_f", "Outside temp °F",   ["site"])
+g_humidity       = Gauge("mining_guardian_humidity_pct",   "Outside humidity %", ["site"])
+
+SITE = "usa_188"
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "guardian.db")
 app = FastAPI(title="Mining Guardian API", version="1.0.0")
@@ -261,7 +291,88 @@ def get_db():
     return conn
 
 
-# ── Fleet Status ─────────────────────────────────────────────
+# ── Prometheus /metrics endpoint ─────────────────────────────
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus metrics endpoint — scraped every 30s by Prometheus."""
+    conn = get_db()
+
+    # Latest scan summary
+    scan = conn.execute(
+        "SELECT online, offline, issues FROM scans ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if scan:
+        g_fleet_online.labels(site=SITE).set(scan["online"])
+        g_fleet_offline.labels(site=SITE).set(scan["offline"])
+        g_fleet_issues.labels(site=SITE).set(scan["issues"])
+
+    # Per-miner readings from latest scan
+    scan_id_row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+    if scan_id_row:
+        miners = conn.execute("""
+            SELECT ip, model, hashrate_pct, temp_chip, pdu_power,
+                   map_location, issue
+            FROM miner_readings
+            WHERE scan_id = ?
+        """, (scan_id_row["id"],)).fetchall()
+
+        # Get dead board miner IPs
+        dead_board_ips = set(
+            r["ip"] for r in conn.execute(
+                "SELECT ip FROM known_dead_boards WHERE resolved_at IS NULL"
+            ).fetchall()
+        )
+
+        for m in miners:
+            ip  = m["ip"] or "unknown"
+            mdl = (m["model"] or "unknown").replace(" ", "_")
+            loc = (m["map_location"] or "unknown").replace(" ", "_")
+
+            # hashrate_pct stored as float e.g. 76.2
+            try:
+                hr = float(m["hashrate_pct"]) if m["hashrate_pct"] else 0.0
+            except (ValueError, TypeError):
+                hr = 0.0
+
+            temp = m["temp_chip"] if m["temp_chip"] is not None else -1
+            pdu  = m["pdu_power"] if m["pdu_power"] is not None else 0.0
+            flag = 1 if m["issue"] else 0
+            dead = 1 if ip in dead_board_ips else 0
+
+            g_hashrate_pct.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(hr)
+            g_temp_chip.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(temp)
+            g_pdu_power_kw.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(pdu)
+            g_flagged.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(flag)
+            g_dead_boards.labels(miner_ip=ip, model=mdl, site=SITE).set(dead)
+
+    # Latest HVAC reading
+    hvac = conn.execute(
+        "SELECT * FROM hvac_readings ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if hvac:
+        if hvac["supply_temp_f"] is not None:
+            g_hvac_supply.labels(site=SITE).set(hvac["supply_temp_f"])
+        if hvac["return_temp_f"] is not None:
+            g_hvac_return.labels(site=SITE).set(hvac["return_temp_f"])
+        if hvac["delta_t_f"] is not None:
+            g_hvac_delta_t.labels(site=SITE).set(hvac["delta_t_f"])
+        if hvac["diff_pressure"] is not None:
+            g_hvac_pressure.labels(site=SITE).set(hvac["diff_pressure"])
+        g_spray_pump.labels(site=SITE).set(hvac["spray_pump_on"] or 0)
+
+    # Latest weather reading
+    wx = conn.execute(
+        "SELECT temp_f, humidity_pct FROM weather_readings ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if wx:
+        if wx["temp_f"] is not None:
+            g_outside_temp.labels(site=SITE).set(wx["temp_f"])
+        if wx["humidity_pct"] is not None:
+            g_humidity.labels(site=SITE).set(wx["humidity_pct"])
+
+    conn.close()
+    return PlainTextResponse(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/fleet/latest")
 def fleet_latest():
