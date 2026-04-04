@@ -423,24 +423,19 @@ def metrics():
 
 @app.get("/miner/status/{miner_ip}")
 def miner_status(miner_ip: str):
-    """Current problem + full action history for a specific miner IP.
-    Used by the Per Miner dashboard status panel.
-    """
+    """Current problem + full action history for a specific miner IP."""
     conn = get_db()
     miner_ip_clean = miner_ip.replace("_", ".")
 
-    # Current issue from latest scan
     current = conn.execute("""
         SELECT mr.ip, mr.model, mr.issue, mr.action, mr.scanned_at,
                mr.hashrate_pct, mr.temp_chip, mr.pdu_power, mr.status,
                mr.current_profile, mr.map_location
         FROM miner_readings mr
-        JOIN scans s ON mr.scan_id = s.id
         WHERE mr.ip = ?
         ORDER BY mr.id DESC LIMIT 1
     """, (miner_ip_clean,)).fetchone()
 
-    # Full audit history for this miner
     history = conn.execute("""
         SELECT timestamp, problem, action_taken, decision, approved_by, notes
         FROM action_audit_log
@@ -448,7 +443,6 @@ def miner_status(miner_ip: str):
         ORDER BY timestamp DESC LIMIT 20
     """, (miner_ip_clean,)).fetchall()
 
-    # Dead board info if any
     dead_boards = conn.execute("""
         SELECT board_indices, first_seen, restart_attempted,
                restart_result, ticket_created
@@ -462,6 +456,127 @@ def miner_status(miner_ip: str):
         "history": [dict(r) for r in history],
         "dead_boards": dict(dead_boards) if dead_boards else None,
     }
+
+@app.get("/miner/status_html/{miner_ip}", response_class=HTMLResponse)
+def miner_status_html(miner_ip: str):
+    """Styled HTML status page for a miner — embeddable in Grafana text panel as iframe."""
+    conn = get_db()
+    miner_ip_clean = miner_ip.replace("_", ".")
+
+    current = conn.execute("""
+        SELECT ip, model, issue, action, scanned_at,
+               hashrate_pct, temp_chip, pdu_power, status,
+               current_profile, map_location
+        FROM miner_readings WHERE ip = ?
+        ORDER BY id DESC LIMIT 1
+    """, (miner_ip_clean,)).fetchone()
+
+    history = conn.execute("""
+        SELECT timestamp, problem, action_taken, decision, approved_by, notes
+        FROM action_audit_log WHERE ip = ?
+        ORDER BY timestamp DESC LIMIT 15
+    """, (miner_ip_clean,)).fetchall()
+
+    dead = conn.execute("""
+        SELECT board_indices, first_seen, restart_attempted,
+               restart_result, ticket_created
+        FROM known_dead_boards WHERE ip = ? AND resolved_at IS NULL
+    """, (miner_ip_clean,)).fetchone()
+
+    conn.close()
+
+    # Build current status block
+    if current:
+        status_color = "#2ecc71" if not current["issue"] else "#e74c3c"
+        action_colors = {
+            "RESTART": "#e67e22", "PDU_CYCLE": "#e74c3c",
+            "MONITOR": "#f39c12", "RESTART_CHECK_BOARDS": "#c0392b",
+            "PHYSICAL_CYCLE": "#8e44ad", "TEMP_ACTION_REQUIRED": "#e74c3c",
+        }
+        action_color = action_colors.get(current["action"] or "", "#95a5a6")
+        current_html = f"""
+        <div class="current-block">
+            <div class="row">
+                <span class="label">Status</span>
+                <span class="badge" style="background:{status_color}">
+                    {current["status"].upper() if current["status"] else "UNKNOWN"}
+                </span>
+                {f'<span class="badge" style="background:{action_color};margin-left:6px">{current["action"]}</span>' if current["action"] else ""}
+            </div>
+            <div class="row"><span class="label">Model</span><span>{current["model"] or "—"}</span></div>
+            <div class="row"><span class="label">Profile</span><span>{current["current_profile"] or "—"}</span></div>
+            <div class="row"><span class="label">Location</span><span>{current["map_location"] or "not mapped"}</span></div>
+            <div class="row"><span class="label">Hashrate</span><span>{current["hashrate_pct"]}%</span></div>
+            <div class="row"><span class="label">Chip Temp</span><span>{current["temp_chip"]}°C</span></div>
+            <div class="row"><span class="label">PDU Power</span><span>{current["pdu_power"]} kW</span></div>
+            <div class="row"><span class="label">Last Scan</span><span>{(current["scanned_at"] or "")[:16].replace("T"," ")}</span></div>
+            {f'<div class="issue-box">⚠️ {current["issue"]}</div>' if current["issue"] else '<div class="ok-box">✅ No active issues</div>'}
+        </div>"""
+    else:
+        current_html = '<div class="current-block"><p style="color:#aaa">No data yet</p></div>'
+
+    # Dead board warning
+    dead_html = ""
+    if dead:
+        dead_html = f"""
+        <div class="dead-board-box">
+            🔴 <strong>Known Dead Boards:</strong> {dead["board_indices"]}<br>
+            First seen: {(dead["first_seen"] or "")[:16].replace("T"," ")} |
+            Ticket: {dead["ticket_created"] or "pending"}
+        </div>"""
+
+    # Audit history table
+    if history:
+        rows_html = ""
+        for h in history:
+            dec_color = "#2ecc71" if h["decision"] == "APPROVED" else "#e74c3c" if h["decision"] == "DENIED" else "#f39c12"
+            ts = (h["timestamp"] or "")[:16].replace("T", " ")
+            rows_html += f"""<tr>
+                <td>{ts}</td>
+                <td><span style="color:{dec_color};font-weight:600">{h["decision"]}</span></td>
+                <td>{h["action_taken"] or "—"}</td>
+                <td style="color:#aaa;font-size:11px">{h["approved_by"] or "—"}</td>
+                <td style="font-size:11px;max-width:300px;word-break:break-word">{h["problem"] or "—"}</td>
+            </tr>"""
+        history_html = f"""
+        <table>
+            <thead><tr>
+                <th>Time</th><th>Decision</th><th>Action</th><th>By</th><th>Problem</th>
+            </tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table>"""
+    else:
+        history_html = '<p style="color:#aaa;font-size:13px">No actions taken yet</p>'
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  * {{margin:0;padding:0;box-sizing:border-box}}
+  body {{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         background:#111;color:#ddd;padding:12px;font-size:13px}}
+  h3 {{font-size:14px;color:#fff;margin-bottom:8px;border-bottom:1px solid #333;padding-bottom:6px}}
+  .current-block {{margin-bottom:12px}}
+  .row {{display:flex;gap:10px;padding:3px 0;border-bottom:1px solid #1a1a1a}}
+  .label {{color:#888;width:90px;flex-shrink:0}}
+  .badge {{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#fff}}
+  .issue-box {{background:#2a1010;border-left:3px solid #e74c3c;padding:6px 8px;
+               margin-top:8px;border-radius:2px;font-size:12px;color:#e74c3c}}
+  .ok-box {{background:#0d1f0d;border-left:3px solid #2ecc71;padding:6px 8px;
+            margin-top:8px;border-radius:2px;font-size:12px;color:#2ecc71}}
+  .dead-board-box {{background:#2a1010;border-left:3px solid #c0392b;padding:8px;
+                    margin-bottom:12px;border-radius:2px;font-size:12px;color:#e88}}
+  table {{width:100%;border-collapse:collapse;font-size:12px}}
+  th {{background:#1a1a1a;color:#888;padding:5px 8px;text-align:left;font-weight:500}}
+  td {{padding:5px 8px;border-bottom:1px solid #1a1a1a;vertical-align:top}}
+  tr:hover td {{background:#1a1a1a}}
+</style>
+</head><body>
+<h3>Current Status — {miner_ip_clean}</h3>
+{current_html}
+{dead_html}
+<h3 style="margin-top:12px">Action History</h3>
+{history_html}
+</body></html>"""
 def fleet_latest():
     """Latest scan summary — fleet status right now."""
     conn = get_db()
