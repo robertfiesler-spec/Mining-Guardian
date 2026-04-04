@@ -1508,6 +1508,71 @@ class GuardianDB:
 
                 CREATE INDEX IF NOT EXISTS idx_state_miner
                     ON miner_state_readings(miner_id, scanned_at);
+
+                -- ── Miner hardware identity table ──────────────────────────────────
+                -- Populated by parsing CGMiner/BixMiner logs at boot or log collection time.
+                -- One row per board per miner — updated when new data is found.
+                -- This is the permanent hardware identity record for the fleet.
+                -- Fields sourced from miner.log EEPROM lines:
+                --   board_name, serial_number, chip_die, chip_marking, chip_technology
+                --   pcb_version, bom_version, chip_bin, chip_ft_ver
+                -- Fields sourced from miner.log device detection:
+                --   control_board, psu_version, bixminer_version, topol_machine
+                --   device_name, asic_count, bad_chips_count
+                -- This data never changes unless a board is physically replaced.
+                -- When repair shop data arrives, cross-reference by board serial number.
+                CREATE TABLE IF NOT EXISTS miner_hardware (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    miner_id            TEXT    NOT NULL,
+                    ip                  TEXT,
+                    mac                 TEXT,
+                    board_index         INTEGER NOT NULL,
+                    board_name          TEXT,
+                    serial_number       TEXT,
+                    chip_die            TEXT,
+                    chip_marking        TEXT,
+                    chip_technology     TEXT,
+                    pcb_version         TEXT,
+                    bom_version         TEXT,
+                    chip_bin            TEXT,
+                    chip_ft_ver         TEXT,
+                    ideal_hashrate      INTEGER,
+                    control_board       TEXT,
+                    psu_version         TEXT,
+                    bixminer_version    TEXT,
+                    topol_machine       TEXT,
+                    device_name         TEXT,
+                    asic_count          INTEGER,
+                    bad_chips_count     INTEGER,
+                    pic_version         TEXT,
+                    first_seen          TEXT    NOT NULL,
+                    last_updated        TEXT    NOT NULL,
+                    log_source          TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_hardware_miner_board
+                    ON miner_hardware(miner_id, board_index);
+
+                -- ── AMS miner_readings extended fields ─────────────────────────────
+                -- Stores fields from AMS that belong in miner_readings but weren't there:
+                -- timestamp (AMS reading time), map coordinates, stratum URL, pdu counter
+                CREATE TABLE IF NOT EXISTS miner_ams_extended (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id             INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at          TEXT    NOT NULL,
+                    miner_id            TEXT    NOT NULL,
+                    ip                  TEXT,
+                    ams_timestamp       TEXT,
+                    map_location_id     INTEGER,
+                    map_x               REAL,
+                    map_y               REAL,
+                    pdu_counter         REAL,
+                    stratum_url         TEXT,
+                    favorite            INTEGER DEFAULT 0
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_ams_ext_miner
+                    ON miner_ams_extended(miner_id, scanned_at);
             """)
         logger.info("Database ready at %s", self.db_path)
 
@@ -1745,7 +1810,7 @@ class GuardianDB:
 
     def save_logs(self, miner_id: str, model: str, health_status: str,
                   log_files: Dict[str, str]) -> None:
-        """Store extracted log file contents for a miner."""
+        """Store extracted log file contents and parse hardware identity from miner.log."""
         now = datetime.now().isoformat()
         rows = [
             (now, miner_id, model, health_status, filename, content)
@@ -1759,6 +1824,24 @@ class GuardianDB:
                 rows
             )
         logger.info("Saved %s log files for miner %s (%s)", len(rows), miner_id, health_status)
+
+        # Parse hardware identity from miner.log automatically
+        for filename, content in log_files.items():
+            if "miner.log" in filename and content:
+                try:
+                    # Get ip/mac from latest miner_readings
+                    with self._connect() as conn:
+                        row = conn.execute(
+                            "SELECT ip, mac FROM miner_readings WHERE miner_id=? ORDER BY id DESC LIMIT 1",
+                            (miner_id,)
+                        ).fetchone()
+                    ip  = row["ip"] if row else ""
+                    mac = row["mac"] if row else ""
+                    boards = self.parse_and_save_hardware(miner_id, ip, mac, content, filename)
+                    if boards:
+                        logger.info("[%s] Hardware identity extracted: %s boards", miner_id, boards)
+                except Exception as e:
+                    logger.warning("[%s] Hardware parse failed: %s", miner_id, e)
 
     def purge_old_logs(self, days: int = 7) -> int:
         """Delete miner log entries older than N days. Returns count deleted.
@@ -1945,6 +2028,169 @@ class GuardianDB:
                  miner_status, cooling_mode, worker_version, active_pool_user)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, rows)
+
+    def save_ams_extended(self, scan_id: int, scanned_at: str, miners: List[Dict]) -> None:
+        """Store AMS fields not captured elsewhere: timestamp, map coords, pdu counter, stratum URL."""
+        rows = []
+        for m in miners:
+            map_loc = m.get("mapLocation") or {}
+            pdu_out = m.get("pduOutlet") or {}
+            # Get stratum URL from primary pool
+            pools = m.get("pools") or []
+            stratum_url = pools[0].get("stratumURL", "") if pools else ""
+            rows.append((
+                scan_id, scanned_at, str(m.get("id", "")), m.get("ip", ""),
+                m.get("timestamp", ""),
+                map_loc.get("id"),
+                map_loc.get("x"),
+                map_loc.get("y"),
+                pdu_out.get("counter"),
+                stratum_url,
+                1 if m.get("favorite") else 0,
+            ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            conn.executemany("""
+                INSERT INTO miner_ams_extended
+                (scan_id, scanned_at, miner_id, ip,
+                 ams_timestamp, map_location_id, map_x, map_y,
+                 pdu_counter, stratum_url, favorite)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """, rows)
+
+    def parse_and_save_hardware(self, miner_id: str, ip: str, mac: str,
+                                 log_content: str, log_source: str) -> int:
+        """Parse CGMiner/BixMiner miner.log and extract hardware identity.
+
+        Extracts from EEPROM lines per board:
+          board_name, serial_number, chip_die, chip_marking, chip_technology,
+          pcb_version, bom_version, chip_bin, chip_ft_ver, ideal_hashrate
+
+        Extracts from device detection lines:
+          control_board, psu_version, bixminer_version, topol_machine,
+          device_name, asic_count, bad_chips_count, pic_version
+
+        Returns count of boards parsed.
+        """
+        import re
+        now = datetime.now().isoformat()
+
+        # Per-board EEPROM data
+        eeprom_pattern = re.compile(
+            r'Eeprom chain \[(\d+)\] '
+            r'board_name: (\S+), '
+            r'sn_oom: (\S+), '
+            r'chip_die_oom: (\S+), '
+            r'chip_marking_oom: (\S+), '
+            r'chip_technology_oom: (\S+).*?'
+            r'chip_bin (\S+).*?'
+            r'chip_ft_ver (\S+).*?'
+            r'pcb_version (\S+).*?'
+            r'bom_version (\S+).*?'
+            r'voltage \d+.*?'
+            r'freq \d+.*?'
+            r'ideal_hashrate (\d+)',
+            re.MULTILINE
+        )
+
+        # Device-level fields
+        control_board  = re.search(r'Control board: (\S+)', log_content)
+        psu_version    = re.search(r'Detected psu version: (\S+)', log_content)
+        bixminer_ver   = re.search(r'BixMiner ver: ([\S]+),', log_content)
+        topol_machine  = re.search(r'Topol machine: (\S+)', log_content)
+        device_name    = re.search(r'Device name: (.+)', log_content)
+
+        ctrl_board_val  = control_board.group(1) if control_board else None
+        psu_ver_val     = psu_version.group(1) if psu_version else None
+        bixminer_val    = bixminer_ver.group(1) if bixminer_ver else None
+        topol_val       = topol_machine.group(1) if topol_machine else None
+        device_val      = device_name.group(1).strip() if device_name else None
+
+        # Per-board asic counts
+        asic_pattern = re.compile(r'Chain\[(\d+)\]: found (\d+) asic, bad chips (\d+)')
+        asic_map = {}
+        for match in asic_pattern.finditer(log_content):
+            idx = int(match.group(1))
+            asic_map[idx] = {"asic_count": int(match.group(2)), "bad_chips": int(match.group(3))}
+
+        # PIC versions (one per board)
+        pic_pattern = re.compile(r'Pic \[(\d+)\] version (\d+)')
+        pic_map = {}
+        for match in pic_pattern.finditer(log_content):
+            pic_map[int(match.group(1))] = match.group(2)
+
+        boards_parsed = 0
+        with self._connect() as conn:
+            for match in eeprom_pattern.finditer(log_content):
+                board_idx = int(match.group(1))
+                asic_info = asic_map.get(board_idx, {})
+                pic_ver   = pic_map.get(board_idx)
+
+                conn.execute("""
+                    INSERT INTO miner_hardware
+                    (miner_id, ip, mac, board_index, board_name, serial_number,
+                     chip_die, chip_marking, chip_technology,
+                     pcb_version, bom_version, chip_bin, chip_ft_ver, ideal_hashrate,
+                     control_board, psu_version, bixminer_version, topol_machine,
+                     device_name, asic_count, bad_chips_count, pic_version,
+                     first_seen, last_updated, log_source)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(miner_id, board_index) DO UPDATE SET
+                        board_name=excluded.board_name,
+                        serial_number=excluded.serial_number,
+                        chip_die=excluded.chip_die,
+                        chip_marking=excluded.chip_marking,
+                        chip_technology=excluded.chip_technology,
+                        pcb_version=excluded.pcb_version,
+                        bom_version=excluded.bom_version,
+                        chip_bin=excluded.chip_bin,
+                        chip_ft_ver=excluded.chip_ft_ver,
+                        ideal_hashrate=excluded.ideal_hashrate,
+                        control_board=excluded.control_board,
+                        psu_version=excluded.psu_version,
+                        bixminer_version=excluded.bixminer_version,
+                        topol_machine=excluded.topol_machine,
+                        device_name=excluded.device_name,
+                        asic_count=excluded.asic_count,
+                        bad_chips_count=excluded.bad_chips_count,
+                        pic_version=excluded.pic_version,
+                        last_updated=excluded.last_updated,
+                        log_source=excluded.log_source
+                """, (
+                    miner_id, ip, mac, board_idx,
+                    match.group(2),   # board_name
+                    match.group(3),   # serial_number
+                    match.group(4),   # chip_die
+                    match.group(5),   # chip_marking
+                    match.group(6),   # chip_technology
+                    match.group(9),   # pcb_version
+                    match.group(10),  # bom_version
+                    match.group(7),   # chip_bin
+                    match.group(8),   # chip_ft_ver
+                    int(match.group(11)),  # ideal_hashrate
+                    ctrl_board_val, psu_ver_val, bixminer_val,
+                    topol_val, device_val,
+                    asic_info.get("asic_count"),
+                    asic_info.get("bad_chips"),
+                    pic_ver,
+                    now, now, log_source
+                ))
+                boards_parsed += 1
+
+        if boards_parsed:
+            logger.info("[%s] Hardware identity parsed: %s boards from %s",
+                        miner_id, boards_parsed, log_source)
+        return boards_parsed
+
+    def get_hardware_identity(self, miner_id: str) -> List[Dict]:
+        """Return hardware identity records for a miner (one per board)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM miner_hardware WHERE miner_id=? ORDER BY board_index",
+                (miner_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def last_log_collected(self, miner_id: str) -> Optional[datetime]:
         """Return datetime of last log collection for this miner, or None."""
@@ -3377,6 +3623,7 @@ class MiningGuardian:
         self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_miner_state_readings(scan_id, datetime.now().isoformat(), miners)
+        self.db.save_ams_extended(scan_id, datetime.now().isoformat(), miners)
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
