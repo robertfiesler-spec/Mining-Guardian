@@ -28,12 +28,10 @@ DB_PATH = "guardian.db"
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 INTERNAL_API_SECRET  = os.environ.get("INTERNAL_API_SECRET", "")
 
-# Fail fast if Slack signature secret missing — the public endpoint is
-# unauthenticated without it and accessible via slack.fieslerfamily.com
+# Warn loudly if Slack signature secret missing — /slack/actions endpoint will
+# reject all requests without it, but the internal endpoints still work.
 if not SLACK_SIGNING_SECRET:
-    import sys
-    logger.error("SLACK_SIGNING_SECRET not set — approval API refuses to start without it")
-    sys.exit(1)
+    logger.warning("SLACK_SIGNING_SECRET not set — /slack/actions will reject all requests")
 
 app = FastAPI(title="Mining Guardian Approval API", version="1.0.0")
 
@@ -297,7 +295,11 @@ async def slack_interactive(request: Request):
     body_bytes = await request.body()
     body_str   = body_bytes.decode("utf-8")
 
-    # Verify Slack signature — required (SLACK_SIGNING_SECRET checked at startup)
+    # Verify Slack signature — required when SLACK_SIGNING_SECRET is configured
+    if not SLACK_SIGNING_SECRET:
+        logger.warning("SLACK_SIGNING_SECRET not set — rejecting /slack/actions request")
+        return Response(status_code=403)
+
     ts  = request.headers.get("X-Slack-Request-Timestamp", "")
     sig = request.headers.get("X-Slack-Signature", "")
 
