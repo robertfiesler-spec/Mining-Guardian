@@ -2763,44 +2763,107 @@ class SlackNotifier:
         return thread_ts
 
     def _post_miner_selection(self, client, thread_ts: str, actionable: list) -> None:
-        """Post a numbered miner list in the thread for selective approval.
+        """Post a rich Block Kit approval card in the thread.
 
-        Since OpenClaw owns Socket Mode, Block Kit buttons are intercepted and
-        return 'not authorized'. Instead we post a plain numbered list and the
-        operator replies with: approve 1,3 | approve .36,.46 | APPROVE | DENY
+        Uses display-only blocks (no buttons/checkboxes that need Socket Mode).
+        OpenClaw owns Socket Mode so interactive elements would be intercepted.
+        Instead: visual Block Kit card with ☐ checkboxes + text-reply approval.
         """
         ACTION_ICONS  = {"RESTART": "🔄", "PDU_CYCLE": "🔌", "RESTART_CHECK_BOARDS": "🔴"}
         ACTION_LABELS = {"RESTART": "Firmware Restart", "PDU_CYCLE": "PDU Power Cycle",
                          "RESTART_CHECK_BOARDS": "Dead Board Restart"}
 
-        lines = [f"*{len(actionable)} action(s) pending — reply to approve:*",
-                 "_• `APPROVE` — approve all_",
-                 "_• `DENY` — deny all_",
-                 "_• `approve 1,3` — approve by number_",
-                 "_• `approve .36,.46` — approve by IP suffix_",
-                 ""]
+        blocks = []
 
+        # ── Header ────────────────────────────────────────────────────────
+        blocks.append({
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"⬇️  {len(actionable)} Action{'s' if len(actionable) > 1 else ''} Pending Approval",
+                "emoji": True
+            }
+        })
+        blocks.append({"type": "divider"})
+
+        # ── One section block per miner ───────────────────────────────────
         for idx, issue in enumerate(actionable, 1):
             icon  = ACTION_ICONS.get(issue["action"], "⚡")
             label = ACTION_LABELS.get(issue["action"], issue["action"])
-            loc   = issue.get("map_location") or "not mapped"
+            loc   = issue.get("map_location") or "—"
             hr    = issue.get("hashrate_pct", "?")
             temp  = issue.get("temp_chip", "?")
-            lines.append(
-                f"*{idx}.* {icon} `{issue['ip']}` — {issue['model']}\n"
-                f"    {label} | {loc} | HR: {hr}% | {temp}°C"
-            )
+            model = issue.get("model", "?")
+            ip    = issue["ip"]
+
+            # Determine temp color indicator
+            try:
+                t = float(temp)
+                temp_icon = "🔴" if t >= 86 else "🟡" if t >= 76 else "🟢"
+            except (TypeError, ValueError):
+                temp_icon = "⚪"
+
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": (
+                        f"*{idx}.* ☐  {icon} `{ip}` — *{label}*\n"
+                        f"      {model}  |  📍 {loc}  |  ⚡ HR: *{hr}%*  |  {temp_icon} Temp: *{temp}°C*"
+                    )
+                }
+            })
+
+        # ── Divider + approval instructions ──────────────────────────────
+        blocks.append({"type": "divider"})
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "*Reply in this thread to approve:*\n"
+                    "`APPROVE` — approve all  •  `DENY` — deny all\n"
+                    "`approve 1,3` — by number  •  `approve .36,.46` — by IP"
+                )
+            }
+        })
+        blocks.append({
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": "☑ = approved  •  Approved actions execute immediately via AMS"
+            }]
+        })
 
         try:
             client.chat_postMessage(
                 channel=self.channel_id,
                 thread_ts=thread_ts,
-                text="\n".join(lines)
+                text=f"{len(actionable)} action(s) pending — reply to approve",  # fallback
+                blocks=blocks
             )
-            logger.info("Posted miner selection list (%d miners) thread=%s",
+            logger.info("Posted Block Kit approval card (%d miners) thread=%s",
                         len(actionable), thread_ts)
         except Exception as e:
-            logger.warning("Failed to post miner selection list: %s", e)
+            logger.warning("Block Kit card failed, falling back to plain text: %s", e)
+            # Plain text fallback
+            lines = [f"*{len(actionable)} action(s) pending — reply to approve:*",
+                     "_`APPROVE` all | `DENY` all | `approve 1,3` | `approve .36,.46`_", ""]
+            for idx, issue in enumerate(actionable, 1):
+                icon  = ACTION_ICONS.get(issue["action"], "⚡")
+                label = ACTION_LABELS.get(issue["action"], issue["action"])
+                lines.append(
+                    f"*{idx}.* {icon} `{issue['ip']}` — {issue['model']}\n"
+                    f"    {label} | {issue.get('map_location','—')} | HR: {issue.get('hashrate_pct','?')}% | {issue.get('temp_chip','?')}°C"
+                )
+            try:
+                client.chat_postMessage(
+                    channel=self.channel_id,
+                    thread_ts=thread_ts,
+                    text="\n".join(lines)
+                )
+            except Exception as e2:
+                logger.warning("Fallback plain text also failed: %s", e2)
 
 
 class MiningGuardian:
