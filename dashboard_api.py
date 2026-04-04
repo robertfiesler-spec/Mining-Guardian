@@ -421,7 +421,47 @@ def metrics():
     conn.close()
     return PlainTextResponse(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
-@app.get("/fleet/latest")
+@app.get("/miner/status/{miner_ip}")
+def miner_status(miner_ip: str):
+    """Current problem + full action history for a specific miner IP.
+    Used by the Per Miner dashboard status panel.
+    """
+    conn = get_db()
+    miner_ip_clean = miner_ip.replace("_", ".")
+
+    # Current issue from latest scan
+    current = conn.execute("""
+        SELECT mr.ip, mr.model, mr.issue, mr.action, mr.scanned_at,
+               mr.hashrate_pct, mr.temp_chip, mr.pdu_power, mr.status,
+               mr.current_profile, mr.map_location
+        FROM miner_readings mr
+        JOIN scans s ON mr.scan_id = s.id
+        WHERE mr.ip = ?
+        ORDER BY mr.id DESC LIMIT 1
+    """, (miner_ip_clean,)).fetchone()
+
+    # Full audit history for this miner
+    history = conn.execute("""
+        SELECT timestamp, problem, action_taken, decision, approved_by, notes
+        FROM action_audit_log
+        WHERE ip = ?
+        ORDER BY timestamp DESC LIMIT 20
+    """, (miner_ip_clean,)).fetchall()
+
+    # Dead board info if any
+    dead_boards = conn.execute("""
+        SELECT board_indices, first_seen, restart_attempted,
+               restart_result, ticket_created
+        FROM known_dead_boards
+        WHERE ip = ? AND resolved_at IS NULL
+    """, (miner_ip_clean,)).fetchone()
+
+    conn.close()
+    return {
+        "current": dict(current) if current else None,
+        "history": [dict(r) for r in history],
+        "dead_boards": dict(dead_boards) if dead_boards else None,
+    }
 def fleet_latest():
     """Latest scan summary — fleet status right now."""
     conn = get_db()
