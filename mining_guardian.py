@@ -1416,6 +1416,98 @@ class GuardianDB:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_dead_boards_miner
                     ON known_dead_boards(miner_id)
                     WHERE resolved_at IS NULL;
+
+                -- ── Per-board chain readings (one row per board per miner per scan) ──
+                -- Captures every field AMS exposes at the board level:
+                -- HW errors, voltage, frequency, per-board consumption, per-board temps
+                CREATE TABLE IF NOT EXISTS chain_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    board_index     INTEGER NOT NULL,
+                    rate_mhs        REAL,
+                    voltage         REAL,
+                    freq_mhz        REAL,
+                    consumption_w   REAL,
+                    hw_errors       INTEGER,
+                    temp_board      REAL,
+                    temp_chip       REAL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chain_miner
+                    ON chain_readings(miner_id, scanned_at);
+
+                -- ── Per-pool readings (one row per pool per miner per scan) ──
+                -- Captures accepted/rejected shares, difficulty, pool status
+                -- This is the data that drives profitability and pool health analysis
+                CREATE TABLE IF NOT EXISTS pool_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    pool_priority   INTEGER,
+                    pool_url        TEXT,
+                    pool_user       TEXT,
+                    pool_type       TEXT,
+                    status          TEXT,
+                    accepted        INTEGER,
+                    rejected        INTEGER,
+                    accepted_diff   REAL,
+                    rejected_diff   REAL,
+                    difficulty      TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pool_miner
+                    ON pool_readings(miner_id, scanned_at);
+
+                -- ── Per-chip readings stub (for future direct miner API integration) ──
+                -- chips_ws from AMS returns all zeros for hydro/immersion (no per-chip sensors)
+                -- Future: populated via direct miner API (port 4028/4029 on BiXBiT firmware)
+                -- Structure ready — data collection requires direct device access
+                CREATE TABLE IF NOT EXISTS chip_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    board_index     INTEGER NOT NULL,
+                    chip_index      INTEGER NOT NULL,
+                    freq_mhz        REAL,
+                    voltage_mv      REAL,
+                    temp_c          REAL,
+                    source          TEXT    DEFAULT 'direct_api'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chip_miner
+                    ON chip_readings(miner_id, scanned_at);
+
+                -- ── Extended miner state per scan ──
+                -- Fields available in AMS miner list that we weren't storing
+                CREATE TABLE IF NOT EXISTS miner_state_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    hashrate_medium REAL,
+                    hashrate_low    REAL,
+                    max_hashrate    REAL,
+                    max_consumption REAL,
+                    max_temp_board  REAL,
+                    max_temp_chip   REAL,
+                    temp_chip_low   REAL,
+                    temp_chip_medium REAL,
+                    miner_status    INTEGER,
+                    cooling_mode    INTEGER,
+                    worker_version  TEXT,
+                    active_pool_user TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_state_miner
+                    ON miner_state_readings(miner_id, scanned_at);
             """)
         logger.info("Database ready at %s", self.db_path)
 
@@ -1777,6 +1869,82 @@ class GuardianDB:
                 "UPDATE known_dead_boards SET resolved_at = ? WHERE miner_id = ? AND resolved_at IS NULL",
                 (now, miner_id)
             )
+
+    def save_chain_readings(self, scan_id: int, scanned_at: str, miners: List[Dict]) -> None:
+        """Store per-board chain data every scan: rate, voltage, freq, consumption, HW errors, temps."""
+        rows = []
+        for m in miners:
+            miner_id = str(m.get("id", ""))
+            ip = m.get("ip", "")
+            for chain in (m.get("chains", []) or []):
+                rows.append((
+                    scan_id, scanned_at, miner_id, ip,
+                    chain.get("index", 0), chain.get("rate", 0),
+                    chain.get("voltage"), chain.get("freq"),
+                    chain.get("consumption"), chain.get("HWErrors", 0),
+                    chain.get("tempBoard"), chain.get("tempChip"),
+                ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            conn.executemany("""
+                INSERT INTO chain_readings
+                (scan_id, scanned_at, miner_id, ip, board_index,
+                 rate_mhs, voltage, freq_mhz, consumption_w,
+                 hw_errors, temp_board, temp_chip)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """, rows)
+
+    def save_pool_readings(self, scan_id: int, scanned_at: str, miners: List[Dict]) -> None:
+        """Store per-pool stats every scan: accepted/rejected shares, diff, pool status."""
+        rows = []
+        for m in miners:
+            miner_id = str(m.get("id", ""))
+            ip = m.get("ip", "")
+            for pool in (m.get("pools", []) or []):
+                rows.append((
+                    scan_id, scanned_at, miner_id, ip,
+                    pool.get("priority", 0), pool.get("url", ""),
+                    pool.get("user", ""), pool.get("poolType", ""),
+                    pool.get("status", ""), pool.get("accepted", 0),
+                    pool.get("rejected", 0), pool.get("acceptedDiff", 0),
+                    pool.get("rejectedDiff", 0), pool.get("diff", ""),
+                ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            conn.executemany("""
+                INSERT INTO pool_readings
+                (scan_id, scanned_at, miner_id, ip, pool_priority,
+                 pool_url, pool_user, pool_type, status,
+                 accepted, rejected, accepted_diff, rejected_diff, difficulty)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, rows)
+
+    def save_miner_state_readings(self, scan_id: int, scanned_at: str, miners: List[Dict]) -> None:
+        """Store extended state fields from AMS miner list: hashrate tiers, limits, status codes."""
+        rows = []
+        for m in miners:
+            rows.append((
+                scan_id, scanned_at, str(m.get("id", "")), m.get("ip", ""),
+                m.get("hashrateMedium"), m.get("hashrateLow"),
+                m.get("maxHashrate"), m.get("maxConsumption"),
+                m.get("maxTempBoard"), m.get("maxTempChip"),
+                m.get("tempChipLow"), m.get("tempChipMedium"),
+                m.get("minerStatus"), m.get("coolingMode"),
+                m.get("workerVersion", ""), m.get("activePoolUser", ""),
+            ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            conn.executemany("""
+                INSERT INTO miner_state_readings
+                (scan_id, scanned_at, miner_id, ip,
+                 hashrate_medium, hashrate_low, max_hashrate, max_consumption,
+                 max_temp_board, max_temp_chip, temp_chip_low, temp_chip_medium,
+                 miner_status, cooling_mode, worker_version, active_pool_user)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, rows)
 
     def last_log_collected(self, miner_id: str) -> Optional[datetime]:
         """Return datetime of last log collection for this miner, or None."""
@@ -3206,6 +3374,9 @@ class MiningGuardian:
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot)
         scan_id   = self.db.save_scan(miners, issues)
+        self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
+        self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
+        self.db.save_miner_state_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.purge_old_logs(days=7)
         self.collect_logs(miners, issues)
         self.notifier.send_scan(miners, issues)
