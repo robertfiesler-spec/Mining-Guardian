@@ -721,6 +721,12 @@ class AMSClient:
             description: Full details
             priority: "low" (1), "normal" (3), "high" (2)
             miner_ids: List of miner IDs to link to this ticket
+
+        AMS ticket format (confirmed from API inspection):
+          priority: int (1=low, 2=high, 3=normal)
+          miners: list of int miner IDs
+          executorID: int user ID (1 = owner/Test2334)
+          statusID: 0 = Backlog (default)
         """
         priority_map = {"low": 1, "high": 2, "normal": 3, "critical": 2}
         priority_num = priority_map.get(priority, 3)
@@ -732,15 +738,17 @@ class AMSClient:
                 "description": description,
                 "priority":    priority_num,
                 "miners":      miner_ids or [],
-                "executorID":  0,
-                "statusID":    0,
+                "executorID":  1,    # owner account (Test2334)
+                "statusID":    0,    # Backlog
             },
             headers={"Authorization": f"Bearer {token}"},
             timeout=self.timeout,
         )
-        if resp.status_code == 200:
-            logger.info("Ticket created: %s", title)
-            return resp.json()
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            ticket = data.get("ticket", data)
+            logger.info("Ticket created: %s (id=%s)", title, ticket.get("id"))
+            return ticket
         logger.warning("create_ticket returned %s: %s", resp.status_code, resp.text[:100])
         return {}
 
