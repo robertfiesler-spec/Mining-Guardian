@@ -118,7 +118,11 @@ class KnowledgeManager:
         self.save()
 
     def build_context_prompt(self) -> str:
-        """Build a knowledge context string to include in every LLM prompt."""
+        """Build a knowledge context string to include in every LLM prompt.
+
+        Pulls live data from all tables — not just knowledge.json —
+        so the LLM has the richest possible context every scan cycle.
+        """
         parts = ["FLEET KNOWLEDGE (accumulated from past scans):"]
 
         # Fleet summary
@@ -127,8 +131,66 @@ class KnowledgeManager:
             parts.append(f"Last scan: {fs.get('last_scan', 'unknown')}")
             parts.append(f"Fleet: {fs.get('total_miners', '?')} miners, "
                         f"{fs.get('online', '?')} online, {fs.get('offline', '?')} offline")
+            if fs.get("supply_water_f"):
+                parts.append(f"HVAC: supply={fs['supply_water_f']}°F return={fs.get('return_water_f')}°F")
+            if fs.get("outside_temp_f"):
+                parts.append(f"Outside: {fs['outside_temp_f']}°F")
 
-        # Chronic problem miners
+        # Pull live board-level data — chronic HW errors, dead boards
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+
+            # Miners with hardware identity parsed
+            hw_count = conn.execute("SELECT COUNT(DISTINCT miner_id) FROM miner_hardware").fetchone()[0]
+            parts.append(f"\nHardware identity: {hw_count} miners with full board/chip data")
+
+            # Boards with HW errors in last 7 days
+            hwerr = conn.execute("""
+                SELECT miner_id, ip, board_index, SUM(hw_errors) as total_errors
+                FROM chain_readings
+                WHERE scanned_at > datetime('now', '-7 days')
+                GROUP BY miner_id, board_index
+                HAVING total_errors > 0
+                ORDER BY total_errors DESC LIMIT 10
+            """).fetchall()
+            if hwerr:
+                parts.append("\nBoards with HW errors (last 7 days):")
+                for h in hwerr:
+                    parts.append(f"  - {h['ip']} board {h['board_index']}: {h['total_errors']} errors")
+
+            # Pool rejection spikes
+            pool = conn.execute("""
+                SELECT miner_id, ip, pool_url,
+                       ROUND(MAX(rejected)*100.0/NULLIF(MAX(accepted)+MAX(rejected),0), 2) as reject_pct
+                FROM pool_readings
+                WHERE scanned_at > datetime('now', '-24 hours')
+                GROUP BY miner_id
+                HAVING reject_pct > 1.0
+                ORDER BY reject_pct DESC LIMIT 5
+            """).fetchall()
+            if pool:
+                parts.append("\nHigh pool rejection rates (last 24h):")
+                for p in pool:
+                    parts.append(f"  - {p['ip']}: {p['reject_pct']}% rejected")
+
+            # Known dead boards
+            dead = conn.execute("""
+                SELECT ip, board_indices, ticket_created
+                FROM known_dead_boards WHERE resolved_at IS NULL
+            """).fetchall()
+            if dead:
+                parts.append("\nKnown dead boards (awaiting repair):")
+                for d in dead:
+                    ticket = f"ticket #{d['ticket_created']}" if d['ticket_created'] else "no ticket yet"
+                    parts.append(f"  - {d['ip']} boards {d['board_indices']} — {ticket}")
+
+            conn.close()
+        except Exception as e:
+            parts.append(f"(Live DB context unavailable: {e})")
+
+        # Chronic problem miners from knowledge.json
         profiles = self.knowledge.get("miner_profiles", {})
         chronic = sorted(profiles.items(), key=lambda x: x[1].get("total_flags", 0), reverse=True)[:10]
         if chronic:
@@ -137,7 +199,7 @@ class KnowledgeManager:
                 if p["total_flags"] >= 3:
                     recent = p["issue_history"][-1]["summary"] if p["issue_history"] else "unknown"
                     parts.append(f"  - Miner {mid} ({p['model']}) @ {p['ip']}: "
-                                f"flagged {p['total_flags']}x, last: {recent}")
+                                f"flagged {p['total_flags']}x, last: {recent[:100]}")
 
         # Recent LLM insights
         insights = self.knowledge.get("known_issues", [])[-5:]
