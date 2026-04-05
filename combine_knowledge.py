@@ -22,7 +22,7 @@ import json
 import sys
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict
 from dotenv import load_dotenv
 
@@ -34,7 +34,7 @@ logger = logging.getLogger("combine_knowledge")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate")
 MODEL      = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
-OUTPUT_PATH = "master_knowledge.json"
+OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_knowledge.json")
 
 # Use Claude API if available, fall back to Ollama
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -87,7 +87,7 @@ def build_merge_prompt(sites: List[Dict]) -> str:
         if patterns:
             parts.append(f"Patterns ({len(patterns)}):")
             for p in patterns:
-                parts.append(f"  - {p[:200]}")
+                parts.append(f"  - {str(p)[:200]}")
 
         # Recent insights
         insights = d.get("known_issues", [])[-10:]
@@ -115,6 +115,7 @@ def build_merge_prompt(sites: List[Dict]) -> str:
 
     return "\n".join(parts)
 
+
 def query_llm(prompt: str) -> str:
     """Send the merge prompt to Claude API (preferred) or Ollama (fallback)."""
     if CLAUDE_API_KEY:
@@ -131,7 +132,13 @@ def query_llm(prompt: str) -> str:
             }, timeout=120)
             resp.raise_for_status()
             data = resp.json()
-            text = data.get("content", [{}])[0].get("text", "")
+            text = ""
+            for block in data.get("content", []):
+                if block.get("type") == "text":
+                    text += block.get("text", "")
+            if not text:
+                logger.warning("Claude returned empty content — falling back to Ollama")
+                raise ValueError("empty response")
             logger.info("Claude merge complete (%d chars)", len(text))
             return text
         except Exception as e:
@@ -161,7 +168,7 @@ def build_master_knowledge(sites: List[Dict], llm_synthesis: str) -> Dict:
     """Combine raw knowledge from all sites with LLM synthesis into master."""
     master = {
         "version": 1,
-        "last_merged": datetime.now().isoformat(),
+        "last_merged": datetime.now(timezone.utc).isoformat(),
         "sites_merged": [s["name"] for s in sites],
         "site_count": len(sites),
         "fleet_summary": {},
@@ -183,7 +190,8 @@ def build_master_knowledge(sites: List[Dict], llm_synthesis: str) -> Dict:
     all_patterns = set()
     for site in sites:
         for p in site["data"].get("patterns", []):
-            all_patterns.add(p)
+            # Coerce to string — patterns may be dicts/lists in some knowledge files
+            all_patterns.add(str(p) if not isinstance(p, str) else p)
     master["patterns"] = list(all_patterns)
 
     # Merge insights — keep all, sorted by date
@@ -197,7 +205,11 @@ def build_master_knowledge(sites: List[Dict], llm_synthesis: str) -> Dict:
     all_insights.sort(key=lambda x: x.get("date", ""), reverse=True)
     master["known_issues"] = all_insights[:100]  # keep top 100
 
-    # Add LLM synthesis
+    # Add LLM synthesis — skip entirely if LLM returned nothing
+    if not llm_synthesis:
+        logger.warning("LLM synthesis was empty — skipping synthesis block")
+        return master
+
     try:
         synthesis = json.loads(llm_synthesis)
         master["llm_synthesis"] = synthesis
@@ -210,7 +222,7 @@ def build_master_knowledge(sites: List[Dict], llm_synthesis: str) -> Dict:
         # Add cross-site insights as known issues
         for insight in synthesis.get("new_cross_site_insights", []):
             master["known_issues"].insert(0, {
-                "date": datetime.now().isoformat()[:10],
+                "date": datetime.now(timezone.utc).isoformat()[:10],
                 "miner_id": "cross-site",
                 "insight": insight,
                 "source_site": "llm_merge"
