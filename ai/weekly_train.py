@@ -65,6 +65,14 @@ def run_weekly():
     except Exception as e:
         logger.warning("HVAC correlation failed (non-fatal): %s", e)
 
+    # Feature 6: Log prediction accuracy into knowledge for training
+    try:
+        from predictor import get_prediction_accuracy
+        accuracy = get_prediction_accuracy()
+        logger.info("Prediction accuracy: %s", accuracy)
+    except Exception as e:
+        logger.warning("Prediction accuracy check failed (non-fatal): %s", e)
+
     logger.info("=" * 60)
     logger.info("WEEKLY TRAINING — Complete")
     logger.info("=" * 60)

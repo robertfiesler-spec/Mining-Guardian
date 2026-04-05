@@ -4205,6 +4205,28 @@ class MiningGuardian:
                 except Exception:
                     logger.debug("HVAC correlator skipped (non-fatal)")
 
+                # Feature 6: Pre-Failure Prediction
+                # Detect miners showing pre-failure signals before they break
+                try:
+                    from predictor import run_predictions, format_prediction_alert
+                    latest_scan = self.db._connect().execute(
+                        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if latest_scan:
+                        preds = run_predictions(latest_scan["id"])
+                        for pred in preds:
+                            if pred["action"] == "PREEMPTIVE_RESTART":
+                                # High confidence — post immediately to Slack
+                                try:
+                                    msg = format_prediction_alert(pred)
+                                    self.slack.post_to_channel(msg)
+                                except Exception:
+                                    pass
+                            logger.info("Prediction: %s %s conf=%d%%",
+                                       pred["ip"], pred["action"], pred["confidence"])
+                except Exception:
+                    logger.debug("Predictor skipped (non-fatal)")
+
             except Exception:
                 logger.exception("Guardian loop error")
             time.sleep(self.config.scan_interval_seconds)
