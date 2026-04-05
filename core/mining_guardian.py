@@ -2511,22 +2511,24 @@ class GuardianDB:
         return row is not None
 
     def get_failed_restart_count(self, miner_id: str, days: int = 7) -> int:
-        """Count restarts in the last N days where the miner did not recover.
-
-        A restart is 'failed' if the miner's hashrate is still below 50% of rated
-        at the time of the next scan after the restart. We approximate this by
-        counting restarts where the miner was restarted but is still being flagged
-        as a hashrate issue — i.e. it appears in the audit log as RESTART multiple
-        times without a clean period in between.
-
-        Used to decide when to stop restarting and escalate to a ticket instead.
-        """
+        """Count restarts in the last N days where the miner did not recover."""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM miner_restarts
                 WHERE miner_id=? AND restarted_at >= ?
             """, (miner_id, cutoff)).fetchone()
+        return row["cnt"] if row else 0
+
+    def count_outcome_failures(self, miner_id: str) -> int:
+        """Count restarts labeled FAILURE by the outcome feedback loop (Feature 1).
+        This is more reliable than get_failed_restart_count because it uses
+        actual observed post-restart hashrate, not just restart count."""
+        with self._connect() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) as cnt FROM miner_restarts
+                WHERE miner_id=? AND outcome='FAILURE'
+            """, (miner_id,)).fetchone()
         return row["cnt"] if row else 0
         """Return datetime of last log collection for this miner, or None."""
         with self._connect() as conn:
@@ -3167,13 +3169,38 @@ class MiningGuardian:
             # Verify directly before taking any action.
             verify = verify_miner_online(ip)
             if verify["actually_online"]:
+                # Count how many consecutive scans this miner has been in AMS SYNC state
+                ams_sync_count = 0
+                try:
+                    with self.db._connect() as conn:
+                        rows = conn.execute("""
+                            SELECT issue FROM miner_readings
+                            WHERE miner_id=? ORDER BY id DESC LIMIT 20
+                        """, (miner_id,)).fetchall()
+                        for row in rows:
+                            if row["issue"] and "AMS SYNC" in str(row["issue"]):
+                                ams_sync_count += 1
+                            else:
+                                break  # stop at first non-AMS-SYNC scan
+                except Exception:
+                    pass
+
+                if ams_sync_count >= 10:
+                    # Been in AMS SYNC state for 10+ scans — suppress from report
+                    # This miner is reachable but AMS is persistently out of sync.
+                    # Don't flood reports with it — let it resolve itself.
+                    logger.debug(
+                        "[%s] AMS SYNC suppressed — %d consecutive scans, miner is reachable",
+                        miner_id, ams_sync_count
+                    )
+                    return None  # exclude from issues entirely
+
                 logger.info(
-                    "[%s] AMS reports offline but miner is reachable — %s.",
-                    miner_id, verify["status_detail"]
+                    "[%s] AMS reports offline but miner is reachable — %s (scan %d).",
+                    miner_id, verify["status_detail"], ams_sync_count + 1
                 )
-                # Miner is alive but AMS thinks it's offline — report the discrepancy
                 issues.append(
-                    f"⚠️ AMS SYNC: Miner is ONLINE (verified via direct check) "
+                    f"⚠️ AMS SYNC ({ams_sync_count+1} scans): Miner is ONLINE (verified) "
                     f"but AMS reports offline — check AMS"
                 )
                 action = "MONITOR"
@@ -3248,25 +3275,38 @@ class MiningGuardian:
             pct = (hashrate_ths / rated_ths) * 100
             hashrate_pct_str = f"{pct:.1f}%"
             if pct < self.HASHRATE_THRESHOLD * 100:
+                # ── Ticketed miners — never re-queue ─────────────────────
+                # If this miner already has a ticket (known dead boards with
+                # ticket_created set), suppress entirely. Don't add to issues,
+                # don't set action, don't show in Slack. Ticket handles it.
+                if self.db.has_known_dead_boards(miner_id):
+                    logger.debug(
+                        "[%s] Low hashrate suppressed — known dead board ticket already open",
+                        miner_id
+                    )
+                    return None  # fully suppress — don't appear in report at all
+
                 issues.append(
                     f"Hashrate {pct:.1f}% of rated "
                     f"({hashrate_ths:.1f} / {rated_ths:.0f} TH/s) "
                     f"[{tier}]"
                 )
                 # Only set RESTART if a dead board hasn't already claimed the action
-                # Dead board takes priority — its flow includes a restart anyway
                 if action != "RESTART_CHECK_BOARDS":
-                    # Escalation rule: if this miner has been restarted 2+ times
-                    # in the last 7 days and is still failing, stop restarting
-                    # and escalate to RESTART_CHECK_BOARDS → triggers ticket flow
+                    # Escalation: 2+ failed restarts → ticket flow
+                    # Also check outcome-labeled failures from Feature 1
                     failed_restarts = self.db.get_failed_restart_count(miner_id, days=7)
-                    if failed_restarts >= 2:
+                    outcome_failures = self.db.count_outcome_failures(miner_id)
+                    if failed_restarts >= 2 or outcome_failures >= 2:
                         action = "RESTART_CHECK_BOARDS"
                         issues.append(
-                            f"⚠️ Escalated: {failed_restarts} restarts in 7 days with no recovery — ticket required"
+                            f"⚠️ Escalated: {failed_restarts} restarts, "
+                            f"{outcome_failures} FAILURE outcomes — ticket required"
                         )
-                        logger.info("[%s] Escalating to RESTART_CHECK_BOARDS after %d failed restarts",
-                                    miner_id, failed_restarts)
+                        logger.info(
+                            "[%s] Escalating to RESTART_CHECK_BOARDS — restarts=%d outcomes=%d",
+                            miner_id, failed_restarts, outcome_failures
+                        )
                     else:
                         action = "RESTART"
 

@@ -114,16 +114,39 @@ def get_restart_count_tonight(miner_id: str) -> int:
 
 
 def has_recent_failure(miner_id: str, hours: int = 6) -> bool:
-    """True if this miner had a failed restart in the last N hours."""
+    """
+    True if this miner should be blocked from auto-restart.
+    Checks both:
+    1. outcome=FAILURE in miner_restarts (Feature 1 outcome feedback)
+    2. Multiple consecutive failures — if 3+ FAILURE outcomes, block permanently
+       until a human reviews it
+    """
+    conn = get_db()
+
+    # Primary check: outcome-labeled failures from Feature 1
+    failures = conn.execute("""
+        SELECT COUNT(*) as cnt FROM miner_restarts
+        WHERE miner_id=? AND outcome='FAILURE'
+    """, (miner_id,)).fetchone()
+    failure_count = failures["cnt"] if failures else 0
+
+    # If 3+ labeled failures — hard block, don't auto-restart
+    if failure_count >= 3:
+        logger.info(
+            "Auto-restart blocked for %s — %d FAILURE outcomes recorded",
+            miner_id, failure_count
+        )
+        conn.close()
+        return True
+
+    # Secondary check: recent failure within the time window
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
-    conn   = get_db()
-    row    = conn.execute("""
-        SELECT COUNT(*) as cnt FROM action_audit_log
-        WHERE miner_id=? AND decision IN ('FAILED','AUTO_OVERNIGHT')
-          AND notes LIKE '%failed%' AND timestamp >= ?
+    recent = conn.execute("""
+        SELECT COUNT(*) as cnt FROM miner_restarts
+        WHERE miner_id=? AND outcome='FAILURE' AND restarted_at >= ?
     """, (miner_id, cutoff)).fetchone()
     conn.close()
-    return (row["cnt"] if row else 0) > 0
+    return (recent["cnt"] if recent else 0) > 0
 
 
 def classify_risk(action: dict) -> str:
