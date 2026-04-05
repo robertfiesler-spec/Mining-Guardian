@@ -65,7 +65,16 @@ g_spray_pump     = Gauge("mining_guardian_spray_pump_on",      "Spray pump on 1/
 g_outside_temp   = Gauge("mining_guardian_outside_temp_f", "Outside temp °F",   ["site"])
 g_humidity       = Gauge("mining_guardian_humidity_pct",   "Outside humidity %", ["site"])
 
-# ── AI / Knowledge metrics ────────────────────────────────────────────────────
+# ── Miner Health Score (MHS) metrics ─────────────────────────────────────────
+# Formula: hashrate 35% + uptime 25% + efficiency 20% + hw_errors 15% + pool 5%
+g_mhs              = Gauge("mining_guardian_mhs",
+                            "Miner Health Score 0-100", ["miner_ip","model","site"])
+g_hashrate_ths     = Gauge("mining_guardian_hashrate_ths",
+                            "Actual hashrate TH/s", ["miner_ip","model","site"])
+g_rated_ths        = Gauge("mining_guardian_rated_ths",
+                            "Rated/spec hashrate TH/s", ["miner_ip","model","site"])
+g_efficiency       = Gauge("mining_guardian_efficiency_ths_per_kw",
+                            "Efficiency TH/s per kW", ["miner_ip","model","site"])
 g_knowledge_insights  = Gauge("mining_guardian_knowledge_insights_total",
                                "Total insights in knowledge base", ["site"])
 g_knowledge_patterns  = Gauge("mining_guardian_knowledge_patterns_total",
@@ -369,11 +378,30 @@ def metrics():
     scan_id_row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
     if scan_id_row:
         miners = conn.execute("""
-            SELECT ip, model, hashrate_pct, temp_chip, pdu_power,
-                   map_location, issue
+            SELECT ip, model, hashrate_pct, hashrate, temp_chip, pdu_power,
+                   consumption, map_location, issue, status
             FROM miner_readings
             WHERE scan_id = ?
         """, (scan_id_row["id"],)).fetchall()
+
+        # HW errors per miner (sum across boards)
+        hw_errors_by_ip = {}
+        for row in conn.execute("""
+            SELECT ip, SUM(hw_errors) as total_hw
+            FROM chain_readings WHERE scan_id=? GROUP BY ip
+        """, (scan_id_row["id"],)).fetchall():
+            hw_errors_by_ip[row["ip"]] = float(row["total_hw"] or 0)
+
+        # Pool rejection rate per miner (latest scan)
+        rejection_by_ip = {}
+        for row in conn.execute("""
+            SELECT ip,
+                   CASE WHEN SUM(accepted)+SUM(rejected) > 0
+                        THEN CAST(SUM(rejected) AS FLOAT) / (SUM(accepted)+SUM(rejected))
+                        ELSE 0 END as rej_rate
+            FROM pool_readings WHERE scan_id=? GROUP BY ip
+        """, (scan_id_row["id"],)).fetchall():
+            rejection_by_ip[row["ip"]] = float(row["rej_rate"] or 0)
 
         # Get dead board miner IPs
         dead_board_ips = set(
@@ -404,6 +432,56 @@ def metrics():
             g_pdu_power_kw.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(pdu)
             g_flagged.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(flag)
             g_dead_boards.labels(miner_ip=ip, model=mdl, site=SITE).set(dead)
+
+            # ── Miner Health Score (MHS) ──────────────────────────────────────
+            # Only score online miners with hashrate > 0
+            is_online = (m["status"] == "online") and hr > 0
+            if is_online:
+                # hashrate_score: hashrate % capped 0-100
+                hashrate_score = min(max(hr, 0), 100)
+
+                # efficiency_score: actual TH/kW vs rated TH/kW
+                # hashrate stored in GH/s → divide by 1000 for TH/s
+                actual_ths = float(m["hashrate"] or 0) / 1000.0
+                rated_ths  = actual_ths / (hr / 100.0) if hr > 0 else 0
+                actual_w   = pdu * 1000 if pdu > 0 else (float(m["consumption"] or 0))
+                rated_w    = actual_w  # use actual as proxy until we expose rated_w
+
+                if actual_ths > 0 and actual_w > 0:
+                    actual_eff = actual_ths / (actual_w / 1000.0)   # TH/kW
+                    # Baseline: ~100 TH/kW is good for S19JPro, ~35 TH/kW for immersion
+                    # Use hashrate_pct as efficiency proxy since we have rated vs actual
+                    efficiency_score = min(max(hr, 0), 100)  # same as hashrate until we have rated_w
+                else:
+                    efficiency_score = 0.0
+
+                # hw_error_score: each error costs 2 pts, floor 0
+                hw_errs = hw_errors_by_ip.get(ip, 0)
+                hw_error_score = max(0, 100 - (hw_errs * 2))
+
+                # uptime_score: not flagged = healthy = 100, flagged = reduced
+                uptime_score = 100.0 if flag == 0 else max(0, 100 - (flag * 50))
+
+                # rejection_score: 0.2% rejection = 0 pts (×500 multiplier)
+                rej_rate = rejection_by_ip.get(ip, 0)
+                rejection_score = max(0, 100 - (rej_rate * 500))
+
+                mhs = (
+                    hashrate_score    * 0.35 +
+                    uptime_score      * 0.25 +
+                    efficiency_score  * 0.20 +
+                    hw_error_score    * 0.15 +
+                    rejection_score   * 0.05
+                )
+                mhs = round(min(max(mhs, 0), 100), 1)
+
+                g_mhs.labels(miner_ip=ip, model=mdl, site=SITE).set(mhs)
+                g_hashrate_ths.labels(miner_ip=ip, model=mdl, site=SITE).set(round(actual_ths, 2))
+                g_rated_ths.labels(miner_ip=ip, model=mdl, site=SITE).set(round(rated_ths, 2))
+                if actual_w > 0:
+                    g_efficiency.labels(miner_ip=ip, model=mdl, site=SITE).set(
+                        round(actual_ths / (actual_w / 1000.0), 2)
+                    )
 
     # Per-board chain readings from latest scan
     if scan_id_row:
