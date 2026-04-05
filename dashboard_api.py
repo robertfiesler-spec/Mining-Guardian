@@ -598,6 +598,88 @@ def metrics():
     conn.close()
     return PlainTextResponse(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
+@app.get("/mhs", response_class=HTMLResponse)
+def mhs_panel():
+    """Miner Health Score leaderboard — HTML table for Grafana text panel iframe.
+    Top 5 healthiest on the left, bottom 5 on the right. Online miners only.
+    """
+    conn = get_db()
+    scan_id_row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+    if not scan_id_row:
+        conn.close()
+        return HTMLResponse("<p>No scan data yet.</p>")
+
+    miners = conn.execute("""
+        SELECT ip, model, hashrate_pct, pdu_power, status, issue
+        FROM miner_readings
+        WHERE scan_id=? AND status='online' AND hashrate_pct > 0
+        ORDER BY hashrate_pct DESC
+    """, (scan_id_row["id"],)).fetchall()
+
+    hw_errors_by_ip = {}
+    for row in conn.execute("""
+        SELECT ip, SUM(hw_errors) as total_hw FROM chain_readings WHERE scan_id=? GROUP BY ip
+    """, (scan_id_row["id"],)).fetchall():
+        hw_errors_by_ip[row["ip"]] = float(row["total_hw"] or 0)
+
+    rejection_by_ip = {}
+    for row in conn.execute("""
+        SELECT ip,
+               CASE WHEN SUM(accepted)+SUM(rejected) > 0
+                    THEN CAST(SUM(rejected) AS FLOAT)/(SUM(accepted)+SUM(rejected))
+                    ELSE 0 END as rej_rate
+        FROM pool_readings WHERE scan_id=? GROUP BY ip
+    """, (scan_id_row["id"],)).fetchall():
+        rejection_by_ip[row["ip"]] = float(row["rej_rate"] or 0)
+
+    conn.close()
+
+    scores = []
+    for m in miners:
+        ip  = m["ip"] or "unknown"
+        hr  = float(m["hashrate_pct"] or 0)
+        rej = rejection_by_ip.get(ip, 0)
+        hw  = hw_errors_by_ip.get(ip, 0)
+        flg = 1 if m["issue"] else 0
+        mhs = round(
+            min(max(hr, 0), 100)          * 0.35 +
+            (100.0 if flg == 0 else 50.0) * 0.25 +
+            min(max(hr, 0), 100)          * 0.20 +
+            max(0, 100 - hw * 2)          * 0.15 +
+            max(0, 100 - rej * 500)       * 0.05, 1)
+        model = html_lib.escape((m["model"] or "Unknown").replace("Antminer_", "").replace("_", " "))
+        scores.append({"ip": ip, "model": model, "mhs": mhs})
+
+    scores.sort(key=lambda x: x["mhs"], reverse=True)
+    top5 = scores[:5]
+    bot5 = sorted(scores, key=lambda x: x["mhs"])[:5]
+
+    def rows(lst, color):
+        out = ""
+        for i, m in enumerate(lst, 1):
+            out += f'<tr><td style="color:{color};font-weight:bold;padding:5px 10px">{i}</td>'
+            out += f'<td style="font-family:monospace;padding:5px 10px">{m["ip"]}</td>'
+            out += f'<td style="color:#aaa;padding:5px 10px">{m["model"]}</td>'
+            out += f'<td style="color:{color};font-weight:bold;padding:5px 10px">{m["mhs"]}</td></tr>'
+        return out
+
+    return HTMLResponse(f"""<style>
+    body{{background:transparent;color:#e0e0e0;font-family:sans-serif;margin:0;padding:8px}}
+    .wrap{{display:flex;gap:20px}} .col{{flex:1}}
+    h3{{margin:0 0 8px 0;font-size:13px;text-transform:uppercase;letter-spacing:.08em}}
+    table{{width:100%;border-collapse:collapse;font-size:13px}}
+    th{{text-align:left;padding:4px 10px;color:#666;font-weight:normal;border-bottom:1px solid #333}}
+    tr:hover{{background:rgba(255,255,255,.04)}}
+    </style>
+    <div class="wrap">
+      <div class="col"><h3>🏆 Top 5 Healthiest</h3>
+        <table><thead><tr><th>#</th><th>IP</th><th>Model</th><th>MHS</th></tr></thead>
+        <tbody>{rows(top5,'#52c41a')}</tbody></table></div>
+      <div class="col"><h3>⚠️ Bottom 5 — Need Attention</h3>
+        <table><thead><tr><th>#</th><th>IP</th><th>Model</th><th>MHS</th></tr></thead>
+        <tbody>{rows(bot5,'#fa8c16')}</tbody></table></div>
+    </div>""")
+
 @app.get("/miner/status/{miner_ip}")
 def miner_status(miner_ip: str):
     """Current problem + full action history for a specific miner IP."""
