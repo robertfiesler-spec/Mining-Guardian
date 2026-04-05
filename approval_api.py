@@ -24,9 +24,31 @@ import uvicorn
 logger = logging.getLogger("approval_api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-DB_PATH = "guardian.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), "guardian.db")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 INTERNAL_API_SECRET  = os.environ.get("INTERNAL_API_SECRET", "")
+
+# Pre-load a single MiningGuardian instance at startup so AMS auth is
+# established once and reused for every approval — avoids repeated
+# select_workspace calls that intermittently return 400.
+_guardian = None
+def get_guardian():
+    global _guardian
+    if _guardian is None:
+        try:
+            import mining_guardian as mg
+            cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+            cfg = json.load(open(cfg_path))
+            _guardian = mg.MiningGuardian(
+                mg.GuardianConfig(**{
+                    k: v for k, v in cfg.items()
+                    if k in mg.GuardianConfig.__dataclass_fields__
+                })
+            )
+            logger.info("MiningGuardian instance initialized for approval_api")
+        except Exception as e:
+            logger.error("Failed to init MiningGuardian: %s", e)
+    return _guardian
 
 # Warn loudly if Slack signature secret missing — /slack/actions endpoint will
 # reject all requests without it, but the internal endpoints still work.
@@ -121,24 +143,19 @@ async def approve_actions(request: Request):
 
         results.append({"miner_id": miner_id, "ip": action["ip"],
                         "action": action_type, "status": "APPROVED"})
-        logger.info("APPROVED: %s %s for miner %s (%s) by %s",
-                     action_type, miner_id, action["ip"], user)
+        logger.info("APPROVED: %s for miner %s (%s) by %s",
+                     action_type, action["ip"], action["model"], user)
 
     conn.commit()
     conn.close()
 
-    # Execute the approved actions via AMS
+    # Execute the approved actions using the persistent guardian instance
     try:
-        import mining_guardian
-        cfg = json.load(open("config.json"))
-        g = mining_guardian.MiningGuardian(
-            mining_guardian.GuardianConfig(**{
-                k: v for k, v in cfg.items()
-                if k in mining_guardian.GuardianConfig.__dataclass_fields__
-            })
-        )
+        g = get_guardian()
+        if g is None:
+            raise RuntimeError("MiningGuardian failed to initialize — check config.json and AMS credentials")
         for r in results:
-            issue = {"id": r["miner_id"], "ip": r["ip"], "model": ""}
+            issue = {"id": r["miner_id"], "ip": r["ip"], "model": r.get("model", "")}
             if r["action"] == "RESTART":
                 g.execute_restart(issue)
             elif r["action"] == "PDU_CYCLE":
