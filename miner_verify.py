@@ -70,7 +70,7 @@ def _try_tcp_4028(ip: str) -> dict:
                     if not chunk:
                         break
                     data += chunk
-                    if len(data) > 100:  # got a real response, stop reading
+                    if len(data) > 20:  # got a real response, stop reading
                         break
                 except socket.timeout:
                     break

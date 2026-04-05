@@ -24,10 +24,16 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
-APP_TOKEN = os.environ.get("SLACK_APP_TOKEN", "")
+BOT_TOKEN  = os.environ.get("SLACK_BOT_TOKEN", "")
+APP_TOKEN  = os.environ.get("SLACK_APP_TOKEN", "")
 CHANNEL_ID = "C0AQ8SE1448"
 DB_PATH    = os.path.join(os.path.dirname(__file__), "guardian.db")
+
+# Authorized Slack user IDs — only these users can approve/deny actions
+AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_SLACK_USER_IDS", "")
+AUTHORIZED_USER_IDS = set(
+    uid.strip() for uid in AUTHORIZED_USER_IDS_RAW.split(",") if uid.strip()
+)
 
 app = App(token=BOT_TOKEN)
 
@@ -136,6 +142,11 @@ def handle_message(event, say, client):
     if text not in ("APPROVE", "DENY"):
         return
 
+    # Authorization check — only allowed users can trigger hardware actions
+    if AUTHORIZED_USER_IDS and user_id not in AUTHORIZED_USER_IDS:
+        logger.warning("Unauthorized approval attempt from user %s — ignored", user_id)
+        return
+
     logger.info("Processing %s from %s", text, user_id)
 
     try:
@@ -169,48 +180,8 @@ def handle_message(event, say, client):
     logger.info("Processed %s by %s", text, approved_by)
 
 
-@app.message(r"^(APPROVE|DENY|approve|deny)$")
-def handle_approval(message, say, client):
-    text      = message.get("text", "").strip().upper()
-    thread_ts = message.get("thread_ts")
-    user_id   = message.get("user")
-    channel   = message.get("channel")
-
-    if channel != CHANNEL_ID or not thread_ts:
-        return
-
-    logger.info("Received %s from %s in thread %s", text, user_id, thread_ts)
-
-    # Get user display name
-    try:
-        info     = client.users_info(user=user_id)
-        profile  = info["user"].get("profile", {})
-        approved_by = profile.get("display_name") or profile.get("real_name") or user_id
-    except Exception:
-        approved_by = user_id
-
-    actions = get_pending_actions(thread_ts)
-
-    if not actions:
-        say(text=f"⚠️ No pending actions found for this scan.", thread_ts=thread_ts)
-        return
-
-    if text == "APPROVE":
-        client.reactions_add(channel=CHANNEL_ID, timestamp=thread_ts, name="white_check_mark")
-        results = execute_actions(actions, approved_by, user_id)
-        update_approval_status(thread_ts, "APPROVED")
-        reply = f"✅ *{approved_by} approved {len(actions)} action(s):*\n" + "\n".join(results)
-    else:
-        client.reactions_add(channel=CHANNEL_ID, timestamp=thread_ts, name="x")
-        for action in actions:
-            log_audit(action["miner_id"], action["ip"], action["model"],
-                      action["problem"], action["action_type"],
-                      "DENIED", approved_by, user_id, action.get("scan_id"))
-        update_approval_status(thread_ts, "DENIED")
-        reply = f"❌ *{approved_by} denied {len(actions)} action(s).* No changes made."
-
-    say(text=reply, thread_ts=thread_ts)
-    logger.info("Processed %s by %s", text, approved_by)
+# handle_approval removed — was a duplicate of handle_message causing double
+# hardware actuation (double restart / double PDU cycle) on every APPROVE message
 
 
 if __name__ == "__main__":

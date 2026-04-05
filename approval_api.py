@@ -33,6 +33,12 @@ INTERNAL_API_SECRET  = os.environ.get("INTERNAL_API_SECRET", "")
 if not SLACK_SIGNING_SECRET:
     logger.warning("SLACK_SIGNING_SECRET not set — /slack/actions will reject all requests")
 
+if not INTERNAL_API_SECRET:
+    logger.warning(
+        "INTERNAL_API_SECRET not set — /approve /deny /approve_selected are unauthenticated. "
+        "Set this in .env to prevent unauthorized hardware actuation."
+    )
+
 app = FastAPI(title="Mining Guardian Approval API", version="1.0.0")
 
 # Restrict CORS to known consumers only — not wildcard
@@ -337,8 +343,10 @@ async def slack_interactive(request: Request):
 
 
 @app.get("/pending")
-async def list_pending():
+async def list_pending(request: Request):
     """List all pending approvals."""
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
     conn = get_db()
     rows = conn.execute(
         "SELECT * FROM pending_approvals WHERE status = 'PENDING' ORDER BY created_at DESC"

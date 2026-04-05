@@ -72,8 +72,14 @@ app = FastAPI(title="Mining Guardian API", version="1.0.0")
 # Allow Retool and any local client to connect
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=[
+        "https://dashboard.fieslerfamily.com",
+        "https://grafana.fieslerfamily.com",
+        "https://retool.com",
+        "http://localhost:8585",
+        "http://127.0.0.1:8585",
+    ],
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 

@@ -151,8 +151,8 @@ def execute_auto_action(action: dict) -> dict:
     """Execute an AUTO action directly via AMS — bypasses approval API to avoid
     creating spurious DENIED entries for other miners in the same thread."""
     try:
-        import sys
-        sys.path.insert(0, '/root/Mining-Gaurdian')
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import mining_guardian
         cfg = json.load(open("config.json"))
         g = mining_guardian.MiningGuardian(

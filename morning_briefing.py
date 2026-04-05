@@ -142,7 +142,13 @@ def query_llm(prompt: str) -> str:
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json"
             }, timeout=30)
-            return resp.json()["content"][0]["text"]
+            resp.raise_for_status()
+            data = resp.json()
+            for block in data.get("content", []):
+                if isinstance(block, dict) and block.get("type") == "text":
+                    return block["text"]
+            logger.warning("Claude returned no text block in morning briefing")
+            return None
         except Exception as e:
             logger.warning("Claude API failed, falling back to Ollama: %s", e)
 
@@ -175,8 +181,9 @@ def build_briefing(data: dict, btc_price: float) -> str:
     if btc_price:
         try:
             conn_hr = get_db()
+            # Bug fix: column is 'hashrate' (GH/s), not 'hashrate_ths'
             row = conn_hr.execute("""
-                SELECT SUM(hashrate_ths) as fleet_ths FROM (
+                SELECT SUM(mr.hashrate) / 1000.0 as fleet_ths FROM (
                     SELECT miner_id, MAX(id) as max_id
                     FROM miner_readings WHERE status='online'
                     GROUP BY miner_id
@@ -221,7 +228,7 @@ def build_briefing(data: dict, btc_price: float) -> str:
         lines.append(f"\n*⚠️ Most Active Problem Miners (last 24h)*")
         for f in data["top_flagged"]:
             lines.append(f"  • `{f['ip']}` {f['model']} — flagged {f['flags']}x "
-                         f"| avg HR: {f['avg_hr']:.0f}% | avg temp: {f['avg_temp']:.0f}°C")
+                         f"| avg HR: {f['avg_hr'] or 0:.0f}% | avg temp: {f['avg_temp'] or 0:.0f}°C")
 
     # HVAC overnight
     hvac = data["hvac"]

@@ -149,7 +149,7 @@ class PDUClient:
     SESSION_TTL = 280   # re-login after this many seconds (PDU times out at ~300s)
     TIMEOUT     = 8
 
-    def __init__(self, ip: str, user: str = 'admin', password: str = 'admin',
+    def __init__(self, ip: str, user: str, password: str,
                  outlet_names: Optional[dict] = None):
         self.ip           = ip
         self.user         = user

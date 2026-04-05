@@ -23,8 +23,13 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 ECLYPSE_URL  = "https://192.168.188.235"
-ECLYPSE_USER = os.getenv("ECLYPSE_USER", "BigStar")
-ECLYPSE_PASS = os.getenv("ECLYPSE_PASS", "BigSt@r2020")
+ECLYPSE_USER = os.getenv("ECLYPSE_USER")
+ECLYPSE_PASS = os.getenv("ECLYPSE_PASS")
+if not ECLYPSE_USER or not ECLYPSE_PASS:
+    import logging as _log
+    _log.getLogger(__name__).warning(
+        "ECLYPSE_USER / ECLYPSE_PASS not set — HVAC client will fail to authenticate"
+    )
 BASE         = f"{ECLYPSE_URL}/api/rest/v1/protocols/bacnet/local/objects"
 
 
