@@ -185,6 +185,14 @@ def execute_auto_action(action: dict) -> dict:
         # Only log to audit trail if the action actually executed
         if success:
             now = datetime.now()
+
+            # Record in miner_restarts so the escalation counter works —
+            # without this, get_failed_restart_count() never sees overnight
+            # restarts and miners never escalate to tickets
+            g.db.record_restart(
+                action["miner_id"], action["ip"], action.get("model", ""),
+                restart_type=f"AUTO_OVERNIGHT_{action['action_type']}"
+            )
             conn = get_db()
             conn.execute("""
                 INSERT INTO action_audit_log
