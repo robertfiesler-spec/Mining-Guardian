@@ -16,6 +16,7 @@ Runs on: http://localhost:8585
 
 import sqlite3
 import os
+import json
 import html as html_lib
 from datetime import datetime, timedelta
 from typing import Optional
@@ -63,6 +64,30 @@ g_spray_pump     = Gauge("mining_guardian_spray_pump_on",      "Spray pump on 1/
 # Environment gauges
 g_outside_temp   = Gauge("mining_guardian_outside_temp_f", "Outside temp °F",   ["site"])
 g_humidity       = Gauge("mining_guardian_humidity_pct",   "Outside humidity %", ["site"])
+
+# ── AI / Knowledge metrics ────────────────────────────────────────────────────
+g_knowledge_insights  = Gauge("mining_guardian_knowledge_insights_total",
+                               "Total insights in knowledge base", ["site"])
+g_knowledge_patterns  = Gauge("mining_guardian_knowledge_patterns_total",
+                               "Patterns identified by AI", ["site"])
+g_knowledge_profiles  = Gauge("mining_guardian_knowledge_miner_profiles_total",
+                               "Miner profiles in knowledge base", ["site"])
+g_knowledge_updated   = Gauge("mining_guardian_knowledge_last_updated_timestamp",
+                               "Unix timestamp of last knowledge update", ["site"])
+g_actions_approved    = Gauge("mining_guardian_actions_approved_total",
+                               "Total approved actions (all time)", ["site"])
+g_actions_denied      = Gauge("mining_guardian_actions_denied_total",
+                               "Total denied actions (all time)", ["site"])
+g_actions_auto        = Gauge("mining_guardian_actions_auto_overnight_total",
+                               "Total auto-executed overnight actions (all time)", ["site"])
+g_actions_expired     = Gauge("mining_guardian_actions_expired_total",
+                               "Total auto-expired approvals (all time)", ["site"])
+g_restarts_total      = Gauge("mining_guardian_restarts_total",
+                               "Total restarts performed (all time)", ["site"])
+g_tickets_total       = Gauge("mining_guardian_tickets_created_total",
+                               "Total AMS tickets created by AI (all time)", ["site"])
+g_knowledge_score     = Gauge("mining_guardian_knowledge_score",
+                               "AI knowledge score: insights + patterns * 10 + profiles", ["site"])
 
 SITE = "usa_188"
 
@@ -437,6 +462,60 @@ def metrics():
             g_outside_temp.labels(site=SITE).set(wx["temp_f"])
         if wx["humidity_pct"] is not None:
             g_humidity.labels(site=SITE).set(wx["humidity_pct"])
+
+    # ── AI / Knowledge metrics ─────────────────────────────────────────────────
+    try:
+        knowledge_path = os.path.join(os.path.dirname(__file__), "knowledge.json")
+        with open(knowledge_path) as f:
+            k = json.load(f)
+        insights  = len(k.get("known_issues", []))
+        patterns  = len(k.get("patterns", []))
+        profiles  = len(k.get("miner_profiles", {}))
+        score     = insights + (patterns * 10) + profiles
+        g_knowledge_insights.labels(site=SITE).set(insights)
+        g_knowledge_patterns.labels(site=SITE).set(patterns)
+        g_knowledge_profiles.labels(site=SITE).set(profiles)
+        g_knowledge_score.labels(site=SITE).set(score)
+        last_updated = k.get("last_updated", "")
+        if last_updated:
+            from datetime import timezone as _tz
+            try:
+                ts = datetime.fromisoformat(last_updated.replace("Z", "+00:00"))
+                g_knowledge_updated.labels(site=SITE).set(ts.timestamp())
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("Knowledge metrics read failed: %s", e)
+
+    # Audit log action counts
+    try:
+        approved = conn.execute(
+            "SELECT COUNT(*) FROM action_audit_log WHERE decision='APPROVED'"
+        ).fetchone()[0]
+        denied = conn.execute(
+            "SELECT COUNT(*) FROM action_audit_log WHERE decision='DENIED'"
+        ).fetchone()[0]
+        auto_ov = conn.execute(
+            "SELECT COUNT(*) FROM action_audit_log WHERE decision='AUTO_OVERNIGHT'"
+        ).fetchone()[0]
+        expired = conn.execute(
+            "SELECT COUNT(*) FROM action_audit_log WHERE decision='DENIED' "
+            "AND approved_by LIKE '%Auto-Expired%'"
+        ).fetchone()[0]
+        restarts = conn.execute(
+            "SELECT COUNT(*) FROM miner_restarts"
+        ).fetchone()[0]
+        tickets = conn.execute(
+            "SELECT COUNT(*) FROM known_dead_boards WHERE ticket_created IS NOT NULL"
+        ).fetchone()[0]
+        g_actions_approved.labels(site=SITE).set(approved)
+        g_actions_denied.labels(site=SITE).set(denied)
+        g_actions_auto.labels(site=SITE).set(auto_ov)
+        g_actions_expired.labels(site=SITE).set(expired)
+        g_restarts_total.labels(site=SITE).set(restarts)
+        g_tickets_total.labels(site=SITE).set(tickets)
+    except Exception as e:
+        logger.warning("Action metrics read failed: %s", e)
 
     conn.close()
     return PlainTextResponse(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
