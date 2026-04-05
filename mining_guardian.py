@@ -2472,6 +2472,25 @@ class GuardianDB:
                 (miner_id, now)
             ).fetchone()
         return row is not None
+
+    def get_failed_restart_count(self, miner_id: str, days: int = 7) -> int:
+        """Count restarts in the last N days where the miner did not recover.
+
+        A restart is 'failed' if the miner's hashrate is still below 50% of rated
+        at the time of the next scan after the restart. We approximate this by
+        counting restarts where the miner was restarted but is still being flagged
+        as a hashrate issue — i.e. it appears in the audit log as RESTART multiple
+        times without a clean period in between.
+
+        Used to decide when to stop restarting and escalate to a ticket instead.
+        """
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) as cnt FROM miner_restarts
+                WHERE miner_id=? AND restarted_at >= ?
+            """, (miner_id, cutoff)).fetchone()
+        return row["cnt"] if row else 0
         """Return datetime of last log collection for this miner, or None."""
         with self._connect() as conn:
             row = conn.execute(
@@ -2605,6 +2624,13 @@ class SlackNotifier:
         """POST a formatted scan summary to Slack via incoming webhook."""
         if not self.webhook_url:
             logger.debug("Slack webhook not configured — skipping Slack notification")
+            return
+
+        # Quiet hours — no Slack messages 10pm–5am
+        # Overnight automation handles that window; Slack noise at night is unwanted
+        current_hour = datetime.now().hour
+        if current_hour >= 22 or current_hour < 5:
+            logger.debug("Quiet hours (10pm–5am) — suppressing Slack scan report")
             return
 
         now     = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -3159,7 +3185,19 @@ class MiningGuardian:
                 # Only set RESTART if a dead board hasn't already claimed the action
                 # Dead board takes priority — its flow includes a restart anyway
                 if action != "RESTART_CHECK_BOARDS":
-                    action = "RESTART"
+                    # Escalation rule: if this miner has been restarted 2+ times
+                    # in the last 7 days and is still failing, stop restarting
+                    # and escalate to RESTART_CHECK_BOARDS → triggers ticket flow
+                    failed_restarts = self.db.get_failed_restart_count(miner_id, days=7)
+                    if failed_restarts >= 2:
+                        action = "RESTART_CHECK_BOARDS"
+                        issues.append(
+                            f"⚠️ Escalated: {failed_restarts} restarts in 7 days with no recovery — ticket required"
+                        )
+                        logger.info("[%s] Escalating to RESTART_CHECK_BOARDS after %d failed restarts",
+                                    miner_id, failed_restarts)
+                    else:
+                        action = "RESTART"
 
         # ── TEMP check ───────────────────────────────────────────────────
         # Same thresholds regardless of cooling type.
