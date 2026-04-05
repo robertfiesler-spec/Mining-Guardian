@@ -4006,9 +4006,9 @@ class MiningGuardian:
                            dry_run=self.config.dry_run)
         scan_id   = self.db.save_scan(miners, issues)
 
-        # Expire unanswered approvals older than 2 hours before saving new ones
+        # Expire unanswered approvals older than 1 hour before saving new ones
         # This keeps the queue clean — only the current scan's actions are ever pending
-        expired = self.db.expire_old_pending_approvals(max_age_minutes=120)
+        expired = self.db.expire_old_pending_approvals(max_age_minutes=60)
         if expired:
             logger.info("Expired %d stale pending approvals", expired)
         self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
