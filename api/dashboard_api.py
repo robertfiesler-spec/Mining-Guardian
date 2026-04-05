@@ -564,7 +564,7 @@ def metrics():
 
     # ── AI / Knowledge metrics ─────────────────────────────────────────────────
     try:
-        knowledge_path = os.path.join(os.path.dirname(__file__), "knowledge.json")
+        knowledge_path = str(_ROOT / "knowledge.json")
         with open(knowledge_path) as f:
             k = json.load(f)
         insights  = len(k.get("known_issues", []))
