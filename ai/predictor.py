@@ -220,6 +220,11 @@ def _predict_miner(miner_id: str, ip: str, model: str,
         s, sig = _check_max_temp_trend(state_rows, facility_stressed)
         if sig: signals.append(sig); scores.append(s)
 
+    # ── Signal 12: Board attach/detach events (chain_events in log_metrics) ──
+    # Board cycling on/off is a strong pre-failure signal — only for BiXBiT miners
+    s, sig = _check_chain_events(miner_id, ip)
+    if sig: signals.append(sig); scores.append(s)
+
     if not signals:
         return None
 
@@ -390,6 +395,42 @@ def _check_max_temp_trend(state_rows, facility_stressed: bool) -> Tuple[float, O
     if max_bds and max_bds[0] > MAX_BOARD_TEMP_WARN:
         score = min(70.0, 40.0 + (max_bds[0] - MAX_BOARD_TEMP_WARN) * 3.0)
         return score, f"max board temp {max_bds[0]:.0f}°C approaching thermal limit"
+    return 0.0, None
+
+
+def _check_chain_events(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
+    """
+    Signal 12: Detect board attach/detach cycling in log_metrics.
+    Board detach events = boards going offline temporarily — strong pre-failure signal.
+    Only available for BiXBiT firmware miners that export log data.
+    Checks last 24 hours of chain_events.
+    """
+    conn = get_db()
+    cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+    rows = conn.execute("""
+        SELECT text_value as event, board_index, COUNT(*) as cnt
+        FROM log_metrics
+        WHERE ip=? AND metric_type='chain_event' AND recorded_at>=?
+        GROUP BY text_value, board_index
+        ORDER BY cnt DESC
+    """, (ip, cutoff)).fetchall()
+    conn.close()
+
+    if not rows:
+        return 0.0, None
+
+    detach_counts = {r["board_index"]: r["cnt"] for r in rows if r["event"] == "detached"}
+    total_detaches = sum(detach_counts.values())
+
+    if total_detaches >= 50:
+        # High detach rate — boards cycling rapidly
+        score = min(85.0, 50.0 + (total_detaches - 50) * 0.3)
+        worst_board = max(detach_counts, key=detach_counts.get)
+        return score, (f"board cycling: {total_detaches} detach events in 24h "
+                      f"(board {worst_board}: {detach_counts[worst_board]}x)")
+    elif total_detaches >= 10:
+        score = min(65.0, 40.0 + total_detaches * 0.5)
+        return score, f"board instability: {total_detaches} detach events in 24h"
     return 0.0, None
 
 

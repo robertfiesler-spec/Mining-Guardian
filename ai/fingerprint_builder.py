@@ -229,6 +229,28 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     """, (miner_id, cutoff)).fetchone()["c"]
     flag_freq = round(flagged_cnt/(LOOKBACK_DAYS/7.0), 2)
 
+    # ── 8b. PDU power variance (miner_readings.pdu_power) ────────────────────
+    pdu_rows = conn.execute("""
+        SELECT pdu_power FROM miner_readings
+        WHERE miner_id=? AND pdu_power > 0 AND scanned_at>=?
+        ORDER BY id DESC LIMIT 50
+    """, (miner_id, cutoff)).fetchall()
+    pdu_readings = [float(r["pdu_power"]) for r in pdu_rows]
+    avg_pdu_kw  = round(sum(pdu_readings)/len(pdu_readings), 3) if pdu_readings else None
+    pdu_variance = None
+    if len(pdu_readings) >= 3:
+        mean = sum(pdu_readings)/len(pdu_readings)
+        pdu_variance = round((sum((p-mean)**2 for p in pdu_readings)/len(pdu_readings))**0.5, 3)
+
+    # ── 8c. Chain events (log_metrics — BiXBiT only) ─────────────────────────
+    chain_evt_rows = conn.execute("""
+        SELECT text_value as event, COUNT(*) as cnt
+        FROM log_metrics WHERE ip=? AND metric_type='chain_event' AND recorded_at>=?
+        GROUP BY text_value
+    """, (ip, cutoff)).fetchall()
+    chain_detaches = sum(r["cnt"] for r in chain_evt_rows if r["event"] == "detached")
+    chain_attaches = sum(r["cnt"] for r in chain_evt_rows if r["event"] == "attached")
+
     # ── 9. Known issues ───────────────────────────────────────────────────────
     known_issues = []
     dead = conn.execute("""
@@ -243,6 +265,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     if hashrate_drop_alerts > 5:          known_issues.append(f"hashrate_drop_alerts:{hashrate_drop_alerts}")
     if rej_rate and rej_rate > 0.008:     known_issues.append(f"high_rejection:{rej_rate*100:.2f}%")
     if max_board_temp_ever and max_board_temp_ever > 75: known_issues.append(f"high_board_temp:{max_board_temp_ever}C")
+    if chain_detaches > 100:              known_issues.append(f"board_cycling:{chain_detaches}_detaches")
 
     conn.close()
 
@@ -255,13 +278,14 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     if rej_rate is not None:
         modifier -= min(0.10, rej_rate * 12)              # up to -10% for high rejection
     if hashrate_drop_alerts > 0:
-        modifier -= min(0.10, hashrate_drop_alerts * 0.01)# up to -10% for AMS drop alerts
+        modifier -= min(0.10, hashrate_drop_alerts * 0.01)
     if hot_board_alerts > 0:
-        modifier -= min(0.08, hot_board_alerts * 0.008)   # up to -8% for hot board alerts
-    if dead:        modifier -= 0.30                       # -30% for confirmed dead boards
-    if bad_chips > 0: modifier -= 0.05 * min(4, bad_chips)# -5% per bad chip (max -20%)
-    if uptime_resets > 0: modifier -= 0.05 * min(3, uptime_resets) # -5% per reboot
-    if voltage_drop: modifier -= 0.15                     # -15% for low voltage
+        modifier -= min(0.08, hot_board_alerts * 0.008)
+    if dead:        modifier -= 0.30
+    if bad_chips > 0: modifier -= 0.05 * min(4, bad_chips)
+    if uptime_resets > 0: modifier -= 0.05 * min(3, uptime_resets)
+    if voltage_drop: modifier -= 0.15
+    if chain_detaches > 100: modifier -= min(0.15, chain_detaches * 0.0003)  # up to -15% for board cycling
     modifier = round(max(-0.5, min(0.5, modifier)), 3)
 
     return {
