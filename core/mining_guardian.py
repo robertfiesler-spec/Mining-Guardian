@@ -3755,9 +3755,8 @@ class MiningGuardian:
         won't repeat. Suppresses the miner from future reports automatically.
         """
         # Trigger on 3+ FAILURE outcomes OR 2+ restarts that escalated to RESTART_CHECK_BOARDS
-        # This catches oscillating miners (success then fail then success) that need inspection
         FAILURE_THRESHOLD = 3
-        ESCALATION_THRESHOLD = 2  # total restarts with escalation = needs ticket
+        ESCALATION_THRESHOLD = 2
 
         with self.db._connect() as conn:
             # Find miners with enough failures and no ticket
@@ -3777,8 +3776,8 @@ class MiningGuardian:
                 SELECT miner_id, ip, model,
                        COUNT(*) as failure_count, 'escalated_restarts' as reason
                 FROM miner_restarts
-                WHERE restart_type LIKE '%RESTART_CHECK_BOARDS%'
-                   OR restart_type LIKE '%Dead board%'
+                WHERE restart_type LIKE '%Dead board%'
+                   OR restart_type LIKE '%board%'
                 GROUP BY miner_id
                 HAVING failure_count >= ?
             """, (ESCALATION_THRESHOLD,)).fetchall()
@@ -3791,6 +3790,10 @@ class MiningGuardian:
                     seen.add(c["miner_id"])
                     candidates.append(c)
 
+        logger.info(
+            "Auto-ticket check: %d candidates found (%d failure + %d escalated)",
+            len(candidates), len(candidates_failures), len(candidates_escalated)
+        )
         for c in candidates:
             miner_id = str(c["miner_id"])
             ip       = c["ip"]
