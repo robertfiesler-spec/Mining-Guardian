@@ -3754,18 +3754,42 @@ class MiningGuardian:
         Runs every scan. Only creates a ticket once — marks ticket_created so it
         won't repeat. Suppresses the miner from future reports automatically.
         """
+        # Trigger on 3+ FAILURE outcomes OR 2+ restarts that escalated to RESTART_CHECK_BOARDS
+        # This catches oscillating miners (success then fail then success) that need inspection
         FAILURE_THRESHOLD = 3
+        ESCALATION_THRESHOLD = 2  # total restarts with escalation = needs ticket
 
         with self.db._connect() as conn:
             # Find miners with enough failures and no ticket
-            candidates = conn.execute("""
+            # Two paths:
+            # 1. 3+ FAILURE outcomes (confirmed bad)
+            # 2. 2+ total restarts escalated to RESTART_CHECK_BOARDS (oscillating pattern)
+            candidates_failures = conn.execute("""
                 SELECT miner_id, ip, model,
-                       COUNT(*) as failure_count
+                       COUNT(*) as failure_count, 'failure_outcomes' as reason
                 FROM miner_restarts
                 WHERE outcome = 'FAILURE'
                 GROUP BY miner_id
                 HAVING failure_count >= ?
             """, (FAILURE_THRESHOLD,)).fetchall()
+
+            candidates_escalated = conn.execute("""
+                SELECT miner_id, ip, model,
+                       COUNT(*) as failure_count, 'escalated_restarts' as reason
+                FROM miner_restarts
+                WHERE restart_type LIKE '%RESTART_CHECK_BOARDS%'
+                   OR restart_type LIKE '%Dead board%'
+                GROUP BY miner_id
+                HAVING failure_count >= ?
+            """, (ESCALATION_THRESHOLD,)).fetchall()
+
+            # Merge, dedup by miner_id
+            seen = set()
+            candidates = []
+            for c in list(candidates_failures) + list(candidates_escalated):
+                if c["miner_id"] not in seen:
+                    seen.add(c["miner_id"])
+                    candidates.append(c)
 
         for c in candidates:
             miner_id = str(c["miner_id"])
@@ -3784,7 +3808,8 @@ class MiningGuardian:
                 continue  # already has a ticket
 
             # Create the AMS ticket
-            title = f"Persistent failure — {model} @ {ip} ({failures} restart failures)"
+            reason_str = getattr(c, 'reason', 'persistent_failure') if hasattr(c, 'reason') else 'persistent_failure'
+            title = f"Persistent failure — {model} @ {ip} ({failures} restarts, needs inspection)"
             description = (
                 f"Miner: {miner_id} ({model})\n"
                 f"IP: {ip}\n"
