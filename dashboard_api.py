@@ -433,37 +433,53 @@ def metrics():
             g_flagged.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(flag)
             g_dead_boards.labels(miner_ip=ip, model=mdl, site=SITE).set(dead)
 
-            # ── Miner Health Score (MHS) ──────────────────────────────────────
-            # Only score online miners with hashrate > 0
+            # ── Miner Health Score (MHS) — raw component collection ───────────
+            # Collect raw scores first; normalize fleet-relative after the loop
             is_online = (m["status"] == "online") and hr > 0
             if is_online:
                 hw_errs  = hw_errors_by_ip.get(ip, 0)
                 rej_rate = rejection_by_ip.get(ip, 0)
-
-                # hashrate_score: exponential decay below 100% rated.
-                # Overclocked (>100%) = capped at 100. At 80% = 57pts. At 50% = 18pts. At 1% ≈ 0.
                 if hr >= 100:
                     hashrate_score = 100.0
                 else:
                     hashrate_score = 100.0 * ((hr / 100.0) ** 2.5)
-
-                # uptime_score: binary — flagged = 0 pts, healthy = 100
-                uptime_score = 0.0 if flag else 100.0
-
-                # hw_error_score: each error costs 10 pts (reaches 0 at 10 errors)
+                uptime_score   = 0.0 if flag else 100.0
                 hw_error_score = max(0.0, 100.0 - (hw_errs * 10.0))
-
-                # rejection_score: 0.5% rejection = 0 pts
                 rejection_score = max(0.0, 100.0 - (rej_rate * 20000.0))
+                raw_mhs = (
+                    hashrate_score   * 0.50 +
+                    uptime_score     * 0.30 +
+                    hw_error_score   * 0.15 +
+                    rejection_score  * 0.05
+                )
+                # Store for fleet-relative normalization pass below
+                if not hasattr(g_mhs, '_raw_batch'):
+                    g_mhs._raw_batch = {}
+                g_mhs._raw_batch[(ip, mdl)] = raw_mhs
 
-                mhs = round(min(max(
-                    hashrate_score   * 0.50 +   # hashrate is the primary signal
-                    uptime_score     * 0.30 +   # flagged = serious, binary penalty
-                    hw_error_score   * 0.15 +   # dead boards matter
-                    rejection_score  * 0.05     # pool health
-                , 0.0), 100.0), 1)
-
+        # ── Fleet-relative MHS normalization ──────────────────────────────────
+        # After all miners are scored, normalize so best=100, worst=0.
+        # This guarantees a full 0-100 spread regardless of fleet health.
+        if hasattr(g_mhs, '_raw_batch') and g_mhs._raw_batch:
+            raw_vals = list(g_mhs._raw_batch.values())
+            mn, mx = min(raw_vals), max(raw_vals)
+            spread = mx - mn if mx != mn else 1.0
+            for (ip, mdl), raw in g_mhs._raw_batch.items():
+                mhs = round((raw - mn) / spread * 100.0, 1)
                 g_mhs.labels(miner_ip=ip, model=mdl, site=SITE).set(mhs)
+            g_mhs._raw_batch = {}
+
+        # Hashrate/efficiency gauges (separate from MHS normalization)
+        for m in miners:
+            ip  = m["ip"] or "unknown"
+            mdl = (m["model"] or "unknown").replace(" ", "_")
+            hr  = float(m["hashrate_pct"]) if m["hashrate_pct"] else 0.0
+            pdu = m["pdu_power"] if m["pdu_power"] is not None else 0.0
+            is_online = (m["status"] == "online") and hr > 0
+            if is_online:
+                actual_ths = float(m["hashrate"] or 0) / 1000.0
+                rated_ths  = actual_ths / (hr / 100.0) if hr > 0 else 0
+                actual_w   = pdu * 1000 if pdu > 0 else float(m["consumption"] or 0)
                 g_hashrate_ths.labels(miner_ip=ip, model=mdl, site=SITE).set(round(actual_ths, 2))
                 g_rated_ths.labels(miner_ip=ip, model=mdl, site=SITE).set(round(rated_ths, 2))
                 if actual_w > 0:
@@ -633,14 +649,17 @@ def mhs_panel():
         upt_score = 0.0 if flg else 100.0
         hw_score  = max(0.0, 100.0 - (hw * 10.0))
         rej_score = max(0.0, 100.0 - (rej * 20000.0))
-        mhs = round(min(max(
-            hr_score  * 0.50 +
-            upt_score * 0.30 +
-            hw_score  * 0.15 +
-            rej_score * 0.05
-        , 0.0), 100.0), 1)
+        raw = hr_score*0.50 + upt_score*0.30 + hw_score*0.15 + rej_score*0.05
         model = html_lib.escape((m["model"] or "Unknown").replace("Antminer_", "").replace("_", " "))
-        scores.append({"ip": ip, "model": model, "mhs": mhs})
+        scores.append({"ip": ip, "model": model, "raw": raw})
+
+    # Fleet-relative normalization: best=100, worst=0, always full spread
+    if scores:
+        mn = min(s["raw"] for s in scores)
+        mx = max(s["raw"] for s in scores)
+        spread = mx - mn if mx != mn else 1.0
+        for s in scores:
+            s["mhs"] = round((s["raw"] - mn) / spread * 100.0, 1)
 
     scores.sort(key=lambda x: x["mhs"], reverse=True)
     top5 = scores[:5]
