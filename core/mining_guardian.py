@@ -3756,7 +3756,7 @@ class MiningGuardian:
         """
         # Trigger on 3+ FAILURE outcomes OR 2+ restarts that escalated to RESTART_CHECK_BOARDS
         FAILURE_THRESHOLD = 3
-        ESCALATION_THRESHOLD = 2
+        ESCALATION_THRESHOLD = 1  # even 1 dead board restart = needs inspection
 
         with self.db._connect() as conn:
             # Find miners with enough failures and no ticket
@@ -3782,17 +3782,28 @@ class MiningGuardian:
                 HAVING failure_count >= ?
             """, (ESCALATION_THRESHOLD,)).fetchall()
 
-            # Merge, dedup by miner_id
+            # Path 3: miners currently pending RESTART_CHECK_BOARDS approval
+            # Most direct signal — system already decided board check needed
+            candidates_pending = conn.execute("""
+                SELECT DISTINCT miner_id, ip, model,
+                       1 as failure_count, 'pending_board_check' as reason
+                FROM pending_approvals
+                WHERE action_type = 'RESTART_CHECK_BOARDS'
+                  AND status = 'PENDING'
+            """).fetchall()
+
+            # Merge all, dedup by miner_id
             seen = set()
             candidates = []
-            for c in list(candidates_failures) + list(candidates_escalated):
+            for c in list(candidates_failures) + list(candidates_escalated) + list(candidates_pending):
                 if c["miner_id"] not in seen:
                     seen.add(c["miner_id"])
                     candidates.append(c)
 
         logger.info(
-            "Auto-ticket check: %d candidates found (%d failure + %d escalated)",
-            len(candidates), len(candidates_failures), len(candidates_escalated)
+            "Auto-ticket check: %d candidates (%d failure + %d escalated + %d pending board check)",
+            len(candidates), len(candidates_failures),
+            len(candidates_escalated), len(candidates_pending)
         )
         for c in candidates:
             miner_id = str(c["miner_id"])
