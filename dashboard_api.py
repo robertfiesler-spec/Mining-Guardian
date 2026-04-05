@@ -437,43 +437,31 @@ def metrics():
             # Only score online miners with hashrate > 0
             is_online = (m["status"] == "online") and hr > 0
             if is_online:
-                # hashrate_score: hashrate % capped 0-100
-                hashrate_score = min(max(hr, 0), 100)
-
-                # efficiency_score: actual TH/kW vs rated TH/kW
-                # hashrate stored in GH/s → divide by 1000 for TH/s
-                actual_ths = float(m["hashrate"] or 0) / 1000.0
-                rated_ths  = actual_ths / (hr / 100.0) if hr > 0 else 0
-                actual_w   = pdu * 1000 if pdu > 0 else (float(m["consumption"] or 0))
-                rated_w    = actual_w  # use actual as proxy until we expose rated_w
-
-                if actual_ths > 0 and actual_w > 0:
-                    actual_eff = actual_ths / (actual_w / 1000.0)   # TH/kW
-                    # Baseline: ~100 TH/kW is good for S19JPro, ~35 TH/kW for immersion
-                    # Use hashrate_pct as efficiency proxy since we have rated vs actual
-                    efficiency_score = min(max(hr, 0), 100)  # same as hashrate until we have rated_w
-                else:
-                    efficiency_score = 0.0
-
-                # hw_error_score: each error costs 2 pts, floor 0
-                hw_errs = hw_errors_by_ip.get(ip, 0)
-                hw_error_score = max(0, 100 - (hw_errs * 2))
-
-                # uptime_score: not flagged = healthy = 100, flagged = reduced
-                uptime_score = 100.0 if flag == 0 else max(0, 100 - (flag * 50))
-
-                # rejection_score: 0.2% rejection = 0 pts (×500 multiplier)
+                hw_errs  = hw_errors_by_ip.get(ip, 0)
                 rej_rate = rejection_by_ip.get(ip, 0)
-                rejection_score = max(0, 100 - (rej_rate * 500))
 
-                mhs = (
-                    hashrate_score    * 0.35 +
-                    uptime_score      * 0.25 +
-                    efficiency_score  * 0.20 +
-                    hw_error_score    * 0.15 +
-                    rejection_score   * 0.05
-                )
-                mhs = round(min(max(mhs, 0), 100), 1)
+                # hashrate_score: exponential decay below 100% rated.
+                # Overclocked (>100%) = capped at 100. At 80% = 57pts. At 50% = 18pts. At 1% ≈ 0.
+                if hr >= 100:
+                    hashrate_score = 100.0
+                else:
+                    hashrate_score = 100.0 * ((hr / 100.0) ** 2.5)
+
+                # uptime_score: binary — flagged = 0 pts, healthy = 100
+                uptime_score = 0.0 if flag else 100.0
+
+                # hw_error_score: each error costs 10 pts (reaches 0 at 10 errors)
+                hw_error_score = max(0.0, 100.0 - (hw_errs * 10.0))
+
+                # rejection_score: 0.5% rejection = 0 pts
+                rejection_score = max(0.0, 100.0 - (rej_rate * 20000.0))
+
+                mhs = round(min(max(
+                    hashrate_score   * 0.50 +   # hashrate is the primary signal
+                    uptime_score     * 0.30 +   # flagged = serious, binary penalty
+                    hw_error_score   * 0.15 +   # dead boards matter
+                    rejection_score  * 0.05     # pool health
+                , 0.0), 100.0), 1)
 
                 g_mhs.labels(miner_ip=ip, model=mdl, site=SITE).set(mhs)
                 g_hashrate_ths.labels(miner_ip=ip, model=mdl, site=SITE).set(round(actual_ths, 2))
@@ -641,12 +629,16 @@ def mhs_panel():
         rej = rejection_by_ip.get(ip, 0)
         hw  = hw_errors_by_ip.get(ip, 0)
         flg = 1 if m["issue"] else 0
-        mhs = round(
-            min(max(hr, 0), 100)          * 0.35 +
-            (100.0 if flg == 0 else 50.0) * 0.25 +
-            min(max(hr, 0), 100)          * 0.20 +
-            max(0, 100 - hw * 2)          * 0.15 +
-            max(0, 100 - rej * 500)       * 0.05, 1)
+        hr_score  = 100.0 if hr >= 100 else 100.0 * ((hr / 100.0) ** 2.5)
+        upt_score = 0.0 if flg else 100.0
+        hw_score  = max(0.0, 100.0 - (hw * 10.0))
+        rej_score = max(0.0, 100.0 - (rej * 20000.0))
+        mhs = round(min(max(
+            hr_score  * 0.50 +
+            upt_score * 0.30 +
+            hw_score  * 0.15 +
+            rej_score * 0.05
+        , 0.0), 100.0), 1)
         model = html_lib.escape((m["model"] or "Unknown").replace("Antminer_", "").replace("_", " "))
         scores.append({"ip": ip, "model": model, "mhs": mhs})
 
