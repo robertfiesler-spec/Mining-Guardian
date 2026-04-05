@@ -37,7 +37,7 @@ g_flagged       = Gauge("mining_guardian_flagged",       "1 if currently flagged
 g_dead_boards   = Gauge("mining_guardian_dead_boards",   "Known dead hashboards count",  ["miner_ip","model","site"])
 
 # Per-board gauges (labels: miner_ip, board, site)
-g_board_rate    = Gauge("mining_guardian_board_rate_mhs",   "Board hashrate MH/s",       ["miner_ip","board","site"])
+g_board_rate    = Gauge("mining_guardian_board_rate_ghs",   "Board hashrate GH/s",       ["miner_ip","board","site"])
 g_board_voltage = Gauge("mining_guardian_board_voltage",    "Board voltage V",            ["miner_ip","board","site"])
 g_board_freq    = Gauge("mining_guardian_board_freq_mhz",   "Board frequency MHz",        ["miner_ip","board","site"])
 g_board_power   = Gauge("mining_guardian_board_power_w",    "Board consumption W",        ["miner_ip","board","site"])
@@ -415,7 +415,7 @@ def metrics():
         for c in chains:
             ip    = c["ip"] or "unknown"
             board = str(c["board_index"])
-            g_board_rate.labels(miner_ip=ip, board=board, site=SITE).set(c["rate_mhs"] or 0)
+            g_board_rate.labels(miner_ip=ip, board=board, site=SITE).set((c["rate_mhs"] or 0) / 1000)
             g_board_voltage.labels(miner_ip=ip, board=board, site=SITE).set(c["voltage"] or 0)
             g_board_freq.labels(miner_ip=ip, board=board, site=SITE).set(c["freq_mhz"] or 0)
             g_board_power.labels(miner_ip=ip, board=board, site=SITE).set(c["consumption_w"] or 0)
