@@ -2730,6 +2730,23 @@ class SlackNotifier:
             else:
                 hvac_lines.append("  ✅ All alarms clear")
 
+            # Feature 5: Add facility stress level to HVAC section
+            try:
+                from hvac_correlator import get_facility_stress_level
+                stress, stress_reasons = get_facility_stress_level()
+                if stress >= 51:
+                    hvac_lines.append(
+                        f"  🏭 *FACILITY STRESS: {stress}%* — "
+                        f"{', '.join(stress_reasons[:2])}. "
+                        f"Fleet flags may be facility-caused."
+                    )
+                elif stress >= 26:
+                    hvac_lines.append(
+                        f"  🏭 Facility watch: {stress}% — {', '.join(stress_reasons[:1])}"
+                    )
+            except Exception:
+                pass
+
             lines.extend(hvac_lines)
 
         lines.append(status_line)
@@ -4171,6 +4188,22 @@ class MiningGuardian:
                         check_outcomes()
                     except Exception:
                         logger.exception("Outcome checker error (non-fatal)")
+
+                # Feature 5: HVAC/Environment Correlation
+                # Check if fleet flags correlate with facility stress
+                try:
+                    from hvac_correlator import check_fleet_correlation, get_facility_stress_level
+                    stress, reasons = get_facility_stress_level()
+                    if stress >= 26:
+                        logger.info("Facility stress %d%%: %s", stress, reasons)
+                    # check_fleet_correlation uses the latest scan id
+                    latest_scan = self.db._connect().execute(
+                        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if latest_scan:
+                        check_fleet_correlation(latest_scan["id"])
+                except Exception:
+                    logger.debug("HVAC correlator skipped (non-fatal)")
 
             except Exception:
                 logger.exception("Guardian loop error")

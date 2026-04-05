@@ -48,6 +48,23 @@ def run_weekly():
     except Exception as e:
         logger.warning("Fingerprint building failed (non-fatal): %s", e)
 
+    # Feature 5: Compute HVAC correlation patterns and add to knowledge
+    try:
+        from hvac_correlator import get_hvac_correlation_patterns
+        logger.info("Computing HVAC correlation patterns...")
+        patterns = get_hvac_correlation_patterns(lookback_days=30)
+        if "error" not in patterns:
+            import json
+            from pathlib import Path
+            kpath = Path(_ROOT / "knowledge.json")
+            knowledge = json.loads(kpath.read_text()) if kpath.exists() else {}
+            knowledge["hvac_correlation"] = patterns
+            kpath.write_text(json.dumps(knowledge, indent=2))
+            corr = patterns.get("supply_temp_flag_correlation", 0)
+            logger.info("HVAC correlation: supply_temp vs flags = %.3f", corr)
+    except Exception as e:
+        logger.warning("HVAC correlation failed (non-fatal): %s", e)
+
     logger.info("=" * 60)
     logger.info("WEEKLY TRAINING — Complete")
     logger.info("=" * 60)
