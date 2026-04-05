@@ -4376,6 +4376,29 @@ class MiningGuardian:
         if expired:
             logger.info("Expired %d stale pending approvals", expired)
 
+        # Cancel pending approvals for miners that now have tickets
+        # Prevents stale RESTART_CHECK_BOARDS approvals from sitting in queue
+        # after a ticket has been auto-created for that miner
+        try:
+            with self.db._connect() as conn:
+                ticketed_ids = [r["miner_id"] for r in conn.execute(
+                    "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL"
+                ).fetchall()]
+                if ticketed_ids:
+                    placeholders = ",".join("?" for _ in ticketed_ids)
+                    cancelled = conn.execute(f"""
+                        UPDATE pending_approvals
+                        SET status='CANCELLED', responded_at=datetime('now')
+                        WHERE miner_id IN ({placeholders}) AND status='PENDING'
+                    """, ticketed_ids).rowcount
+                    if cancelled:
+                        logger.info(
+                            "Cancelled %d pending approvals for ticketed miners", cancelled
+                        )
+                    conn.commit()
+        except Exception:
+            logger.exception("Failed to cancel ticketed pending approvals (non-fatal)")
+
         # ── Auto-ticket: miners with 3+ FAILURE outcomes and no ticket yet ──
         # This handles miners that kept getting plain RESTART approvals but never
         # went through the RESTART_CHECK_BOARDS flow that normally creates tickets.
