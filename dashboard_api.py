@@ -622,20 +622,31 @@ def fleet_board_stats():
         return HTMLResponse("<p>No scan data yet.</p>")
 
     rej_rows = conn.execute("""
-        SELECT ip, model,
-               CASE WHEN SUM(accepted)+SUM(rejected)>0
-                    THEN CAST(SUM(rejected) AS FLOAT)/(SUM(accepted)+SUM(rejected))
+        SELECT p.ip,
+               COALESCE(m.model, 'Unknown') as model,
+               CASE WHEN SUM(p.accepted)+SUM(p.rejected)>0
+                    THEN CAST(SUM(p.rejected) AS FLOAT)/(SUM(p.accepted)+SUM(p.rejected))
                     ELSE 0 END as rej_rate
-        FROM pool_readings WHERE scan_id=? GROUP BY ip
+        FROM pool_readings p
+        LEFT JOIN (
+            SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
+        ) m ON p.ip = m.ip
+        WHERE p.scan_id=? GROUP BY p.ip
         ORDER BY rej_rate DESC LIMIT 10
-    """, (scan["id"],)).fetchall()
+    """, (scan["id"], scan["id"])).fetchall()
 
     hw_rows = conn.execute("""
-        SELECT ip, model, SUM(hw_errors) as total_hw
-        FROM chain_readings WHERE scan_id=?
-        GROUP BY ip HAVING total_hw > 0
+        SELECT c.ip,
+               COALESCE(m.model, 'Unknown') as model,
+               SUM(c.hw_errors) as total_hw
+        FROM chain_readings c
+        LEFT JOIN (
+            SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
+        ) m ON c.ip = m.ip
+        WHERE c.scan_id=?
+        GROUP BY c.ip HAVING total_hw > 0
         ORDER BY total_hw DESC LIMIT 10
-    """, (scan["id"],)).fetchall()
+    """, (scan["id"], scan["id"])).fetchall()
 
     conn.close()
 

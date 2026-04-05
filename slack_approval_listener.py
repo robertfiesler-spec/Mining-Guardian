@@ -252,13 +252,19 @@ class ApprovalListener:
             logger.error("Execution failed: %s", e)
 
     def _check_escalation(self):
-        """Alert if any miner flagged in 3+ consecutive scans."""
+        """Alert if any miner flagged in 3+ consecutive scans — skip known dead boards."""
         try:
             conn     = get_db()
             scan_ids = [str(r["id"]) for r in conn.execute(
                 "SELECT id FROM scans ORDER BY id DESC LIMIT 3").fetchall()]
             if len(scan_ids) < 3:
                 conn.close(); return
+
+            # Miners with tickets already created — suppress from escalation alerts
+            dead_miner_ids = {str(r["miner_id"]) for r in conn.execute(
+                "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL AND ticket_created IS NOT NULL"
+            ).fetchall()}
+
             ph = ",".join("?" * len(scan_ids))
             persistent = conn.execute(f"""
                 SELECT miner_id, ip, model,
@@ -272,6 +278,9 @@ class ApprovalListener:
             """, scan_ids).fetchall()
             conn.close()
             for m in persistent:
+                # Skip miners with AMS tickets — they're suppressed
+                if str(m['miner_id']) in dead_miner_ids:
+                    continue
                 key = f"escalated:{m['miner_id']}"
                 if key in self.processed: continue
                 self.client.chat_postMessage(channel=CHANNEL_ID, text=(
