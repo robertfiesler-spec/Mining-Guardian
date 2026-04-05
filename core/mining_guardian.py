@@ -4216,7 +4216,6 @@ class MiningGuardian:
                         preds = run_predictions(latest_scan["id"])
                         for pred in preds:
                             if pred["action"] == "PREEMPTIVE_RESTART":
-                                # High confidence — post immediately to Slack
                                 try:
                                     msg = format_prediction_alert(pred)
                                     self.slack.post_to_channel(msg)
@@ -4226,6 +4225,36 @@ class MiningGuardian:
                                        pred["ip"], pred["action"], pred["confidence"])
                 except Exception:
                     logger.debug("Predictor skipped (non-fatal)")
+
+                # Feature 8: Action Diversity
+                # Evaluate power tuning, eco mode, pool failover
+                try:
+                    from action_diversity import evaluate_all_actions
+                    latest_scan = self.db._connect().execute(
+                        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if latest_scan:
+                        new_actions = evaluate_all_actions(latest_scan["id"])
+                        for act in new_actions:
+                            logger.info(
+                                "Action diversity: %s for %s conf=%d%% reasons=%s",
+                                act["action"], act["ip"],
+                                act["confidence"], act.get("reasons", [])[:1]
+                            )
+                            # Log to audit trail for tracking
+                            try:
+                                self.db.log_action(
+                                    act["miner_id"], act["ip"],
+                                    act["model"],
+                                    problem="; ".join(act.get("reasons", [])),
+                                    action_taken=act["action"],
+                                    decision="PENDING_APPROVAL",
+                                    notes=f"confidence={act['confidence']}% data={act.get('data_used',[])}",
+                                )
+                            except Exception:
+                                pass
+                except Exception:
+                    logger.debug("Action diversity skipped (non-fatal)")
 
             except Exception:
                 logger.exception("Guardian loop error")
