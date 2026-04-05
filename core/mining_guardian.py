@@ -2758,6 +2758,13 @@ class SlackNotifier:
             dead_mixed = [i for i in fw_restarts if str(i["id"]) in dead_board_miners]
 
             from collections import defaultdict
+            # Load confidence scorer once for the whole report
+            try:
+                from confidence_scorer import get_confidence, get_gate
+                _has_confidence = True
+            except ImportError:
+                _has_confidence = False
+
             if approvable:
                 by_model: dict = defaultdict(list)
                 for i in approvable:
@@ -2766,7 +2773,17 @@ class SlackNotifier:
                 for model, group in by_model.items():
                     if len(group) == 1:
                         i = group[0]
-                        lines.append(f"  • `{i['ip']}` {model} — HR: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
+                        conf_str = ""
+                        if _has_confidence:
+                            try:
+                                score, _ = get_confidence(str(i["id"]), i["ip"], "RESTART",
+                                                          hashrate_pct=i.get("hashrate_pct"))
+                                gate = get_gate(score)
+                                gate_emoji = "🟢" if gate == "AUTO" else "🟡" if gate == "ASK" else "🔴"
+                                conf_str = f" {gate_emoji} Conf: {score}%"
+                            except Exception:
+                                pass
+                        lines.append(f"  • `{i['ip']}` {model} — HR: {i['hashrate_pct']} | Temp: {i['temp_chip']}{conf_str}")
                     else:
                         ips = ", ".join(f"`{i['ip']}`" for i in group)
                         issue_str = " | ".join(set(" | ".join(i["issues"]) for i in group))
