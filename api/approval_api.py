@@ -9,6 +9,7 @@ which processes the pending approvals and executes actions.
 Runs on: http://localhost:8686
 """
 
+import sys
 import sqlite3
 import json
 import logging
@@ -17,14 +18,21 @@ import hmac
 import time
 import os
 from datetime import datetime
+from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+# ── Path setup — add core/ so mining_guardian imports work ───────────────────
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 logger = logging.getLogger("approval_api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "guardian.db")
+DB_PATH = str(_ROOT / "guardian.db")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 INTERNAL_API_SECRET  = os.environ.get("INTERNAL_API_SECRET", "")
 
@@ -37,7 +45,9 @@ def get_guardian():
     if _guardian is None:
         try:
             import mining_guardian as mg
-            cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+            cfg_path = _ROOT / "config" / "config.json"
+            if not cfg_path.exists():
+                cfg_path = _ROOT / "config.json"
             cfg = json.load(open(cfg_path))
             _guardian = mg.MiningGuardian(
                 mg.GuardianConfig(**{
@@ -280,14 +290,9 @@ async def approve_selected_actions(request: Request):
     # Execute only the approved ones
     if approved:
         try:
-            import mining_guardian
-            cfg = json.load(open("config.json"))
-            g = mining_guardian.MiningGuardian(
-                mining_guardian.GuardianConfig(**{
-                    k: v for k, v in cfg.items()
-                    if k in mining_guardian.GuardianConfig.__dataclass_fields__
-                })
-            )
+            g = get_guardian()
+            if g is None:
+                raise RuntimeError("MiningGuardian singleton unavailable")
             for r in approved:
                 issue = {"id": r["miner_id"], "ip": r["ip"], "model": ""}
                 if r["action"] == "RESTART":

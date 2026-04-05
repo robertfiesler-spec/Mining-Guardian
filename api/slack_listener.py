@@ -12,11 +12,13 @@ Usage:
     python slack_listener.py
 """
 
+import sys
 import os
 import sqlite3
 import logging
 import threading
 from datetime import datetime
+from pathlib import Path
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
@@ -24,10 +26,15 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 BOT_TOKEN  = os.environ.get("SLACK_BOT_TOKEN", "")
 APP_TOKEN  = os.environ.get("SLACK_APP_TOKEN", "")
 CHANNEL_ID = "C0AQ8SE1448"
-DB_PATH    = os.path.join(os.path.dirname(__file__), "guardian.db")
+DB_PATH    = str(_ROOT / "guardian.db")
 
 # Authorized Slack user IDs — only these users can approve/deny actions
 AUTHORIZED_USER_IDS_RAW = os.getenv("AUTHORIZED_SLACK_USER_IDS", "")
@@ -81,11 +88,12 @@ def log_audit(miner_id, ip, model, problem, action_taken,
     logger.info("Audit: %s %s on %s by %s", decision, action_taken, ip, approved_by)
 
 def execute_actions(actions, approved_by, slack_user_id):
-    import sys
-    sys.path.insert(0, os.path.dirname(__file__))
     from mining_guardian import AMSClient, GuardianConfig
     try:
-        config = GuardianConfig.from_file(os.path.join(os.path.dirname(__file__), "config.json"))
+        cfg_path = _ROOT / "config" / "config.json"
+        if not cfg_path.exists():
+            cfg_path = _ROOT / "config.json"
+        config = GuardianConfig.from_file(str(cfg_path))
         ams    = AMSClient(config)
     except Exception as e:
         logger.error("Could not load AMS client: %s", e)

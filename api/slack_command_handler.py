@@ -17,6 +17,7 @@ Commands:
 Runs as a systemd service alongside the other listeners.
 """
 
+import sys
 import os
 import re
 import time
@@ -25,6 +26,7 @@ import logging
 import sqlite3
 import requests
 from datetime import datetime
+from pathlib import Path
 from slack_sdk import WebClient
 from dotenv import load_dotenv
 
@@ -34,12 +36,17 @@ logger = logging.getLogger("slack_commands")
 
 load_dotenv()
 
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID = "C0AQ8SE1448"
-DB_PATH = "guardian.db"
+DB_PATH = str(_ROOT / "guardian.db")
 OLLAMA_URL = "http://localhost:11434/api/generate"
 POLL_INTERVAL = 5
-BOT_USER_ID = None  # populated on startup
+BOT_USER_ID = None
 
 
 class CommandHandler:

@@ -10,7 +10,14 @@ hardware identity, per-chip data, HVAC/weather correlation.
 Cron: 0 3 * * 0 cd /root/Mining-Gaurdian && venv/bin/python weekly_train.py >> /tmp/weekly_train.log 2>&1
 """
 
+import sys
 import logging
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT / "ai") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "ai"))
+
 from train_comprehensive import run_comprehensive_training
 from knowledge_manager import KnowledgeManager
 

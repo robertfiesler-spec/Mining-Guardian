@@ -9,6 +9,7 @@ NOTE: Socket Mode is owned by OpenClaw — we use polling instead of Bolt
 to avoid conflicts. Block Kit buttons post a text reply that we detect here.
 """
 
+import sys
 import os
 import time
 import json
@@ -17,6 +18,7 @@ import sqlite3
 import requests
 import threading
 from datetime import datetime, timedelta
+from pathlib import Path
 from slack_sdk import WebClient
 from dotenv import load_dotenv
 
@@ -25,11 +27,17 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("slack_approval_listener")
 
+# ── Path setup ────────────────────────────────────────────────────────────────
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID      = "C0AQ8SE1448"
 APPROVAL_API    = "http://localhost:8686"
-DB_PATH         = "guardian.db"
-POLL_INTERVAL   = 15  # seconds — increased to avoid rate limiting
+DB_PATH         = str(_ROOT / "guardian.db")
+POLL_INTERVAL   = 15
 
 # Authorized Slack user IDs — only these users can approve/deny actions.
 # Add user IDs from your Slack workspace (Settings → Members → click member → copy member ID).

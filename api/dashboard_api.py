@@ -14,12 +14,20 @@ Usage:
 Runs on: http://localhost:8585
 """
 
+import sys
 import sqlite3
 import os
 import json
 import html as html_lib
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
+
+# ── Path setup ────────────────────────────────────────────────────────────────
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -102,7 +110,7 @@ g_knowledge_score     = Gauge("mining_guardian_knowledge_score",
 
 SITE = "usa_188"
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "guardian.db")
+DB_PATH = str(_ROOT / "guardian.db")
 app = FastAPI(title="Mining Guardian API", version="1.0.0")
 
 # Allow Retool and any local client to connect

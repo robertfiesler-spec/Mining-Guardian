@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import time
 import sqlite3
@@ -8,6 +9,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+# ── Path setup — works whether run from repo root or core/ directory ──────────
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import requests
 import websocket
