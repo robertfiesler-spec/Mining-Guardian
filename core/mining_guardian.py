@@ -3733,6 +3733,89 @@ class MiningGuardian:
                 reason=f"Board(s) {still_dead_idx} still dead after restart"
             )
 
+    def _auto_create_missing_tickets(self, miners: list) -> None:
+        """
+        Scan-level ticket creation for miners that have accumulated 3+ FAILURE
+        outcomes but never had an AMS ticket created — this handles the case where
+        miners kept getting plain RESTART approvals instead of RESTART_CHECK_BOARDS,
+        bypassing the normal ticket creation flow in execute_board_restart().
+
+        Runs every scan. Only creates a ticket once — marks ticket_created so it
+        won't repeat. Suppresses the miner from future reports automatically.
+        """
+        FAILURE_THRESHOLD = 3
+
+        with self.db._connect() as conn:
+            # Find miners with enough failures and no ticket
+            candidates = conn.execute("""
+                SELECT miner_id, ip, model,
+                       COUNT(*) as failure_count
+                FROM miner_restarts
+                WHERE outcome = 'FAILURE'
+                GROUP BY miner_id
+                HAVING failure_count >= ?
+            """, (FAILURE_THRESHOLD,)).fetchall()
+
+        for c in candidates:
+            miner_id = str(c["miner_id"])
+            ip       = c["ip"]
+            model    = c["model"]
+            failures = c["failure_count"]
+
+            # Skip if already in known_dead_boards with a ticket
+            with self.db._connect() as conn:
+                existing = conn.execute("""
+                    SELECT ticket_created FROM known_dead_boards
+                    WHERE miner_id=? AND resolved_at IS NULL
+                """, (miner_id,)).fetchone()
+
+            if existing and existing["ticket_created"]:
+                continue  # already has a ticket
+
+            # Create the AMS ticket
+            title = f"Persistent failure — {model} @ {ip} ({failures} restart failures)"
+            description = (
+                f"Miner: {miner_id} ({model})\n"
+                f"IP: {ip}\n"
+                f"Failed restarts: {failures}\n"
+                f"Outcome: Every restart attempt returned FAILURE outcome.\n"
+                f"Action: Miner has been automatically suppressed from reports.\n"
+                f"Physical inspection required."
+            )
+            try:
+                ticket = self.ams.create_ticket(
+                    title=title,
+                    description=description,
+                    priority="high",
+                    miner_ids=[int(miner_id)]
+                )
+                ticket_id = str(ticket.get("id", "unknown"))
+                logger.info(
+                    "[%s] Auto-ticket created: #%s (%d failures)",
+                    ip, ticket_id, failures
+                )
+                # Register in known_dead_boards so miner is suppressed
+                if not existing:
+                    self.db.register_dead_boards(
+                        miner_id, ip, model,
+                        board_indices=[], restart_result="failed"
+                    )
+                self.db.mark_ticket_created(miner_id, ticket_id)
+
+                # Slack notification
+                try:
+                    self.slack.post_to_channel(
+                        f"🎫 *Auto-ticket created: #{ticket_id}*\n"
+                        f"  `{ip}` ({model}) — {failures} FAILURE outcomes, "
+                        f"no recovery after repeated restarts.\n"
+                        f"  Miner removed from reports. Physical inspection required."
+                    )
+                except Exception:
+                    pass
+
+            except Exception as e:
+                logger.error("[%s] Auto-ticket creation failed: %s", ip, e)
+
     def _escalate_board_issue(self, miner_id: str, ip: str, model: str,
                                dead_idx: list, reason: str) -> None:
         """
@@ -4126,6 +4209,15 @@ class MiningGuardian:
         expired = self.db.expire_old_pending_approvals(max_age_minutes=60)
         if expired:
             logger.info("Expired %d stale pending approvals", expired)
+
+        # ── Auto-ticket: miners with 3+ FAILURE outcomes and no ticket yet ──
+        # This handles miners that kept getting plain RESTART approvals but never
+        # went through the RESTART_CHECK_BOARDS flow that normally creates tickets.
+        try:
+            self._auto_create_missing_tickets(miners)
+        except Exception:
+            logger.exception("Auto-ticket creation failed (non-fatal)")
+
         self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_miner_state_readings(scan_id, datetime.now().isoformat(), miners)
