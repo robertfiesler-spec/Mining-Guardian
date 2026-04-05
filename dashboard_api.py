@@ -33,11 +33,13 @@ from prometheus_client import (
 g_hashrate_pct  = Gauge("mining_guardian_hashrate_pct",  "Hashrate % of rated",         ["miner_ip","model","site","map_location"])
 g_temp_chip     = Gauge("mining_guardian_temp_chip",     "Chip temperature °C",          ["miner_ip","model","site","map_location"])
 g_pdu_power_kw  = Gauge("mining_guardian_pdu_power_kw",  "PDU outlet power draw kW",    ["miner_ip","model","site","map_location"])
+g_consumption_kw= Gauge("mining_guardian_consumption_kw","Miner-reported power draw kW (fallback when no PDU)", ["miner_ip","model","site"])
+g_power_kw      = Gauge("mining_guardian_power_kw",      "Best available power kW (PDU if available, else miner-reported)", ["miner_ip","model","site"])
 g_flagged       = Gauge("mining_guardian_flagged",       "1 if currently flagged",       ["miner_ip","model","site","map_location"])
 g_dead_boards   = Gauge("mining_guardian_dead_boards",   "Known dead hashboards count",  ["miner_ip","model","site"])
 
 # Per-board gauges (labels: miner_ip, board, site)
-g_board_rate    = Gauge("mining_guardian_board_rate_ghs",   "Board hashrate GH/s",       ["miner_ip","board","site"])
+g_board_rate    = Gauge("mining_guardian_board_rate_ths",   "Board hashrate TH/s",       ["miner_ip","board","site"])
 g_board_voltage = Gauge("mining_guardian_board_voltage",    "Board voltage V",            ["miner_ip","board","site"])
 g_board_freq    = Gauge("mining_guardian_board_freq_mhz",   "Board frequency MHz",        ["miner_ip","board","site"])
 g_board_power   = Gauge("mining_guardian_board_power_w",    "Board consumption W",        ["miner_ip","board","site"])
@@ -432,6 +434,13 @@ def metrics():
             g_pdu_power_kw.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(pdu)
             g_flagged.labels(miner_ip=ip, model=mdl, site=SITE, map_location=loc).set(flag)
             g_dead_boards.labels(miner_ip=ip, model=mdl, site=SITE).set(dead)
+
+            # Miner-reported consumption and best-available power
+            consumption = float(m["consumption"] or 0) / 1000.0  # W → kW
+            g_consumption_kw.labels(miner_ip=ip, model=mdl, site=SITE).set(consumption)
+            # Best power: PDU if non-zero, otherwise miner-reported
+            best_power = pdu if pdu > 0 else consumption
+            g_power_kw.labels(miner_ip=ip, model=mdl, site=SITE).set(best_power)
 
             # ── Miner Health Score (MHS) — raw component collection ───────────
             # Collect raw scores first; normalize fleet-relative after the loop
