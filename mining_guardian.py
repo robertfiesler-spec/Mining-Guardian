@@ -1579,37 +1579,95 @@ class GuardianDB:
                                issues: List[Dict]) -> None:
         """Save actionable issues as pending approvals linked to a Slack thread.
 
-        Filters out miners that should never appear in the approval queue:
-          - Known dead boards (already attempted restart, needs physical inspection)
-          - PHYSICAL_CYCLE (no PDU, requires manual visit)
-          - MONITOR (no action needed)
+        Rules:
+          - Only RESTART / PDU_CYCLE / RESTART_CHECK_BOARDS ever need approval
+          - Known dead boards are skipped (need physical inspection)
+          - One pending approval per miner — if one already exists, update it
+            so the thread_ts and problem stay current without creating duplicates
         """
         now  = datetime.now().isoformat()
-        rows = []
-        for i in issues:
-            if i["action"] not in ("PDU_CYCLE", "RESTART", "RESTART_CHECK_BOARDS"):
-                continue  # PHYSICAL_CYCLE and MONITOR never need approval
-            # Skip known dead boards — they need physical inspection, not software action
-            if self.has_known_dead_boards(str(i["id"])):
-                logger.info("Skipping pending approval for miner %s (%s) — known dead boards",
-                            i["id"], i.get("ip"))
-                continue
-            rows.append((
-                now, scan_id, thread_ts,
-                i["id"], i["ip"], i["model"],
-                i["action"], " | ".join(i.get("issues", [])),
-                i.get("pdu_id"), i.get("outlet"),
-            ))
-        if not rows:
-            return
         with self._connect() as conn:
-            conn.executemany("""
-                INSERT INTO pending_approvals
-                (created_at, scan_id, thread_ts, miner_id, ip, model,
-                 action_type, problem, pdu_id, outlet)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
-            """, rows)
-        logger.info("Saved %s pending approvals for thread %s", len(rows), thread_ts)
+            for i in issues:
+                if i["action"] not in ("PDU_CYCLE", "RESTART", "RESTART_CHECK_BOARDS"):
+                    continue
+                if self.has_known_dead_boards(str(i["id"])):
+                    logger.info("Skipping pending approval for miner %s (%s) — known dead boards",
+                                i["id"], i.get("ip"))
+                    continue
+
+                problem = " | ".join(i.get("issues", []))
+
+                # Check if a PENDING approval already exists for this miner
+                existing = conn.execute(
+                    "SELECT id FROM pending_approvals "
+                    "WHERE miner_id=? AND status='PENDING' LIMIT 1",
+                    (str(i["id"]),)
+                ).fetchone()
+
+                if existing:
+                    # Update existing row — keep it current without spamming new rows
+                    conn.execute("""
+                        UPDATE pending_approvals
+                        SET thread_ts=?, scan_id=?, action_type=?,
+                            problem=?, pdu_id=?, outlet=?, created_at=?
+                        WHERE id=?
+                    """, (thread_ts, scan_id, i["action"],
+                          problem, i.get("pdu_id"), i.get("outlet"),
+                          now, existing["id"]))
+                    logger.debug("Updated existing pending approval for miner %s", i["id"])
+                else:
+                    # New pending approval
+                    conn.execute("""
+                        INSERT INTO pending_approvals
+                        (created_at, scan_id, thread_ts, miner_id, ip, model,
+                         action_type, problem, pdu_id, outlet)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, (now, scan_id, thread_ts,
+                          i["id"], i["ip"], i["model"],
+                          i["action"], problem,
+                          i.get("pdu_id"), i.get("outlet")))
+                    logger.info("New pending approval for miner %s (%s) → %s",
+                                i["id"], i["ip"], i["action"])
+
+    def expire_old_pending_approvals(self, max_age_minutes: int = 30) -> int:
+        """Auto-deny pending approvals older than max_age_minutes.
+
+        Called at the start of each scan cycle. If you didn't respond in
+        30 minutes, the approval is auto-denied and cleared from the queue.
+        This prevents the queue from growing unboundedly across scans.
+        """
+        cutoff = (datetime.now() - timedelta(minutes=max_age_minutes)).isoformat()
+        with self._connect() as conn:
+            expired = conn.execute(
+                "SELECT id, miner_id, ip, action_type FROM pending_approvals "
+                "WHERE status='PENDING' AND created_at < ?",
+                (cutoff,)
+            ).fetchall()
+
+            if expired:
+                conn.execute("""
+                    UPDATE pending_approvals
+                    SET status='DENIED', responded_at=?
+                    WHERE status='PENDING' AND created_at < ?
+                """, (datetime.now().isoformat(), cutoff))
+
+                # Log each expiry to audit trail
+                for row in expired:
+                    conn.execute("""
+                        INSERT INTO action_audit_log
+                        (timestamp, date, miner_id, ip, model, problem,
+                         action_taken, decision, approved_by, notes)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, (datetime.now().isoformat(),
+                          datetime.now().strftime("%Y-%m-%d"),
+                          row["miner_id"], row["ip"], "", "",
+                          row["action_type"], "DENIED",
+                          "Mining Guardian (Auto-Expired)",
+                          f"No response within {max_age_minutes} minutes — auto-denied"))
+
+                logger.info("Auto-expired %d pending approvals older than %d min",
+                            len(expired), max_age_minutes)
+        return len(expired) if expired else 0
 
     def log_action(self, miner_id: str, ip: str, model: str,
                    problem: str, action_taken: str, decision: str,
@@ -3909,6 +3967,12 @@ class MiningGuardian:
         self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot,
                            dry_run=self.config.dry_run)
         scan_id   = self.db.save_scan(miners, issues)
+
+        # Expire unanswered approvals older than 30 minutes before saving new ones
+        # This keeps the queue clean — only the current scan's actions are ever pending
+        expired = self.db.expire_old_pending_approvals(max_age_minutes=30)
+        if expired:
+            logger.info("Expired %d stale pending approvals", expired)
         self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_miner_state_readings(scan_id, datetime.now().isoformat(), miners)
