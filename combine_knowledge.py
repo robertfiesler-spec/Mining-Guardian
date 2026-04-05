@@ -129,6 +129,7 @@ def query_llm(prompt: str) -> str:
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json"
             }, timeout=120)
+            resp.raise_for_status()
             data = resp.json()
             text = data.get("content", [{}])[0].get("text", "")
             logger.info("Claude merge complete (%d chars)", len(text))
@@ -264,8 +265,10 @@ def main():
     master = build_master_knowledge(sites, llm_response)
 
     # Save
-    with open(OUTPUT_PATH, "w") as f:
+    tmp = OUTPUT_PATH + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(master, f, indent=2)
+    os.replace(tmp, OUTPUT_PATH)
 
     logger.info("=" * 60)
     logger.info("MERGE COMPLETE — master_knowledge.json")
