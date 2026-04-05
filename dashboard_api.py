@@ -611,6 +611,78 @@ def metrics():
     conn.close()
     return PlainTextResponse(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
+
+@app.get("/fleet/board_stats", response_class=HTMLResponse)
+def fleet_board_stats():
+    """Fleet board health: worst rejection rates + worst HW error miners, side by side."""
+    conn = get_db()
+    scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+    if not scan:
+        conn.close()
+        return HTMLResponse("<p>No scan data yet.</p>")
+
+    rej_rows = conn.execute("""
+        SELECT ip, model,
+               CASE WHEN SUM(accepted)+SUM(rejected)>0
+                    THEN CAST(SUM(rejected) AS FLOAT)/(SUM(accepted)+SUM(rejected))
+                    ELSE 0 END as rej_rate
+        FROM pool_readings WHERE scan_id=? GROUP BY ip
+        ORDER BY rej_rate DESC LIMIT 10
+    """, (scan["id"],)).fetchall()
+
+    hw_rows = conn.execute("""
+        SELECT ip, model, SUM(hw_errors) as total_hw
+        FROM chain_readings WHERE scan_id=?
+        GROUP BY ip HAVING total_hw > 0
+        ORDER BY total_hw DESC LIMIT 10
+    """, (scan["id"],)).fetchall()
+
+    conn.close()
+
+    def rej_color(r):
+        if r >= 0.01: return "#ff4d4f"
+        if r >= 0.003: return "#fa8c16"
+        if r >= 0.001: return "#fadb14"
+        return "#52c41a"
+
+    rej_html = ""
+    for i, r in enumerate(rej_rows, 1):
+        rate = r["rej_rate"] or 0
+        if rate == 0: continue
+        color = rej_color(rate)
+        model = (r["model"] or "?").replace("Antminer_","").replace("_"," ")
+        rej_html += f'<tr><td style="color:{color};font-weight:bold;padding:5px 10px">{i}</td><td style="font-family:monospace;padding:5px 10px">{r["ip"]}</td><td style="color:#aaa;padding:5px 10px">{model}</td><td style="color:{color};font-weight:bold;padding:5px 10px">{rate*100:.3f}%</td></tr>'
+    if not rej_html:
+        rej_html = '<tr><td colspan="4" style="padding:10px;color:#52c41a;text-align:center">✅ No rejections</td></tr>'
+
+    hw_html = ""
+    for i, r in enumerate(hw_rows, 1):
+        hw = int(r["total_hw"] or 0)
+        color = "#ff4d4f" if hw>=50 else "#fa8c16" if hw>=10 else "#fadb14"
+        model = (r["model"] or "?").replace("Antminer_","").replace("_"," ")
+        hw_html += f'<tr><td style="color:{color};font-weight:bold;padding:5px 10px">{i}</td><td style="font-family:monospace;padding:5px 10px">{r["ip"]}</td><td style="color:#aaa;padding:5px 10px">{model}</td><td style="color:{color};font-weight:bold;padding:5px 10px">{hw}</td></tr>'
+    if not hw_html:
+        hw_html = '<tr><td colspan="4" style="padding:10px;color:#52c41a;text-align:center">✅ No HW errors</td></tr>'
+
+    return HTMLResponse(f"""<style>
+    body{{background:transparent;color:#e0e0e0;font-family:sans-serif;margin:0;padding:8px}}
+    .wrap{{display:flex;gap:20px}} .col{{flex:1}}
+    h3{{margin:0 0 10px 0;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.12em}}
+    h3.rej{{color:#fa8c16}} h3.hw{{color:#ff4d4f}}
+    table{{width:100%;border-collapse:collapse;font-size:13px}}
+    th{{text-align:left;padding:5px 10px;color:#999;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #444}}
+    tr:hover{{background:rgba(255,255,255,.06)}}
+    </style>
+    <div class="wrap">
+      <div class="col"><h3 class="rej">⚠️ Worst Pool Rejection Rates</h3>
+        <table><thead><tr><th>#</th><th>IP</th><th>Model</th><th>Rej %</th></tr></thead>
+        <tbody>{rej_html}</tbody></table></div>
+      <div class="col"><h3 class="hw">🔧 Worst HW Error Miners</h3>
+        <table><thead><tr><th>#</th><th>IP</th><th>Model</th><th>Errors</th></tr></thead>
+        <tbody>{hw_html}</tbody></table></div>
+    </div>""")
+
+
 @app.get("/mhs", response_class=HTMLResponse)
 def mhs_panel():
     """Miner Health Score leaderboard — HTML table for Grafana text panel iframe.
