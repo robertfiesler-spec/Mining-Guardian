@@ -207,10 +207,16 @@ def _update_knowledge(
         profiles = knowledge.setdefault("miner_profiles", {})
         profile  = profiles.setdefault(miner_id, {
             "ip": ip, "model": model,
-            "restart_outcomes": [], "success_count": 0,
-            "failure_count": 0, "partial_count": 0,
+            "restart_outcomes": [],
+            "success_count": 0,
+            "failure_count": 0,
+            "partial_count": 0,
             "last_updated": None
         })
+
+        # Ensure restart_outcomes key exists on old profiles
+        if "restart_outcomes" not in profile:
+            profile["restart_outcomes"] = []
 
         # Append this outcome
         profile["restart_outcomes"].append({
