@@ -4568,8 +4568,11 @@ class MiningGuardian:
                     if latest_scan:
                         preds = run_predictions(latest_scan["id"])
                         for pred in preds:
-                            miner_id = str(pred.get("miner_id", ""))
-                            ip       = pred.get("ip", "")
+                            # PAUSED: Preemptive restart alerts silenced overnight
+                            # Resume in morning after tuning confidence thresholds
+                            # and signal sensitivity. Data still being collected.
+                            logger.info("Prediction (paused): %s %s conf=%d%%",
+                                       pred.get("ip"), pred.get("action"), pred.get("confidence", 0))
 
                             # Skip ticketed miners — they already have a ticket open
                             if self.db.has_known_dead_boards(miner_id):
