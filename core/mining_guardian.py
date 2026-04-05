@@ -4261,14 +4261,60 @@ class MiningGuardian:
                     if latest_scan:
                         preds = run_predictions(latest_scan["id"])
                         for pred in preds:
+                            miner_id = str(pred.get("miner_id", ""))
+                            ip       = pred.get("ip", "")
+
+                            # Skip ticketed miners — they already have a ticket open
+                            if self.db.has_known_dead_boards(miner_id):
+                                logger.debug(
+                                    "Prediction suppressed for %s — dead board ticket open", ip
+                                )
+                                continue
+
+                            # Skip Auradine voltage signal — 0.29V is their firmware format
+                            firmware = ""
+                            try:
+                                with self.db._connect() as _c:
+                                    _fw = _c.execute(
+                                        "SELECT firmware_manufacturer FROM miner_readings "
+                                        "WHERE miner_id=? ORDER BY id DESC LIMIT 1", (miner_id,)
+                                    ).fetchone()
+                                    firmware = (_fw["firmware_manufacturer"] or "").upper() if _fw else ""
+                            except Exception:
+                                pass
+                            if "AURADINE" in firmware:
+                                filtered = [s for s in pred.get("signals", [])
+                                            if "voltage" not in s.lower()]
+                                if not filtered:
+                                    logger.debug("Prediction suppressed for %s — Auradine voltage false positive", ip)
+                                    continue
+                                pred["signals"] = filtered
+
                             if pred["action"] == "PREEMPTIVE_RESTART":
                                 try:
+                                    # Post as approval request so you can APPROVE or DENY
                                     msg = format_prediction_alert(pred)
-                                    self.slack.post_to_channel(msg)
+                                    thread = self.slack.post_to_channel(
+                                        msg + "\n\n_Reply `APPROVE` to execute restart or `DENY` to skip._"
+                                    )
+                                    # Register as pending approval so listener picks it up
+                                    if thread and isinstance(thread, str):
+                                        self.db.save_pending_approvals(
+                                            thread, latest_scan["id"],
+                                            [{
+                                                "id":          miner_id,
+                                                "ip":          ip,
+                                                "model":       pred.get("model", ""),
+                                                "action":      "RESTART",
+                                                "issues":      pred.get("signals", []),
+                                                "hashrate_pct":f"{pred.get('current_hr', 0):.1f}%",
+                                                "temp_chip":   pred.get("current_chip_temp", 0),
+                                            }]
+                                        )
                                 except Exception:
                                     pass
                             logger.info("Prediction: %s %s conf=%d%%",
-                                       pred["ip"], pred["action"], pred["confidence"])
+                                       ip, pred["action"], pred["confidence"])
                 except Exception:
                     logger.debug("Predictor skipped (non-fatal)")
 

@@ -61,21 +61,31 @@ def run_predictions(scan_id: int) -> List[Dict[str, Any]]:
     conn = get_db()
     miners = conn.execute("""
         SELECT mr.miner_id, mr.ip, mr.model, mr.hashrate_pct,
-               mr.temp_chip, mr.temp_board, mr.uptime, mr.status, mr.action
+               mr.temp_chip, mr.temp_board, mr.uptime, mr.status,
+               mr.action, mr.firmware_manufacturer
         FROM miner_readings mr
         WHERE mr.scan_id=? AND mr.status='online'
           AND (mr.action='MONITOR' OR mr.action IS NULL)
     """, (scan_id,)).fetchall()
+
+    # Get ticketed miners to suppress
+    ticketed = {str(r[0]) for r in conn.execute(
+        "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL"
+    ).fetchall()}
     conn.close()
 
     predictions = []
     for m in miners:
+        # Skip ticketed miners
+        if str(m["miner_id"]) in ticketed:
+            continue
         try:
             pred = _predict_miner(
                 m["miner_id"], m["ip"], m["model"],
                 float(m["hashrate_pct"] or 0),
                 float(m["temp_chip"] or 0),
-                float(m["temp_board"] or 0)
+                float(m["temp_board"] or 0),
+                firmware=m["firmware_manufacturer"] or ""
             )
             if pred:
                 predictions.append(pred)
@@ -90,7 +100,8 @@ def run_predictions(scan_id: int) -> List[Dict[str, Any]]:
 
 def _predict_miner(miner_id: str, ip: str, model: str,
                    current_hr: float, current_chip_temp: float,
-                   current_board_temp: float) -> Optional[Dict[str, Any]]:
+                   current_board_temp: float,
+                   firmware: str = "") -> Optional[Dict[str, Any]]:
     conn = get_db()
 
     # Hashrate + chip temp history
@@ -175,8 +186,11 @@ def _predict_miner(miner_id: str, ip: str, model: str,
     s, sig = _check_pattern_match(miner_id, hashrates[:TREND_WINDOW])
     if sig: signals.append(sig); scores.append(s)
 
+    is_auradine = "AURADINE" in firmware.upper()
+
     # ── Signal 6: Board voltage drop ─────────────────────────────────────────
-    if boards:
+    # Skip Auradine — they report ~0.29V which is firmware format, not real voltage
+    if boards and not is_auradine:
         s, sig = _check_voltage_drop(boards)
         if sig: signals.append(sig); scores.append(s)
 
