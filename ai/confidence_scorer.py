@@ -78,6 +78,15 @@ def get_confidence(miner_id: str, ip: str, action_type: str,
 
     conn.close()
 
+    # Feature 4: Apply per-miner fingerprint confidence modifier
+    try:
+        from fingerprint_builder import get_confidence_modifier
+        modifier = get_confidence_modifier(miner_id)
+        # Modifier is -0.5 to +0.5, scale to point adjustment
+        fingerprint_adjustment = modifier * 30  # max ±15 points
+    except Exception:
+        fingerprint_adjustment = 0.0
+
     # Blend scores — weight miner history more when we have enough data
     if miner_count >= MIN_OUTCOMES_FOR_MINER_SCORE:
         # Enough miner-specific data to weight heavily
@@ -96,12 +105,12 @@ def get_confidence(miner_id: str, ip: str, action_type: str,
         # No miner-specific data yet — use fleet rate only
         history_score = fleet_score
 
-    # Final weighted score
+    # Final weighted score with fingerprint modifier
     raw_confidence = (
         history_score   * (WEIGHT_MINER_HISTORY + WEIGHT_FLEET_HISTORY) +
         stability_score * WEIGHT_STABILITY
     )
-    confidence = max(0, min(100, round(raw_confidence)))
+    confidence = max(0, min(100, round(raw_confidence + fingerprint_adjustment)))
 
     # Build human-readable reason
     parts = []

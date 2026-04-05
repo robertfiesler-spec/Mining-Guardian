@@ -39,6 +39,15 @@ def run_weekly():
         logger.error("Comprehensive training failed: %s", e)
         raise
 
+    # Feature 4: Rebuild miner fingerprints after training
+    try:
+        from fingerprint_builder import build_all_fingerprints
+        logger.info("Building miner fingerprints...")
+        result = build_all_fingerprints()
+        logger.info("Fingerprints built: %d miners", result["built"])
+    except Exception as e:
+        logger.warning("Fingerprint building failed (non-fatal): %s", e)
+
     logger.info("=" * 60)
     logger.info("WEEKLY TRAINING — Complete")
     logger.info("=" * 60)
