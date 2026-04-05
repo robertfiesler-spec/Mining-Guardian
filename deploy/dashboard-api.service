@@ -1,0 +1,15 @@
+[Unit]
+Description=Mining Guardian Dashboard API
+After=network.target mining-guardian.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Mining-Gaurdian
+ExecStart=/root/Mining-Gaurdian/venv/bin/python api/dashboard_api.py
+Restart=always
+RestartSec=10
+Environment=PATH=/root/Mining-Gaurdian/venv/bin:/usr/local/bin:/usr/bin
+
+[Install]
+WantedBy=multi-user.target

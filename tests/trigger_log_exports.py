@@ -15,14 +15,22 @@ Usage:
 """
 
 import os, sys, json, time, threading
-sys.path.insert(0, os.path.dirname(__file__))
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from mining_guardian import AMSClient, GuardianConfig
 
 DIVIDER = "━" * 60
 
 def main():
-    config = GuardianConfig.from_file("config.json")
+    cfg_path = _ROOT / "config" / "config.json"
+    if not cfg_path.exists():
+        cfg_path = _ROOT / "config.json"
+    config = GuardianConfig.from_file(str(cfg_path))
     client = AMSClient(config)
 
     print(f"\n{DIVIDER}")

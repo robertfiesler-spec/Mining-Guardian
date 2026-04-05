@@ -17,6 +17,7 @@ OpenClaw integration: Posts an overnight summary via the webhook so the LLM
 can provide a narrative summary to Slack when the window closes.
 """
 
+import sys
 import os
 import json
 import time
@@ -24,7 +25,14 @@ import logging
 import sqlite3
 import requests
 from datetime import datetime, timedelta
+from pathlib import Path
 from dotenv import load_dotenv
+
+# ── Path setup ────────────────────────────────────────────────────────────────
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO,
@@ -156,10 +164,11 @@ def execute_auto_action(action: dict) -> dict:
     """Execute an AUTO action directly via AMS — bypasses approval API to avoid
     creating spurious DENIED entries for other miners in the same thread."""
     try:
-        import sys, os
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import mining_guardian
-        cfg = json.load(open("config.json"))
+        cfg_path = _ROOT / "config" / "config.json"
+        if not cfg_path.exists():
+            cfg_path = _ROOT / "config.json"
+        cfg = json.load(open(cfg_path))
         g = mining_guardian.MiningGuardian(
             mining_guardian.GuardianConfig(**{
                 k: v for k, v in cfg.items()

@@ -19,11 +19,19 @@ performance trends, failure patterns, and correlations with environment.
 Cron: 0 3 * * 0 cd /root/Mining-Gaurdian && venv/bin/python train_comprehensive.py
 """
 
+import sys
 import sqlite3
 import json
 import logging
 import time
+from pathlib import Path
 from datetime import datetime, timedelta
+
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "ai"), str(_ROOT / "core")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 from llm_analyzer import LLMAnalyzer
 from knowledge_manager import KnowledgeManager
 

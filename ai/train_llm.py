@@ -9,8 +9,15 @@ Saves analysis results to the llm_analysis table.
 
 import sqlite3
 import json
+import sys
 import logging
 import time
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT / "core") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "core"))
+
 from llm_analyzer import LLMAnalyzer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

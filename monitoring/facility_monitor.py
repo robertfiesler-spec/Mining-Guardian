@@ -25,14 +25,20 @@ Known PDU outlet → AMS miner ID assignments:
   Tank  port 20    → S21Imm    #64346 @ 192.168.188.23
 """
 
+import sys
 import logging
 import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT / "clients") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "clients"))
 
 from pdu_client import PDUClient, PDUReading
 from immersion_client import ImmersionTankClient, TankReading
