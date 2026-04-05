@@ -2521,15 +2521,26 @@ class GuardianDB:
         return row["cnt"] if row else 0
 
     def count_outcome_failures(self, miner_id: str) -> int:
-        """Count restarts labeled FAILURE by the outcome feedback loop (Feature 1).
-        This is more reliable than get_failed_restart_count because it uses
-        actual observed post-restart hashrate, not just restart count."""
+        """Count restarts labeled FAILURE by the outcome feedback loop (Feature 1)."""
         with self._connect() as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM miner_restarts
                 WHERE miner_id=? AND outcome='FAILURE'
             """, (miner_id,)).fetchone()
         return row["cnt"] if row else 0
+
+    def _count_pdu_cycles(self, miner_id: str, days: int = 1) -> int:
+        """Count PDU power cycles attempted for this miner in the last N days."""
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) as cnt FROM action_audit_log
+                WHERE miner_id=? AND action_taken='PDU_CYCLE'
+                  AND timestamp >= ?
+            """, (miner_id, cutoff)).fetchone()
+        return row["cnt"] if row else 0
+
+    def last_log_collected(self, miner_id: str) -> Optional[datetime]:
         """Return datetime of last log collection for this miner, or None."""
         with self._connect() as conn:
             row = conn.execute(
@@ -3228,11 +3239,40 @@ class MiningGuardian:
                     miner_id, verify["status_detail"]
                 )
                 issues.append("OFFLINE")
-                if has_pdu:
+
+                # ── Offline remediation decision tree ─────────────────────
+                # Step 1: Firmware restart (first attempt for any offline miner)
+                # Step 2: PDU cycle (if restart was tried and miner still offline)
+                # Step 3: Ticket — bad PSU / bad control board
+                #
+                # Count how many restarts and PDU cycles have been attempted
+                offline_restarts = self.db.get_failed_restart_count(miner_id, days=1)
+                offline_pdu_cycles = self.db._count_pdu_cycles(miner_id, days=1)
+
+                if offline_restarts == 0:
+                    # First time offline — try firmware restart first
+                    action = "RESTART"
+
+                elif offline_pdu_cycles == 0 and has_pdu:
+                    # Restart was tried, still offline, has PDU — try power cycle
+                    # Likely bad PSU or control board needs hard reset
                     action     = "PDU_CYCLE"
                     pdu_action = f"PDU {pdu_id} → Outlet {outlet_index}"
-                else:
+                    issues[-1] = "OFFLINE — restart attempted, trying PDU power cycle (possible bad PSU)"
+
+                elif offline_pdu_cycles >= 1:
+                    # PDU cycle was tried, still offline — needs physical inspection
+                    # Could be: dead PSU, dead control board, blown fuse
                     action = "PHYSICAL_CYCLE"
+                    issues[-1] = "OFFLINE — restart + PDU cycle failed (bad PSU / control board / physical fault)"
+
+                elif not has_pdu:
+                    # No PDU info — can only do physical cycle
+                    if offline_restarts >= 1:
+                        action = "PHYSICAL_CYCLE"
+                        issues[-1] = "OFFLINE — restart attempted, no PDU (physical inspection required)"
+                    else:
+                        action = "RESTART"
 
                 return self._build_issue(
                     miner, issues, action, pdu_action, power_watts,
@@ -3821,17 +3861,33 @@ class MiningGuardian:
             if existing and existing["ticket_created"]:
                 continue  # already has a ticket
 
-            # Create the AMS ticket
-            reason_str = getattr(c, 'reason', 'persistent_failure') if hasattr(c, 'reason') else 'persistent_failure'
-            title = f"Persistent failure — {model} @ {ip} ({failures} restarts, needs inspection)"
-            description = (
-                f"Miner: {miner_id} ({model})\n"
-                f"IP: {ip}\n"
-                f"Failed restarts: {failures}\n"
-                f"Outcome: Every restart attempt returned FAILURE outcome.\n"
-                f"Action: Miner has been automatically suppressed from reports.\n"
-                f"Physical inspection required."
-            )
+            # Create the AMS ticket with diagnostic context
+            reason_str = c["reason"] if "reason" in c.keys() else "persistent_failure"
+            if reason_str == "pending_board_check":
+                title = f"Dead hashboards — {model} @ {ip} (physical inspection required)"
+                description = (
+                    f"Miner: {miner_id} ({model})\nIP: {ip}\n"
+                    f"Issue: Hashboards not recovering after restart attempts.\n"
+                    f"Likely cause: Dead hashboard(s) — needs physical inspection and board replacement.\n"
+                    f"Action: Check each board, test with known-good board if available."
+                )
+            elif reason_str == "escalated_restarts":
+                title = f"Persistent hashrate failure — {model} @ {ip} (dead boards)"
+                description = (
+                    f"Miner: {miner_id} ({model})\nIP: {ip}\n"
+                    f"Board check restarts: {failures}\n"
+                    f"Likely cause: Dead hashboard(s) that restart cannot fix.\n"
+                    f"Action: Physical board inspection and replacement required."
+                )
+            else:
+                title = f"Persistent FAILURE outcomes — {model} @ {ip} ({failures} restarts)"
+                description = (
+                    f"Miner: {miner_id} ({model})\nIP: {ip}\n"
+                    f"Failed restarts: {failures}\n"
+                    f"Outcome: Every restart attempt returned FAILURE — miner not recovering.\n"
+                    f"Possible causes: Dead hashboard, bad PSU, bad control board.\n"
+                    f"Action: Physical inspection required."
+                )
             try:
                 ticket = self.ams.create_ticket(
                     title=title,
@@ -4013,6 +4069,66 @@ class MiningGuardian:
             logger.info("[%s] PDU %s outlet %s — power cycled", miner_id, pdu_id, outlet)
         except Exception as e:
             logger.error("[%s] PDU cycle failed: %s", miner_id, e)
+            return
+
+        # Step 3 — wait 90 seconds then check if miner came back online
+        logger.info("[%s] Waiting 90s for miner to recover after PDU cycle...", miner_id)
+        time.sleep(90)
+
+        # Re-verify miner status
+        from miner_verify import verify_miner_online
+        result = verify_miner_online(ip)
+        self.db.log_action(
+            miner_id, ip, model,
+            problem="Offline — PDU cycle executed",
+            action_taken="PDU_CYCLE",
+            decision="APPROVED",
+            notes=f"Post-cycle check: {'ONLINE' if result['actually_online'] else 'STILL OFFLINE'}"
+        )
+
+        if not result["actually_online"]:
+            # Still offline after PDU cycle — bad PSU or control board
+            logger.warning(
+                "[%s] Still offline after PDU cycle — likely bad PSU or control board",
+                miner_id
+            )
+            # Create AMS ticket
+            try:
+                ticket = self.ams.create_ticket(
+                    title=f"Offline after PDU cycle — {model} @ {ip} (bad PSU / control board)",
+                    description=(
+                        f"Miner: {miner_id} ({model})\n"
+                        f"IP: {ip}\n"
+                        f"Steps taken: Firmware restart attempted → PDU power cycle (off 10s, on)\n"
+                        f"Result: Miner still offline after PDU cycle.\n"
+                        f"Likely cause: Bad PSU, bad control board, blown fuse, or physical fault.\n"
+                        f"Action required: Physical inspection — check PSU, control board, fuses."
+                    ),
+                    priority="high",
+                    miner_ids=[int(miner_id)]
+                )
+                ticket_id = str(ticket.get("id", "unknown"))
+                logger.info("[%s] Auto-ticket created after PDU failure: #%s", ip, ticket_id)
+
+                # Register in known_dead_boards to suppress from future reports
+                self.db.register_dead_boards(miner_id, ip, model, [], restart_result="pdu_failed")
+                self.db.mark_ticket_created(miner_id, ticket_id)
+
+                # Slack alert
+                try:
+                    self.slack.post_to_channel(
+                        f"🔴 *Offline after PDU cycle — physical inspection required*\n"
+                        f"  `{ip}` ({model})\n"
+                        f"  Ticket #{ticket_id} created.\n"
+                        f"  Likely: bad PSU, bad control board, or blown fuse.\n"
+                        f"  Miner removed from reports until ticket resolved."
+                    )
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error("[%s] Failed to create post-PDU ticket: %s", ip, e)
+        else:
+            logger.info("[%s] Back online after PDU cycle — power issue resolved", miner_id)
 
     # ── Report printer ────────────────────────────────────────
 
