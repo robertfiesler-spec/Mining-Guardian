@@ -4209,6 +4209,12 @@ class MiningGuardian:
         }
 
     def loop(self) -> None:
+        # Ensure ai/ directory is in sys.path for all feature imports
+        import sys as _sys
+        _ai_path = str(Path(__file__).resolve().parent.parent / "ai")
+        if _ai_path not in _sys.path:
+            _sys.path.insert(0, _ai_path)
+
         # Import outcome checker once at loop start
         try:
             from outcome_checker import check_outcomes
