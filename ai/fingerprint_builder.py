@@ -1,41 +1,23 @@
 """
-fingerprint_builder.py
-Mining Guardian — Feature 4: Miner Fingerprinting
+fingerprint_builder.py — v2
+Mining Guardian — Feature 4: Miner Fingerprinting (Full Data)
 
-Builds a per-miner behavioral profile from accumulated outcome history,
-scan data, and restart patterns. Every miner has a personality — some
-run hot, some are unstable, some are rock solid.
-
-Fingerprints are stored in knowledge.json under miner_fingerprints and
-feed directly into confidence scoring to make it per-miner instead of
-fleet-wide.
-
-Runs:
-  - After weekly_train.py (automatically)
-  - On demand via: python3 -m ai.fingerprint_builder
-
-Fingerprint schema per miner:
-  {
-    "miner_id": "53499",
-    "ip": "192.168.188.125",
-    "model": "Antminer S19JPro",
-    "restart_success_rate": 0.85,
-    "avg_recovery_time_scans": 1.2,
-    "flag_frequency_per_week": 0.4,
-    "hashrate_stability_score": 92.3,
-    "avg_hashrate_pct": 187.4,
-    "known_issues": [],
-    "confidence_modifier": 0.15,
-    "total_restarts": 5,
-    "total_scans_flagged": 3,
-    "last_updated": "2026-04-05T16:00:00"
-  }
+Uses EVERY available data point:
+  miner_readings:       hashrate, temp_chip, temp_board, uptime, error_codes, consumption
+  chain_readings:       per-board voltage, freq_mhz, temp_board, hw_errors, consumption_w
+  miner_state_readings: hashrate_medium/low, max_temp_board, max_temp_chip
+  pool_readings:        rejection rate
+  miner_hardware:       chip_bin, bad_chips_count, pcb_version, ideal_hashrate
+  ams_notifications:    hashrateDropLevel, hotBoard, consumptionChangeLevel counts
+  miner_restarts:       outcome history
+  known_dead_boards:    confirmed hardware failures
 """
 
 import sys
 import json
 import logging
 import sqlite3
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -49,10 +31,7 @@ logger = logging.getLogger("fingerprint_builder")
 
 DB_PATH        = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
-
-# How far back to look when building fingerprints
 LOOKBACK_DAYS  = 30
-# Minimum restarts needed before we trust the success rate
 MIN_RESTARTS_FOR_RATE = 2
 
 
@@ -63,27 +42,16 @@ def get_db() -> sqlite3.Connection:
 
 
 def build_all_fingerprints() -> dict:
-    """
-    Build fingerprints for every miner that has scan history.
-    Returns summary of what was built.
-    """
     conn = get_db()
-
-    # Get all unique miners from miner_readings
     miners = conn.execute("""
-        SELECT DISTINCT miner_id, ip, model
-        FROM miner_readings
-        WHERE miner_id IS NOT NULL
-        ORDER BY ip
+        SELECT DISTINCT miner_id, ip, model FROM miner_readings
+        WHERE miner_id IS NOT NULL ORDER BY ip
     """).fetchall()
-
     conn.close()
 
     if not miners:
-        logger.warning("No miners found in miner_readings")
         return {"built": 0, "miners": []}
 
-    # Load existing knowledge
     knowledge = _load_knowledge()
     fingerprints = knowledge.setdefault("miner_fingerprints", {})
 
@@ -94,106 +62,206 @@ def build_all_fingerprints() -> dict:
             fingerprints[m["miner_id"]] = fp
             built.append(m["ip"])
         except Exception as e:
-            logger.warning("Failed to build fingerprint for %s: %s", m["ip"], e)
+            logger.warning("Fingerprint failed for %s: %s", m["ip"], e)
 
     knowledge["miner_fingerprints"] = fingerprints
     knowledge["fingerprints_updated_at"] = datetime.now().isoformat()
     _save_knowledge(knowledge)
-
     logger.info("Built %d miner fingerprints", len(built))
     return {"built": len(built), "miners": built}
 
 
+def _parse_uptime_secs(s: str) -> Optional[int]:
+    if not s: return None
+    try:
+        d = int(re.search(r'(\d+)d', s).group(1)) if 'd' in s else 0
+        h = int(re.search(r'(\d+)h', s).group(1)) if 'h' in s else 0
+        m = int(re.search(r'(\d+)m', s).group(1)) if 'm' in s else 0
+        return d*86400 + h*3600 + m*60
+    except Exception:
+        return None
+
+
 def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
-    """Build a single miner fingerprint from all available data."""
     conn = get_db()
     cutoff = (datetime.now() - timedelta(days=LOOKBACK_DAYS)).isoformat()
 
-    # ── Restart history and outcomes ─────────────────────────────────────────
+    # ── 1. Restart outcomes ───────────────────────────────────────────────────
     restarts = conn.execute("""
-        SELECT outcome, recovery_time_scans, restart_type, restarted_at
-        FROM miner_restarts
-        WHERE miner_id = ? AND restarted_at >= ?
-        ORDER BY restarted_at DESC
+        SELECT outcome, recovery_time_scans FROM miner_restarts
+        WHERE miner_id=? AND restarted_at>=? ORDER BY restarted_at DESC
     """, (miner_id, cutoff)).fetchall()
-
-    total_restarts  = len(restarts)
-    successes       = sum(1 for r in restarts if r["outcome"] == "SUCCESS")
-    failures        = sum(1 for r in restarts if r["outcome"] == "FAILURE")
-    partials        = sum(1 for r in restarts if r["outcome"] == "PARTIAL")
-    pending         = sum(1 for r in restarts if r["outcome"] in ("PENDING", None))
-
+    total_restarts = len(restarts)
+    successes = sum(1 for r in restarts if r["outcome"] == "SUCCESS")
+    failures  = sum(1 for r in restarts if r["outcome"] == "FAILURE")
+    partials  = sum(1 for r in restarts if r["outcome"] == "PARTIAL")
     completed = successes + failures + partials
-    if completed >= MIN_RESTARTS_FOR_RATE:
-        success_rate = round((successes + partials * 0.5) / completed, 3)
-    else:
-        success_rate = None  # not enough data
+    success_rate = round((successes + partials*0.5)/completed, 3) if completed >= MIN_RESTARTS_FOR_RATE else None
+    rec_times = [r["recovery_time_scans"] for r in restarts if r["recovery_time_scans"]]
+    avg_recovery = round(sum(rec_times)/len(rec_times), 1) if rec_times else None
 
-    recovery_times = [r["recovery_time_scans"] for r in restarts
-                      if r["recovery_time_scans"] is not None]
-    avg_recovery = round(sum(recovery_times) / len(recovery_times), 1) \
-        if recovery_times else None
-
-    # ── Hashrate behavior ────────────────────────────────────────────────────
-    hr_rows = conn.execute("""
-        SELECT hashrate_pct FROM miner_readings
-        WHERE miner_id = ? AND status = 'online'
-          AND hashrate_pct IS NOT NULL AND hashrate_pct > 0
-          AND scan_id IN (
-              SELECT id FROM scans WHERE scanned_at >= ? ORDER BY id DESC LIMIT 100
-          )
+    # ── 2. Hashrate + temps + uptime + errors (miner_readings) ───────────────
+    mr_rows = conn.execute("""
+        SELECT hashrate_pct, temp_chip, temp_board, consumption, uptime, error_codes
+        FROM miner_readings WHERE miner_id=? AND status='online' AND hashrate_pct>0
+          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=? ORDER BY id DESC LIMIT 100)
         ORDER BY id DESC LIMIT 50
     """, (miner_id, cutoff)).fetchall()
 
-    hashrates = [float(r["hashrate_pct"]) for r in hr_rows]
-    avg_hr    = round(sum(hashrates) / len(hashrates), 1) if hashrates else None
+    hashrates   = [float(r["hashrate_pct"]) for r in mr_rows]
+    chip_temps  = [float(r["temp_chip"])  for r in mr_rows if r["temp_chip"]  and float(r["temp_chip"])  > 0]
+    board_temps = [float(r["temp_board"]) for r in mr_rows if r["temp_board"] and float(r["temp_board"]) > 0]
+    consumptions= [float(r["consumption"]) for r in mr_rows if r["consumption"] and float(r["consumption"]) > 0]
+    error_codes_seen = [r["error_codes"] for r in mr_rows if r["error_codes"]]
 
+    avg_hr         = round(sum(hashrates)/len(hashrates), 1) if hashrates else None
+    avg_chip_temp  = round(sum(chip_temps)/len(chip_temps), 1) if chip_temps else None
+    avg_board_temp = round(sum(board_temps)/len(board_temps), 1) if board_temps else None
+    avg_consumption= round(sum(consumptions)/len(consumptions), 0) if consumptions else None
+
+    # Hashrate stability (coefficient of variation)
+    stability = None
     if len(hashrates) >= 3:
-        mean    = sum(hashrates) / len(hashrates)
-        std_dev = (sum((h - mean)**2 for h in hashrates) / len(hashrates)) ** 0.5
-        cv      = std_dev / mean if mean > 0 else 1.0
-        stability = round(max(0.0, min(100.0, (1.0 - cv * 2.0) * 100.0)), 1)
-    else:
-        stability = None
+        mean = sum(hashrates)/len(hashrates)
+        std  = (sum((h-mean)**2 for h in hashrates)/len(hashrates))**0.5
+        cv   = std/mean if mean > 0 else 1.0
+        stability = round(max(0.0, min(100.0, (1.0-cv*2.0)*100.0)), 1)
 
-    # ── Flagging frequency ───────────────────────────────────────────────────
-    flagged_scans = conn.execute("""
-        SELECT COUNT(*) as cnt FROM miner_readings
-        WHERE miner_id = ? AND issue IS NOT NULL AND issue != ''
-          AND scan_id IN (SELECT id FROM scans WHERE scanned_at >= ?)
-    """, (miner_id, cutoff)).fetchone()["cnt"]
+    # Uptime: detect resets (unscheduled reboots)
+    uptime_secs = [_parse_uptime_secs(r["uptime"]) for r in mr_rows]
+    uptime_secs = [s for s in uptime_secs if s is not None]
+    uptime_resets = sum(
+        1 for i in range(len(uptime_secs)-1)
+        if uptime_secs[i] < uptime_secs[i+1] * 0.3 and uptime_secs[i+1] > 3600
+    )
+    latest_uptime_h = round(uptime_secs[0]/3600, 1) if uptime_secs else None
 
+    # ── 3. Per-board data (chain_readings) ───────────────────────────────────
+    board_rows = conn.execute("""
+        SELECT board_index,
+               AVG(voltage)      as avg_volt,
+               MIN(voltage)      as min_volt,
+               AVG(freq_mhz)     as avg_freq,
+               AVG(temp_board)   as avg_board_temp,
+               MAX(temp_board)   as max_board_temp,
+               SUM(hw_errors)    as total_hw,
+               AVG(rate_mhs)     as avg_rate,
+               AVG(consumption_w)as avg_power_w
+        FROM chain_readings WHERE miner_id=? AND scanned_at>=?
+        GROUP BY board_index
+    """, (miner_id, cutoff)).fetchall()
+
+    board_profiles = {}
+    for b in board_rows:
+        board_profiles[str(b["board_index"])] = {
+            "avg_voltage":     round(float(b["avg_volt"]  or 0), 3),
+            "min_voltage":     round(float(b["min_volt"]  or 0), 3),
+            "avg_freq_mhz":    round(float(b["avg_freq"]  or 0), 1),
+            "avg_temp_board":  round(float(b["avg_board_temp"] or 0), 1),
+            "max_temp_board":  round(float(b["max_board_temp"] or 0), 1),
+            "total_hw_errors": int(b["total_hw"] or 0),
+            "avg_rate_mhs":    round(float(b["avg_rate"] or 0), 0),
+            "avg_power_w":     round(float(b["avg_power_w"] or 0), 0),
+        }
+
+    total_hw_errors = sum(b["total_hw_errors"] for b in board_profiles.values())
+    voltages = [b["min_voltage"] for b in board_profiles.values() if b["min_voltage"] > 0]
+    avg_voltage  = round(sum(voltages)/len(voltages), 3) if voltages else None
+    min_voltage  = min(voltages) if voltages else None
+    voltage_drop = bool(min_voltage and min_voltage < 14.2)
+
+    freqs = [b["avg_freq_mhz"] for b in board_profiles.values() if b["avg_freq_mhz"] > 0]
+    avg_freq_mhz = round(sum(freqs)/len(freqs), 1) if freqs else None
+
+    board_max_temps = [b["max_temp_board"] for b in board_profiles.values() if b["max_temp_board"] > 0]
+    max_board_temp_ever = max(board_max_temps) if board_max_temps else None
+
+    # ── 4. State readings — hashrate distribution, max temps ─────────────────
+    state = conn.execute("""
+        SELECT AVG(max_temp_board)  as a_max_bd,
+               AVG(max_temp_chip)   as a_max_chip,
+               AVG(hashrate_medium) as a_hr_med,
+               AVG(hashrate_low)    as a_hr_low
+        FROM miner_state_readings WHERE miner_id=? AND scanned_at>=?
+    """, (miner_id, cutoff)).fetchone()
+    avg_max_board_temp = round(float(state["a_max_bd"]),   1) if state and state["a_max_bd"]   else None
+    avg_max_chip_temp  = round(float(state["a_max_chip"]), 1) if state and state["a_max_chip"]  else None
+    avg_hr_medium      = round(float(state["a_hr_med"]),   0) if state and state["a_hr_med"]    else None
+
+    # ── 5. Pool rejection rate ────────────────────────────────────────────────
+    pool = conn.execute("""
+        SELECT SUM(accepted) as acc, SUM(rejected) as rej
+        FROM pool_readings WHERE miner_id=? AND scanned_at>=?
+    """, (miner_id, cutoff)).fetchone()
+    rej_rate = None
+    if pool and pool["acc"] is not None:
+        total_shares = (pool["acc"] or 0) + (pool["rej"] or 0)
+        rej_rate = round(float(pool["rej"] or 0)/total_shares, 5) if total_shares > 0 else 0.0
+
+    # ── 6. AMS notifications ──────────────────────────────────────────────────
+    ams = conn.execute("""
+        SELECT key, COUNT(*) as cnt FROM ams_notifications
+        WHERE miner_ip=? AND recorded_at>=? GROUP BY key
+    """, (ip, cutoff)).fetchall()
+    ams_counts = {r["key"]: r["cnt"] for r in ams}
+    hashrate_drop_alerts = ams_counts.get("hashrateDropLevel", 0)
+    hot_board_alerts     = ams_counts.get("hotBoard", 0)
+    consumption_alerts   = ams_counts.get("consumptionChangeLevel", 0)
+    offline_alerts       = ams_counts.get("workerOffline", 0)
+
+    # ── 7. Hardware identity ──────────────────────────────────────────────────
+    hw = conn.execute("""
+        SELECT chip_bin, bad_chips_count, pcb_version, ideal_hashrate, asic_count
+        FROM miner_hardware WHERE miner_id=? ORDER BY last_updated DESC LIMIT 1
+    """, (miner_id,)).fetchone()
+    chip_bin       = hw["chip_bin"]             if hw else None
+    bad_chips      = int(hw["bad_chips_count"] or 0) if hw and hw["bad_chips_count"] is not None else 0
+    ideal_hashrate = float(hw["ideal_hashrate"] or 0) if hw else None
+
+    # ── 8. Flagging frequency ─────────────────────────────────────────────────
+    flagged_cnt = conn.execute("""
+        SELECT COUNT(*) as c FROM miner_readings WHERE miner_id=? AND issue IS NOT NULL
+          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=?)
+    """, (miner_id, cutoff)).fetchone()["c"]
     total_scans = conn.execute("""
-        SELECT COUNT(*) as cnt FROM miner_readings
-        WHERE miner_id = ?
-          AND scan_id IN (SELECT id FROM scans WHERE scanned_at >= ?)
-    """, (miner_id, cutoff)).fetchone()["cnt"]
+        SELECT COUNT(*) as c FROM miner_readings WHERE miner_id=?
+          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=?)
+    """, (miner_id, cutoff)).fetchone()["c"]
+    flag_freq = round(flagged_cnt/(LOOKBACK_DAYS/7.0), 2)
 
-    # Express as flags per week
-    weeks = LOOKBACK_DAYS / 7.0
-    flag_freq = round(flagged_scans / weeks, 2) if weeks > 0 else 0
-
-    # ── Known issues ─────────────────────────────────────────────────────────
+    # ── 9. Known issues ───────────────────────────────────────────────────────
     known_issues = []
     dead = conn.execute("""
-        SELECT board_indices FROM known_dead_boards
-        WHERE miner_id = ? AND resolved_at IS NULL
+        SELECT board_indices FROM known_dead_boards WHERE miner_id=? AND resolved_at IS NULL
     """, (miner_id,)).fetchone()
-    if dead:
-        known_issues.append(f"dead_boards:{dead['board_indices']}")
+    if dead:                              known_issues.append(f"dead_boards:{dead['board_indices']}")
+    if bad_chips > 0:                     known_issues.append(f"bad_chips:{bad_chips}")
+    if voltage_drop:                      known_issues.append(f"low_voltage:{min_voltage:.3f}V")
+    if error_codes_seen:                  known_issues.append("error_codes_present")
+    if hot_board_alerts > 5:              known_issues.append(f"hot_board_alerts:{hot_board_alerts}")
+    if uptime_resets > 2:                 known_issues.append(f"frequent_reboots:{uptime_resets}")
+    if hashrate_drop_alerts > 5:          known_issues.append(f"hashrate_drop_alerts:{hashrate_drop_alerts}")
+    if rej_rate and rej_rate > 0.008:     known_issues.append(f"high_rejection:{rej_rate*100:.2f}%")
+    if max_board_temp_ever and max_board_temp_ever > 75: known_issues.append(f"high_board_temp:{max_board_temp_ever}C")
 
     conn.close()
 
-    # ── Confidence modifier ───────────────────────────────────────────────────
-    # How much to adjust confidence relative to fleet average
-    # +ve = more trustworthy than average, -ve = less trustworthy
+    # ── 10. Confidence modifier ───────────────────────────────────────────────
     modifier = 0.0
     if success_rate is not None:
-        modifier += (success_rate - 0.5) * 0.4   # ±20% based on success rate
+        modifier += (success_rate - 0.5) * 0.40          # ±20% from restart success rate
     if stability is not None:
-        modifier += (stability / 100.0 - 0.5) * 0.2  # ±10% based on stability
-    if known_issues:
-        modifier -= 0.3  # -30% for known dead boards
+        modifier += (stability/100.0 - 0.5) * 0.20       # ±10% from hashrate stability
+    if rej_rate is not None:
+        modifier -= min(0.10, rej_rate * 12)              # up to -10% for high rejection
+    if hashrate_drop_alerts > 0:
+        modifier -= min(0.10, hashrate_drop_alerts * 0.01)# up to -10% for AMS drop alerts
+    if hot_board_alerts > 0:
+        modifier -= min(0.08, hot_board_alerts * 0.008)   # up to -8% for hot board alerts
+    if dead:        modifier -= 0.30                       # -30% for confirmed dead boards
+    if bad_chips > 0: modifier -= 0.05 * min(4, bad_chips)# -5% per bad chip (max -20%)
+    if uptime_resets > 0: modifier -= 0.05 * min(3, uptime_resets) # -5% per reboot
+    if voltage_drop: modifier -= 0.15                     # -15% for low voltage
     modifier = round(max(-0.5, min(0.5, modifier)), 3)
 
     return {
@@ -202,83 +270,90 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
         "model":                  model,
         "restart_success_rate":   success_rate,
         "avg_recovery_time_scans":avg_recovery,
-        "flag_frequency_per_week":flag_freq,
-        "hashrate_stability_score":stability,
+        "total_restarts":         total_restarts,
         "avg_hashrate_pct":       avg_hr,
+        "hashrate_stability_score":stability,
+        "avg_chip_temp_c":        avg_chip_temp,
+        "avg_board_temp_c":       avg_board_temp,
+        "avg_max_board_temp_c":   avg_max_board_temp,
+        "avg_max_chip_temp_c":    avg_max_chip_temp,
+        "max_board_temp_ever_c":  max_board_temp_ever,
+        "avg_voltage":            avg_voltage,
+        "min_voltage":            min_voltage,
+        "voltage_drop_detected":  voltage_drop,
+        "avg_freq_mhz":           avg_freq_mhz,
+        "total_hw_errors":        total_hw_errors,
+        "avg_consumption_w":      avg_consumption,
+        "board_profiles":         board_profiles,
+        "latest_uptime_hours":    latest_uptime_h,
+        "uptime_resets_30d":      uptime_resets,
+        "rejection_rate":         rej_rate,
+        "hashrate_drop_alerts":   hashrate_drop_alerts,
+        "hot_board_alerts":       hot_board_alerts,
+        "consumption_alerts":     consumption_alerts,
+        "offline_alerts":         offline_alerts,
+        "chip_bin":               chip_bin,
+        "bad_chips_count":        bad_chips,
+        "ideal_hashrate":         ideal_hashrate,
+        "error_codes_seen":       bool(error_codes_seen),
+        "flag_frequency_per_week":flag_freq,
+        "total_scans":            total_scans,
+        "total_scans_flagged":    flagged_cnt,
         "known_issues":           known_issues,
         "confidence_modifier":    modifier,
-        "total_restarts":         total_restarts,
-        "total_scans":            total_scans,
-        "total_scans_flagged":    flagged_scans,
         "last_updated":           datetime.now().isoformat()
     }
 
 
 def get_fingerprint(miner_id: str) -> Optional[Dict[str, Any]]:
-    """Get a single miner's fingerprint from knowledge.json."""
-    knowledge = _load_knowledge()
-    return knowledge.get("miner_fingerprints", {}).get(miner_id)
+    return _load_knowledge().get("miner_fingerprints", {}).get(miner_id)
 
 
 def get_confidence_modifier(miner_id: str) -> float:
-    """
-    Return the confidence modifier for a miner (-0.5 to +0.5).
-    Used by confidence_scorer.py to adjust per-miner confidence.
-    Returns 0.0 if no fingerprint exists yet.
-    """
     fp = get_fingerprint(miner_id)
-    if fp is None:
-        return 0.0
-    return float(fp.get("confidence_modifier", 0.0))
+    return float(fp.get("confidence_modifier", 0.0)) if fp else 0.0
 
 
 def print_fleet_fingerprints():
-    """Print a human-readable summary of all miner fingerprints."""
-    knowledge = _load_knowledge()
-    fps = knowledge.get("miner_fingerprints", {})
-
+    fps = _load_knowledge().get("miner_fingerprints", {})
     if not fps:
-        print("No fingerprints built yet. Run build_all_fingerprints() first.")
+        print("No fingerprints yet.")
         return
-
-    print(f"\n{'='*80}")
-    print(f"{'MINER FINGERPRINTS':^80}")
-    print(f"{'='*80}")
-    print(f"{'IP':<20} {'Model':<18} {'SuccRate':>8} {'Stab':>6} {'FlagWk':>6} {'Modifier':>9} {'Issues'}")
-    print(f"{'-'*80}")
-
-    for mid, fp in sorted(fps.items(), key=lambda x: x[1].get("ip","")):
-        rate    = f"{fp['restart_success_rate']*100:.0f}%" if fp.get("restart_success_rate") is not None else "N/A"
-        stab    = f"{fp['hashrate_stability_score']:.0f}%" if fp.get("hashrate_stability_score") is not None else "N/A"
-        freq    = f"{fp.get('flag_frequency_per_week', 0):.1f}"
-        mod     = f"{fp.get('confidence_modifier', 0):+.2f}"
-        issues  = ", ".join(fp.get("known_issues", [])) or "none"
-        model   = (fp.get("model","?") or "?")[:17]
-        print(f"{fp.get('ip','?'):<20} {model:<18} {rate:>8} {stab:>6} {freq:>6} {mod:>9}  {issues}")
-
-    print(f"{'='*80}")
-    updated = knowledge.get("fingerprints_updated_at", "unknown")
-    print(f"Last updated: {updated[:19] if updated else 'never'}")
-    print(f"Total miners fingerprinted: {len(fps)}\n")
+    print(f"\n{'='*110}")
+    print(f"{'MINER FINGERPRINTS v2':^110}")
+    print(f"{'='*110}")
+    print(f"{'IP':<20} {'Succ':>5} {'Stab':>5} {'Volt':>6} {'Freq':>5} {'RejR':>6} "
+          f"{'HW':>4} {'AMS↓':>4} {'HotBd':>5} {'Uptime':>7} {'Mod':>6}  Issues")
+    print(f"{'-'*110}")
+    for mid, fp in sorted(fps.items(), key=lambda x: x[1].get("ip", "")):
+        rate   = f"{fp['restart_success_rate']*100:.0f}%" if fp.get("restart_success_rate") is not None else "N/A"
+        stab   = f"{fp['hashrate_stability_score']:.0f}%" if fp.get("hashrate_stability_score") is not None else "N/A"
+        volt   = f"{fp['min_voltage']:.2f}"  if fp.get("min_voltage")  else "N/A"
+        freq   = f"{fp['avg_freq_mhz']:.0f}" if fp.get("avg_freq_mhz") else "N/A"
+        rej    = f"{fp.get('rejection_rate',0)*100:.2f}%" if fp.get("rejection_rate") is not None else "N/A"
+        hw     = str(fp.get("total_hw_errors", 0))
+        ams    = str(fp.get("hashrate_drop_alerts", 0))
+        hot    = str(fp.get("hot_board_alerts", 0))
+        uptime = f"{fp['latest_uptime_hours']:.0f}h" if fp.get("latest_uptime_hours") else "N/A"
+        mod    = f"{fp.get('confidence_modifier', 0):+.2f}"
+        issues = ", ".join(fp.get("known_issues", [])) or "none"
+        print(f"{fp.get('ip','?'):<20} {rate:>5} {stab:>5} {volt:>6} {freq:>5} {rej:>6} "
+              f"{hw:>4} {ams:>4} {hot:>5} {uptime:>7} {mod:>6}  {issues[:50]}")
+    print(f"{'='*110}\n")
 
 
 def _load_knowledge() -> dict:
     path = Path(KNOWLEDGE_PATH)
-    if path.exists():
-        with open(path) as f:
-            return json.load(f)
-    return {}
+    return json.loads(path.read_text()) if path.exists() else {}
 
 
 def _save_knowledge(knowledge: dict):
-    with open(KNOWLEDGE_PATH, "w") as f:
-        json.dump(knowledge, f, indent=2)
+    Path(KNOWLEDGE_PATH).write_text(json.dumps(knowledge, indent=2))
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
-    logger.info("Building all miner fingerprints...")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logger.info("Building fingerprints v2 — all data points...")
     result = build_all_fingerprints()
-    logger.info("Done: %d fingerprints built", result["built"])
+    logger.info("Done: %d fingerprints", result["built"])
     print_fleet_fingerprints()

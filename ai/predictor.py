@@ -1,29 +1,26 @@
 """
-predictor.py
-Mining Guardian — Feature 6: Pre-Failure Prediction
+predictor.py — v2
+Mining Guardian — Feature 6: Pre-Failure Prediction (Full Data)
 
-Instead of reacting when a miner breaks, predict it 2-3 scans before it happens.
-Detects patterns that historically precede failures for specific miners and flags
-them proactively before anything is actually wrong.
-
-Prediction signals (evaluated per miner every scan):
-  1. Hashrate trend   — sustained decline over last N scans
-  2. Volatility spike — hashrate variance suddenly much higher than baseline
-  3. Board imbalance  — one board diverging significantly from others
-  4. Temp creep       — chip temps rising without facility cause
-  5. Pattern match    — current trend matches miner's historical pre-failure pattern
-
-Actions generated:
-  MONITOR_CLOSE — Watch carefully, no restart yet. Logged, shown in Slack.
-  PREEMPTIVE_RESTART — High confidence prediction, restart now before failure.
-
-Prediction accuracy is tracked in knowledge.json and fed back into training.
+11 signals using every available data point:
+  1.  Hashrate trend decline       (miner_readings.hashrate_pct)
+  2.  Volatility spike             (miner_readings.hashrate_pct)
+  3.  Board rate imbalance         (chain_readings.rate_mhs)
+  4.  Chip temp creep              (miner_readings.temp_chip)
+  5.  Historical pattern match     (miner_restarts pre-failure shape)
+  6.  Board voltage drop           (chain_readings.voltage)
+  7.  Board temp elevated          (chain_readings.temp_board)
+  8.  Pool rejection rate spike    (pool_readings)
+  9.  AMS alert spike              (ams_notifications)
+  10. Uptime reset / reboot        (miner_readings.uptime)
+  11. Max temp trending high       (miner_state_readings.max_temp_board/chip)
 """
 
 import sys
 import json
 import logging
 import sqlite3
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -38,16 +35,21 @@ logger = logging.getLogger("predictor")
 DB_PATH        = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
-# ── Tuning ────────────────────────────────────────────────────────────────────
-TREND_WINDOW        = 5     # scans to look back for trend detection
-TREND_DROP_PCT      = 15.0  # % drop over window that triggers prediction
-VOLATILITY_WINDOW   = 10    # scans for baseline volatility calculation
-VOLATILITY_SPIKE    = 2.5   # multiplier: current CV vs baseline CV
-TEMP_CREEP_C        = 4.0   # °C rise over window that triggers prediction
-BOARD_IMBALANCE_PCT = 30.0  # % difference between boards that triggers flag
-MIN_SCANS_FOR_PRED  = 5     # minimum scan history before predicting
-PRED_CONFIDENCE_MIN = 60    # minimum confidence to emit MONITOR_CLOSE
-PRED_CONFIDENCE_ACT = 80    # minimum confidence to emit PREEMPTIVE_RESTART
+TREND_WINDOW        = 5
+TREND_DROP_PCT      = 15.0
+VOLATILITY_WINDOW   = 10
+VOLATILITY_SPIKE    = 2.5
+TEMP_CREEP_C        = 4.0
+BOARD_IMBALANCE_PCT = 30.0
+MIN_SCANS_FOR_PRED  = 5
+PRED_CONFIDENCE_MIN = 60
+PRED_CONFIDENCE_ACT = 80
+VOLTAGE_DROP_V      = 14.2
+BOARD_TEMP_WARN_C   = 70.0
+REJ_RATE_HIGH       = 0.005
+AMS_ALERT_WINDOW_H  = 24
+MAX_BOARD_TEMP_WARN = 80.0
+
 
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
@@ -56,29 +58,25 @@ def get_db() -> sqlite3.Connection:
 
 
 def run_predictions(scan_id: int) -> List[Dict[str, Any]]:
-    """
-    Main entry point. Run predictions for all online miners in this scan.
-    Returns list of prediction dicts for miners showing pre-failure signals.
-    """
     conn = get_db()
-
-    # Get all online miners from this scan
     miners = conn.execute("""
         SELECT mr.miner_id, mr.ip, mr.model, mr.hashrate_pct,
-               mr.temp_chip, mr.status, mr.action
+               mr.temp_chip, mr.temp_board, mr.uptime, mr.status, mr.action
         FROM miner_readings mr
-        WHERE mr.scan_id = ? AND mr.status = 'online'
-        AND (mr.action = 'MONITOR' OR mr.action IS NULL)
+        WHERE mr.scan_id=? AND mr.status='online'
+          AND (mr.action='MONITOR' OR mr.action IS NULL)
     """, (scan_id,)).fetchall()
-
     conn.close()
 
     predictions = []
     for m in miners:
         try:
-            pred = _predict_miner(m["miner_id"], m["ip"], m["model"],
-                                  float(m["hashrate_pct"] or 0),
-                                  float(m["temp_chip"] or 0))
+            pred = _predict_miner(
+                m["miner_id"], m["ip"], m["model"],
+                float(m["hashrate_pct"] or 0),
+                float(m["temp_chip"] or 0),
+                float(m["temp_board"] or 0)
+            )
             if pred:
                 predictions.append(pred)
         except Exception as e:
@@ -87,89 +85,134 @@ def run_predictions(scan_id: int) -> List[Dict[str, Any]]:
     if predictions:
         logger.info("Predictions: %d miners showing pre-failure signals", len(predictions))
         _save_predictions(predictions)
-
     return predictions
 
 
 def _predict_miner(miner_id: str, ip: str, model: str,
-                   current_hr: float, current_temp: float) -> Optional[Dict[str, Any]]:
-    """
-    Evaluate a single miner for pre-failure signals.
-    Returns prediction dict if signals found, None otherwise.
-    """
+                   current_hr: float, current_chip_temp: float,
+                   current_board_temp: float) -> Optional[Dict[str, Any]]:
     conn = get_db()
 
-    # Get recent scan history for this miner
+    # Hashrate + chip temp history
     history = conn.execute("""
-        SELECT mr.hashrate_pct, mr.temp_chip, s.scanned_at
+        SELECT mr.hashrate_pct, mr.temp_chip, mr.temp_board, mr.uptime
         FROM miner_readings mr
-        JOIN scans s ON mr.scan_id = s.id
-        WHERE mr.miner_id = ? AND mr.status = 'online'
-          AND mr.hashrate_pct IS NOT NULL
-        ORDER BY s.scanned_at DESC
-        LIMIT ?
-    """, (miner_id, max(TREND_WINDOW, VOLATILITY_WINDOW) + 5)).fetchall()
+        JOIN scans s ON mr.scan_id=s.id
+        WHERE mr.miner_id=? AND mr.status='online' AND mr.hashrate_pct IS NOT NULL
+        ORDER BY s.scanned_at DESC LIMIT ?
+    """, (miner_id, max(TREND_WINDOW, VOLATILITY_WINDOW)+5)).fetchall()
 
     if len(history) < MIN_SCANS_FOR_PRED:
         conn.close()
         return None
 
-    # Get recent board hashrates for imbalance detection
+    # Latest board readings (voltage, freq, temp_board, hw_errors per board)
     boards = conn.execute("""
-        SELECT c.board_index, c.rate_mhs
+        SELECT c.board_index, c.rate_mhs, c.voltage, c.freq_mhz,
+               c.temp_board, c.hw_errors
         FROM chain_readings c
-        JOIN (SELECT MAX(scan_id) as sid FROM chain_readings WHERE ip=?) t ON c.scan_id=t.sid
-        WHERE c.ip = ?
+        WHERE c.ip=? AND c.scan_id=(
+            SELECT MAX(scan_id) FROM chain_readings WHERE ip=?
+        )
     """, (ip, ip)).fetchall()
+
+    # Pool rejection rate (last 10 scans)
+    pool = conn.execute("""
+        SELECT SUM(accepted) as acc, SUM(rejected) as rej
+        FROM pool_readings WHERE miner_id=?
+          AND scan_id IN (SELECT id FROM scans ORDER BY id DESC LIMIT 10)
+    """, (miner_id,)).fetchone()
+
+    # AMS alerts in last 24h
+    ams_cutoff = (datetime.now() - timedelta(hours=AMS_ALERT_WINDOW_H)).isoformat()
+    ams = conn.execute("""
+        SELECT key, COUNT(*) as cnt FROM ams_notifications
+        WHERE miner_ip=? AND recorded_at>=? GROUP BY key
+    """, (ip, ams_cutoff)).fetchall()
+    ams_counts = {r["key"]: r["cnt"] for r in ams}
+
+    # State readings for max temps
+    state_rows = conn.execute("""
+        SELECT max_temp_board, max_temp_chip FROM miner_state_readings
+        WHERE miner_id=? ORDER BY id DESC LIMIT 3
+    """, (miner_id,)).fetchall()
+
+    # HVAC context — is facility stressed?
+    hvac = conn.execute("""
+        SELECT supply_temp_f FROM hvac_readings ORDER BY id DESC LIMIT 1
+    """).fetchone()
+    facility_stressed = bool(hvac and float(hvac["supply_temp_f"] or 0) > 80.0)
 
     conn.close()
 
     hashrates = [float(r["hashrate_pct"]) for r in history]
-    temps     = [float(r["temp_chip"]) if r["temp_chip"] else None for r in history]
+    chip_temps = [float(r["temp_chip"]) if r["temp_chip"] else None for r in history]
+    uptimes    = [r["uptime"] for r in history]
 
-    signals   = []
-    scores    = []
+    signals = []
+    scores  = []
 
-    # ── Signal 1: Sustained hashrate decline ─────────────────────────────────
-    trend_score, trend_signal = _check_hashrate_trend(hashrates[:TREND_WINDOW])
-    if trend_signal:
-        signals.append(trend_signal)
-        scores.append(trend_score)
+    # ── Signal 1: Hashrate trend decline ─────────────────────────────────────
+    s, sig = _check_hashrate_trend(hashrates[:TREND_WINDOW])
+    if sig: signals.append(sig); scores.append(s)
 
-    # ── Signal 2: Volatility spike ───────────────────────────────────────────
-    vol_score, vol_signal = _check_volatility(hashrates)
-    if vol_signal:
-        signals.append(vol_signal)
-        scores.append(vol_score)
+    # ── Signal 2: Volatility spike ────────────────────────────────────────────
+    s, sig = _check_volatility(hashrates)
+    if sig: signals.append(sig); scores.append(s)
 
-    # ── Signal 3: Board imbalance ─────────────────────────────────────────────
+    # ── Signal 3: Board rate imbalance ────────────────────────────────────────
     if boards:
-        bal_score, bal_signal = _check_board_balance(boards)
-        if bal_signal:
-            signals.append(bal_signal)
-            scores.append(bal_score)
+        s, sig = _check_board_rate_imbalance(boards)
+        if sig: signals.append(sig); scores.append(s)
 
-    # ── Signal 4: Temperature creep ───────────────────────────────────────────
-    valid_temps = [t for t in temps[:TREND_WINDOW] if t is not None and t > 0]
-    if len(valid_temps) >= 3:
-        temp_score, temp_signal = _check_temp_creep(valid_temps)
-        if temp_signal:
-            signals.append(temp_signal)
-            scores.append(temp_score)
+    # ── Signal 4: Chip temp creep ─────────────────────────────────────────────
+    valid_ct = [t for t in chip_temps[:TREND_WINDOW] if t and t > 0]
+    if len(valid_ct) >= 3:
+        s, sig = _check_temp_creep(valid_ct, facility_stressed)
+        if sig: signals.append(sig); scores.append(s)
 
     # ── Signal 5: Historical pre-failure pattern match ────────────────────────
-    pattern_score, pattern_signal = _check_pattern_match(miner_id, hashrates[:TREND_WINDOW])
-    if pattern_signal:
-        signals.append(pattern_signal)
-        scores.append(pattern_score)
+    s, sig = _check_pattern_match(miner_id, hashrates[:TREND_WINDOW])
+    if sig: signals.append(sig); scores.append(s)
+
+    # ── Signal 6: Board voltage drop ─────────────────────────────────────────
+    if boards:
+        s, sig = _check_voltage_drop(boards)
+        if sig: signals.append(sig); scores.append(s)
+
+    # ── Signal 7: Board temp elevated ────────────────────────────────────────
+    if boards:
+        s, sig = _check_board_temps(boards, facility_stressed)
+        if sig: signals.append(sig); scores.append(s)
+
+    # ── Signal 8: Pool rejection rate spike ───────────────────────────────────
+    if pool and pool["acc"] is not None:
+        total_sh = (pool["acc"] or 0) + (pool["rej"] or 0)
+        if total_sh > 0:
+            rej_rate = float(pool["rej"] or 0) / total_sh
+            s, sig = _check_rejection_rate(rej_rate)
+            if sig: signals.append(sig); scores.append(s)
+
+    # ── Signal 9: AMS alert spike ────────────────────────────────────────────
+    s, sig = _check_ams_alerts(ams_counts)
+    if sig: signals.append(sig); scores.append(s)
+
+    # ── Signal 10: Uptime reset ───────────────────────────────────────────────
+    s, sig = _check_uptime_reset(uptimes)
+    if sig: signals.append(sig); scores.append(s)
+
+    # ── Signal 11: Max temp trending high ────────────────────────────────────
+    if state_rows:
+        s, sig = _check_max_temp_trend(state_rows, facility_stressed)
+        if sig: signals.append(sig); scores.append(s)
 
     if not signals:
         return None
 
-    # Combine signal scores — multiple signals amplify each other
-    base_confidence = max(scores)
-    bonus = sum(s * 0.1 for s in scores[1:])  # each additional signal adds 10% of its score
-    confidence = min(100, round(base_confidence + bonus))
+    # Combine scores — each additional signal amplifies the base
+    base = max(scores)
+    bonus = sum(s * 0.10 for s in scores[1:])
+    confidence = min(100, round(base + bonus))
 
     if confidence < PRED_CONFIDENCE_MIN:
         return None
@@ -177,186 +220,182 @@ def _predict_miner(miner_id: str, ip: str, model: str,
     action = "PREEMPTIVE_RESTART" if confidence >= PRED_CONFIDENCE_ACT else "MONITOR_CLOSE"
 
     return {
-        "miner_id":   miner_id,
-        "ip":         ip,
-        "model":      model,
-        "action":     action,
-        "confidence": confidence,
-        "signals":    signals,
-        "current_hr": current_hr,
-        "current_temp": current_temp,
+        "miner_id":     miner_id,
+        "ip":           ip,
+        "model":        model,
+        "action":       action,
+        "confidence":   confidence,
+        "signals":      signals,
+        "current_hr":   current_hr,
+        "current_chip_temp":  current_chip_temp,
+        "current_board_temp": current_board_temp,
         "predicted_at": datetime.now().isoformat()
     }
 
 
-def _check_hashrate_trend(hashrates: List[float]) -> Tuple[float, Optional[str]]:
-    """Detect sustained hashrate decline over the trend window."""
-    if len(hashrates) < 3:
-        return 0.0, None
-    # hashrates[0] is most recent, hashrates[-1] is oldest
-    oldest = hashrates[-1]
-    newest = hashrates[0]
-    if oldest <= 0:
-        return 0.0, None
-    drop_pct = ((oldest - newest) / oldest) * 100
-    if drop_pct >= TREND_DROP_PCT:
-        # Score scales with severity of drop
-        score = min(90.0, 50.0 + (drop_pct - TREND_DROP_PCT) * 2.0)
-        return score, f"hashrate declining {drop_pct:.1f}% over {len(hashrates)} scans ({oldest:.0f}% → {newest:.0f}%)"
+# ── Signal implementations ────────────────────────────────────────────────────
+
+def _check_hashrate_trend(hrs: List[float]) -> Tuple[float, Optional[str]]:
+    if len(hrs) < 3 or hrs[-1] <= 0: return 0.0, None
+    drop = ((hrs[-1] - hrs[0]) / hrs[-1]) * 100
+    if drop >= TREND_DROP_PCT:
+        score = min(90.0, 50.0 + (drop - TREND_DROP_PCT) * 2.0)
+        return score, f"hashrate declining {drop:.1f}% over {len(hrs)} scans ({hrs[-1]:.0f}%→{hrs[0]:.0f}%)"
     return 0.0, None
 
 
-def _check_volatility(hashrates: List[float]) -> Tuple[float, Optional[str]]:
-    """Detect sudden spike in hashrate volatility compared to baseline."""
-    if len(hashrates) < VOLATILITY_WINDOW + 2:
-        return 0.0, None
-
-    recent   = hashrates[:3]
-    baseline = hashrates[3:VOLATILITY_WINDOW]
-
+def _check_volatility(hrs: List[float]) -> Tuple[float, Optional[str]]:
+    if len(hrs) < VOLATILITY_WINDOW + 2: return 0.0, None
     def cv(vals):
-        if not vals: return 0
-        m = sum(vals) / len(vals)
-        if m == 0: return 0
-        var = sum((v - m)**2 for v in vals) / len(vals)
-        return (var**0.5) / m
-
-    recent_cv   = cv(recent)
-    baseline_cv = cv(baseline)
-
+        m = sum(vals)/len(vals) if vals else 0
+        return ((sum((v-m)**2 for v in vals)/len(vals))**0.5)/m if m > 0 else 0
+    recent_cv   = cv(hrs[:3])
+    baseline_cv = cv(hrs[3:VOLATILITY_WINDOW])
     if baseline_cv > 0 and recent_cv > baseline_cv * VOLATILITY_SPIKE:
         ratio = recent_cv / baseline_cv
         score = min(75.0, 40.0 + (ratio - VOLATILITY_SPIKE) * 10.0)
-        return score, f"volatility {ratio:.1f}x above baseline (unstable hashrate pattern)"
+        return score, f"volatility {ratio:.1f}x above baseline (unstable hashrate)"
     return 0.0, None
 
 
-def _check_board_balance(boards) -> Tuple[float, Optional[str]]:
-    """Detect one board diverging significantly from the others."""
-    rates = [(r["board_index"], float(r["rate_mhs"] or 0)) for r in boards]
-    rates = [(b, r) for b, r in rates if r > 0]
-    if len(rates) < 2:
-        return 0.0, None
-
-    values = [r for _, r in rates]
-    mean_rate = sum(values) / len(values)
-    if mean_rate == 0:
-        return 0.0, None
-
-    for board_idx, rate in rates:
-        deviation = abs(rate - mean_rate) / mean_rate * 100
-        if deviation >= BOARD_IMBALANCE_PCT:
-            score = min(80.0, 50.0 + (deviation - BOARD_IMBALANCE_PCT) * 1.0)
-            direction = "low" if rate < mean_rate else "high"
-            return score, f"board {board_idx} running {deviation:.0f}% {direction} vs fleet avg"
+def _check_board_rate_imbalance(boards) -> Tuple[float, Optional[str]]:
+    rates = [(r["board_index"], float(r["rate_mhs"] or 0)) for r in boards if float(r["rate_mhs"] or 0) > 0]
+    if len(rates) < 2: return 0.0, None
+    mean = sum(r for _, r in rates) / len(rates)
+    for bidx, rate in rates:
+        dev = abs(rate - mean) / mean * 100
+        if dev >= BOARD_IMBALANCE_PCT:
+            score = min(80.0, 50.0 + (dev - BOARD_IMBALANCE_PCT))
+            return score, f"board {bidx} rate {dev:.0f}% {'low' if rate<mean else 'high'} vs others"
     return 0.0, None
 
 
-def _check_temp_creep(temps: List[float]) -> Tuple[float, Optional[str]]:
-    """Detect temperature creeping up without environmental cause."""
-    if len(temps) < 3:
-        return 0.0, None
-    oldest = temps[-1]
-    newest = temps[0]
-    rise = newest - oldest
+def _check_temp_creep(temps: List[float], facility_stressed: bool) -> Tuple[float, Optional[str]]:
+    if len(temps) < 3 or facility_stressed: return 0.0, None  # skip if facility is causing it
+    rise = temps[0] - temps[-1]
     if rise >= TEMP_CREEP_C:
         score = min(70.0, 40.0 + (rise - TEMP_CREEP_C) * 5.0)
-        return score, f"temp creeping up {rise:.1f}°C over {len(temps)} scans ({oldest:.0f} → {newest:.0f}°C)"
+        return score, f"chip temp creeping +{rise:.1f}°C over {len(temps)} scans ({temps[-1]:.0f}→{temps[0]:.0f}°C)"
     return 0.0, None
 
 
 def _check_pattern_match(miner_id: str, recent_hrs: List[float]) -> Tuple[float, Optional[str]]:
-    """
-    Compare current hashrate trend to historical pre-failure patterns.
-    Uses outcomes from miner_restarts — what did hashrate look like
-    in the 5 scans before each FAILURE outcome?
-    """
     conn = get_db()
-
-    # Get historical FAILURE restarts with hashrate_before
     failures = conn.execute("""
-        SELECT miner_id, restarted_at, hashrate_before FROM miner_restarts
-        WHERE miner_id = ? AND outcome = 'FAILURE' AND hashrate_before IS NOT NULL
-        ORDER BY restarted_at DESC LIMIT 5
+        SELECT restarted_at FROM miner_restarts
+        WHERE miner_id=? AND outcome='FAILURE' ORDER BY restarted_at DESC LIMIT 5
     """, (miner_id,)).fetchall()
-
     if not failures:
         conn.close()
         return 0.0, None
-
-    # For each failure, get the 5 scans before it
-    pre_failure_patterns = []
+    best = 0.0
     for f in failures:
         pre = conn.execute("""
             SELECT mr.hashrate_pct FROM miner_readings mr
-            JOIN scans s ON mr.scan_id = s.id
-            WHERE mr.miner_id = ? AND s.scanned_at < ?
-              AND mr.hashrate_pct IS NOT NULL
+            JOIN scans s ON mr.scan_id=s.id
+            WHERE mr.miner_id=? AND s.scanned_at<? AND mr.hashrate_pct IS NOT NULL
             ORDER BY s.scanned_at DESC LIMIT 5
         """, (miner_id, f["restarted_at"])).fetchall()
         if len(pre) >= 3:
-            pre_failure_patterns.append([float(r["hashrate_pct"]) for r in pre])
-
+            pattern = [float(r["hashrate_pct"]) for r in pre]
+            best = max(best, _trend_similarity(recent_hrs[:len(pattern)], pattern))
     conn.close()
+    if best >= 0.75:
+        return min(85.0, best*85.0), f"matches pre-failure pattern ({best:.0%} similarity)"
+    return 0.0, None
 
-    if not pre_failure_patterns or len(recent_hrs) < 3:
-        return 0.0, None
 
-    # Compute similarity: does current trend shape match any pre-failure pattern?
-    best_similarity = 0.0
-    for pattern in pre_failure_patterns:
-        similarity = _trend_similarity(recent_hrs[:len(pattern)], pattern)
-        best_similarity = max(best_similarity, similarity)
+def _check_voltage_drop(boards) -> Tuple[float, Optional[str]]:
+    low = [(r["board_index"], float(r["voltage"])) for r in boards
+           if r["voltage"] and 0 < float(r["voltage"]) < VOLTAGE_DROP_V]
+    if low:
+        score = min(85.0, 60.0 + len(low) * 10.0)
+        detail = ", ".join(f"board {b}={v:.3f}V" for b, v in low)
+        return score, f"low board voltage ({detail} < {VOLTAGE_DROP_V}V)"
+    return 0.0, None
 
-    if best_similarity >= 0.75:
-        score = min(85.0, best_similarity * 85.0)
-        return score, f"current trend matches pre-failure pattern ({best_similarity:.0%} similarity)"
+
+def _check_board_temps(boards, facility_stressed: bool) -> Tuple[float, Optional[str]]:
+    if facility_stressed: return 0.0, None
+    hot = [(r["board_index"], float(r["temp_board"])) for r in boards
+           if r["temp_board"] and float(r["temp_board"]) > BOARD_TEMP_WARN_C]
+    if hot:
+        max_t = max(t for _, t in hot)
+        score = min(75.0, 40.0 + (max_t - BOARD_TEMP_WARN_C) * 2.0)
+        detail = ", ".join(f"board {b}={t:.0f}°C" for b, t in hot)
+        return score, f"elevated board temps ({detail})"
+    return 0.0, None
+
+
+def _check_rejection_rate(rej_rate: float) -> Tuple[float, Optional[str]]:
+    if rej_rate >= REJ_RATE_HIGH:
+        score = min(65.0, 40.0 + (rej_rate - REJ_RATE_HIGH) * 5000.0)
+        return score, f"high pool rejection rate {rej_rate*100:.2f}% (>{REJ_RATE_HIGH*100:.1f}% threshold)"
+    return 0.0, None
+
+
+def _check_ams_alerts(ams_counts: dict) -> Tuple[float, Optional[str]]:
+    hr_drops = ams_counts.get("hashrateDropLevel", 0)
+    hot_bds  = ams_counts.get("hotBoard", 0)
+    offlines = ams_counts.get("workerOffline", 0)
+    alerts, score = [], 0.0
+    if hr_drops >= 2:
+        score += min(40.0, hr_drops * 10.0)
+        alerts.append(f"{hr_drops}x hashrate drop alerts")
+    if hot_bds >= 2:
+        score += min(35.0, hot_bds * 8.0)
+        alerts.append(f"{hot_bds}x hot board alerts")
+    if offlines >= 3:
+        score += min(30.0, offlines * 5.0)
+        alerts.append(f"{offlines}x offline alerts")
+    if alerts:
+        return min(80.0, score), f"AMS alert spike 24h: {', '.join(alerts)}"
+    return 0.0, None
+
+
+def _check_uptime_reset(uptimes: List[str]) -> Tuple[float, Optional[str]]:
+    def parse(s):
+        if not s: return None
+        try:
+            d = int(re.search(r'(\d+)d', s).group(1)) if 'd' in s else 0
+            h = int(re.search(r'(\d+)h', s).group(1)) if 'h' in s else 0
+            m = int(re.search(r'(\d+)m', s).group(1)) if 'm' in s else 0
+            return d*86400 + h*3600 + m*60
+        except Exception: return None
+    secs = [parse(u) for u in uptimes if u]
+    secs = [s for s in secs if s is not None]
+    if len(secs) < 2: return 0.0, None
+    if secs[0] < secs[1] * 0.3 and secs[1] > 3600:
+        return 60.0, f"unscheduled reboot (uptime reset {secs[1]//3600}h→{secs[0]//60}m)"
+    return 0.0, None
+
+
+def _check_max_temp_trend(state_rows, facility_stressed: bool) -> Tuple[float, Optional[str]]:
+    if facility_stressed: return 0.0, None
+    max_bds = [float(r["max_temp_board"]) for r in state_rows if r["max_temp_board"]]
+    if max_bds and max_bds[0] > MAX_BOARD_TEMP_WARN:
+        score = min(70.0, 40.0 + (max_bds[0] - MAX_BOARD_TEMP_WARN) * 3.0)
+        return score, f"max board temp {max_bds[0]:.0f}°C approaching thermal limit"
     return 0.0, None
 
 
 def _trend_similarity(a: List[float], b: List[float]) -> float:
-    """
-    Compute normalized similarity between two hashrate trend sequences.
-    Both are normalized to their own mean so absolute levels don't matter —
-    only the shape (direction and relative magnitude of changes).
-    """
     n = min(len(a), len(b))
-    if n < 2:
-        return 0.0
-
-    def normalize(seq):
-        m = sum(seq) / len(seq)
-        if m == 0: return seq
-        return [v / m for v in seq]
-
-    an = normalize(a[:n])
-    bn = normalize(b[:n])
-
-    # Compute deltas (direction of change between consecutive scans)
-    def deltas(seq):
-        return [seq[i] - seq[i+1] for i in range(len(seq)-1)]
-
-    ad = deltas(an)
-    bd = deltas(bn)
-
-    # Direction agreement: do deltas have the same sign?
-    agreements = sum(1 for x, y in zip(ad, bd) if (x >= 0) == (y >= 0))
-    return agreements / len(ad) if ad else 0.0
+    if n < 2: return 0.0
+    def norm(s): m=sum(s)/len(s); return [v/m for v in s] if m else s
+    def deltas(s): return [s[i]-s[i+1] for i in range(len(s)-1)]
+    ad, bd = deltas(norm(a[:n])), deltas(norm(b[:n]))
+    agreed = sum(1 for x,y in zip(ad,bd) if (x>=0)==(y>=0))
+    return agreed/len(ad) if ad else 0.0
 
 
 def _save_predictions(predictions: List[Dict[str, Any]]):
-    """Save predictions to knowledge.json for tracking accuracy."""
     try:
         path = Path(KNOWLEDGE_PATH)
         knowledge = json.loads(path.read_text()) if path.exists() else {}
         preds = knowledge.setdefault("predictions", [])
         for p in predictions:
-            preds.append({
-                **p,
-                "outcome": None,  # filled in by outcome_checker if restart occurs
-                "accurate": None  # filled in after outcome is known
-            })
-        # Keep last 200 predictions
+            preds.append({**p, "outcome": None, "accurate": None})
         knowledge["predictions"] = preds[-200:]
         path.write_text(json.dumps(knowledge, indent=2))
     except Exception as e:
@@ -364,69 +403,49 @@ def _save_predictions(predictions: List[Dict[str, Any]]):
 
 
 def get_prediction_accuracy() -> Dict[str, Any]:
-    """
-    Return prediction accuracy stats for the 48hr test report.
-    Matches predictions to subsequent restarts to see if the prediction was correct.
-    """
     try:
         path = Path(KNOWLEDGE_PATH)
-        if not path.exists():
-            return {"error": "No knowledge.json"}
-        knowledge = json.loads(path.read_text())
-        preds = knowledge.get("predictions", [])
-        if not preds:
-            return {"total": 0, "accurate": 0, "accuracy_pct": None}
-
+        if not path.exists(): return {"error": "No knowledge.json"}
+        preds = json.loads(path.read_text()).get("predictions", [])
         total    = len(preds)
         accurate = sum(1 for p in preds if p.get("accurate") is True)
         pending  = sum(1 for p in preds if p.get("accurate") is None)
-
+        scored   = total - pending
         return {
-            "total": total,
-            "accurate": accurate,
-            "pending": pending,
-            "accuracy_pct": round(accurate / (total - pending) * 100, 1)
-                            if (total - pending) > 0 else None
+            "total": total, "accurate": accurate, "pending": pending,
+            "accuracy_pct": round(accurate/scored*100, 1) if scored > 0 else None
         }
     except Exception as e:
         return {"error": str(e)}
 
 
 def format_prediction_alert(pred: Dict[str, Any]) -> str:
-    """Format a prediction as a Slack message."""
-    action_label = {
-        "MONITOR_CLOSE":     "👁️ *WATCH CLOSELY*",
-        "PREEMPTIVE_RESTART":"⚡ *PREEMPTIVE RESTART RECOMMENDED*"
-    }.get(pred["action"], pred["action"])
-
+    label = {"MONITOR_CLOSE": "👁️ *WATCH CLOSELY*",
+             "PREEMPTIVE_RESTART": "⚡ *PREEMPTIVE RESTART RECOMMENDED*"}.get(pred["action"], pred["action"])
     lines = [
-        f"{action_label} — `{pred['ip']}` ({pred['model']})",
-        f"  Confidence: *{pred['confidence']}%* | Current HR: {pred['current_hr']:.1f}%",
-        f"  Signals detected:"
+        f"{label} — `{pred['ip']}` ({pred['model']})",
+        f"  Confidence: *{pred['confidence']}%* | HR: {pred['current_hr']:.1f}% | "
+        f"Chip: {pred['current_chip_temp']:.0f}°C | Board: {pred['current_board_temp']:.0f}°C",
+        f"  Signals:"
     ]
-    for signal in pred["signals"]:
-        lines.append(f"    • {signal}")
+    for sig in pred["signals"]:
+        lines.append(f"    • {sig}")
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     conn = get_db()
     scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
-
     if scan:
-        logger.info("Running predictions on latest scan (id=%d)...", scan["id"])
-        predictions = run_predictions(scan["id"])
-        if predictions:
-            print(f"\n{len(predictions)} pre-failure prediction(s):\n")
-            for p in predictions:
+        logger.info("Running predictions on scan %d (all 11 signals)...", scan["id"])
+        preds = run_predictions(scan["id"])
+        if preds:
+            print(f"\n{len(preds)} prediction(s):\n")
+            for p in preds:
                 print(format_prediction_alert(p))
                 print()
         else:
-            print("\nNo pre-failure signals detected — fleet looks healthy.")
-    else:
-        print("No scans found.")
-
-    print(f"\nPrediction accuracy: {get_prediction_accuracy()}")
+            print("\nNo pre-failure signals — fleet looks healthy.")
+    print(f"Accuracy: {get_prediction_accuracy()}")
