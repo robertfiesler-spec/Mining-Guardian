@@ -3241,38 +3241,42 @@ class MiningGuardian:
                 issues.append("OFFLINE")
 
                 # ── Offline remediation decision tree ─────────────────────
-                # Step 1: Firmware restart (first attempt for any offline miner)
-                # Step 2: PDU cycle (if restart was tried and miner still offline)
-                # Step 3: Ticket — bad PSU / bad control board
+                # Domain rules from operator:
+                #   S19JPros have NO PDU access — restart → still offline → bad PSU ticket
+                #   S21 Hydro/Imm MAY have PDU via AMS — restart → PDU cycle → ticket
+                #   has_pdu = AMS reports a PDU outlet for this miner
                 #
-                # Count how many restarts and PDU cycles have been attempted
-                offline_restarts = self.db.get_failed_restart_count(miner_id, days=1)
+                offline_restarts   = self.db.get_failed_restart_count(miner_id, days=1)
                 offline_pdu_cycles = self.db._count_pdu_cycles(miner_id, days=1)
 
                 if offline_restarts == 0:
-                    # First time offline — try firmware restart first
+                    # First time offline — firmware restart always first regardless of model
                     action = "RESTART"
+                    issues[-1] = "OFFLINE — attempting firmware restart"
 
-                elif offline_pdu_cycles == 0 and has_pdu:
-                    # Restart was tried, still offline, has PDU — try power cycle
-                    # Likely bad PSU or control board needs hard reset
+                elif has_pdu and offline_pdu_cycles == 0:
+                    # Has PDU + restart tried → power cycle next
                     action     = "PDU_CYCLE"
                     pdu_action = f"PDU {pdu_id} → Outlet {outlet_index}"
-                    issues[-1] = "OFFLINE — restart attempted, trying PDU power cycle (possible bad PSU)"
+                    issues[-1] = (
+                        "OFFLINE — firmware restart attempted, trying PDU power cycle "
+                        "(possible bad PSU or needs hard reset)"
+                    )
 
-                elif offline_pdu_cycles >= 1:
-                    # PDU cycle was tried, still offline — needs physical inspection
-                    # Could be: dead PSU, dead control board, blown fuse
+                else:
+                    # No PDU (S19JPros etc.) + restart tried, OR PDU cycle already tried
+                    # → needs physical inspection, likely bad PSU or control board
                     action = "PHYSICAL_CYCLE"
-                    issues[-1] = "OFFLINE — restart + PDU cycle failed (bad PSU / control board / physical fault)"
-
-                elif not has_pdu:
-                    # No PDU info — can only do physical cycle
-                    if offline_restarts >= 1:
-                        action = "PHYSICAL_CYCLE"
-                        issues[-1] = "OFFLINE — restart attempted, no PDU (physical inspection required)"
+                    if not has_pdu:
+                        issues[-1] = (
+                            "OFFLINE — restart attempted, no PDU access. "
+                            "Likely bad PSU or control board — physical inspection required"
+                        )
                     else:
-                        action = "RESTART"
+                        issues[-1] = (
+                            "OFFLINE — restart + PDU cycle both failed. "
+                            "Bad PSU, bad control board, or blown fuse — physical inspection required"
+                        )
 
                 return self._build_issue(
                     miner, issues, action, pdu_action, power_watts,
@@ -3823,7 +3827,6 @@ class MiningGuardian:
             """, (ESCALATION_THRESHOLD,)).fetchall()
 
             # Path 3: miners currently pending RESTART_CHECK_BOARDS approval
-            # Most direct signal — system already decided board check needed
             candidates_pending = conn.execute("""
                 SELECT DISTINCT miner_id, ip, model,
                        1 as failure_count, 'pending_board_check' as reason
@@ -3832,18 +3835,32 @@ class MiningGuardian:
                   AND status = 'PENDING'
             """).fetchall()
 
-            # Merge all, dedup by miner_id
+            # Path 4: offline miners stuck in PHYSICAL_CYCLE for 3+ consecutive scans
+            # These are miners where restart was tried, no PDU, needs bad PSU ticket
+            candidates_offline = conn.execute("""
+                SELECT miner_id, ip, model,
+                       COUNT(*) as failure_count, 'offline_no_pdu' as reason
+                FROM miner_readings
+                WHERE action = 'PHYSICAL_CYCLE'
+                  AND status = 'offline'
+                  AND scan_id IN (SELECT id FROM scans ORDER BY id DESC LIMIT 10)
+                GROUP BY miner_id
+                HAVING failure_count >= 3
+            """).fetchall()
+
+            # Merge all paths, dedup by miner_id
             seen = set()
             candidates = []
-            for c in list(candidates_failures) + list(candidates_escalated) + list(candidates_pending):
+            for c in (list(candidates_failures) + list(candidates_escalated) +
+                      list(candidates_pending) + list(candidates_offline)):
                 if c["miner_id"] not in seen:
                     seen.add(c["miner_id"])
                     candidates.append(c)
 
         logger.info(
-            "Auto-ticket check: %d candidates (%d failure + %d escalated + %d pending board check)",
+            "Auto-ticket check: %d candidates (%d failure + %d escalated + %d pending board check + %d offline no-pdu)",
             len(candidates), len(candidates_failures),
-            len(candidates_escalated), len(candidates_pending)
+            len(candidates_escalated), len(candidates_pending), len(candidates_offline)
         )
         for c in candidates:
             miner_id = str(c["miner_id"])
@@ -3863,7 +3880,16 @@ class MiningGuardian:
 
             # Create the AMS ticket with diagnostic context
             reason_str = c["reason"] if "reason" in c.keys() else "persistent_failure"
-            if reason_str == "pending_board_check":
+            if reason_str == "offline_no_pdu":
+                title = f"Offline — bad PSU suspected — {model} @ {ip}"
+                description = (
+                    f"Miner: {miner_id} ({model})\nIP: {ip}\n"
+                    f"Issue: Miner offline, firmware restart attempted, no PDU access to power cycle.\n"
+                    f"Likely cause: Bad PSU — miner cannot restart itself.\n"
+                    f"Action: Physical inspection — check PSU, power connections, fuses.\n"
+                    f"Note: S19JPros have no PDU outlet; PSU replacement most common fix."
+                )
+            elif reason_str == "pending_board_check":
                 title = f"Dead hashboards — {model} @ {ip} (physical inspection required)"
                 description = (
                     f"Miner: {miner_id} ({model})\nIP: {ip}\n"
