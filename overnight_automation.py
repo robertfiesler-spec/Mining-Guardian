@@ -37,7 +37,7 @@ OPENCLAW_WEBHOOK = os.getenv("OPENCLAW_WEBHOOK_URL", "http://localhost:18789/hoo
 OPENCLAW_TOKEN   = os.getenv("OPENCLAW_TOKEN", "")
 
 # ── Overnight window (24h clock) ──────────────────────────────────────────────
-WINDOW_START_HOUR = 22   # 10pm
+WINDOW_START_HOUR = 20   # 8pm
 WINDOW_END_HOUR   = 6    # 6am
 
 # ── How many times a miner can be auto-restarted in one overnight window ──────
