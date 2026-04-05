@@ -276,8 +276,8 @@ class ApprovalListener:
                 if key in self.processed: continue
                 self.client.chat_postMessage(channel=CHANNEL_ID, text=(
                     f"🚨 *Persistent Issue — `{m['ip']}`* ({m['model']})\n"
-                    f"Flagged 3 consecutive scans | avg HR: {m['avg_hr']:.0f}% "
-                    f"| avg temp: {m['avg_temp']:.0f}°C | actions: {m['actions']}"
+                    f"Flagged 3 consecutive scans | avg HR: {m['avg_hr'] or 0:.0f}% "
+                    f"| avg temp: {m['avg_temp'] or 0:.0f}°C | actions: {m['actions']}"
                 ))
                 self.processed.add(key)
                 logger.info("Escalation: %s", m["ip"])

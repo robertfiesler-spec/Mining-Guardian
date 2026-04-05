@@ -3721,6 +3721,9 @@ class MiningGuardian:
         try:
             self.ams.reboot_miner([miner_id])
             logger.info("[%s] Firmware restart sent via AMS", miner_id)
+            # Record restart so escalation counter works — must be called for
+            # both manual (this path) and overnight auto restarts
+            self.db.record_restart(miner_id, ip, model, restart_type="MANUAL_APPROVED")
         except Exception as e:
             logger.error("[%s] Firmware restart failed: %s", miner_id, e)
 
