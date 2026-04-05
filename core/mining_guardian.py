@@ -2857,7 +2857,6 @@ class SlackNotifier:
         # AMS notifications section — exclude miners already flagged in main report
         if ams_notifs:
             from collections import defaultdict
-            # Human-readable names for AMS notification keys
             key_labels = {
                 "consumptionChangeLevel": "Power consumption change",
                 "hotBoard":               "Hashboard overheating",
@@ -2867,8 +2866,20 @@ class SlackNotifier:
                 "highTemp":               "High temperature",
                 "lowHashrate":            "Low hashrate",
             }
-            # IPs already covered in the main report
-            flagged_ips = {i["ip"] for i in issues}
+            # Suppress ticketed miners from AMS alerts section too
+            ticketed_ips = set()
+            try:
+                with self.db._connect() as _conn:
+                    ticketed_ips = {
+                        r["ip"] for r in _conn.execute(
+                            "SELECT ip FROM known_dead_boards WHERE resolved_at IS NULL"
+                        ).fetchall()
+                    }
+            except Exception:
+                pass
+
+            # IPs already covered in the main report or ticketed
+            flagged_ips = {i["ip"] for i in issues} | ticketed_ips
 
             critical = [n for n in ams_notifs
                         if n.get("params", {}).get("alertLevel") == "Critical"
