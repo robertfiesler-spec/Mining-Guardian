@@ -658,16 +658,17 @@ def mhs_panel():
     return HTMLResponse(f"""<style>
     body{{background:transparent;color:#e0e0e0;font-family:sans-serif;margin:0;padding:8px}}
     .wrap{{display:flex;gap:20px}} .col{{flex:1}}
-    h3{{margin:0 0 8px 0;font-size:13px;text-transform:uppercase;letter-spacing:.08em}}
+    h3{{margin:0 0 10px 0;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.12em}}
+    h3.top{{color:#52c41a}} h3.bot{{color:#fa8c16}}
     table{{width:100%;border-collapse:collapse;font-size:13px}}
-    th{{text-align:left;padding:4px 10px;color:#666;font-weight:normal;border-bottom:1px solid #333}}
-    tr:hover{{background:rgba(255,255,255,.04)}}
+    th{{text-align:left;padding:5px 10px;color:#999;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #444}}
+    tr:hover{{background:rgba(255,255,255,.06)}}
     </style>
     <div class="wrap">
-      <div class="col"><h3>🏆 Top 5 Healthiest</h3>
+      <div class="col"><h3 class="top">🏆 Top 5 Healthiest</h3>
         <table><thead><tr><th>#</th><th>IP</th><th>Model</th><th>MHS</th></tr></thead>
         <tbody>{rows(top5,'#52c41a')}</tbody></table></div>
-      <div class="col"><h3>⚠️ Bottom 5 — Need Attention</h3>
+      <div class="col"><h3 class="bot">⚠️ Bottom 5 — Need Attention</h3>
         <table><thead><tr><th>#</th><th>IP</th><th>Model</th><th>MHS</th></tr></thead>
         <tbody>{rows(bot5,'#fa8c16')}</tbody></table></div>
     </div>""")
