@@ -618,6 +618,33 @@ def get_cross_miner_correlations(conn) -> str:
                 f"{r['approved']} approved | {r['denied']} denied"
             )
 
+    # Feature 3: Include denial reasons in training — operator judgment as signal
+    denial_reasons = conn.execute("""
+        SELECT timestamp, ip, model, action_taken, notes
+        FROM action_audit_log
+        WHERE decision = 'DENIED'
+          AND notes LIKE '%DENIAL_REASON%'
+          AND timestamp >= datetime('now', '-30 days')
+        ORDER BY timestamp DESC
+        LIMIT 20
+    """).fetchall()
+    if denial_reasons:
+        lines.append("\n--- OPERATOR DENIAL REASONS (last 30 days) ---")
+        lines.append("These are cases where the operator denied the AI recommendation and explained why.")
+        lines.append("Use these to understand what the operator considers inappropriate action timing or conditions.")
+        for r in denial_reasons:
+            reason_text = ""
+            if r["notes"]:
+                import re
+                match = re.search(r"DENIAL_REASON: (.+?)(?:\||$)", r["notes"])
+                if match:
+                    reason_text = match.group(1).strip()
+            if reason_text:
+                lines.append(
+                    f"  [{r['timestamp'][:10]}] {r['ip']} ({r['model']}) "
+                    f"action={r['action_taken']} | Operator said: \"{reason_text}\""
+                )
+
     lines.append(
         "\n=== CROSS-MINER ANALYSIS REQUESTED ===\n"
         "Based on the fleet-wide data above:\n"
