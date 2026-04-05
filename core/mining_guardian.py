@@ -1393,13 +1393,19 @@ class GuardianDB:
                     ON miner_logs(miner_id, collected_at);
 
                 CREATE TABLE IF NOT EXISTS miner_restarts (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    restarted_at    TEXT    NOT NULL,
-                    miner_id        TEXT    NOT NULL,
-                    ip              TEXT,
-                    model           TEXT,
-                    restart_type    TEXT,
-                    elevated_until  TEXT
+                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    restarted_at          TEXT    NOT NULL,
+                    miner_id              TEXT    NOT NULL,
+                    ip                    TEXT,
+                    model                 TEXT,
+                    restart_type          TEXT,
+                    elevated_until        TEXT,
+                    -- Outcome feedback columns (Feature 1)
+                    outcome               TEXT,    -- SUCCESS / FAILURE / PARTIAL / PENDING
+                    outcome_checked_at    TEXT,    -- when outcome was evaluated
+                    hashrate_before       REAL,    -- hashrate_pct at time of restart
+                    hashrate_after        REAL,    -- hashrate_pct 2-3 scans after restart
+                    recovery_time_scans   INTEGER  -- how many scans until recovery
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_restarts_miner
@@ -1580,6 +1586,24 @@ class GuardianDB:
                 CREATE INDEX IF NOT EXISTS idx_ams_ext_miner
                     ON miner_ams_extended(miner_id, scanned_at);
             """)
+
+            # ── Schema migrations for existing databases ──────────────────────
+            # Add outcome feedback columns to miner_restarts if not present
+            existing = [r[1] for r in conn.execute(
+                "PRAGMA table_info(miner_restarts)").fetchall()]
+            for col, typedef in [
+                ("outcome",             "TEXT"),
+                ("outcome_checked_at",  "TEXT"),
+                ("hashrate_before",     "REAL"),
+                ("hashrate_after",      "REAL"),
+                ("recovery_time_scans", "INTEGER"),
+            ]:
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE miner_restarts ADD COLUMN {col} {typedef}")
+                    logger.info("Migration: added miner_restarts.%s", col)
+            conn.commit()
+
         logger.info("Database ready at %s", self.db_path)
 
     def save_pending_approvals(self, thread_ts: str, scan_id: int,
@@ -2454,16 +2478,22 @@ class GuardianDB:
         return None
 
     def record_restart(self, miner_id: str, ip: str, model: str,
-                       restart_type: str, elevated_hours: int = 3) -> None:
-        """Record a restart event and set elevated monitoring window."""
-        now           = datetime.now()
+                       restart_type: str, elevated_hours: int = 3,
+                       hashrate_before: float = None) -> None:
+        """Record a restart event, set elevated monitoring window, and mark outcome as PENDING.
+        hashrate_before captures the miner's hashrate_pct at time of restart so the
+        outcome checker knows what 'before' looked like without a separate lookup.
+        """
+        now            = datetime.now()
         elevated_until = (now + timedelta(hours=elevated_hours)).isoformat()
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO miner_restarts "
-                "(restarted_at, miner_id, ip, model, restart_type, elevated_until) "
-                "VALUES (?,?,?,?,?,?)",
-                (now.isoformat(), miner_id, ip, model, restart_type, elevated_until)
+                "(restarted_at, miner_id, ip, model, restart_type, elevated_until, "
+                " outcome, hashrate_before) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (now.isoformat(), miner_id, ip, model, restart_type,
+                 elevated_until, "PENDING", hashrate_before)
             )
         logger.info("Restart recorded for miner %s (%s) — elevated monitoring for %sh",
                     miner_id, restart_type, elevated_hours)
@@ -3533,7 +3563,8 @@ class MiningGuardian:
             self.ams.reboot_miner([miner_id])
             self.db.record_restart(
                 miner_id, ip, model,
-                f"Dead board restart — boards {dead_idx} offline before restart"
+                f"Dead board restart — boards {dead_idx} offline before restart",
+                hashrate_before=float(issue.get("hashrate_pct") or 0)
             )
             logger.info("[%s] Restart command sent", miner_id)
         except Exception as e:
@@ -3675,7 +3706,8 @@ class MiningGuardian:
         )
 
         # Enable elevated monitoring so next scans watch it closely
-        self.db.record_restart(miner_id, ip, model, reason)
+        self.db.record_restart(miner_id, ip, model, reason,
+                               hashrate_before=float(issue.get("hashrate_pct") or 0))
 
         # Slack alert
         slack_msg = (
@@ -3728,9 +3760,8 @@ class MiningGuardian:
         try:
             self.ams.reboot_miner([miner_id])
             logger.info("[%s] Firmware restart sent via AMS", miner_id)
-            # Record restart so escalation counter works — must be called for
-            # both manual (this path) and overnight auto restarts
-            self.db.record_restart(miner_id, ip, model, restart_type="MANUAL_APPROVED")
+            self.db.record_restart(miner_id, ip, model, restart_type="MANUAL_APPROVED",
+                                   hashrate_before=float(issue.get("hashrate_pct") or 0))
         except Exception as e:
             logger.error("[%s] Firmware restart failed: %s", miner_id, e)
 
@@ -4104,9 +4135,26 @@ class MiningGuardian:
         }
 
     def loop(self) -> None:
+        # Import outcome checker once at loop start
+        try:
+            from outcome_checker import check_outcomes
+            _has_outcome_checker = True
+        except ImportError:
+            logger.warning("outcome_checker not found — outcome feedback disabled")
+            _has_outcome_checker = False
+
         while True:
             try:
                 self.run_once()
+
+                # Feature 1: Outcome Feedback Loop
+                # Runs after every scan to evaluate restart outcomes
+                if _has_outcome_checker:
+                    try:
+                        check_outcomes()
+                    except Exception:
+                        logger.exception("Outcome checker error (non-fatal)")
+
             except Exception:
                 logger.exception("Guardian loop error")
             time.sleep(self.config.scan_interval_seconds)

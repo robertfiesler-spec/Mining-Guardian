@@ -205,7 +205,8 @@ def execute_auto_action(action: dict) -> dict:
             # restarts and miners never escalate to tickets
             g.db.record_restart(
                 action["miner_id"], action["ip"], action.get("model", ""),
-                restart_type=f"AUTO_OVERNIGHT_{action['action_type']}"
+                restart_type=f"AUTO_OVERNIGHT_{action['action_type']}",
+                hashrate_before=float(action.get("hashrate_pct") or 0)
             )
             conn = get_db()
             conn.execute("""
