@@ -37,11 +37,12 @@ OPENCLAW_WEBHOOK = os.getenv("OPENCLAW_WEBHOOK_URL", "http://localhost:18789/hoo
 OPENCLAW_TOKEN   = os.getenv("OPENCLAW_TOKEN", "")
 
 # ── Overnight window (24h clock) ──────────────────────────────────────────────
-WINDOW_START_HOUR = 20   # 8pm
-WINDOW_END_HOUR   = 6    # 6am
+# Set to 0 / 24 to run ALL DAY — full autonomous mode
+WINDOW_START_HOUR = 0    # midnight (start of day)
+WINDOW_END_HOUR   = 24   # end of day — effectively always active
 
 # ── How many times a miner can be auto-restarted in one overnight window ──────
-MAX_AUTO_RESTARTS_PER_NIGHT = 1
+MAX_AUTO_RESTARTS_PER_NIGHT = 2  # increased from 1 for full-day mode
 
 
 def get_db():
@@ -51,7 +52,11 @@ def get_db():
 
 
 def is_overnight_window() -> bool:
-    """Returns True if current time is inside the overnight automation window."""
+    """Returns True if current time is inside the automation window.
+    When WINDOW_END_HOUR=24, always returns True (full-day autonomous mode).
+    """
+    if WINDOW_END_HOUR >= 24:
+        return True  # full-day mode
     hour = datetime.now().hour
     if WINDOW_START_HOUR > WINDOW_END_HOUR:
         # Spans midnight: e.g. 22 → 6
