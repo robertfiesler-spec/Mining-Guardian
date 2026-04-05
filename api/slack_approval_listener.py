@@ -256,8 +256,95 @@ class ApprovalListener:
             )
             logger.info("%s by %s — thread %s", action, user_name, thread_ts)
 
+            # Feature 3: Denial Reason Capture
+            # After a DENY, ask for a reason — this is gold for AI training
+            if action == "DENY":
+                threading.Thread(
+                    target=self._capture_denial_reason,
+                    args=(thread_ts, user_id, user_name),
+                    daemon=True
+                ).start()
+
         except Exception as e:
             logger.error("Execution failed: %s", e)
+
+    def _capture_denial_reason(self, thread_ts: str, user_id: str, user_name: str):
+        """
+        Feature 3: Denial Reason Capture.
+        After a DENY, post a follow-up in the thread asking why.
+        Wait up to 5 minutes for a reply. Store the reason in action_audit_log.notes
+        so the AI can learn from operator decisions over time.
+        """
+        try:
+            # Post the follow-up prompt
+            prompt_resp = self.client.chat_postMessage(
+                channel=CHANNEL_ID,
+                thread_ts=thread_ts,
+                text="💬 _Why did you deny? (optional — reply here within 5 min to help the AI learn)_"
+            )
+            prompt_ts = prompt_resp["ts"]
+
+            # Poll the thread for a reply from the same user for up to 5 minutes
+            deadline = datetime.now().timestamp() + 300  # 5 minutes
+            seen_ts  = set()
+            reason   = None
+
+            while datetime.now().timestamp() < deadline:
+                time.sleep(15)
+                try:
+                    replies = self.client.conversations_replies(
+                        channel=CHANNEL_ID,
+                        ts=thread_ts,
+                        oldest=prompt_ts,
+                        limit=10
+                    )
+                    for msg in replies.get("messages", []):
+                        msg_ts = msg.get("ts", "")
+                        if msg_ts == prompt_ts:
+                            continue  # skip the bot's own prompt
+                        if msg_ts in seen_ts:
+                            continue
+                        # Only capture from the user who denied
+                        if msg.get("user") == user_id:
+                            text = msg.get("text", "").strip()
+                            if text and len(text) > 2:
+                                reason = text
+                                seen_ts.add(msg_ts)
+                                break
+                    if reason:
+                        break
+                except Exception:
+                    pass
+
+            if reason:
+                # Store reason in action_audit_log for recent DENY entries in this thread
+                conn = get_db()
+                conn.execute("""
+                    UPDATE action_audit_log
+                    SET notes = COALESCE(notes || ' | ', '') || 'DENIAL_REASON: ' || ?
+                    WHERE decision = 'DENIED'
+                      AND approved_by = ?
+                      AND date = date('now')
+                      AND (notes IS NULL OR notes NOT LIKE '%DENIAL_REASON%')
+                    ORDER BY timestamp DESC
+                    LIMIT 5
+                """, (reason, user_name))
+                conn.commit()
+                conn.close()
+
+                # Acknowledge receipt
+                self.client.chat_postMessage(
+                    channel=CHANNEL_ID,
+                    thread_ts=thread_ts,
+                    text=f"✅ _Got it — reason logged for AI training: \"{reason[:100]}\"_"
+                )
+                logger.info("Denial reason captured from %s: %s", user_name, reason[:80])
+            else:
+                # No reply — silently remove the prompt (or just leave it)
+                logger.info("No denial reason provided for thread %s", thread_ts)
+
+        except Exception as e:
+            logger.warning("Denial reason capture failed: %s", e)
 
     def _check_escalation(self):
         """Alert if any miner flagged in 3+ consecutive scans — skip known dead boards."""

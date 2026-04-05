@@ -1393,13 +1393,19 @@ class GuardianDB:
                     ON miner_logs(miner_id, collected_at);
 
                 CREATE TABLE IF NOT EXISTS miner_restarts (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    restarted_at    TEXT    NOT NULL,
-                    miner_id        TEXT    NOT NULL,
-                    ip              TEXT,
-                    model           TEXT,
-                    restart_type    TEXT,
-                    elevated_until  TEXT
+                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    restarted_at          TEXT    NOT NULL,
+                    miner_id              TEXT    NOT NULL,
+                    ip                    TEXT,
+                    model                 TEXT,
+                    restart_type          TEXT,
+                    elevated_until        TEXT,
+                    -- Outcome feedback columns (Feature 1)
+                    outcome               TEXT,    -- SUCCESS / FAILURE / PARTIAL / PENDING
+                    outcome_checked_at    TEXT,    -- when outcome was evaluated
+                    hashrate_before       REAL,    -- hashrate_pct at time of restart
+                    hashrate_after        REAL,    -- hashrate_pct 2-3 scans after restart
+                    recovery_time_scans   INTEGER  -- how many scans until recovery
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_restarts_miner
@@ -1580,6 +1586,24 @@ class GuardianDB:
                 CREATE INDEX IF NOT EXISTS idx_ams_ext_miner
                     ON miner_ams_extended(miner_id, scanned_at);
             """)
+
+            # ── Schema migrations for existing databases ──────────────────────
+            # Add outcome feedback columns to miner_restarts if not present
+            existing = [r[1] for r in conn.execute(
+                "PRAGMA table_info(miner_restarts)").fetchall()]
+            for col, typedef in [
+                ("outcome",             "TEXT"),
+                ("outcome_checked_at",  "TEXT"),
+                ("hashrate_before",     "REAL"),
+                ("hashrate_after",      "REAL"),
+                ("recovery_time_scans", "INTEGER"),
+            ]:
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE miner_restarts ADD COLUMN {col} {typedef}")
+                    logger.info("Migration: added miner_restarts.%s", col)
+            conn.commit()
+
         logger.info("Database ready at %s", self.db_path)
 
     def save_pending_approvals(self, thread_ts: str, scan_id: int,
@@ -2454,16 +2478,22 @@ class GuardianDB:
         return None
 
     def record_restart(self, miner_id: str, ip: str, model: str,
-                       restart_type: str, elevated_hours: int = 3) -> None:
-        """Record a restart event and set elevated monitoring window."""
-        now           = datetime.now()
+                       restart_type: str, elevated_hours: int = 3,
+                       hashrate_before: float = None) -> None:
+        """Record a restart event, set elevated monitoring window, and mark outcome as PENDING.
+        hashrate_before captures the miner's hashrate_pct at time of restart so the
+        outcome checker knows what 'before' looked like without a separate lookup.
+        """
+        now            = datetime.now()
         elevated_until = (now + timedelta(hours=elevated_hours)).isoformat()
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO miner_restarts "
-                "(restarted_at, miner_id, ip, model, restart_type, elevated_until) "
-                "VALUES (?,?,?,?,?,?)",
-                (now.isoformat(), miner_id, ip, model, restart_type, elevated_until)
+                "(restarted_at, miner_id, ip, model, restart_type, elevated_until, "
+                " outcome, hashrate_before) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (now.isoformat(), miner_id, ip, model, restart_type,
+                 elevated_until, "PENDING", hashrate_before)
             )
         logger.info("Restart recorded for miner %s (%s) — elevated monitoring for %sh",
                     miner_id, restart_type, elevated_hours)
@@ -2481,22 +2511,24 @@ class GuardianDB:
         return row is not None
 
     def get_failed_restart_count(self, miner_id: str, days: int = 7) -> int:
-        """Count restarts in the last N days where the miner did not recover.
-
-        A restart is 'failed' if the miner's hashrate is still below 50% of rated
-        at the time of the next scan after the restart. We approximate this by
-        counting restarts where the miner was restarted but is still being flagged
-        as a hashrate issue — i.e. it appears in the audit log as RESTART multiple
-        times without a clean period in between.
-
-        Used to decide when to stop restarting and escalate to a ticket instead.
-        """
+        """Count restarts in the last N days where the miner did not recover."""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM miner_restarts
                 WHERE miner_id=? AND restarted_at >= ?
             """, (miner_id, cutoff)).fetchone()
+        return row["cnt"] if row else 0
+
+    def count_outcome_failures(self, miner_id: str) -> int:
+        """Count restarts labeled FAILURE by the outcome feedback loop (Feature 1).
+        This is more reliable than get_failed_restart_count because it uses
+        actual observed post-restart hashrate, not just restart count."""
+        with self._connect() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) as cnt FROM miner_restarts
+                WHERE miner_id=? AND outcome='FAILURE'
+            """, (miner_id,)).fetchone()
         return row["cnt"] if row else 0
         """Return datetime of last log collection for this miner, or None."""
         with self._connect() as conn:
@@ -2700,6 +2732,23 @@ class SlackNotifier:
             else:
                 hvac_lines.append("  ✅ All alarms clear")
 
+            # Feature 5: Add facility stress level to HVAC section
+            try:
+                from hvac_correlator import get_facility_stress_level
+                stress, stress_reasons = get_facility_stress_level()
+                if stress >= 51:
+                    hvac_lines.append(
+                        f"  🏭 *FACILITY STRESS: {stress}%* — "
+                        f"{', '.join(stress_reasons[:2])}. "
+                        f"Fleet flags may be facility-caused."
+                    )
+                elif stress >= 26:
+                    hvac_lines.append(
+                        f"  🏭 Facility watch: {stress}% — {', '.join(stress_reasons[:1])}"
+                    )
+            except Exception:
+                pass
+
             lines.extend(hvac_lines)
 
         lines.append(status_line)
@@ -2728,6 +2777,13 @@ class SlackNotifier:
             dead_mixed = [i for i in fw_restarts if str(i["id"]) in dead_board_miners]
 
             from collections import defaultdict
+            # Load confidence scorer once for the whole report
+            try:
+                from confidence_scorer import get_confidence, get_gate
+                _has_confidence = True
+            except ImportError:
+                _has_confidence = False
+
             if approvable:
                 by_model: dict = defaultdict(list)
                 for i in approvable:
@@ -2736,7 +2792,17 @@ class SlackNotifier:
                 for model, group in by_model.items():
                     if len(group) == 1:
                         i = group[0]
-                        lines.append(f"  • `{i['ip']}` {model} — HR: {i['hashrate_pct']} | Temp: {i['temp_chip']}")
+                        conf_str = ""
+                        if _has_confidence:
+                            try:
+                                score, _ = get_confidence(str(i["id"]), i["ip"], "RESTART",
+                                                          hashrate_pct=i.get("hashrate_pct"))
+                                gate = get_gate(score)
+                                gate_emoji = "🟢" if gate == "AUTO" else "🟡" if gate == "ASK" else "🔴"
+                                conf_str = f" {gate_emoji} Conf: {score}%"
+                            except Exception:
+                                pass
+                        lines.append(f"  • `{i['ip']}` {model} — HR: {i['hashrate_pct']} | Temp: {i['temp_chip']}{conf_str}")
                     else:
                         ips = ", ".join(f"`{i['ip']}`" for i in group)
                         issue_str = " | ".join(set(" | ".join(i["issues"]) for i in group))
@@ -2791,7 +2857,6 @@ class SlackNotifier:
         # AMS notifications section — exclude miners already flagged in main report
         if ams_notifs:
             from collections import defaultdict
-            # Human-readable names for AMS notification keys
             key_labels = {
                 "consumptionChangeLevel": "Power consumption change",
                 "hotBoard":               "Hashboard overheating",
@@ -2801,8 +2866,20 @@ class SlackNotifier:
                 "highTemp":               "High temperature",
                 "lowHashrate":            "Low hashrate",
             }
-            # IPs already covered in the main report
-            flagged_ips = {i["ip"] for i in issues}
+            # Suppress ticketed miners from AMS alerts section too
+            ticketed_ips = set()
+            try:
+                with self.db._connect() as _conn:
+                    ticketed_ips = {
+                        r["ip"] for r in _conn.execute(
+                            "SELECT ip FROM known_dead_boards WHERE resolved_at IS NULL"
+                        ).fetchall()
+                    }
+            except Exception:
+                pass
+
+            # IPs already covered in the main report or ticketed
+            flagged_ips = {i["ip"] for i in issues} | ticketed_ips
 
             critical = [n for n in ams_notifs
                         if n.get("params", {}).get("alertLevel") == "Critical"
@@ -3103,13 +3180,38 @@ class MiningGuardian:
             # Verify directly before taking any action.
             verify = verify_miner_online(ip)
             if verify["actually_online"]:
+                # Count how many consecutive scans this miner has been in AMS SYNC state
+                ams_sync_count = 0
+                try:
+                    with self.db._connect() as conn:
+                        rows = conn.execute("""
+                            SELECT issue FROM miner_readings
+                            WHERE miner_id=? ORDER BY id DESC LIMIT 20
+                        """, (miner_id,)).fetchall()
+                        for row in rows:
+                            if row["issue"] and "AMS SYNC" in str(row["issue"]):
+                                ams_sync_count += 1
+                            else:
+                                break  # stop at first non-AMS-SYNC scan
+                except Exception:
+                    pass
+
+                if ams_sync_count >= 10:
+                    # Been in AMS SYNC state for 10+ scans — suppress from report
+                    # This miner is reachable but AMS is persistently out of sync.
+                    # Don't flood reports with it — let it resolve itself.
+                    logger.debug(
+                        "[%s] AMS SYNC suppressed — %d consecutive scans, miner is reachable",
+                        miner_id, ams_sync_count
+                    )
+                    return None  # exclude from issues entirely
+
                 logger.info(
-                    "[%s] AMS reports offline but miner is reachable — %s.",
-                    miner_id, verify["status_detail"]
+                    "[%s] AMS reports offline but miner is reachable — %s (scan %d).",
+                    miner_id, verify["status_detail"], ams_sync_count + 1
                 )
-                # Miner is alive but AMS thinks it's offline — report the discrepancy
                 issues.append(
-                    f"⚠️ AMS SYNC: Miner is ONLINE (verified via direct check) "
+                    f"⚠️ AMS SYNC ({ams_sync_count+1} scans): Miner is ONLINE (verified) "
                     f"but AMS reports offline — check AMS"
                 )
                 action = "MONITOR"
@@ -3184,25 +3286,38 @@ class MiningGuardian:
             pct = (hashrate_ths / rated_ths) * 100
             hashrate_pct_str = f"{pct:.1f}%"
             if pct < self.HASHRATE_THRESHOLD * 100:
+                # ── Ticketed miners — never re-queue ─────────────────────
+                # If this miner already has a ticket (known dead boards with
+                # ticket_created set), suppress entirely. Don't add to issues,
+                # don't set action, don't show in Slack. Ticket handles it.
+                if self.db.has_known_dead_boards(miner_id):
+                    logger.debug(
+                        "[%s] Low hashrate suppressed — known dead board ticket already open",
+                        miner_id
+                    )
+                    return None  # fully suppress — don't appear in report at all
+
                 issues.append(
                     f"Hashrate {pct:.1f}% of rated "
                     f"({hashrate_ths:.1f} / {rated_ths:.0f} TH/s) "
                     f"[{tier}]"
                 )
                 # Only set RESTART if a dead board hasn't already claimed the action
-                # Dead board takes priority — its flow includes a restart anyway
                 if action != "RESTART_CHECK_BOARDS":
-                    # Escalation rule: if this miner has been restarted 2+ times
-                    # in the last 7 days and is still failing, stop restarting
-                    # and escalate to RESTART_CHECK_BOARDS → triggers ticket flow
+                    # Escalation: 2+ failed restarts → ticket flow
+                    # Also check outcome-labeled failures from Feature 1
                     failed_restarts = self.db.get_failed_restart_count(miner_id, days=7)
-                    if failed_restarts >= 2:
+                    outcome_failures = self.db.count_outcome_failures(miner_id)
+                    if failed_restarts >= 2 or outcome_failures >= 2:
                         action = "RESTART_CHECK_BOARDS"
                         issues.append(
-                            f"⚠️ Escalated: {failed_restarts} restarts in 7 days with no recovery — ticket required"
+                            f"⚠️ Escalated: {failed_restarts} restarts, "
+                            f"{outcome_failures} FAILURE outcomes — ticket required"
                         )
-                        logger.info("[%s] Escalating to RESTART_CHECK_BOARDS after %d failed restarts",
-                                    miner_id, failed_restarts)
+                        logger.info(
+                            "[%s] Escalating to RESTART_CHECK_BOARDS — restarts=%d outcomes=%d",
+                            miner_id, failed_restarts, outcome_failures
+                        )
                     else:
                         action = "RESTART"
 
@@ -3533,7 +3648,8 @@ class MiningGuardian:
             self.ams.reboot_miner([miner_id])
             self.db.record_restart(
                 miner_id, ip, model,
-                f"Dead board restart — boards {dead_idx} offline before restart"
+                f"Dead board restart — boards {dead_idx} offline before restart",
+                hashrate_before=float(issue.get("hashrate_pct") or 0)
             )
             logger.info("[%s] Restart command sent", miner_id)
         except Exception as e:
@@ -3628,6 +3744,89 @@ class MiningGuardian:
                 reason=f"Board(s) {still_dead_idx} still dead after restart"
             )
 
+    def _auto_create_missing_tickets(self, miners: list) -> None:
+        """
+        Scan-level ticket creation for miners that have accumulated 3+ FAILURE
+        outcomes but never had an AMS ticket created — this handles the case where
+        miners kept getting plain RESTART approvals instead of RESTART_CHECK_BOARDS,
+        bypassing the normal ticket creation flow in execute_board_restart().
+
+        Runs every scan. Only creates a ticket once — marks ticket_created so it
+        won't repeat. Suppresses the miner from future reports automatically.
+        """
+        FAILURE_THRESHOLD = 3
+
+        with self.db._connect() as conn:
+            # Find miners with enough failures and no ticket
+            candidates = conn.execute("""
+                SELECT miner_id, ip, model,
+                       COUNT(*) as failure_count
+                FROM miner_restarts
+                WHERE outcome = 'FAILURE'
+                GROUP BY miner_id
+                HAVING failure_count >= ?
+            """, (FAILURE_THRESHOLD,)).fetchall()
+
+        for c in candidates:
+            miner_id = str(c["miner_id"])
+            ip       = c["ip"]
+            model    = c["model"]
+            failures = c["failure_count"]
+
+            # Skip if already in known_dead_boards with a ticket
+            with self.db._connect() as conn:
+                existing = conn.execute("""
+                    SELECT ticket_created FROM known_dead_boards
+                    WHERE miner_id=? AND resolved_at IS NULL
+                """, (miner_id,)).fetchone()
+
+            if existing and existing["ticket_created"]:
+                continue  # already has a ticket
+
+            # Create the AMS ticket
+            title = f"Persistent failure — {model} @ {ip} ({failures} restart failures)"
+            description = (
+                f"Miner: {miner_id} ({model})\n"
+                f"IP: {ip}\n"
+                f"Failed restarts: {failures}\n"
+                f"Outcome: Every restart attempt returned FAILURE outcome.\n"
+                f"Action: Miner has been automatically suppressed from reports.\n"
+                f"Physical inspection required."
+            )
+            try:
+                ticket = self.ams.create_ticket(
+                    title=title,
+                    description=description,
+                    priority="high",
+                    miner_ids=[int(miner_id)]
+                )
+                ticket_id = str(ticket.get("id", "unknown"))
+                logger.info(
+                    "[%s] Auto-ticket created: #%s (%d failures)",
+                    ip, ticket_id, failures
+                )
+                # Register in known_dead_boards so miner is suppressed
+                if not existing:
+                    self.db.register_dead_boards(
+                        miner_id, ip, model,
+                        board_indices=[], restart_result="failed"
+                    )
+                self.db.mark_ticket_created(miner_id, ticket_id)
+
+                # Slack notification
+                try:
+                    self.slack.post_to_channel(
+                        f"🎫 *Auto-ticket created: #{ticket_id}*\n"
+                        f"  `{ip}` ({model}) — {failures} FAILURE outcomes, "
+                        f"no recovery after repeated restarts.\n"
+                        f"  Miner removed from reports. Physical inspection required."
+                    )
+                except Exception:
+                    pass
+
+            except Exception as e:
+                logger.error("[%s] Auto-ticket creation failed: %s", ip, e)
+
     def _escalate_board_issue(self, miner_id: str, ip: str, model: str,
                                dead_idx: list, reason: str) -> None:
         """
@@ -3675,7 +3874,8 @@ class MiningGuardian:
         )
 
         # Enable elevated monitoring so next scans watch it closely
-        self.db.record_restart(miner_id, ip, model, reason)
+        self.db.record_restart(miner_id, ip, model, reason,
+                               hashrate_before=float(issue.get("hashrate_pct") or 0))
 
         # Slack alert
         slack_msg = (
@@ -3728,9 +3928,8 @@ class MiningGuardian:
         try:
             self.ams.reboot_miner([miner_id])
             logger.info("[%s] Firmware restart sent via AMS", miner_id)
-            # Record restart so escalation counter works — must be called for
-            # both manual (this path) and overnight auto restarts
-            self.db.record_restart(miner_id, ip, model, restart_type="MANUAL_APPROVED")
+            self.db.record_restart(miner_id, ip, model, restart_type="MANUAL_APPROVED",
+                                   hashrate_before=float(issue.get("hashrate_pct") or 0))
         except Exception as e:
             logger.error("[%s] Firmware restart failed: %s", miner_id, e)
 
@@ -4021,6 +4220,15 @@ class MiningGuardian:
         expired = self.db.expire_old_pending_approvals(max_age_minutes=60)
         if expired:
             logger.info("Expired %d stale pending approvals", expired)
+
+        # ── Auto-ticket: miners with 3+ FAILURE outcomes and no ticket yet ──
+        # This handles miners that kept getting plain RESTART approvals but never
+        # went through the RESTART_CHECK_BOARDS flow that normally creates tickets.
+        try:
+            self._auto_create_missing_tickets(miners)
+        except Exception:
+            logger.exception("Auto-ticket creation failed (non-fatal)")
+
         self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
         self.db.save_miner_state_readings(scan_id, datetime.now().isoformat(), miners)
@@ -4104,9 +4312,145 @@ class MiningGuardian:
         }
 
     def loop(self) -> None:
+        # Ensure ai/ directory is in sys.path for all feature imports
+        import sys as _sys
+        _ai_path = str(Path(__file__).resolve().parent.parent / "ai")
+        if _ai_path not in _sys.path:
+            _sys.path.insert(0, _ai_path)
+
+        # Import outcome checker once at loop start
+        try:
+            from outcome_checker import check_outcomes
+            _has_outcome_checker = True
+        except ImportError:
+            logger.warning("outcome_checker not found — outcome feedback disabled")
+            _has_outcome_checker = False
+
         while True:
             try:
                 self.run_once()
+
+                # Feature 1: Outcome Feedback Loop
+                # Runs after every scan to evaluate restart outcomes
+                if _has_outcome_checker:
+                    try:
+                        check_outcomes()
+                    except Exception:
+                        logger.exception("Outcome checker error (non-fatal)")
+
+                # Feature 5: HVAC/Environment Correlation
+                # Check if fleet flags correlate with facility stress
+                try:
+                    from hvac_correlator import check_fleet_correlation, get_facility_stress_level
+                    stress, reasons = get_facility_stress_level()
+                    if stress >= 26:
+                        logger.info("Facility stress %d%%: %s", stress, reasons)
+                    # check_fleet_correlation uses the latest scan id
+                    latest_scan = self.db._connect().execute(
+                        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if latest_scan:
+                        check_fleet_correlation(latest_scan["id"])
+                except Exception:
+                    logger.debug("HVAC correlator skipped (non-fatal)")
+
+                # Feature 6: Pre-Failure Prediction
+                # Detect miners showing pre-failure signals before they break
+                try:
+                    from predictor import run_predictions, format_prediction_alert
+                    latest_scan = self.db._connect().execute(
+                        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if latest_scan:
+                        preds = run_predictions(latest_scan["id"])
+                        for pred in preds:
+                            miner_id = str(pred.get("miner_id", ""))
+                            ip       = pred.get("ip", "")
+
+                            # Skip ticketed miners — they already have a ticket open
+                            if self.db.has_known_dead_boards(miner_id):
+                                logger.debug(
+                                    "Prediction suppressed for %s — dead board ticket open", ip
+                                )
+                                continue
+
+                            # Skip Auradine voltage signal — 0.29V is their firmware format
+                            firmware = ""
+                            try:
+                                with self.db._connect() as _c:
+                                    _fw = _c.execute(
+                                        "SELECT firmware_manufacturer FROM miner_readings "
+                                        "WHERE miner_id=? ORDER BY id DESC LIMIT 1", (miner_id,)
+                                    ).fetchone()
+                                    firmware = (_fw["firmware_manufacturer"] or "").upper() if _fw else ""
+                            except Exception:
+                                pass
+                            if "AURADINE" in firmware:
+                                filtered = [s for s in pred.get("signals", [])
+                                            if "voltage" not in s.lower()]
+                                if not filtered:
+                                    logger.debug("Prediction suppressed for %s — Auradine voltage false positive", ip)
+                                    continue
+                                pred["signals"] = filtered
+
+                            if pred["action"] == "PREEMPTIVE_RESTART":
+                                try:
+                                    # Post as approval request so you can APPROVE or DENY
+                                    msg = format_prediction_alert(pred)
+                                    thread = self.slack.post_to_channel(
+                                        msg + "\n\n_Reply `APPROVE` to execute restart or `DENY` to skip._"
+                                    )
+                                    # Register as pending approval so listener picks it up
+                                    if thread and isinstance(thread, str):
+                                        self.db.save_pending_approvals(
+                                            thread, latest_scan["id"],
+                                            [{
+                                                "id":          miner_id,
+                                                "ip":          ip,
+                                                "model":       pred.get("model", ""),
+                                                "action":      "RESTART",
+                                                "issues":      pred.get("signals", []),
+                                                "hashrate_pct":f"{pred.get('current_hr', 0):.1f}%",
+                                                "temp_chip":   pred.get("current_chip_temp", 0),
+                                            }]
+                                        )
+                                except Exception:
+                                    pass
+                            logger.info("Prediction: %s %s conf=%d%%",
+                                       ip, pred["action"], pred["confidence"])
+                except Exception:
+                    logger.debug("Predictor skipped (non-fatal)")
+
+                # Feature 8: Action Diversity
+                # Evaluate power tuning, eco mode, pool failover
+                try:
+                    from action_diversity import evaluate_all_actions
+                    latest_scan = self.db._connect().execute(
+                        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if latest_scan:
+                        new_actions = evaluate_all_actions(latest_scan["id"])
+                        for act in new_actions:
+                            logger.info(
+                                "Action diversity: %s for %s conf=%d%% reasons=%s",
+                                act["action"], act["ip"],
+                                act["confidence"], act.get("reasons", [])[:1]
+                            )
+                            # Log to audit trail for tracking
+                            try:
+                                self.db.log_action(
+                                    act["miner_id"], act["ip"],
+                                    act["model"],
+                                    problem="; ".join(act.get("reasons", [])),
+                                    action_taken=act["action"],
+                                    decision="PENDING_APPROVAL",
+                                    notes=f"confidence={act['confidence']}% data={act.get('data_used',[])}",
+                                )
+                            except Exception:
+                                pass
+                except Exception:
+                    logger.debug("Action diversity skipped (non-fatal)")
+
             except Exception:
                 logger.exception("Guardian loop error")
             time.sleep(self.config.scan_interval_seconds)

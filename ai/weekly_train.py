@@ -39,6 +39,40 @@ def run_weekly():
         logger.error("Comprehensive training failed: %s", e)
         raise
 
+    # Feature 4: Rebuild miner fingerprints after training
+    try:
+        from fingerprint_builder import build_all_fingerprints
+        logger.info("Building miner fingerprints...")
+        result = build_all_fingerprints()
+        logger.info("Fingerprints built: %d miners", result["built"])
+    except Exception as e:
+        logger.warning("Fingerprint building failed (non-fatal): %s", e)
+
+    # Feature 5: Compute HVAC correlation patterns and add to knowledge
+    try:
+        from hvac_correlator import get_hvac_correlation_patterns
+        logger.info("Computing HVAC correlation patterns...")
+        patterns = get_hvac_correlation_patterns(lookback_days=30)
+        if "error" not in patterns:
+            import json
+            from pathlib import Path
+            kpath = Path(_ROOT / "knowledge.json")
+            knowledge = json.loads(kpath.read_text()) if kpath.exists() else {}
+            knowledge["hvac_correlation"] = patterns
+            kpath.write_text(json.dumps(knowledge, indent=2))
+            corr = patterns.get("supply_temp_flag_correlation", 0)
+            logger.info("HVAC correlation: supply_temp vs flags = %.3f", corr)
+    except Exception as e:
+        logger.warning("HVAC correlation failed (non-fatal): %s", e)
+
+    # Feature 6: Log prediction accuracy into knowledge for training
+    try:
+        from predictor import get_prediction_accuracy
+        accuracy = get_prediction_accuracy()
+        logger.info("Prediction accuracy: %s", accuracy)
+    except Exception as e:
+        logger.warning("Prediction accuracy check failed (non-fatal): %s", e)
+
     logger.info("=" * 60)
     logger.info("WEEKLY TRAINING — Complete")
     logger.info("=" * 60)
