@@ -466,7 +466,7 @@ def get_cross_miner_correlations(conn) -> str:
                    THEN 1 ELSE 0 END) as total_flags
         FROM miner_hardware h
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.chip_bin IS NOT NULL
+        WHERE h.chip_bin IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
         GROUP BY h.chip_bin
         ORDER BY avg_hr_pct ASC
     """).fetchall()
@@ -489,7 +489,7 @@ def get_cross_miner_correlations(conn) -> str:
                    THEN 1 ELSE 0 END) as total_flags
         FROM miner_hardware h
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.chip_die IS NOT NULL
+        WHERE h.chip_die IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
         GROUP BY h.chip_die, h.chip_technology
         ORDER BY avg_hr_pct ASC
     """).fetchall()
@@ -540,7 +540,7 @@ def get_cross_miner_correlations(conn) -> str:
                    THEN 1 ELSE 0 END) as total_flags
         FROM miner_hardware h
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.pcb_version IS NOT NULL
+        WHERE h.pcb_version IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
         GROUP BY h.pcb_version, h.bom_version
         ORDER BY avg_hr_pct ASC
     """).fetchall()
@@ -564,7 +564,7 @@ def get_cross_miner_correlations(conn) -> str:
         LEFT JOIN log_metrics lm ON h.miner_id = lm.miner_id
             AND lm.metric_type = 'psu_voltage'
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.psu_version IS NOT NULL
+        WHERE h.psu_version IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
         GROUP BY h.psu_version
         ORDER BY avg_voltage ASC
     """).fetchall()
