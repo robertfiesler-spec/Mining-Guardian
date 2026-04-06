@@ -1841,7 +1841,16 @@ class GuardianDB:
                 miner_id  = str(m.get("id", ""))
                 max_hr    = m.get("maxHashrate") or 0
                 hashrate  = m.get("hashrate") or 0
-                pct       = round((hashrate / max_hr) * 100, 1) if max_hr > 0 else 0.0
+                # Use BiXBiT profile parser for accurate rated TH/s, fall back to AMS maxHashrate
+                _profile_str = m.get("currentProfile", "") or ""
+                _profile_rated = parse_bixbit_profile(_profile_str)
+                if _profile_rated:
+                    # Profile gives us TH/s, hashrate from AMS is MH/s
+                    pct = round((hashrate / 1000.0 / _profile_rated) * 100, 1) if _profile_rated > 0 else 0.0
+                elif max_hr > 0:
+                    pct = round((hashrate / max_hr) * 100, 1)
+                else:
+                    pct = 0.0
                 temp_raw  = m.get("tempChip") or 0
                 temp      = temp_raw if temp_raw >= 0 else None
                 temp_board = m.get("tempBoard") or 0
