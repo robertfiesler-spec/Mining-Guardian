@@ -400,7 +400,7 @@ Keep it to one clear, specific rule."""
             # Deduplicate — don't add if similar rule exists
             if not any(rule[:30].lower() in r.lower() for r in rules):
                 rules.append(rule)
-                knowledge["operator_rules"] = rules[-20:]  # keep last 20
+                knowledge["operator_rules"] = rules  # keep last 20
 
                 tmp = str(KNOWLEDGE_PATH) + ".tmp"
                 with open(tmp, "w") as f:
@@ -427,7 +427,7 @@ Keep it to one clear, specific rule."""
                 "source": "local_llm",
                 "model": self.model,
             })
-            knowledge["llm_scan_analyses"] = llm_analyses[:50]
+            knowledge["llm_scan_analyses"] = llm_analyses
 
             # Atomic write
             tmp = str(KNOWLEDGE_PATH) + ".tmp"

@@ -723,7 +723,7 @@ def get_cross_miner_correlations(conn) -> str:
                 lines.append("Review its analyses below. Validate correct conclusions, correct mistakes,")
                 lines.append("and identify patterns the local AI missed that you can see fleet-wide.")
                 # Show most recent 10 analyses
-                for a in local_analyses[:10]:
+                for a in local_analyses:
                     ts = a.get("timestamp", "?")[:16]
                     scan = a.get("scan_id", "?")
                     text = a.get("analysis", "")[:300]
