@@ -1621,7 +1621,7 @@ class GuardianDB:
         now  = datetime.now().isoformat()
         with self._connect() as conn:
             for i in issues:
-                if i["action"] not in ("PDU_CYCLE", "RESTART", "RESTART_CHECK_BOARDS"):
+                if i["action"] not in ("PDU_CYCLE", "RESTART", "RESTART_CHECK_BOARDS", "POWER_PROFILE_UP", "PREEMPTIVE_RESTART", "ECO_MODE", "MONITOR_CLOSE"):
                     continue
                 if self.has_known_dead_boards(str(i["id"])):
                     logger.info("Skipping pending approval for miner %s (%s) — known dead boards",
@@ -4662,6 +4662,30 @@ class MiningGuardian:
                                 )
                             except Exception:
                                 pass
+                            # Post to Slack so operator can approve/deny
+                            try:
+                                reasons_str = ", ".join(act.get("reasons", []))[:100]
+                                msg = (
+                                    f":crystal_ball: *AI Recommendation — {act['action']}*\n"
+                                    f"Miner: `{act['ip']}` ({act['model']})\n"
+                                    f"Confidence: *{act['confidence']}%*\n"
+                                    f"Reason: {reasons_str}\n\n"
+                                    f"_Reply `APPROVE` to execute or `DENY` to skip._"
+                                )
+                                thread = self.slack.post_to_channel(msg)
+                                if thread and isinstance(thread, str) and thread:
+                                    issue_entry = [{
+                                        "id": act["miner_id"],
+                                        "ip": act["ip"],
+                                        "model": act["model"],
+                                        "action": act["action"],
+                                        "issues": act.get("reasons", []),
+                                    }]
+                                    self.db.save_pending_approvals(
+                                        thread, latest_scan["id"], issue_entry
+                                    )
+                            except Exception as ex:
+                                logger.debug("Action diversity Slack post failed: %s", ex)
                             # Post to Slack so operator can approve/deny
                             try:
                                 reasons_str = ", ".join(act.get("reasons", []))[:100]
