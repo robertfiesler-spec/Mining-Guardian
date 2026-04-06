@@ -514,7 +514,7 @@ def get_cross_miner_correlations(conn) -> str:
                SUM(CASE WHEN cr.rate_mhs < 1000 THEN 1 ELSE 0 END) as dead_readings
         FROM miner_hardware h
         LEFT JOIN chain_readings cr ON h.miner_id = cr.miner_id
-            AND h.board_index = cr.board_index
+            AND h.board_index = cr.board_index AND cr.scanned_at >= datetime("now", "-7 days")
         WHERE h.serial_number IS NOT NULL
         GROUP BY sn_batch, h.board_name
         HAVING board_count > 1
@@ -557,8 +557,8 @@ def get_cross_miner_correlations(conn) -> str:
     psu_perf = conn.execute("""
         SELECT h.psu_version,
                COUNT(DISTINCT h.miner_id) as miner_count,
-               ROUND(AVG(lm.value_1), 3) as avg_voltage,
-               ROUND(MIN(lm.value_1), 3) as min_voltage,
+               ROUND(AVG(lm.avg_v), 3) as avg_voltage,
+               ROUND(MIN(lm.min_v), 3) as min_voltage,
                ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct
         FROM miner_hardware h
         LEFT JOIN log_metrics lm ON h.miner_id = lm.miner_id
