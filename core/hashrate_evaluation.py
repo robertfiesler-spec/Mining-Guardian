@@ -25,6 +25,8 @@ import logging
 import statistics
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
 from typing import Optional, Tuple
 
 logger = logging.getLogger("mining_guardian")
@@ -36,7 +38,7 @@ logger = logging.getLogger("mining_guardian")
 class MinerSpecsLoader:
     """Loads miner_specs.json and resolves rated TH/s for known models."""
 
-    def __init__(self, specs_path: str = "miner_specs.json"):
+    def __init__(self, specs_path: str = str(_ROOT / "miner_specs.json")):
         self._specs = {}
         self._baseline_config = {}
         path = Path(specs_path)

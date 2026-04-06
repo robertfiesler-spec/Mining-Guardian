@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("overnight")
 
-DB_PATH          = "guardian.db"
+DB_PATH          = str(_ROOT / "guardian.db")
 APPROVAL_API     = "http://localhost:8686"
 OPENCLAW_WEBHOOK = os.getenv("OPENCLAW_WEBHOOK_URL", "http://localhost:18789/hooks")
 OPENCLAW_TOKEN   = os.getenv("OPENCLAW_TOKEN", "")

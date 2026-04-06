@@ -38,7 +38,7 @@ from knowledge_manager import KnowledgeManager
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("train_comprehensive")
 
-DB_PATH = "guardian.db"
+DB_PATH = str(_ROOT / "guardian.db")
 
 
 def section_log(content: str) -> str:

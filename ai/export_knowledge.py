@@ -24,7 +24,9 @@ import argparse
 from datetime import datetime, date
 from collections import defaultdict
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "guardian.db")
+from pathlib import Path
+_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = str(_ROOT / "guardian.db")
 
 
 def get_db():

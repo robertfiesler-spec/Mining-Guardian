@@ -1,0 +1,15 @@
+[Unit]
+Description=Mining Guardian Slack Command Handler
+After=network.target mining-guardian.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Mining-Gaurdian
+ExecStart=/root/Mining-Gaurdian/venv/bin/python api/slack_command_handler.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/root/Mining-Gaurdian/.env
+
+[Install]
+WantedBy=multi-user.target

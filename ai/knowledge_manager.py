@@ -19,8 +19,10 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger("knowledge_manager")
 
-DB_PATH = "guardian.db"
-KNOWLEDGE_PATH = "knowledge.json"
+from pathlib import Path
+_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = str(_ROOT / "guardian.db")
+KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
 
 class KnowledgeManager:

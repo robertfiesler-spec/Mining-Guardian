@@ -6,7 +6,7 @@ Mining Guardian — Daily Knowledge Backup to GitHub
 Copies knowledge.json to knowledge_backup.json (tracked in git)
 and pushes to GitHub. Runs daily via cron.
 
-Cron: 0 4 * * * cd /root/Mining-Gaurdian && venv/bin/python backup_knowledge.py >> /tmp/knowledge_backup.log 2>&1
+Cron: 0 4 * * * cd /root/Mining-Gaurdian && venv/bin/python ai/backup_knowledge.py >> /tmp/knowledge_backup.log 2>&1
 """
 
 import json
@@ -14,6 +14,9 @@ import shutil
 import subprocess
 import logging
 from datetime import datetime
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
@@ -24,9 +27,12 @@ def backup():
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     logger.info("Knowledge backup starting — %s", now)
 
+    knowledge_path = str(_ROOT / "knowledge.json")
+    backup_path = str(_ROOT / "knowledge_backup.json")
+
     try:
         # Load and validate knowledge.json
-        with open("knowledge.json") as f:
+        with open(knowledge_path) as f:
             data = json.load(f)
 
         miners = len(data.get("miner_profiles", {}))
@@ -35,25 +41,25 @@ def backup():
         logger.info("Knowledge: %d miners, %d insights, %d patterns", miners, insights, patterns)
 
         # Copy to tracked backup file
-        shutil.copy2("knowledge.json", "knowledge_backup.json")
+        shutil.copy2(knowledge_path, backup_path)
 
-        # Git add, commit, push
-        subprocess.run(["git", "add", "knowledge_backup.json"], check=True)
+        # Git add, commit, push — all from repo root
+        subprocess.run(["git", "add", "knowledge_backup.json"], cwd=str(_ROOT), check=True)
         result = subprocess.run(
             ["git", "diff", "--cached", "--quiet", "knowledge_backup.json"],
-            capture_output=True)
+            cwd=str(_ROOT), capture_output=True)
 
         if result.returncode != 0:
             # There are changes to commit
             msg = f"Daily knowledge backup — {now} — {miners} miners, {insights} insights, {patterns} patterns"
-            subprocess.run(["git", "commit", "-m", msg], check=True)
-            subprocess.run(["git", "push"], check=True)
+            subprocess.run(["git", "commit", "-m", msg], cwd=str(_ROOT), check=True)
+            subprocess.run(["git", "push"], cwd=str(_ROOT), check=True)
             logger.info("Backup pushed to GitHub: %s", msg)
         else:
             logger.info("No changes since last backup — skipping push")
 
     except FileNotFoundError:
-        logger.error("knowledge.json not found — nothing to backup")
+        logger.error("knowledge.json not found at %s — nothing to backup", knowledge_path)
     except Exception as e:
         logger.error("Backup failed: %s", e)
 

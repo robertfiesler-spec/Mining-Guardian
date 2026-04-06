@@ -34,7 +34,7 @@ logger = logging.getLogger("combine_knowledge")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate")
 MODEL      = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
-OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "master_knowledge.json")
+OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "master_knowledge.json")
 
 # Use Claude API if available, fall back to Ollama
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

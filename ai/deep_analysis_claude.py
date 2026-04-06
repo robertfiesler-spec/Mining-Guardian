@@ -21,7 +21,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("deep_analysis")
 
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-DB_PATH = "guardian.db"
+from pathlib import Path
+_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = str(_ROOT / "guardian.db")
 
 
 def query_claude(prompt: str) -> str:

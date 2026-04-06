@@ -23,7 +23,7 @@ from llm_analyzer import LLMAnalyzer
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("train_llm")
 
-DB_PATH = "guardian.db"
+DB_PATH = str(_ROOT / "guardian.db")
 
 
 def get_logs_with_content():

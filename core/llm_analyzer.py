@@ -13,6 +13,7 @@ import sqlite3
 import requests
 from datetime import datetime
 from typing import Optional, Dict, List
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,7 +21,8 @@ logger = logging.getLogger("llm_analyzer")
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
-DB_PATH = "guardian.db"
+_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = str(_ROOT / "guardian.db")
 
 # Claude API for deep analysis (weekly training, knowledge merge)
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
