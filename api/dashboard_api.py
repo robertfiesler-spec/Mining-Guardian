@@ -1406,6 +1406,38 @@ def llm_insights_chart():
     return LLM_INSIGHTS_HTML
 
 
+
+
+# ── AI Intelligence Center ────────────────────────────────────
+
+@app.get("/ai/dashboard", response_class=HTMLResponse)
+def ai_dashboard():
+    """Full AI Intelligence Center — interactive HTML dashboard."""
+    try:
+        _api_path = str(_ROOT / "api")
+        if _api_path not in sys.path:
+            sys.path.insert(0, _api_path)
+        from ai_dashboard_api import render_ai_dashboard_html
+        return HTMLResponse(render_ai_dashboard_html())
+    except Exception as exc:
+        import traceback
+        tb = traceback.format_exc()
+        return HTMLResponse(f"<h1>AI Dashboard Error</h1><pre>{tb}</pre>", status_code=500)
+
+
+@app.get("/ai/score")
+def ai_score_json():
+    """AI score as JSON."""
+    try:
+        _ai_path = str(_ROOT / "ai")
+        if _ai_path not in sys.path:
+            sys.path.insert(0, _ai_path)
+        from ai_score import calculate_score
+        return calculate_score()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # ── Health Check ──────────────────────────────────────────────
 
 @app.get("/")
