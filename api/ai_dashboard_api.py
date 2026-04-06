@@ -24,7 +24,7 @@ for _p in [str(_ROOT / "ai"), str(_ROOT / "core")]:
 
 DB_PATH = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
-APPROVAL_API = "http://localhost:8686"
+APPROVAL_API = "https://slack.fieslerfamily.com"
 
 
 def _db():
