@@ -557,12 +557,12 @@ def get_cross_miner_correlations(conn) -> str:
     psu_perf = conn.execute("""
         SELECT h.psu_version,
                COUNT(DISTINCT h.miner_id) as miner_count,
-               ROUND(AVG(lm.avg_v), 3) as avg_voltage,
-               ROUND(MIN(lm.min_v), 3) as min_voltage,
+               ROUND(AVG(lm.value_1), 3) as avg_voltage,
+               ROUND(MIN(lm.value_1), 3) as min_voltage,
                ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct
         FROM miner_hardware h
         LEFT JOIN log_metrics lm ON h.miner_id = lm.miner_id
-            AND lm.metric_type = 'psu_voltage'
+            AND lm.metric_type = 'psu_voltage' AND lm.recorded_at >= datetime('now', '-7 days')
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
         WHERE h.psu_version IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
         GROUP BY h.psu_version
