@@ -166,7 +166,9 @@ class ApprovalListener:
                     self.processed.add(msg_key)
                     return "APPROVE", None, get_user_name(self.client, user_id), user_id
 
-                if upper in ("DENY", "DENIED", "NO", "N") or upper.startswith("DENY ") or upper.startswith("DENIED "):
+                # Match DENY in any form: "deny", "deny.", "deny, reason", "denied!", etc
+                first_word = upper.split()[0].rstrip(".,!:;") if upper.split() else ""
+                if first_word in ("DENY", "DENIED", "NO", "N"):
                     self.processed.add(msg_key)
                     return "DENY", None, get_user_name(self.client, user_id), user_id
 

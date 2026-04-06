@@ -2573,18 +2573,21 @@ class SlackNotifier:
         self.channel_id  = channel_id or self.CHANNEL_ID
         self.bot_token   = bot_token
 
-    def post_to_channel(self, message: str) -> None:
-        """Post a plain message to the channel — used for board restart outcome notifications."""
+    def post_to_channel(self, message: str) -> str:
+        """Post a plain message to the channel. Returns message ts for threading."""
         try:
             if self.bot_token:
                 from slack_sdk import WebClient
-                WebClient(token=self.bot_token).chat_postMessage(
+                resp = WebClient(token=self.bot_token).chat_postMessage(
                     channel=self.channel_id, text=message
                 )
+                return resp.get("ts", "")
             elif self.webhook_url:
                 requests.post(self.webhook_url, json={"text": message}, timeout=10)
+                return ""
         except Exception as e:
             logger.warning("post_to_channel failed: %s", e)
+        return ""
 
     def get_user_display_name(self, slack_user_id: str) -> Optional[str]:
         """Look up a Slack user's display name from their user ID.
@@ -3809,11 +3812,13 @@ class MiningGuardian:
             # Two paths:
             # 1. 3+ FAILURE outcomes (confirmed bad)
             # 2. 2+ total restarts escalated to RESTART_CHECK_BOARDS (oscillating pattern)
+            # Don't count failures from restarts in the last 30 minutes (miner may still be booting)
             candidates_failures = conn.execute("""
                 SELECT miner_id, ip, model,
                        COUNT(*) as failure_count, 'failure_outcomes' as reason
                 FROM miner_restarts
                 WHERE outcome = 'FAILURE'
+                  AND restarted_at < datetime('now', '-30 minutes')
                 GROUP BY miner_id
                 HAVING failure_count >= ?
             """, (FAILURE_THRESHOLD,)).fetchall()
@@ -4657,6 +4662,30 @@ class MiningGuardian:
                                 )
                             except Exception:
                                 pass
+                            # Post to Slack so operator can approve/deny
+                            try:
+                                reasons_str = ", ".join(act.get("reasons", []))[:100]
+                                msg = (
+                                    f":crystal_ball: *AI Recommendation — {act['action']}*\n"
+                                    f"Miner: `{act['ip']}` ({act['model']})\n"
+                                    f"Confidence: *{act['confidence']}%*\n"
+                                    f"Reason: {reasons_str}\n\n"
+                                    f"_Reply `APPROVE` to execute or `DENY` to skip._"
+                                )
+                                thread = self.slack.post_to_channel(msg)
+                                if thread and isinstance(thread, str) and thread:
+                                    issue_entry = [{
+                                        "id": act["miner_id"],
+                                        "ip": act["ip"],
+                                        "model": act["model"],
+                                        "action": act["action"],
+                                        "issues": act.get("reasons", []),
+                                    }]
+                                    self.db.save_pending_approvals(
+                                        thread, latest_scan["id"], issue_entry
+                                    )
+                            except Exception as ex:
+                                logger.debug("Action diversity Slack post failed: %s", ex)
                 except Exception:
                     logger.debug("Action diversity skipped (non-fatal)")
 
