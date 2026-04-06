@@ -148,13 +148,19 @@ class LocalLLMAnalyzer:
             FROM weather_readings ORDER BY id DESC LIMIT 1
         """).fetchone()
 
-        # Knowledge patterns
+        # Knowledge — includes both Claude's weekly analysis and local LLM history
         knowledge = {}
         if KNOWLEDGE_PATH.exists():
             try:
                 knowledge = json.loads(KNOWLEDGE_PATH.read_text())
             except Exception:
                 pass
+
+        # Claude's cross-miner analysis (from weekly training)
+        cross_miner = knowledge.get("cross_miner_analysis", {})
+
+        # Operator rules extracted by local LLM or Claude
+        operator_rules = knowledge.get("operator_rules", [])
 
         conn.close()
 
@@ -169,6 +175,8 @@ class LocalLLMAnalyzer:
             "weather": dict(weather) if weather else {},
             "patterns": knowledge.get("patterns", []),
             "known_issues_count": len(knowledge.get("known_issues", [])),
+            "cross_miner_analysis": cross_miner,
+            "operator_rules": operator_rules,
         }
 
     def _build_scan_prompt(self, ctx: Dict) -> str:
@@ -269,6 +277,20 @@ class LocalLLMAnalyzer:
                 elif isinstance(p, dict):
                     lines.append(f"  - {p.get('pattern', str(p))[:100]}")
 
+        # Claude's cross-miner analysis (from weekly training)
+        xm = ctx.get("cross_miner_analysis", {})
+        if xm:
+            lines.append("\n--- CLAUDE WEEKLY ANALYSIS (use as reference) ---")
+            for key, val in list(xm.items())[:5]:
+                lines.append(f"  {key}: {str(val)[:150]}")
+
+        # Operator rules (accumulated from denials)
+        rules = ctx.get("operator_rules", [])
+        if rules:
+            lines.append("\n--- OPERATOR RULES (follow these) ---")
+            for rule in rules:
+                lines.append(f"  - {rule}")
+
         # Instructions
         lines.append("""
 === YOUR TASK ===
@@ -363,7 +385,31 @@ Keep it to one clear, specific rule."""
         analysis = self._query_llm(prompt, max_tokens=256, timeout=120)
         if analysis:
             logger.info("LLM denial rule for %s: %s", ip, analysis[:150])
+            # Store the rule persistently
+            self.store_operator_rule(analysis)
         return analysis
+
+    def store_operator_rule(self, rule: str) -> None:
+        """Store an operator rule extracted from denial reasons."""
+        try:
+            knowledge = {}
+            if KNOWLEDGE_PATH.exists():
+                knowledge = json.loads(KNOWLEDGE_PATH.read_text())
+
+            rules = knowledge.get("operator_rules", [])
+            # Deduplicate — don't add if similar rule exists
+            if not any(rule[:30].lower() in r.lower() for r in rules):
+                rules.append(rule)
+                knowledge["operator_rules"] = rules[-20:]  # keep last 20
+
+                tmp = str(KNOWLEDGE_PATH) + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(knowledge, f, indent=2)
+                import os
+                os.replace(tmp, str(KNOWLEDGE_PATH))
+                logger.info("Operator rule stored: %s", rule[:80])
+        except Exception as e:
+            logger.warning("Failed to store operator rule: %s", e)
 
     def _store_analysis(self, scan_id: int, analysis: str) -> None:
         """Store LLM analysis in knowledge.json."""
