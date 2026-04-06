@@ -30,7 +30,7 @@ DB_PATH = str(_ROOT / "guardian.db")
 
 def get_miner_history():
     """Get scan history for every miner."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     miners = conn.execute('''
         SELECT miner_id, model, ip, COUNT(*) as scan_count,

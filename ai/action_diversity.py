@@ -73,7 +73,7 @@ REJ_RATE_POOL_FAILOVER = 0.005 # 0.5% rejection rate sustained → pool failover
 REJ_SUSTAINED_SCANS    = 10    # must be high for this many scans
 
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 

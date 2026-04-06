@@ -701,7 +701,7 @@ def run_comprehensive_training():
     """Main training loop — analyze every miner with all available data."""
     analyzer = LLMAnalyzer()
     km = KnowledgeManager()
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
 
     # Get all unique miner IDs
@@ -776,7 +776,7 @@ def run_comprehensive_training():
 
     # ── #5: Cross-miner correlation pass ─────────────────────────
     logger.info("Running cross-miner correlation analysis...")
-    conn2 = sqlite3.connect(DB_PATH)
+    conn2 = sqlite3.connect(DB_PATH, timeout=30)
     conn2.row_factory = sqlite3.Row
     cross_miner_prompt = get_cross_miner_correlations(conn2)
     conn2.close()

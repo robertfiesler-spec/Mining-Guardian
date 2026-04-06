@@ -146,7 +146,7 @@ class KnowledgeManager:
         # Pull live board-level data — chronic HW errors, dead boards
         try:
             import sqlite3
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30)
             conn.row_factory = sqlite3.Row
 
             # Miners with hardware identity parsed

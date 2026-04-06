@@ -78,7 +78,7 @@ class LLMAnalyzer:
         self._ensure_table()
 
     def _ensure_table(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS llm_analysis (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,7 +193,7 @@ class LLMAnalyzer:
         API key is set. If Claude fails, model_used reflects that correctly.
         """
         response, duration, model_used = self._query_claude(prompt)
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute("""
             INSERT INTO llm_analysis
             (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
@@ -240,7 +240,7 @@ class LLMAnalyzer:
         response, duration = self._query_llm(prompt)
 
         # Save to database
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute("""
             INSERT INTO llm_analysis
             (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
@@ -285,7 +285,7 @@ class LLMAnalyzer:
 
         response, duration = self._query_llm(prompt)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute("""
             INSERT INTO llm_analysis
             (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)

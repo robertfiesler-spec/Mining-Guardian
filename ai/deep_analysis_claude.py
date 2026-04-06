@@ -74,7 +74,7 @@ def query_claude(prompt: str) -> str:
 
 def gather_fleet_data():
     """Pull all historical data from the database."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
 
     # Miner history — aggregated per miner

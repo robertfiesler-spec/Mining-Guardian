@@ -45,7 +45,7 @@ AUTHORIZED_USER_IDS = set(
 app = App(token=BOT_TOKEN)
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
