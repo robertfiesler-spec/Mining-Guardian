@@ -208,7 +208,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
     # ═══════════════════════════════════════════════════════════
     # TOTAL — sum of everything, never capped
     # ═══════════════════════════════════════════════════════════
-    total = data_score + knowledge_score + actions_score + outcomes_score + autonomy_score
+    total = (data_score + knowledge_score + actions_score + outcomes_score + autonomy_score) // 10
 
     result = {
         "total_score": total,
