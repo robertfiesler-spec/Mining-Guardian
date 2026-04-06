@@ -49,7 +49,7 @@ class LocalLLMAnalyzer:
         self.QUICK_ANALYSIS_INTERVAL = 300  # quick check every scan
 
     def _query_llm(self, prompt: str, max_tokens: int = 1024,
-                   timeout: int = 60) -> Optional[str]:
+                   timeout: int = 180) -> Optional[str]:
         """Send prompt to local Ollama LLM and return response."""
         try:
             resp = requests.post(
@@ -79,7 +79,7 @@ class LocalLLMAnalyzer:
 
     def _get_scan_context(self, scan_id: int) -> Dict:
         """Build context from the latest scan data."""
-        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn = sqlite3.connect(DB_PATH, timeout=120)
         conn.row_factory = sqlite3.Row
 
         # Current scan summary
@@ -342,7 +342,7 @@ Keep response under 10 lines. Be specific — cite board numbers, voltages, erro
         """Compare pre/post restart logs via LLM. Returns analysis."""
         prompt = self._build_log_analysis_prompt(miner_id, pre_log, post_log, miner_info)
         logger.info("LLM: Analyzing restart logs for miner %s", miner_id)
-        analysis = self._query_llm(prompt, max_tokens=512, timeout=60)
+        analysis = self._query_llm(prompt, max_tokens=512, timeout=180)
         if analysis:
             logger.info("LLM restart analysis for %s: %s", miner_id, analysis[:150])
         return analysis
@@ -360,7 +360,7 @@ Example: "RULE: If miner uptime < 20 minutes → Do not recommend profile change
 
 Keep it to one clear, specific rule."""
 
-        analysis = self._query_llm(prompt, max_tokens=256, timeout=30)
+        analysis = self._query_llm(prompt, max_tokens=256, timeout=120)
         if analysis:
             logger.info("LLM denial rule for %s: %s", ip, analysis[:150])
         return analysis
