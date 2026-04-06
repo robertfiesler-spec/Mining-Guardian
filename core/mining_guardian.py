@@ -3183,12 +3183,21 @@ class MiningGuardian:
         hashrate   = miner.get("hashrate", 0) or 0     # MH/s from AMS
         firmware   = miner.get("firmwareManufacturer", "") or ""
 
-        # ── Post-restart grace period (20 minutes) ───────────────────
-        # Skip action recommendations for recently restarted miners.
-        # Check 1: MG-tracked restarts via elevated_until
-        # Check 2: AMS uptime < 20 min (catches manual restarts)
+        # ── Post-restart grace period ─────────────────────────────────
+        # Skip action recommendations for miners that aren't fully stable.
+        # Check 1: MG-tracked restarts via elevated_until (3hr window)
+        # Check 2: AMS minerStatus != 0 (initializing/starting/auto-tuning)
+        #   minerStatus 0 = mining (stable, ready for actions)
+        #   minerStatus 3 = auto-tuning (still calibrating, don't touch)
+        #   minerStatus 6 = initializing (just booted, too early)
+        #   Any non-zero = not ready for actions
+        # Check 3: Uptime < 20 min as fallback if minerStatus unavailable
         if self.db.is_elevated_monitoring(miner_id):
             logger.debug("[%s] Post-restart grace — elevated monitoring active", miner_id)
+            return None
+        miner_status = miner.get("minerStatus")
+        if miner_status is not None and miner_status != 0 and status == "online":
+            logger.info("[%s] minerStatus=%s (not mining) — skipping actions", miner_id, miner_status)
             return None
         uptime_str = str(miner.get("uptime", "") or "")
         if uptime_str and status == "online":
@@ -3197,17 +3206,11 @@ class MiningGuardian:
                 uptime_secs = 0
                 if uptime_str.isdigit():
                     uptime_secs = int(uptime_str)
-                elif "h" in uptime_str or "m" in uptime_str:
-                    _h = _re.search(r"(\d+)h", uptime_str)
-                    _m = _re.search(r"(\d+)m", uptime_str)
-                    if _h: uptime_secs += int(_h.group(1)) * 3600
-                    if _m: uptime_secs += int(_m.group(1)) * 60
-                if 0 < uptime_secs < 1200:  # < 20 minutes
-                    logger.debug("[%s] Uptime %s < 20min — skipping actions", miner_id, uptime_str)
+                if 0 < uptime_secs < 1200:  # < 20 minutes fallback
+                    logger.debug("[%s] Uptime %ss < 20min — skipping actions", miner_id, uptime_secs)
                     return None
             except Exception:
                 pass
-
         temp_chip_raw = miner.get("tempChip", 0) or 0
         temp_chip     = temp_chip_raw if temp_chip_raw >= 0 else None
 
