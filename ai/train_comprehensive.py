@@ -553,16 +553,16 @@ def get_cross_miner_correlations(conn) -> str:
                 f"total flags={r['total_flags']}"
             )
 
-    # PSU version performance — different PSU firmware behavior
+    # PSU version performance — uses chain_readings voltage (fast) instead of log_metrics (6M+ rows)
     psu_perf = conn.execute("""
         SELECT h.psu_version,
                COUNT(DISTINCT h.miner_id) as miner_count,
-               ROUND(AVG(lm.value_1), 3) as avg_voltage,
-               ROUND(MIN(lm.value_1), 3) as min_voltage,
+               ROUND(AVG(cr.voltage), 3) as avg_voltage,
+               ROUND(MIN(cr.voltage), 3) as min_voltage,
                ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct
         FROM miner_hardware h
-        LEFT JOIN log_metrics lm ON h.miner_id = lm.miner_id
-            AND lm.metric_type = 'psu_voltage' AND lm.recorded_at >= datetime('now', '-7 days')
+        LEFT JOIN chain_readings cr ON h.miner_id = cr.miner_id
+            AND cr.scanned_at >= datetime('now', '-7 days')
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
         WHERE h.psu_version IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
         GROUP BY h.psu_version
