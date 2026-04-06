@@ -728,8 +728,16 @@ def run_comprehensive_training():
 
             prompt = f"{env_context}\n\n{build_miner_prompt(miner_id, profile)}"
 
-            # Use Claude for deep analysis if available, else Ollama
-            response = analyzer.deep_analyze(prompt)
+            # Use Claude for deep analysis — retry on rate limit
+            response = ''
+            for attempt in range(3):
+                response = analyzer.deep_analyze(prompt)
+                if response:
+                    break
+                # Empty response = rate limited or error, wait and retry
+                wait = 60 * (attempt + 1)  # 60s, 120s, 180s
+                logger.info('  Rate limited — waiting %ds before retry (attempt %d/3)', wait, attempt + 1)
+                time.sleep(wait)
 
             # Update knowledge manager with the insight
             km.add_llm_insight(response[:500], miner_id=miner_id)
