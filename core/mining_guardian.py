@@ -3172,6 +3172,31 @@ class MiningGuardian:
         hashrate   = miner.get("hashrate", 0) or 0     # MH/s from AMS
         firmware   = miner.get("firmwareManufacturer", "") or ""
 
+        # ── Post-restart grace period (20 minutes) ───────────────────
+        # Skip action recommendations for recently restarted miners.
+        # Check 1: MG-tracked restarts via elevated_until
+        # Check 2: AMS uptime < 20 min (catches manual restarts)
+        if self.db.is_elevated_monitoring(miner_id):
+            logger.debug("[%s] Post-restart grace — elevated monitoring active", miner_id)
+            return None
+        uptime_str = str(miner.get("uptime", "") or "")
+        if uptime_str and status == "online":
+            try:
+                import re as _re
+                uptime_secs = 0
+                if uptime_str.isdigit():
+                    uptime_secs = int(uptime_str)
+                elif "h" in uptime_str or "m" in uptime_str:
+                    _h = _re.search(r"(\d+)h", uptime_str)
+                    _m = _re.search(r"(\d+)m", uptime_str)
+                    if _h: uptime_secs += int(_h.group(1)) * 3600
+                    if _m: uptime_secs += int(_m.group(1)) * 60
+                if 0 < uptime_secs < 1200:  # < 20 minutes
+                    logger.debug("[%s] Uptime %s < 20min — skipping actions", miner_id, uptime_str)
+                    return None
+            except Exception:
+                pass
+
         temp_chip_raw = miner.get("tempChip", 0) or 0
         temp_chip     = temp_chip_raw if temp_chip_raw >= 0 else None
 

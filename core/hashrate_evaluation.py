@@ -189,6 +189,33 @@ class HashrateTierResolver:
                     f"BiXBiT firmware inferred from profile '{profile}' → {rated} TH/s"
                 )
 
+        # ── TIER 1d: BiXBiT firmware but empty profile — check last known ──
+        # AMS sometimes returns empty currentProfile for miners that ARE on
+        # BiXBiT firmware. Check the DB for the last non-empty profile.
+        if firmware.upper() == "BIXBIT" and not profile:
+            try:
+                import sqlite3
+                from pathlib import Path
+                _db = str(Path(__file__).resolve().parent.parent / "guardian.db")
+                conn = sqlite3.connect(_db, timeout=30)
+                row = conn.execute(
+                    "SELECT current_profile FROM miner_readings "
+                    "WHERE miner_id=? AND current_profile IS NOT NULL AND current_profile != '' "
+                    "ORDER BY id DESC LIMIT 1",
+                    (miner_id,)
+                ).fetchone()
+                conn.close()
+                if row and row[0]:
+                    rated = parse_bixbit_profile(row[0])
+                    if rated:
+                        return (
+                            rated,
+                            "1_bixbit_profile_cached",
+                            f"BiXBiT firmware — last known profile '{row[0]}' → {rated} TH/s"
+                        )
+            except Exception:
+                pass
+
         # ── TIER 1c: Auradine mode-based ─────────────────────────────────
         if firmware.upper() == "AURADINE":
             pmap = self.specs.get_profile_map(model_code)
