@@ -106,7 +106,17 @@ g_restarts_total      = Gauge("mining_guardian_restarts_total",
 g_tickets_total       = Gauge("mining_guardian_tickets_created_total",
                                "Total AMS tickets created by AI (all time)", ["site"])
 g_knowledge_score     = Gauge("mining_guardian_knowledge_score",
-                               "AI knowledge score: insights + patterns * 10 + profiles", ["site"])
+                               "AI total score (0-1000)", ["site"])
+g_ai_data_depth       = Gauge("mining_guardian_ai_data_depth",
+                               "AI data depth score (0-200)", ["site"])
+g_ai_knowledge        = Gauge("mining_guardian_ai_knowledge",
+                               "AI knowledge score (0-200)", ["site"])
+g_ai_experience       = Gauge("mining_guardian_ai_experience",
+                               "AI experience score (0-200)", ["site"])
+g_ai_accuracy         = Gauge("mining_guardian_ai_accuracy",
+                               "AI accuracy score (0-200)", ["site"])
+g_ai_autonomy         = Gauge("mining_guardian_ai_autonomy",
+                               "AI autonomy score (0-200)", ["site"])
 
 SITE = "usa_188"
 
@@ -570,11 +580,27 @@ def metrics():
         insights  = len(k.get("known_issues", []))
         patterns  = len(k.get("patterns", []))
         profiles  = len(k.get("miner_profiles", {}))
-        score     = insights + (patterns * 10) + profiles
         g_knowledge_insights.labels(site=SITE).set(insights)
         g_knowledge_patterns.labels(site=SITE).set(patterns)
         g_knowledge_profiles.labels(site=SITE).set(profiles)
-        g_knowledge_score.labels(site=SITE).set(score)
+
+        # Full AI score calculation
+        try:
+            _ai_path = str(_ROOT / "ai")
+            if _ai_path not in sys.path:
+                sys.path.insert(0, _ai_path)
+            from ai_score import calculate_score
+            ai = calculate_score(conn=conn, knowledge=k)
+            g_knowledge_score.labels(site=SITE).set(ai["total_score"])
+            g_ai_data_depth.labels(site=SITE).set(ai["components"]["data_depth"]["score"])
+            g_ai_knowledge.labels(site=SITE).set(ai["components"]["knowledge"]["score"])
+            g_ai_experience.labels(site=SITE).set(ai["components"]["experience"]["score"])
+            g_ai_accuracy.labels(site=SITE).set(ai["components"]["accuracy"]["score"])
+            g_ai_autonomy.labels(site=SITE).set(ai["components"]["autonomy"]["score"])
+        except Exception as e:
+            # Fallback to simple score if ai_score fails
+            score = insights + (patterns * 10) + profiles
+            g_knowledge_score.labels(site=SITE).set(score)
         last_updated = k.get("last_updated", "")
         if last_updated:
             from datetime import timezone as _tz
