@@ -1,141 +1,170 @@
 # Mining Guardian — AI Learning Roadmap
-## Path to 48-Hour Full Autonomous Test
+## Path to 80% Autonomous Operation
 
-**Branch:** `feature/ai-learning-enhancements`
-**Status:** ALL 8 FEATURES COMPLETE — Ready for 48hr test
+**Branch:** `main`
+**Status:** 48-HOUR TEST IN PROGRESS (started April 6, 2026)
+**Next milestone:** Wednesday April 8 customer demo
 **Rule:** Before building anything, examine every available data point. No unused signals.
 
 ---
 
 ## Current Mode
 **FULL-DAY AUTONOMOUS** — Active 24/7
-Overnight automation runs around the clock. LOW-risk actions execute without approval.
-Max auto-restarts: 2 per window. All 6 services active on VPS.
+Overnight automation runs 8pm-6am. LOW-risk actions execute without approval.
+Max auto-restarts: 2 per window. All 8 services active on VPS.
 
 ---
 
-## Available Data Points (full inventory)
+## 48-Hour Test Status (Live — April 6)
 
-| Table | Key Signals | Rows |
-|---|---|---|
-| miner_readings | hashrate_pct, temp_chip, temp_board, uptime, error_codes, consumption | 41,938 |
-| chain_readings | voltage, freq_mhz, temp_board, hw_errors, rate_mhs, consumption_w | 23,562 |
-| miner_state_readings | max_temp_board, max_temp_chip, hashrate_medium/low, temp ranges | 11,760 |
-| pool_readings | accepted, rejected, rejection rate trend | 8,372 |
-| hvac_readings | supply_temp, return_temp, delta_t, diff_pressure, VFD%, alarms | 817 |
-| ams_notifications | hashrateDropLevel (874), hotBoard (498), workerOffline (5861) | 33,643 |
-| log_metrics | psu_voltage (4M), chip_hashrate (1.2M), system_health (972k) | 6,142,167 |
-| miner_hardware | chip_bin, bad_chips_count, pcb_version, ideal_hashrate | 12 |
-| miner_restarts | outcome, hashrate_before/after, recovery_time_scans | 28 |
-| weather_readings | outside temp, humidity | 854 |
-| scans | total_miners, online, offline, issues | 855 |
-| action_audit_log | decisions, denial reasons, outcomes | 328 |
+| Metric | Value |
+|---|---|
+| Scans completed | 149+ |
+| Data points ingested | 12.1M+ |
+| Miner readings | 53,110 |
+| Chain readings | 45,180 |
+| Log metrics | 12M+ |
+| Miner fingerprints | 58 |
+| Outcomes tracked | 22 SUCCESS, 24 FAILURE, 1 PENDING |
+| Denial reasons captured | 11 |
+| Autonomous actions | 25 |
+| Known issues | 50 |
+| Patterns discovered | 7 |
+| AI Score | 40.2K+ (climbing) |
+
+### Denial Reasons Captured (Operator Knowledge)
+- "always wait 20 minutes after a power cycle to make changes"
+- "miners just restarted, need to wait 20 minutes after restart to download logs then make recommendations"
+- "waiting the 20 minutes still"
+
+**Status:** Stored in audit log. Will be fed to Claude Sonnet at next weekly training (Sunday 3am). Not yet reflected in knowledge.json.
+
+---
+
+## Fixes Deployed During 48hr Test (April 6)
+
+### Operational Fixes
+- [x] **20-minute post-restart grace period** — Miners suppressed from action recommendations for 20 min after restart (both MG-tracked and manual AMS restarts via uptime check)
+- [x] **Hashrate % fix** — Now uses BiXBiT profile parser instead of AMS stock maxHashrate. Fixed 201% → 101%
+- [x] **POWER_PROFILE_UP spam fix** — Only fires as recovery after MG steps a miner DOWN. Not for every miner below theoretical max
+- [x] **AMS alerts suppressed from Slack** — Still stored in DB for learning, removed from Slack messages (operator request)
+- [x] **Deny flow complete** — DENY → "Why?" follow-up → reason captured and stored. Clean two-step workflow
+- [x] **Crystal ball single post** — Each recommendation posts once (was duplicating)
+- [x] **Pending approvals whitelist** — Added POWER_PROFILE_UP, PREEMPTIVE_RESTART, ECO_MODE, MONITOR_CLOSE to save_pending_approvals
+- [x] **Ticket 30-min grace period** — Don't ticket miners restarted < 30 min ago
+
+### Dashboard Fixes
+- [x] **Grafana Board Health dropdown** — Fixed metric name (mhs → ths) so miner IP dropdown populates
+- [x] **Grafana Pool Stats redesigned** — Hero tiles, rejection rate chart, problem miners table
+- [x] **Grafana Main rejection chart** — Replaced per-miner spaghetti with fleet avg + worst miner
+- [x] **AI Intelligence Center** — Complete rebuild with live action queue, approve/deny buttons, AI score
+
+### Code Quality (from code review)
+- [x] Dead code removed (orphaned method bodies)
+- [x] api/slack_listener.py deleted (violated Socket Mode rule)
+- [x] Auth bypass in approval_api.py — now fails closed
+- [x] Atomic writes in outcome_checker.py
+- [ ] DB leaks (bare _connect().execute()) — 3 locations need context managers
+- [ ] NameErrors in predictor loop (line 4619) and _escalate_board_issue (line 4040)
+- [ ] File handle leak in overnight_automation.py
 
 ---
 
 ## Feature Build Status
 
-### Feature 1: Outcome Feedback Loop
-**Status:** COMPLETE
+### Feature 1: Outcome Feedback Loop ✅ COMPLETE + LIVE
 **File:** `ai/outcome_checker.py`
-**Data used:** miner_restarts, miner_readings, scans, knowledge.json
-**What it does:** Labels every restart SUCCESS/FAILURE/PARTIAL/PENDING. Updates miner profiles in knowledge.json. Runs after every scan.
-**First results:** 4 SUCCESS (.56, .227, .125, .48), 22 FAILURE (dead board miners)
+**Live results:** 22 SUCCESS, 24 FAILURE outcomes tracked and labeled
 
-### Feature 2: Confidence Scoring
-**Status:** COMPLETE
+### Feature 2: Confidence Scoring ✅ COMPLETE + LIVE
 **File:** `ai/confidence_scorer.py`
-**Data used:** miner_restarts (outcomes), miner_readings (stability), fingerprint modifier
-**What it does:** Scores 0-100 before any action. Gates: >=80 AUTO, 50-79 ASK, <50 HOLD. Shown in Slack as emoji 🟢🟡🔴.
-**Weights:** per-miner success rate 60%, fleet rate 25%, stability 15%, fingerprint modifier ±15pts
+**Live results:** Confidence shown in Slack, gates auto/manual decisions
 
-### Feature 3: Denial Reason Capture
-**Status:** COMPLETE
+### Feature 3: Denial Reason Capture ✅ COMPLETE + LIVE
 **File:** `api/slack_approval_listener.py`
-**Data used:** Slack thread replies, action_audit_log
-**What it does:** After DENY, bot asks "Why?" in thread. Stores reason in action_audit_log.notes as DENIAL_REASON:. Feeds weekly LLM training.
+**Live results:** 11 denial reasons captured from operator
+**Gap:** weekly_train.py does NOT read denial reasons yet — only train_comprehensive.py does
 
-### Feature 4: Miner Fingerprinting v2
-**Status:** COMPLETE (full data audit)
+### Feature 4: Miner Fingerprinting v2 ✅ COMPLETE + LIVE
 **File:** `ai/fingerprint_builder.py`
-**Data used:** ALL available — miner_readings, chain_readings, miner_state_readings, pool_readings, ams_notifications, miner_hardware, miner_restarts, known_dead_boards
-**What it does:** Per-miner behavioral profile with confidence_modifier (-0.5 to +0.5). Runs after weekly training.
-**Modifiers:** voltage drop -15%, dead boards -30%, bad chips -5% each, hot board AMS alerts penalized, high rejection rate penalized
+**Live results:** 58 miner profiles with behavioral fingerprints
 
-### Feature 5: HVAC/Environment Correlation
-**Status:** COMPLETE
+### Feature 5: HVAC/Environment Correlation ✅ COMPLETE + LIVE
 **File:** `ai/hvac_correlator.py`
-**Data used:** hvac_readings, scans, miner_readings, weather_readings
-**What it does:** Detects facility events when 3+ miners flag with HVAC stress. Pearson correlation supply_temp vs flags. Result: -0.029 (miner issues are hardware, not facility).
-**Current:** 0% facility stress, facility running normally.
+**Live results:** 0% facility stress — confirms miner issues are hardware, not environmental
 
-### Feature 6: Pre-Failure Prediction v2
-**Status:** COMPLETE (full data audit — 11 signals)
+### Feature 6: Pre-Failure Prediction v2 ✅ COMPLETE + LIVE
 **File:** `ai/predictor.py`
-**Data used:** ALL available — miner_readings, chain_readings, miner_state_readings, pool_readings, ams_notifications, hvac_readings, miner_restarts
-**11 signals:**
-1. Hashrate trend decline (>15% over 5 scans)
-2. Volatility spike (2.5x above baseline)
-3. Board rate imbalance (30% divergence)
-4. Chip temp creep (4°C rise, skips when HVAC stressed)
-5. Historical pre-failure pattern match (shape similarity)
-6. Board voltage drop (<14.2V — catches .45, .49 at 13.36V!)
-7. Board temp elevated (>70°C, skips when HVAC stressed)
-8. Pool rejection spike (>0.5%)
-9. AMS alert spike in 24h (hashrateDropLevel, hotBoard, workerOffline)
-10. Uptime reset detection (unscheduled reboot)
-11. Max temp trending high (>80°C max board temp)
-**First run (v2):** 10 predictions including .45 and .49 at 13.36V board voltage — completely invisible before
+**Live results:** 23 miners showing pre-failure signals per scan. Predictions currently paused (not posting to Slack)
 
-### Feature 7: Repair Shop Data Ingestion
-**Status:** PENDING — blocked on dataset format from contact
-**File:** TBD — `ai/repair_data_ingestor.py`
-**Plan:** Normalize repair data to internal schema, merge via combine_knowledge.py
+### Feature 7: Repair Shop Data Ingestion ⏳ PENDING
+**Blocked on:** Dataset from contact (James/ACS)
 
-### Feature 8: Action Diversity
-**Status:** COMPLETE (full data audit)
+### Feature 8: Action Diversity ✅ COMPLETE + FIXED
 **File:** `ai/action_diversity.py`
-**Data used:** miner_readings, chain_readings, miner_state_readings, pool_readings, ams_notifications, hvac_readings, config.json
-**4 new action types:**
-- POWER_PROFILE_DOWN (gate 75%): temp_chip, board_temp, max_temp, hvac_supply, current_profile — BiXBiT only
-- POWER_PROFILE_UP (gate 80%): temp_chip, hvac_supply, hvac_delta_t, current_profile
-- ECO_MODE_FLEET (gate 80%): hvac_supply >80°F, delta_t, pump VFD%
-- POOL_FAILOVER (gate 85%): rejection rate 30-scan trend + AMS corroboration + backup_pool config
-**First run:** .152 recommended POWER_PROFILE_UP (82% confidence, chip 67°C, conditions good)
-**Note:** Pool failover requires config.backup_pool_url to be set
+**Fix applied:** POWER_PROFILE_UP now only fires as recovery action, not constant optimization
 
 ---
 
-## New Rule (Applied Going Forward)
-Before building any feature: audit every table, every column, every row count.
-Use everything that's relevant. The data is the gold mine.
+## Critical Gap: OpenClaw Underutilization
+
+### Current State (Honest Assessment)
+OpenClaw is running (Docker, up 4 days) but contributes **zero actions** to the audit log. It owns the Slack Socket Mode connection and posts the morning briefing. That's it.
+
+All intelligence currently lives in Python rules (predictor.py, action_diversity.py, hashrate_evaluation.py) and the Claude Sonnet weekly training. OpenClaw's local LLM is not being used for real-time analysis.
+
+### What OpenClaw Should Be Doing
+1. **Real-time scan analysis** — Every scan sends data to local LLM via OpenClaw webhook. LLM writes natural language assessment instead of rules-based flags
+2. **Denial reason interpretation** — When operator denies with reason, LLM immediately processes it into an operational rule (not waiting for Sunday training)
+3. **Conversational interface** — Operator asks "Why did .35 restart 3 times?" and gets an intelligent answer from fleet data
+4. **Pre-action analysis** — Before recommending restart, LLM reviews miner's full history (logs, outcomes, fingerprint) and provides nuanced recommendation
+5. **Rich Slack interactions** — Proper Block Kit buttons/forms instead of text-based APPROVE/DENY (OpenClaw owns Socket Mode, so it can handle interactive components)
+
+### Path Forward
+- [ ] Route scan data to OpenClaw webhook (already coded, verify working)
+- [ ] Build OpenClaw prompt templates for scan analysis
+- [ ] Implement real-time denial reason processing via LLM
+- [ ] Add conversational query handler ("ask about miner X")
+- [ ] Restore Block Kit interactive components through OpenClaw
+- [ ] This is a priority for the Mac Mini local deployment
 
 ---
 
-## 48-Hour Autonomous Test
+## Remaining Roadmap
 
-**Ready to run.** Start after review pass on all 8 features.
+### Before Wednesday Demo (April 8)
+- [ ] Verify AI score visibly climbs in Grafana over 48hr period
+- [ ] Document test results for demo narrative
+- [ ] Clean up crystal ball message text
 
-**Test report will cover:**
+### Before Mac Mini Deployment (May 5-9)
+- [ ] OpenClaw integration — real-time LLM analysis per scan
+- [ ] weekly_train.py — add denial reason ingestion
+- [ ] Installer wizard for local Mac Mini deployment
+- [ ] macOS launchd services instead of systemd
+- [ ] Local web dashboard approve/deny (reduce Slack dependency)
+- [ ] Update mechanism that preserves config + DB
+- [ ] Operator guide documentation
 
-| Metric | Description |
-|---|---|
-| Total actions taken | Count by type including new action types |
-| Success rate | From outcome feedback per action type |
-| Confidence calibration | Did high-confidence actions succeed more? |
-| Predictions made | How many? How many preceded actual failures? |
-| Fingerprint modifiers | Did per-miner modifiers improve accuracy? |
-| Denial reasons captured | What did operator judgment add? |
-| HVAC events | Facility vs miner problem separation |
-| Action diversity | Power profiles, eco mode, pool actions taken |
-| Fleet hashrate/uptime | vs 7-day baseline |
+### Long-Term (Post-Deployment)
+- [ ] Repair shop data ingestion (Feature 7)
+- [ ] Container monitoring (when live access granted)
+- [ ] Multi-site federated knowledge with monthly USB sync
+- [ ] Replace Slack with fully local notification system
+- [ ] 80% autonomous operation target with operator override
 
 ---
 
 ## Technical Notes
-- HVAC/BAS integration is one-off for Rob's warehouse — not in future deployment templates
-- S19JPro dead hashboard issues (.36, .177, .195) suppressed — AMS tickets #2662, #2663, #2661
+- HVAC/BAS integration is one-off for Bobby's warehouse — not in deployment templates
+- S19JPro dead board repairs explicitly crossed off — do not raise
 - Pool failover requires backup_pool_url in config.json — not currently set
-- Feature 7 blocked pending repair shop dataset format
-- AH3880 board voltage 0.29V is Auradine firmware reporting format (not a real fault)
-- All features compile clean, all 6 VPS services active
+- AH3880 board voltage 0.29V is Auradine firmware format (not a fault)
+- Feature 7 blocked pending repair shop dataset from James/ACS
+- OpenClaw morning briefing runs via Docker Socket Mode. Mining Guardian uses polling for approve/deny to avoid Socket Mode conflict
+- All denial reasons will be processed in next weekly training (Sunday 3am)
+
+---
+
+*Last updated: April 6, 2026*
+*48hr test in progress — 12M+ data points, 149 scans, 11 operator denial reasons captured*
