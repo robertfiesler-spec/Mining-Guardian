@@ -170,6 +170,13 @@ class ApprovalListener:
                     self.processed.add(msg_key)
                     return "DENY", None, get_user_name(self.client, user_id), user_id
 
+                # DENY with inline reason: "DENY we just restarted, need to wait 15 min"
+                if upper.startswith("DENY ") or upper.startswith("DENIED "):
+                    self.processed.add(msg_key)
+                    # Extract everything after DENY/DENIED as the reason
+                    reason = text.split(" ", 1)[1].strip() if " " in text else None
+                    return "DENY", reason, get_user_name(self.client, user_id), user_id
+
                 # Selective: "approve 1,2,3" or "approve .36,.46"
                 import re
                 m = re.match(r'^approve\s+(.+)$', text, re.IGNORECASE)
@@ -245,12 +252,17 @@ class ApprovalListener:
                 msg += ". Executing now."
 
             else:  # DENY
-                resp  = requests.post(f"{APPROVAL_API}/deny", json={
+                deny_payload = {
                     "thread_ts": thread_ts, "user": user_name, "user_id": user_id
-                }, timeout=15)
+                }
+                if selector:  # inline reason from 'DENY reason here'
+                    deny_payload["reason"] = selector
+                resp = requests.post(f"{APPROVAL_API}/deny", json=deny_payload, timeout=15)
                 count = resp.json().get("count", 0)
-                msg   = f"❌ *DENIED* by {user_name} — {count} action(s) cancelled."
-
+                if selector:
+                    msg = f"❌ *DENIED* by {user_name} — {count} action(s) cancelled.\n💬 Reason: _{selector}_"
+                else:
+                    msg = f"❌ *DENIED* by {user_name} — {count} action(s) cancelled."
             self.client.chat_postMessage(
                 channel=CHANNEL_ID, thread_ts=thread_ts, text=msg
             )
