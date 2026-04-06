@@ -42,7 +42,7 @@ def _e(val):
 def get_action_queue():
     conn = _db()
     rows = conn.execute("""
-        SELECT pa.id, pa.miner_id, pa.ip, pa.model, pa.action, pa.issue,
+        SELECT pa.id, pa.miner_id, pa.ip, pa.model, pa.action_type, pa.problem,
                pa.created_at, pa.scan_id,
                mr.hashrate_pct, mr.temp_chip, mr.temp_board, mr.current_profile
         FROM pending_approvals pa
@@ -177,8 +177,8 @@ def render_ai_dashboard_html():
         qr += (
             f'<tr><td style="font-family:monospace;color:{C}">{_e(q.get("ip",""))}</td>'
             f'<td>{_e(q.get("model",""))}</td>'
-            f'<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_e(str(q.get("issue",""))[:100])}</td>'
-            f'<td><span style="background:{B};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{_e(q.get("action",""))}</span></td>'
+            f'<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_e(str(q.get("problem",""))[:100])}</td>'
+            f'<td><span style="background:{B};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{_e(q.get("action_type",""))}</span></td>'
             f'<td style="color:{hc};font-weight:bold">{hr:.0f}%</td>'
             f'<td style="color:{tc}">{tp:.0f}°C</td>'
             f'<td><button onclick="approveAction(\'{qid}\')" style="background:{G};color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;margin-right:4px;font-size:12px">✓ Approve</button>'

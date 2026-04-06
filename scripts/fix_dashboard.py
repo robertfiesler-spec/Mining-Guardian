@@ -1,24 +1,19 @@
 #!/usr/bin/env python3
-"""Fix the ai_dashboard_api.py junk lines."""
+"""Fix column names in ai_dashboard_api.py"""
 with open("/Users/BigBobby/Documents/GitHub/Mining Gaurdian/api/ai_dashboard_api.py") as f:
-    content = f.read()
+    c = f.read()
 
-# Find the junk: everything between '"""<tr>' and the next proper line
-# The problem is a fragment starting with '"""<tr>' on line ~441
-idx = content.find('"""<tr>')
-if idx > 0:
-    # Find the end of the junk (next proper HTML line)
-    end_idx = content.find('</tr>\n', idx)
-    if end_idx > 0:
-        end_idx = content.find('\n', end_idx + 1)
-        junk = content[idx:end_idx]
-        content = content[:idx] + content[end_idx:]
-        print(f"Removed {len(junk)} chars of junk")
-    else:
-        print("Could not find end of junk")
-else:
-    print("No junk found")
+# Fix SQL column names
+c = c.replace("pa.action, pa.issue,", "pa.action_type, pa.problem,")
+
+# Fix Python dict access - single quotes
+c = c.replace("q.get('action','')", "q.get('action_type','')")
+c = c.replace("q.get('issue','')", "q.get('problem','')")
+
+# Fix Python dict access - double quotes
+c = c.replace('q.get("action","")', 'q.get("action_type","")')
+c = c.replace('q.get("issue","")', 'q.get("problem","")')
 
 with open("/Users/BigBobby/Documents/GitHub/Mining Gaurdian/api/ai_dashboard_api.py", "w") as f:
-    f.write(content)
-print("File cleaned")
+    f.write(c)
+print("Fixed column names: action->action_type, issue->problem")
