@@ -4349,7 +4349,12 @@ class MiningGuardian:
             return
 
         now = datetime.now()
-        collection_interval_seconds = 6 * 3600  # 6 hours
+        # Log collection intervals based on miner health:
+        # Healthy miners: 1 log per 24 hours (baseline drift detection)
+        # Flagged miners: 1 log per 6 hours (more frequent monitoring)
+        # Pre/post restart logs are collected separately in execute_board_restart()
+        HEALTHY_LOG_INTERVAL = 24 * 3600  # 24 hours
+        FLAGGED_LOG_INTERVAL = 6 * 3600   # 6 hours
 
         for miner in miners:
             miner_id  = str(miner.get("id", ""))
@@ -4362,14 +4367,21 @@ class MiningGuardian:
             # Skip offline miners — no connection means no logs available
             if status == "offline":
                 continue
-
-            # Collect every 6 hours per miner
-            last = self.db.last_log_collected(miner_id)
-            if last is not None and (now - last).total_seconds() < collection_interval_seconds:
+            # Skip miners that aren't fully mining yet — don't download during
+            # initializing (6), starting, or auto-tuning (3). Wait for mining (0).
+            miner_status_val = miner.get("minerStatus")
+            if miner_status_val is not None and miner_status_val != 0:
+                logger.debug("[%s] minerStatus=%s — not mining yet, skipping log collection", miner_id, miner_status_val)
                 continue
 
-            flagged = miner_id in {i["id"] for i in issues}
-            health_status = "flagged" if flagged else "healthy"
+            # Check health-based collection interval
+            last = self.db.last_log_collected(miner_id)
+            flagged = miner_id in {i[id] for i in issues}
+            health_status = flagged if flagged else healthy
+            interval = FLAGGED_LOG_INTERVAL if flagged else HEALTHY_LOG_INTERVAL
+            if last is not None and (now - last).total_seconds() < interval:
+                continue
+
 
             try:
                 log_files = self.ams.collect_miner_logs(int(miner_id))

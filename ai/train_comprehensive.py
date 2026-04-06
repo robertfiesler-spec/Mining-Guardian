@@ -166,10 +166,14 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
     """, (miner_id,)).fetchall()
 
     # Full miner logs — all of them, sectioned
+    # All logs from last 7 days — at least 1/day for healthy miners,
+    # plus all pre/post restart logs for problem miners.
+    # Claude needs the full picture to compare before/after restarts.
     logs = conn.execute("""
         SELECT collected_at, log_file, health_status, content
         FROM miner_logs WHERE miner_id = ?
-        ORDER BY collected_at DESC LIMIT 10
+          AND collected_at >= datetime('now', '-7 days')
+        ORDER BY collected_at DESC
     """, (miner_id,)).fetchall()
 
     # AMS notifications
