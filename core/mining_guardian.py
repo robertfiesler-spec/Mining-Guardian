@@ -2913,7 +2913,7 @@ class SlackNotifier:
                         if n.get("params", {}).get("alertLevel") == "Warning"
                         and n.get("params", {}).get("minerIp") not in flagged_ips]
 
-            if critical or warnings:
+            if False and (critical or warnings):  # AMS alerts stored in DB, suppressed from Slack
                 lines.append(f"\n*⚠️ Additional AMS Alerts*")
                 if critical:
                     by_key: dict = defaultdict(list)
