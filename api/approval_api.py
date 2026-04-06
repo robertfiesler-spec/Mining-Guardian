@@ -97,7 +97,7 @@ def verify_internal(request: Request) -> bool:
     requests are accepted (backward compatible with existing deployments).
     """
     if not INTERNAL_API_SECRET:
-        return True  # not configured — open (backward compat)
+        logger.warning("INTERNAL_API_SECRET not set — rejecting (fail closed)"); return False
     provided = request.headers.get("X-Internal-Secret", "")
     return hmac.compare_digest(provided, INTERNAL_API_SECRET)
 

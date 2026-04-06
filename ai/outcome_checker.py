@@ -244,8 +244,11 @@ def _update_knowledge(
 
         profile["last_updated"] = datetime.now().isoformat()
 
-        with open(KNOWLEDGE_PATH, "w") as f:
+        # Atomic write — crash-safe
+    _tmp = str(KNOWLEDGE_PATH) + ".tmp"
+    with open(_tmp, "w") as f:
             json.dump(knowledge, f, indent=2)
+    os.replace(_tmp, str(KNOWLEDGE_PATH))
 
     except Exception as e:
         logger.warning("Could not update knowledge.json with outcome: %s", e)

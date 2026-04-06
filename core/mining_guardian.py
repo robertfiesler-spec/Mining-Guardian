@@ -1971,6 +1971,8 @@ class GuardianDB:
         if deleted:
             logger.info("Purged %s log entries older than %s days", deleted, days)
         return deleted
+
+    def last_log_collected(self, miner_id: str):
         """Return datetime of last log collection for this miner, or None."""
         with self._connect() as conn:
             row = conn.execute(
