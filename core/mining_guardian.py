@@ -4747,14 +4747,24 @@ class MiningGuardian:
                 try:
                     import threading
                     from llm_scan_hook import run_post_scan_llm
-                    def _llm_analysis():
-                        try:
-                            run_post_scan_llm(scan_id, self.slack)
-                        except Exception as ex:
-                            logger.debug("LLM analysis thread error: %s", ex)
-                    threading.Thread(target=_llm_analysis, daemon=True).start()
-                except Exception:
-                    pass  # LLM analysis is optional — never break the scan loop
+                    # scan_id is local to run_once() — fetch latest from DB instead
+                    _latest = self.db._connect().execute(
+                        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                    if _latest:
+                        _scan_id = _latest["id"]
+                        logger.info("Local LLM analysis scheduled for scan #%s", _scan_id)
+                        def _llm_analysis():
+                            try:
+                                run_post_scan_llm(_scan_id, self.slack)
+                                logger.info("Local LLM analysis complete for scan #%s", _scan_id)
+                            except Exception as ex:
+                                logger.warning("Local LLM analysis thread error: %s", ex)
+                        threading.Thread(target=_llm_analysis, daemon=True).start()
+                    else:
+                        logger.debug("Local LLM analysis skipped — no scans yet")
+                except Exception as ex:
+                    logger.warning("Local LLM analysis setup failed: %s", ex)
 
             except Exception:
                 logger.exception("Guardian loop error")
