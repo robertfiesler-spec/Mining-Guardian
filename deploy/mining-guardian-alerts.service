@@ -1,0 +1,23 @@
+[Unit]
+Description=Mining Guardian AMS Alert Listener
+After=network.target mining-guardian.service approval-api.service
+Wants=approval-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Mining-Gaurdian
+EnvironmentFile=/root/Mining-Gaurdian/.env
+ExecStart=/root/Mining-Gaurdian/venv/bin/python /root/Mining-Gaurdian/api/ams_alert_listener.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mg-alerts
+
+# Resource limits — this is a small service, no need for much
+MemoryMax=256M
+TasksMax=20
+
+[Install]
+WantedBy=multi-user.target

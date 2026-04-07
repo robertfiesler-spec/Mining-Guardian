@@ -313,6 +313,75 @@ async def approve_selected_actions(request: Request):
 
 
 
+@app.post("/internal/urgent_action")
+async def urgent_action(request: Request):
+    """Called by ams_alert_listener when an urgent issue needs immediate action.
+
+    These actions skip normal scan-cycle queueing because something is happening
+    RIGHT NOW (miner offline, severe hashrate drop). Inserts into pending_approvals
+    so the main daemon picks them up on its next loop iteration, OR overnight
+    automation executes them directly during quiet hours.
+
+    Expects JSON: {miner_id, ip, action, source, notification_id, urgent}
+    """
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
+
+    body = await request.json()
+    miner_id = str(body.get("miner_id", ""))
+    ip = body.get("ip", "")
+    action = body.get("action", "")
+    source = body.get("source", "unknown")
+    notif_id = body.get("notification_id")
+
+    if not miner_id or not action:
+        return {"status": "error", "reason": "miner_id and action required"}
+
+    ALLOWED = {"RESTART", "PDU_CYCLE", "RESTART_CHECK_BOARDS"}
+    if action not in ALLOWED:
+        return {"status": "error", "reason": f"action must be one of {ALLOWED}"}
+
+    conn = get_db()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM pending_approvals WHERE miner_id=? AND status='pending'",
+            (miner_id,)
+        ).fetchone()
+        if existing:
+            return {"status": "already_pending", "miner_id": miner_id}
+
+        from datetime import datetime as _dt
+        now = _dt.utcnow()
+        now_iso = now.isoformat()
+        today = now.strftime("%Y-%m-%d")
+        problem_text = f"URGENT alert from {source} (notification_id={notif_id})"
+
+        # thread_ts is set by the main daemon when it posts to Slack — use placeholder for now
+        conn.execute(
+            "INSERT INTO pending_approvals (created_at, thread_ts, miner_id, ip, action_type, problem, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'PENDING')",
+            (now_iso, '', miner_id, ip, action, problem_text)
+        )
+        conn.commit()
+
+        conn.execute(
+            "INSERT INTO action_audit_log (timestamp, date, miner_id, ip, problem, action_taken, decision, approved_by, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'PENDING_URGENT', 'system', ?)",
+            (now_iso, today, miner_id, ip, problem_text, action,
+             f"Urgent action queued by {source}, notification_id={notif_id}")
+        )
+        conn.commit()
+
+        logger.info("Urgent action queued: miner=%s ip=%s action=%s source=%s",
+                    miner_id, ip, action, source)
+        return {"status": "queued", "miner_id": miner_id, "action": action}
+    except Exception as e:
+        logger.exception("urgent_action failed: %s", e)
+        return {"status": "error", "reason": str(e)}
+    finally:
+        conn.close()
+
+
 @app.post("/slack/actions")
 async def slack_interactive(request: Request):
     """
