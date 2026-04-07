@@ -91,6 +91,10 @@ g_knowledge_patterns  = Gauge("mining_guardian_knowledge_patterns_total",
                                "Patterns identified by AI", ["site"])
 g_knowledge_profiles  = Gauge("mining_guardian_knowledge_miner_profiles_total",
                                "Miner profiles in knowledge base", ["site"])
+g_llm_scan_analyses   = Gauge("mining_guardian_llm_scan_analyses_total",
+                               "Local LLM scan analyses in knowledge base", ["site"])
+g_operator_rules      = Gauge("mining_guardian_operator_rules_total",
+                               "Operator rules extracted from denials", ["site"])
 g_knowledge_updated   = Gauge("mining_guardian_knowledge_last_updated_timestamp",
                                "Unix timestamp of last knowledge update", ["site"])
 g_actions_approved    = Gauge("mining_guardian_actions_approved_total",
@@ -584,6 +588,12 @@ def metrics():
         g_knowledge_patterns.labels(site=SITE).set(patterns)
         g_knowledge_profiles.labels(site=SITE).set(profiles)
 
+        # Local LLM learning metrics
+        llm_scan_count = len(k.get("llm_scan_analyses", []))
+        operator_rule_count = len(k.get("operator_rules", []))
+        g_llm_scan_analyses.labels(site=SITE).set(llm_scan_count)
+        g_operator_rules.labels(site=SITE).set(operator_rule_count)
+
         # Full AI score calculation
         try:
             _ai_path = str(_ROOT / "ai")
@@ -592,11 +602,11 @@ def metrics():
             from ai_score import calculate_score
             ai = calculate_score(conn=conn, knowledge=k)
             g_knowledge_score.labels(site=SITE).set(ai["total_score"])
-            g_ai_data_depth.labels(site=SITE).set(ai["components"]["data_depth"]["score"])
-            g_ai_knowledge.labels(site=SITE).set(ai["components"]["knowledge"]["score"])
-            g_ai_experience.labels(site=SITE).set(ai["components"]["experience"]["score"])
-            g_ai_accuracy.labels(site=SITE).set(ai["components"]["accuracy"]["score"])
-            g_ai_autonomy.labels(site=SITE).set(ai["components"]["autonomy"]["score"])
+            g_ai_data_depth.labels(site=SITE).set(ai["components"]["data_ingested"]["score"])
+            g_ai_knowledge.labels(site=SITE).set(ai["components"]["knowledge_depth"]["score"])
+            g_ai_experience.labels(site=SITE).set(ai["components"]["actions_taken"]["score"])
+            g_ai_accuracy.labels(site=SITE).set(ai["components"]["outcomes_learned"]["score"])
+            g_ai_autonomy.labels(site=SITE).set(ai["components"]["autonomy_growth"]["score"])
         except Exception as e:
             # Fallback to simple score if ai_score fails
             score = insights + (patterns * 10) + profiles

@@ -87,7 +87,12 @@ def calculate_score(conn=None, knowledge=None) -> dict:
     has_cross_miner = 1 if knowledge.get("cross_miner_analysis") else 0
     rich_profiles = sum(1 for p in knowledge.get("miner_profiles", {}).values()
                         if p.get("issue_history"))
-    
+
+    # Local LLM scan analyses (from Qwen 32B every scan)
+    llm_scan_analyses = len(knowledge.get("llm_scan_analyses", []))
+    # Operator rules extracted from denial reasons
+    operator_rules = len(knowledge.get("operator_rules", []))
+
     total_analyses = 0
     try:
         total_analyses = conn.execute("SELECT COUNT(*) FROM llm_analysis").fetchone()[0] or 0
@@ -95,12 +100,14 @@ def calculate_score(conn=None, knowledge=None) -> dict:
         pass
 
     knowledge_score = (
-        issues * 100 +          # each insight = 100 pts
-        patterns * 500 +        # each pattern = 500 pts (hard to discover)
-        profiles * 50 +         # each profile = 50 pts
-        rich_profiles * 100 +   # profiles with history = bonus 100
-        has_cross_miner * 2000 + # cross-miner analysis = 2000 pts
-        total_analyses * 25     # each LLM analysis = 25 pts
+        issues * 100 +              # each insight = 100 pts
+        patterns * 500 +            # each pattern = 500 pts
+        profiles * 50 +             # each profile = 50 pts
+        rich_profiles * 100 +       # profiles with history = bonus 100
+        has_cross_miner * 2000 +    # cross-miner analysis = 2000 pts
+        total_analyses * 25 +       # each Claude LLM analysis = 25 pts
+        llm_scan_analyses * 50 +    # each local LLM scan analysis = 50 pts
+        operator_rules * 1000       # each operator rule = 1000 pts (very valuable)
     )
 
     knowledge_detail = {
@@ -110,6 +117,8 @@ def calculate_score(conn=None, knowledge=None) -> dict:
         "rich_profiles": rich_profiles,
         "cross_miner_analysis": bool(has_cross_miner),
         "llm_analyses": total_analyses,
+        "llm_scan_analyses": llm_scan_analyses,
+        "operator_rules": operator_rules,
     }
 
     # ═══════════════════════════════════════════════════════════
