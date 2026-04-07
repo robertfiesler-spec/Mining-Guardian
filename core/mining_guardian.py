@@ -4376,8 +4376,8 @@ class MiningGuardian:
 
             # Check health-based collection interval
             last = self.db.last_log_collected(miner_id)
-            flagged = miner_id in {i[id] for i in issues}
-            health_status = flagged if flagged else healthy
+            flagged = miner_id in {i["id"] for i in issues}
+            health_status = "flagged" if flagged else "healthy"
             interval = FLAGGED_LOG_INTERVAL if flagged else HEALTHY_LOG_INTERVAL
             if last is not None and (now - last).total_seconds() < interval:
                 continue
