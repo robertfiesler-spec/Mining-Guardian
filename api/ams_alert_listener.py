@@ -59,7 +59,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-# Make the core daemon importable so we share the AmsClient + GuardianConfig
+# Make the core daemon importable so we share the AMSClient + GuardianConfig
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / 'core'))
 sys.path.insert(0, str(_ROOT / 'ai'))
@@ -179,10 +179,10 @@ class AlertListener:
 
     def __init__(self):
         # Import here so we can show a clear error if config is missing
-        from mining_guardian import GuardianConfig, AmsClient
+        from mining_guardian import GuardianConfig, AMSClient
 
-        self.config = GuardianConfig.load(CONFIG_PATH)
-        self.ams = AmsClient(self.config)
+        self.config = GuardianConfig.from_file(CONFIG_PATH)
+        self.ams = AMSClient(self.config)
         self.db = AlertListenerDB(DB_PATH)
 
         # Read listener-specific config with safe defaults
@@ -221,20 +221,47 @@ class AlertListener:
             self._dead_boards_refresh_at = now
 
     def _classify(self, notif: Dict) -> Optional[str]:
-        """Return action name if urgent, None if defer to next scan."""
+        """Return action name if urgent, None if defer to next scan.
+
+        Real AMS notification shape:
+            {id, deviceID, key, params: {alertLevel, minerIp, ...}, ...}
+        alertLevel lives INSIDE params, not at the top level.
+        """
         key = notif.get('key', '')
-        level = notif.get('alertLevel') or notif.get('alert_level', '')
+        params = notif.get('params') or {}
+        level = (
+            params.get('alertLevel')
+            or notif.get('alertLevel')          # legacy/fallback
+            or notif.get('alert_level', '')     # legacy/fallback
+        )
         return URGENT_RULES.get((key, level))
 
     def _extract_miner(self, notif: Dict) -> Dict:
-        """Extract miner identification from a notification payload."""
-        # AMS notifications attach the device under various shapes
-        device = notif.get('device') or notif.get('miner') or {}
+        """Extract miner identification from an AMS notification.
+
+        Real AMS notification shape:
+            {id, deviceID, type, key, params: {minerIp, deviceType, id, ...}}
+        The miner_id is deviceID (top-level), the IP is in params.minerIp.
+        """
+        params = notif.get('params') or {}
+        # deviceID at the top level is the canonical miner id in AMS
+        miner_id = (
+            notif.get('deviceID')
+            or notif.get('device_id')
+            or params.get('id')
+            or ''
+        )
+        ip = (
+            params.get('minerIp')
+            or params.get('miner_ip')
+            or params.get('ip')
+            or ''
+        )
         return {
-            'id': str(device.get('id') or notif.get('deviceId') or notif.get('device_id') or ''),
-            'ip': device.get('ip') or notif.get('ip') or '',
-            'model': device.get('model') or notif.get('model') or '',
-            'mac': device.get('mac') or notif.get('mac') or '',
+            'id': str(miner_id),
+            'ip': ip,
+            'model': params.get('model', ''),
+            'mac': params.get('mac', ''),
         }
 
     def _trigger_offline_remediation(self, miner: Dict, notif: Dict):
@@ -380,7 +407,8 @@ class AlertListener:
             return  # Already processed
 
         key = notif.get('key', '')
-        level = notif.get('alertLevel') or notif.get('alert_level', '')
+        params = notif.get('params') or {}
+        level = params.get('alertLevel') or notif.get('alertLevel') or ''
         action = self._classify(notif)
         miner = self._extract_miner(notif)
 
