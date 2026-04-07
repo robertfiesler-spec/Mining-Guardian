@@ -340,6 +340,30 @@ class ApprovalListener:
                     text=f"✅ _Got it — reason logged for AI training: \"{reason[:100]}\"_"
                 )
                 logger.info("Denial reason captured from %s: %s", user_name, reason[:80])
+                # Send to local LLM for immediate rule extraction
+                try:
+                    import sys
+                    from pathlib import Path
+                    _ai = str(Path(__file__).resolve().parent.parent / "ai")
+                    if _ai not in sys.path:
+                        sys.path.insert(0, _ai)
+                    from llm_scan_hook import run_denial_processing_llm
+                    # Get miner IP from the pending approval
+                    conn_d = get_db()
+                    denied_miner = conn_d.execute(
+                        "SELECT ip, action_type FROM pending_approvals WHERE thread_ts=? LIMIT 1",
+                        (thread_ts,)
+                    ).fetchone()
+                    conn_d.close()
+                    if denied_miner:
+                        import threading
+                        threading.Thread(
+                            target=run_denial_processing_llm,
+                            args=(denied_miner["ip"], denied_miner["action_type"], reason),
+                            daemon=True
+                        ).start()
+                except Exception as ex:
+                    logger.debug("LLM denial processing failed: %s", ex)
             else:
                 # No reply — silently remove the prompt (or just leave it)
                 logger.info("No denial reason provided for thread %s", thread_ts)

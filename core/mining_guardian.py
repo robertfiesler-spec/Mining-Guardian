@@ -4741,6 +4741,21 @@ class MiningGuardian:
                 except Exception:
                     logger.debug("Action diversity skipped (non-fatal)")
 
+                # ── Local LLM scan analysis (background thread) ──────────
+                # Sends fleet data to Qwen 32B on RTX 4090 for real-time analysis.
+                # Runs in background thread — never blocks the next scan.
+                try:
+                    import threading
+                    from llm_scan_hook import run_post_scan_llm
+                    def _llm_analysis():
+                        try:
+                            run_post_scan_llm(scan_id, self.slack)
+                        except Exception as ex:
+                            logger.debug("LLM analysis thread error: %s", ex)
+                    threading.Thread(target=_llm_analysis, daemon=True).start()
+                except Exception:
+                    pass  # LLM analysis is optional — never break the scan loop
+
             except Exception:
                 logger.exception("Guardian loop error")
             time.sleep(self.config.scan_interval_seconds)

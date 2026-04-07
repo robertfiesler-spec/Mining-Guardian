@@ -706,6 +706,41 @@ def get_cross_miner_correlations(conn) -> str:
                 f"HR: {hr_b} -> {hr_a} | Recovery: {rec} | {r['restart_type'] or '?'}"
             )
 
+    # ── Local LLM weekly analyses — what the on-site AI learned this week ──
+    # The local LLM (Qwen 32B) runs after every scan and produces analyses.
+    # Claude should read these to understand what the local AI observed,
+    # validate its conclusions, and build on them with deeper insight.
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+        _kp = _Path(__file__).resolve().parent.parent / "knowledge.json"
+        if _kp.exists():
+            _k = _json.loads(_kp.read_text())
+            local_analyses = _k.get("llm_scan_analyses", [])
+            if local_analyses:
+                lines.append("\n--- LOCAL LLM ANALYSES THIS WEEK ---")
+                lines.append(f"The on-site AI (Qwen 32B) analyzed {len(local_analyses)} scans this week.")
+                lines.append("Review its analyses below. Validate correct conclusions, correct mistakes,")
+                lines.append("and identify patterns the local AI missed that you can see fleet-wide.")
+                # Show most recent 10 analyses
+                for a in local_analyses:
+                    ts = a.get("timestamp", "?")[:16]
+                    scan = a.get("scan_id", "?")
+                    text = a.get("analysis", "")[:300]
+                    lines.append(f"\n  [Scan #{scan} @ {ts}]:")
+                    lines.append(f"    {text}")
+
+            # Also include any rules the local LLM extracted from denial reasons
+            local_rules = _k.get("operator_rules", [])
+            if local_rules:
+                lines.append("\n--- OPERATOR RULES (extracted by local LLM) ---")
+                lines.append("The local AI extracted these rules from operator denial reasons.")
+                lines.append("Validate and refine them:")
+                for rule in local_rules[:10]:
+                    lines.append(f"  - {rule}")
+    except Exception:
+        pass
+
     lines.append(
         "\n=== CROSS-MINER ANALYSIS REQUESTED ===\n"
         "Based on the fleet-wide data above:\n"
@@ -716,6 +751,7 @@ def get_cross_miner_correlations(conn) -> str:
         "5. What procurement or operational decisions does this data suggest?\n"
         "6. Based on the operator denial reasons above, what rules should the system learn? When should it NOT recommend actions?\n"
         "7. Which restarts actually improved hashrate vs which were wasted effort? Should any miners stop getting restarted?\n"
+        "8. Review the local AI analyses above — are its conclusions correct? What did it miss?\n"
         "Keep response to 20 lines max."
     )
 
