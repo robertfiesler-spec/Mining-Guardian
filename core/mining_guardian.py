@@ -472,6 +472,115 @@ class AMSClient:
                     len(extracted), miner_id, filename)
         return extracted
 
+
+    def collect_fresh_miner_logs(self, miner_id: int,
+                                  max_wait_seconds: int = 90,
+                                  poll_interval_seconds: int = 5) -> Optional[Dict[str, str]]:
+        """Trigger a NEW log export on AMS, poll until ready, then download.
+
+        Use this when freshness matters — pre/post restart, pre-PDU-cycle,
+        any moment where the analysis depends on logs from THIS instant rather
+        than whatever AMS happens to have cached.
+
+        Workflow:
+          1. POST /log/export to ask AMS to generate a fresh log zip
+          2. Poll /log/get_log_list every poll_interval_seconds to detect a NEW
+             log file (one that was not in the list before we triggered)
+          3. When a new log appears with status==2 (ready), download it
+          4. Extract and return the file dict, same shape as collect_miner_logs
+
+        Returns None on timeout or any failure. Never raises.
+
+        Cost: 30-90 seconds per miner. Acceptable for infrequent action paths
+        (restart, PDU cycle). NOT acceptable for routine scan log collection.
+        """
+        import zipfile, io, time as _time
+
+        # 1. Snapshot the current log list so we can detect what is NEW
+        try:
+            before = self.get_log_list(miner_id)
+            before_names = {l.get("fileName") for l in before}
+        except Exception as e:
+            logger.warning("Fresh log: get_log_list snapshot failed for %s: %s", miner_id, e)
+            return None
+
+        # 2. Trigger a fresh export
+        try:
+            ok = self.trigger_log_export(miner_id)
+            if not ok:
+                logger.warning("Fresh log: trigger_log_export returned False for %s", miner_id)
+                return None
+            logger.info("Fresh log: export triggered for miner %s", miner_id)
+        except Exception as e:
+            logger.warning("Fresh log: trigger_log_export raised for %s: %s", miner_id, e)
+            return None
+
+        # 3. Poll for a NEW completed log file
+        deadline = _time.time() + max_wait_seconds
+        new_filename = None
+        while _time.time() < deadline:
+            _time.sleep(poll_interval_seconds)
+            try:
+                logs = self.get_log_list(miner_id)
+            except Exception:
+                continue
+            ready = [l for l in logs if l.get("status") == 2]
+            new_ready = [l for l in ready if l.get("fileName") not in before_names]
+            if new_ready:
+                # Pick the most recent — log lists are usually newest-first but
+                # be defensive
+                new_ready.sort(
+                    key=lambda l: l.get("createdAt") or l.get("fileName") or "",
+                    reverse=True,
+                )
+                new_filename = new_ready[0].get("fileName")
+                logger.info("Fresh log: new file ready for miner %s after %ds: %s",
+                            miner_id, int(_time.time() - (deadline - max_wait_seconds)),
+                            new_filename)
+                break
+
+        if not new_filename:
+            logger.warning("Fresh log: no new log appeared for %s within %ds",
+                           miner_id, max_wait_seconds)
+            return None
+
+        # 4. Download and extract the fresh zip
+        try:
+            zip_bytes = self.download_log(miner_id, new_filename)
+            if not zip_bytes:
+                logger.warning("Fresh log: download failed for %s", miner_id)
+                return None
+        except Exception as e:
+            logger.warning("Fresh log: download raised for %s: %s", miner_id, e)
+            return None
+
+        extracted = {}
+        key_files = {
+            "cgminer.conf",
+            "x-autotune-results.json",
+            "allowed_pools",
+        }
+        MAX_FILES = 3
+        try:
+            with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+                for name in zf.namelist():
+                    if len(extracted) >= MAX_FILES:
+                        break
+                    basename = name.split("/")[-1]
+                    if basename in key_files or "cglog" in name:
+                        try:
+                            content = zf.read(name).decode("utf-8", errors="replace")
+                            extracted[name] = content
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.warning("Fresh log: zip extract failed for %s: %s", miner_id, e)
+            return None
+
+        logger.info("Fresh log: collected %d files for miner %s from %s",
+                    len(extracted), miner_id, new_filename)
+        return extracted if extracted else None
+
     # ── Public write methods ──────────────────────────────────
 
     def get_pdu_detail(self, pdu_id: int) -> Optional[Dict]:
@@ -3545,10 +3654,18 @@ class MiningGuardian:
         def _timeout_handler(signum, frame):
             raise TimeoutError("log collection timed out")
 
+        wants_fresh = label.startswith("pre-") or label.startswith("post-")
+        # Fresh-log path needs more time than cached collection
+        timeout = 120 if wants_fresh else self.LOG_COLLECT_TIMEOUT
+
         try:
             signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(self.LOG_COLLECT_TIMEOUT)
-            logs = self.ams.collect_miner_logs(int(miner_id))
+            signal.alarm(timeout)
+            if wants_fresh:
+                logger.info("[%s] Triggering FRESH log export for %s", miner_id, label)
+                logs = self.ams.collect_fresh_miner_logs(int(miner_id), max_wait_seconds=90)
+            else:
+                logs = self.ams.collect_miner_logs(int(miner_id))
             signal.alarm(0)  # cancel alarm
             if logs:
                 self.db.save_logs(miner_id, model, label, logs)
@@ -3559,7 +3676,7 @@ class MiningGuardian:
         except TimeoutError:
             signal.alarm(0)
             logger.warning("[%s] Log collection timed out after %ss (%s) — continuing",
-                           miner_id, self.LOG_COLLECT_TIMEOUT, label)
+                           miner_id, timeout, label)
             return {}
         except Exception as e:
             signal.alarm(0)
