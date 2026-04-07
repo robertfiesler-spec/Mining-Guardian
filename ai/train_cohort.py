@@ -88,12 +88,12 @@ DB_PATH = str(_ROOT / 'guardian.db')
 KNOWLEDGE_PATH = _ROOT / 'knowledge.json'
 
 # Tunables — keep these conservative for Tier 1 safety
-MAX_LOCAL_LLM_ANALYSES_PER_COHORT = 8   # how many recent local LLM analyses to include in each cohort prompt
-MAX_LOCAL_LLM_ANALYSES_PER_OUTLIER = 5  # how many for an outlier prompt
+MAX_LOCAL_LLM_ANALYSES_PER_COHORT = 25   # how many recent local LLM analyses to include in each cohort prompt
+MAX_LOCAL_LLM_ANALYSES_PER_OUTLIER = 15  # how many for an outlier prompt
 OUTLIER_HASHRATE_SIGMA = 2.0            # miners >2σ below cohort mean HR
 OUTLIER_TEMP_SIGMA = 2.0                # miners >2σ above cohort mean temp
 MAX_OUTLIERS_PER_RUN = 30               # hard cap to prevent runaway
-INTER_REQUEST_PAUSE_SECONDS = 3         # gap between Claude calls (gentle pacing)
+INTER_REQUEST_PAUSE_SECONDS = 1         # gap between Claude calls (gentle pacing)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -371,24 +371,50 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         env_context[:1500],
         '',
         '=== YOUR TASK ===',
-        f'Analyze this cohort of {summary["member_count"]} miners as a GROUP, not individually.',
+        f'You are Claude — an expert Bitcoin mining fleet analyst. Analyze this cohort of {summary["member_count"]} miners as a GROUP, not individually.',
         '',
-        '1. BEHAVIORAL BASELINE (2-3 sentences): What is normal for this hardware cohort?',
-        '   Use the aggregates as ground truth.',
+        'Your audience is the fleet operator and the on-site local LLM (Qwen 32B) that runs',
+        'between your weekly visits. The on-site LLM will read your analysis next week and use',
+        'it to make per-scan decisions, so be SPECIFIC and PRESCRIPTIVE — generic advice helps',
+        'no one. Reference actual miner IPs, actual hashrate numbers, actual temperatures.',
         '',
-        '2. COMMON FAILURE MODES (bullet list): What problems repeat across this cohort?',
-        '   Distinguish hardware-pattern issues from environmental triggers.',
+        '1. BEHAVIORAL BASELINE (3-5 sentences): What is normal for this hardware cohort?',
+        '   Use the aggregates as ground truth. Note any unusual baseline characteristics',
+        '   (e.g., these miners run hot, these miners restart often, these miners drift HR).',
         '',
-        '3. RESTART EFFECTIVENESS (1-2 sentences): Are restarts actually fixing problems',
-        '   for this cohort, or masking them?',
+        '2. COMMON FAILURE MODES (detailed bullet list, 4-8 items): What problems repeat',
+        '   across this cohort? Distinguish hardware-pattern issues (chip degradation, PSU',
+        '   failures, board death) from environmental triggers (HVAC stress, ambient temp,',
+        '   water flow). For each mode, cite the data evidence (e.g., "39 occurrences in',
+        '   action_audit_log over 7 days").',
         '',
-        '4. RECOMMENDED ACTION BIAS (1-2 sentences): For this cohort specifically, what',
-        '   action thresholds make sense? Should they be more or less aggressive than fleet default?',
+        '3. RESTART EFFECTIVENESS (2-3 sentences): Calculate the SUCCESS RATE from the',
+        '   restart_outcomes data. Are restarts actually fixing root causes, or just',
+        '   resetting symptoms? Does this cohort show "restart fatigue" (multiple restarts',
+        '   without lasting improvement)?',
         '',
-        '5. OUTLIERS NEEDING INDIVIDUAL ATTENTION: Which of the listed outliers (if any)',
-        '   need a deeper individual analysis?',
+        '4. RECOMMENDED ACTION BIAS (4-6 specific recommendations): For THIS cohort',
+        '   specifically, what action thresholds should the on-site LLM use? Be numeric:',
+        '   - HR threshold for flagging restart: ___% (vs fleet default 80%)',
+        '   - Restart attempts before ticketing: ___ (vs fleet default 3)',
+        '   - Temp threshold for action: ___°C (vs fleet default 86°C)',
+        '   - Cooldown after restart: ___ min (vs fleet default 20)',
+        '   - Special handling rules unique to this cohort',
         '',
-        'Keep your response under 600 words. Be specific. No filler.',
+        '5. WHICH OUTLIERS NEED INDIVIDUAL ATTENTION: For each listed outlier, decide',
+        '   whether it needs a deeper individual deep-dive (will be done in the next pass)',
+        '   or if its issue is already explained by cohort-wide patterns. Justify each.',
+        '',
+        '6. HARDWARE QUALITY ASSESSMENT (2-3 sentences): Based on this weeks data, is',
+        '   this cohort a candidate for procurement review? Are the units holding up to',
+        '   spec, or is there a hardware quality concern that warrants ordering replacements?',
+        '',
+        '7. CROSS-COHORT INSIGHTS (1-2 sentences): Anything notable about how this cohort',
+        '   compares to the rest of the fleet? Higher/lower restart rates? More/less',
+        '   thermal headroom? This will feed into the fleet-wide synthesis pass.',
+        '',
+        'Format with markdown headers. Cite specific evidence. Aim for 600-1200 words of',
+        'genuine analysis — no filler, no executive summary fluff.',
     ])
     return '\n'.join(lines)
 
@@ -422,13 +448,35 @@ def build_outlier_prompt(miner_id: str, profile: dict, cohort_key: Tuple,
         env_context[:1000],
         '',
         '=== YOUR TASK ===',
-        'This miner is an OUTLIER within its hardware cohort. Something specific is wrong with THIS unit.',
+        'This miner is an OUTLIER within its hardware cohort. Something specific is wrong',
+        'with THIS unit, distinct from the cohort-wide patterns. The fleet operator needs',
+        'to know whether this is a repair candidate, a replacement candidate, or a tuning',
+        'opportunity.',
         '',
-        '1. ROOT CAUSE HYPOTHESIS (2-3 sentences): What is most likely wrong?',
-        '2. EVIDENCE FROM DATA (bullet list): cite specific numbers from the profile',
-        '3. RECOMMENDED ACTION (1 sentence): one concrete next step',
+        '1. ROOT CAUSE HYPOTHESIS (3-5 sentences): What is most likely wrong with this',
+        '   miner? Be specific — name the suspected component (PSU, hashboard, chip die,',
+        '   chip bin, control board, fan, network, AMS sync, etc.). Reference the chip',
+        '   bin or PCB version if hardware fingerprint data is available.',
         '',
-        'Under 400 words. Be specific.',
+        '2. EVIDENCE FROM DATA (5-10 bullet points): Cite specific numbers from the',
+        '   profile and from the local LLM observations above. Examples: "Hashrate has',
+        '   dropped from 145 TH/s to 35 TH/s over the past 4 days while temp climbed',
+        '   from 68°C to 79°C — classic thermal throttling pattern". Be quantitative.',
+        '',
+        '3. CONFIDENCE LEVEL (1 sentence): How confident are you in the diagnosis (high/',
+        '   medium/low) and what data would increase confidence?',
+        '',
+        '4. RECOMMENDED ACTION (2-4 specific steps): What should the operator do? Order',
+        '   matters — what to try first, what to escalate to. Include thresholds for',
+        '   when to give up and ticket. Examples:',
+        '   - First: PDU cycle, wait 20 min, check if HR recovers above X%',
+        '   - Second: collect logs, look for chain disconnect events',
+        '   - Third: ticket as bad PSU, swap to spare',
+        '',
+        '5. PARALLEL INDICATORS (1-2 sentences): Are there other miners in the fleet',
+        '   showing similar early warning signs that we should preemptively check?',
+        '',
+        'Format with markdown headers. 400-800 words.',
     ])
     return base + '\n' + '\n'.join(extras)
 
@@ -487,25 +535,67 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
     lines.extend([
         '',
         '=== YOUR TASK ===',
-        'You have just read the full weekly state of the fleet — by cohort, by outlier,',
-        'by local LLM observation, and by operator rule.',
+        'You are Claude — the weekly fleet analyst for BiXBiT USAs Mining Guardian system.',
+        'You have just read the full weekly state of the fleet: 16 cohort analyses, 3 outlier',
+        'analyses, every local LLM observation from the past week (130+ entries), every',
+        'operator decision and denial reason, and the cross-miner correlation data.',
         '',
-        '1. TOP 3 SYSTEMIC ISSUES (numbered list): What patterns repeat across cohorts?',
-        '   What hardware quality issues are emerging?',
+        'Your job is to produce the WEEKLY FLEET REPORT that the on-site LLM will read next',
+        'week and the operator will act on. This report becomes part of the systems long-term',
+        'memory — it is the highest-leverage moment in the entire learning cycle.',
         '',
-        '2. WHICH COHORTS NEED PROCUREMENT REVIEW (1-2 sentences each):',
-        '   Are any cohorts showing systemic underperformance that suggests buying alternatives?',
+        '1. EXECUTIVE SUMMARY (3-5 sentences): What is the headline of this week? What is',
+        '   the single most important thing the operator should know? What changed from',
+        '   previous weeks (if cross_miner_analysis history is available)?',
         '',
-        '3. LOCAL LLM VALIDATION (bullet list):',
-        '   Was the local LLM\'s diagnosis correct? What did it miss that you can see fleet-wide?',
+        '2. TOP 5 SYSTEMIC ISSUES (numbered list with detail): What patterns repeat across',
+        '   multiple cohorts? Distinguish:',
+        '   a) Hardware quality patterns (specific chip bins / PCB versions failing)',
+        '   b) Firmware bugs (BiXBiT vs Stock vs Auradine differences)',
+        '   c) Environmental stressors (HVAC correlation, weather, time-of-day)',
+        '   d) Operator behavior patterns (what gets denied vs approved and why)',
+        '   e) AMS data quality issues (false offlines, alert noise, ticket gaps)',
+        '   For each, cite specific cohorts and miners affected, and propose one concrete',
+        '   action the operator could take in the next week.',
         '',
-        '4. OPERATOR RULE REFINEMENT (bullet list):',
-        '   Should any of the captured operator rules be generalized, narrowed, or merged?',
+        '3. PROCUREMENT REVIEW (per-cohort recommendation): For each of the 16 cohorts,',
+        '   give a one-line verdict: KEEP / WATCH / REPLACE. Justify any REPLACE call with',
+        '   the data. KEEP is the default — only flag REPLACE if hardware quality is genuinely',
+        '   suspect. WATCH means "monitor closely for one more week".',
         '',
-        '5. NEXT-WEEK FOCUS AREAS (bullet list):',
-        '   What should the system pay closest attention to in the next 7 days?',
+        '4. LOCAL LLM PERFORMANCE REVIEW (bullet list, 5-10 items): The on-site LLM (Qwen',
+        '   32B) made 130+ scan analyses this week. Sample several at random (cite their',
+        '   timestamps) and:',
+        '   - Was its diagnosis correct? What did it get right?',
+        '   - What did it miss that you can see now with fleet-wide context?',
+        '   - Where was it overconfident? Underconfident?',
+        '   - What pattern recognition could it learn from your analysis?',
+        '   This is critical — your job is to TRAIN the local LLM, not replace it.',
         '',
-        'Be specific. Reference cohorts and miners by name. Under 1500 words.',
+        '5. OPERATOR RULE REFINEMENT (bullet list): Look at the 3 captured operator rules',
+        '   from denial reasons. For each:',
+        '   - Is the rule correctly stated, or should it be generalized/narrowed?',
+        '   - Should any rules be merged into one?',
+        '   - Are there NEW rules implied by patterns you see in the data that the system',
+        '     hasnt captured yet? Propose them.',
+        '',
+        '6. PREDICTIVE WARNINGS (bullet list, 3-7 items): Based on the trends in the data,',
+        '   what miners are likely to fail or need attention in the NEXT 7 days? Be specific:',
+        '   miner IP, expected failure mode, expected timeframe, what to do preemptively.',
+        '   This is where you earn your weekly run — predict the future with the data you have.',
+        '',
+        '7. NEXT-WEEK FOCUS AREAS (numbered list, 3-5 items): What should the on-site LLM',
+        '   pay closest attention to in the next 7 days? What signals matter most? What',
+        '   should it ignore that it has been over-flagging?',
+        '',
+        '8. METRICS TO ADD (bullet list, optional): Are there metrics or data points the',
+        '   system isnt currently capturing that would help future analysis? This goes to',
+        '   Bobby for the next sprint.',
+        '',
+        'Format with markdown headers. Cite cohorts and miners by name throughout. This',
+        'is the most important document the system produces all week — aim for 1500-3000',
+        'words of dense, evidence-backed analysis. No filler, no hedging, no executive',
+        'summary fluff. Be opinionated where the data supports an opinion.',
     ])
     return '\n'.join(lines)
 
@@ -575,7 +665,7 @@ def run_cohort_training():
         response = ''
         for attempt in range(3):
             response = analyzer.deep_analyze(prompt)
-            if response and 'error' not in response.lower():
+            if response and len(response) > 100:
                 break
             wait = 30 * (attempt + 1)
             logger.warning('  Attempt %d failed or empty — waiting %ds', attempt + 1, wait)
@@ -583,7 +673,7 @@ def run_cohort_training():
 
         if response:
             logger.info('  ✓ %d chars returned', len(response))
-            km.add_llm_insight(response[:600], miner_id=f"cohort:{'/'.join(str(k) for k in key)[:80]}")
+            km.add_llm_insight(response[:10000], miner_id=f"cohort:{'/'.join(str(k) for k in key)[:80]}")
             cohort_results.append({
                 'cohort_key': key,
                 'member_count': summary['member_count'],
@@ -622,7 +712,7 @@ def run_cohort_training():
         response = ''
         for attempt in range(3):
             response = analyzer.deep_analyze(prompt)
-            if response and 'error' not in response.lower():
+            if response and len(response) > 100:
                 break
             wait = 30 * (attempt + 1)
             logger.warning('  Attempt %d failed or empty — waiting %ds', attempt + 1, wait)
@@ -630,7 +720,7 @@ def run_cohort_training():
 
         if response:
             logger.info('  ✓ %d chars returned', len(response))
-            km.add_llm_insight(response[:500], miner_id=miner_id)
+            km.add_llm_insight(response[:10000], miner_id=miner_id)
             outlier_results.append({
                 'miner_id': miner_id,
                 'ip': outlier.get('ip'),
@@ -656,7 +746,7 @@ def run_cohort_training():
     fleet_response = ''
     for attempt in range(3):
         fleet_response = analyzer.deep_analyze(fleet_prompt)
-        if fleet_response and 'error' not in fleet_response.lower():
+        if fleet_response and len(fleet_response) > 100:
             break
         wait = 60 * (attempt + 1)
         logger.warning('Fleet attempt %d failed — waiting %ds', attempt + 1, wait)
@@ -664,7 +754,7 @@ def run_cohort_training():
 
     if fleet_response:
         logger.info('Fleet synthesis complete: %d chars', len(fleet_response))
-        km.add_llm_insight(fleet_response[:800], miner_id='fleet')
+        km.add_llm_insight(fleet_response[:15000], miner_id='fleet')
         # Also store in cross_miner_analysis for the local LLM to read next week
         knowledge = json.loads(KNOWLEDGE_PATH.read_text())
         if not isinstance(knowledge.get('cross_miner_analysis'), list):
