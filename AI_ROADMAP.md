@@ -168,3 +168,43 @@ All intelligence currently lives in Python rules (predictor.py, action_diversity
 
 *Last updated: April 6, 2026*
 *48hr test in progress — 12M+ data points, 149 scans, 11 operator denial reasons captured*
+
+---
+
+## Production Migration — Cloudflare Removal
+
+**Hard deadline:** May 5-9, 2026 (Mac Mini arrival window)
+
+`fieslerfamily.com` is Bobby's personal R&D-only domain. Every service that
+currently uses a Cloudflare tunnel must move to the local Mac Mini before the
+production architecture is locked in. There is **no public ingress** at a
+customer site — outbound internet only (AMS, OpenClaw socket, Slack outbound).
+
+See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
+
+### Migration checklist
+
+- [ ] `dashboard.fieslerfamily.com` (VPS:8585) → `localhost:8585` on Mac Mini
+- [ ] `slack.fieslerfamily.com` (VPS:8686) → OpenClaw socket → `localhost:8686`
+- [ ] `grafana.fieslerfamily.com` (VPS:3000) → `localhost:3000` on Mac Mini
+- [ ] Block Kit interactive button routing: build OpenClaw `block_actions`
+      handler that forwards to local approval API
+- [ ] Update `api/slack_block_kit.py` action_id values to use `mg_` prefix
+      so OpenClaw can recognize Mining Guardian buttons
+- [ ] Delete or formally deprecate `api/slack_actions_handler.py` — its design
+      requires public ingress and won't work on a Mac Mini
+- [ ] Remove Cloudflare tunnel systemd units from `deploy/`
+- [ ] Audit: `grep -rn 'fieslerfamily' . --include='*.py' --include='*.md' --include='*.json' --include='*.service'`
+      and resolve every hit (migrate to localhost, migrate to Tailscale, or
+      remove)
+- [ ] No customer-facing code or documentation references `fieslerfamily.com`
+
+### Outbound-only requirements that stay
+
+| Endpoint | Why | Notes |
+|---|---|---|
+| AMS API (`api-staging.dev.bixbit.io` or production AMS) | All miner commands | Outbound HTTPS |
+| OpenClaw → Slack | Conversational AI + button event delivery | Outbound websocket (Socket Mode) |
+| Slack outbound API (`slack.com`) | `chat_postMessage`, etc. | Outbound HTTPS |
+| NTP | System clock | Standard |
+| Tailscale | Support access only | Optional, operator decision |

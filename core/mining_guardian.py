@@ -2709,6 +2709,33 @@ class SlackNotifier:
             logger.warning("post_to_channel failed: %s", e)
         return ""
 
+    def post_blocks_to_channel(self, blocks: list, fallback_text: str = "Mining Guardian update") -> str:
+        """Post a Block Kit message to the channel. Returns message ts for threading.
+
+        Outbound-only (chat.postMessage). Works on the VPS today and on the
+        production Mac Mini after May 5 — no public ingress required.
+
+        Block Kit messages need a bot token (webhooks do not reliably render
+        rich blocks). Falls back to plain text via post_to_channel if bot
+        token is not configured. Interactive button click handling is routed
+        through OpenClaw socket → localhost approval API, NOT through any URL
+        handler that would require public ingress. See docs/CLOUDFLARE_MIGRATION.md.
+        """
+        if not self.bot_token:
+            logger.warning("post_blocks_to_channel: no bot token, falling back to plain text")
+            return self.post_to_channel(fallback_text)
+        try:
+            from slack_sdk import WebClient
+            resp = WebClient(token=self.bot_token).chat_postMessage(
+                channel=self.channel_id,
+                blocks=blocks,
+                text=fallback_text,  # required for notifications and accessibility
+            )
+            return resp.get("ts", "")
+        except Exception as e:
+            logger.warning("post_blocks_to_channel failed: %s", e)
+            return ""
+
     def get_user_display_name(self, slack_user_id: str) -> Optional[str]:
         """Look up a Slack user's display name from their user ID.
 
