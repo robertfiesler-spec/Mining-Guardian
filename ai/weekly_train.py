@@ -18,7 +18,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT / "ai") not in sys.path:
     sys.path.insert(0, str(_ROOT / "ai"))
 
-from train_comprehensive import run_comprehensive_training
+from train_cohort import run_cohort_training
 from knowledge_manager import KnowledgeManager
 
 logging.basicConfig(level=logging.INFO,
@@ -28,13 +28,13 @@ logger = logging.getLogger("weekly_train")
 
 def run_weekly():
     logger.info("=" * 60)
-    logger.info("WEEKLY TRAINING — Starting comprehensive analysis")
+    logger.info("WEEKLY TRAINING — Starting cohort-based analysis")
     logger.info("Feeds: full logs (no truncation), chain readings, pool data,")
     logger.info("hardware identity, per-chip hashrate, PSU voltage, audit history")
     logger.info("=" * 60)
 
     try:
-        run_comprehensive_training()
+        run_cohort_training()
     except Exception as e:
         logger.error("Comprehensive training failed: %s", e)
         raise
