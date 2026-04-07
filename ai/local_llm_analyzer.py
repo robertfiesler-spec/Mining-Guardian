@@ -49,7 +49,7 @@ class LocalLLMAnalyzer:
         self.QUICK_ANALYSIS_INTERVAL = 300  # quick check every scan
 
     def _query_llm(self, prompt: str, max_tokens: int = 1024,
-                   timeout: int = 180) -> Optional[str]:
+                   timeout: int = 240) -> Optional[str]:
         """Send prompt to local Ollama LLM and return response."""
         try:
             resp = requests.post(
@@ -278,12 +278,20 @@ class LocalLLMAnalyzer:
                     lines.append(f"  - {p.get('pattern', str(p))[:100]}")
 
         # Claude's cross-miner analysis (from weekly training)
-        xm = ctx.get("cross_miner_analysis", {})
+        # Cross-miner analysis from Claude weekly training (dict or list)
+        xm = ctx.get("cross_miner_analysis")
         if xm:
             lines.append("\n--- CLAUDE WEEKLY ANALYSIS (use as reference) ---")
-            for key, val in list(xm.items())[:5]:
-                lines.append(f"  {key}: {str(val)[:150]}")
-
+            if isinstance(xm, dict):
+                for key, val in list(xm.items())[:5]:
+                    lines.append(f"  {key}: {str(val)[:150]}")
+            elif isinstance(xm, list):
+                for item in xm[:5]:
+                    if isinstance(item, dict):
+                        for key, val in list(item.items())[:3]:
+                            lines.append(f"  {key}: {str(val)[:150]}")
+                    else:
+                        lines.append(f"  - {str(item)[:200]}")
         # Operator rules (accumulated from denials)
         rules = ctx.get("operator_rules", [])
         if rules:
@@ -348,7 +356,7 @@ Keep response under 10 lines. Be specific — cite board numbers, voltages, erro
             self._last_full_analysis = now
 
         logger.info("LLM: Sending scan #%s for analysis (%d chars)", scan_id, len(prompt))
-        analysis = self._query_llm(prompt, max_tokens=1024, timeout=90)
+        analysis = self._query_llm(prompt, max_tokens=1024, timeout=240)
 
         if analysis:
             logger.info("LLM analysis: %s", analysis[:200])
