@@ -17,6 +17,7 @@ This module is called by mining_guardian.py after each scan completes.
 It also updates miner profiles in knowledge.json with outcome history.
 """
 
+import os
 import sys
 import json
 import logging
