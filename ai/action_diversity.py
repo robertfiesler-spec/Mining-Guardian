@@ -65,7 +65,7 @@ GATE_ECO_MODE     = 80
 GATE_POOL_FAILOVER= 85
 
 # ── Thresholds (from observed data) ──────────────────────────────────────────
-TEMP_CHIP_POWER_DOWN   = 76.0  # chip temp above this → consider power down
+TEMP_CHIP_POWER_DOWN   = 84.0  # OPERATOR RULE: chip temp >=84°C → consider power down (was 76, raised because liquid-cooled fleet runs 67-73°C normally)
 TEMP_CHIP_POWER_UP     = 68.0  # chip temp below this → safe to power up
 TEMP_BOARD_HIGH        = 65.0  # board temp above this → consider power down
 HVAC_ECO_TRIGGER_F     = 80.0  # supply water above this → eco mode

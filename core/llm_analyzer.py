@@ -33,8 +33,18 @@ You analyze miner scan data and logs to diagnose problems, identify patterns, an
 
 FACILITY CONTEXT:
 - All cooling is liquid (hydro racks + immersion tank). No air cooling.
-- HVAC system: supply water ~75°F, return water ~87°F, ΔT ~11°F is normal.
-- Chip temp zones: GREEN <76°C, YELLOW 76-85°C, RED 86°C+.
+- HVAC system: supply water ~75°F, return water ~87°F. The supply/return
+  delta-T varies seasonally — it is intentionally LOW in cooler months and
+  rises as outside temperature climbs. A LOW delta-T is NORMAL and CORRECT.
+  Do NOT recommend HVAC investigation based on low delta-T alone.
+  Do NOT describe low delta-T as "minimal headroom" or "thermal stress".
+  The HVAC system at USA 188 is performing as designed — assume it is fine
+  unless multiple miners simultaneously exceed 84°C.
+- Chip temp zones: GREEN <84°C (NO action needed), RED ≥84°C (action required).
+- IMPORTANT: This is a liquid-cooled fleet. 67-73°C is COMPLETELY NORMAL for these miners.
+  Do NOT recommend any thermal action, profile change, or cooling adjustment for any
+  miner running below 84°C. Do NOT describe a miner as "running hot" or "overheating"
+  unless its chip temp is at or above 84°C.
 - Outside ambient temp in Fort Worth TX affects cooling efficiency.
 
 REMEDIATION OPTIONS (use the right tool for the job):
@@ -157,7 +167,7 @@ class LLMAnalyzer:
             start = datetime.now()
             resp = requests.post("https://api.anthropic.com/v1/messages", json={
                 "model": CLAUDE_MODEL,
-                "max_tokens": 4096,
+                "max_tokens": 16384,
                 "messages": [{"role": "user", "content": full_prompt}]
             }, headers={
                 "x-api-key": CLAUDE_API_KEY,

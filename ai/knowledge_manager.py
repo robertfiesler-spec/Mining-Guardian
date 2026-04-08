@@ -117,7 +117,7 @@ class KnowledgeManager:
         entry = {
             "date": datetime.now().isoformat()[:10],
             "miner_id": miner_id,
-            "insight": insight[:10000],
+            "insight": insight[:50000],
         }
 
         # Keep last 50 insights

@@ -125,22 +125,48 @@ def get_feature_status():
 
 
 DATA_SIGNALS = [
-    ("Hashrate %", "AMS WebSocket", "5 min"), ("Chip Temperature", "AMS WebSocket", "5 min"),
-    ("Board Temperature", "AMS WebSocket", "5 min"), ("Board Voltage", "Chain Readings", "5 min"),
-    ("Board Frequency", "Chain Readings", "5 min"), ("Board HW Errors", "Chain Readings", "5 min"),
-    ("Board Power (W)", "Chain Readings", "5 min"), ("Pool Accepted Shares", "Pool Readings", "5 min"),
-    ("Pool Rejected Shares", "Pool Readings", "5 min"), ("Pool Rejection Rate", "Calculated", "5 min"),
-    ("PDU Power (kW)", "PDU API", "5 min"), ("Miner Consumption (W)", "AMS WebSocket", "5 min"),
-    ("Uptime", "AMS WebSocket", "5 min"), ("Error Codes", "AMS WebSocket", "5 min"),
-    ("Firmware Version", "AMS WebSocket", "5 min"), ("Current Profile", "AMS WebSocket", "5 min"),
-    ("Supply Water Temp", "HVAC BAS API", "5 min"), ("Return Water Temp", "HVAC BAS API", "5 min"),
-    ("Differential Pressure", "HVAC BAS API", "5 min"), ("Outside Temperature", "Open-Meteo", "5 min"),
-    ("Outside Humidity", "Open-Meteo", "5 min"), ("Per-Chip Hashrate", "CGMiner Logs", "6 hrs"),
-    ("PSU Voltage", "CGMiner Logs", "6 hrs"), ("System CPU/Memory", "CGMiner Logs", "6 hrs"),
-    ("Board Attach/Detach", "CGMiner Logs", "6 hrs"), ("Board Serial Number", "CGMiner Logs", "Once"),
-    ("Chip Die/Bin/Grade", "CGMiner Logs", "Once"), ("PCB/BOM Version", "CGMiner Logs", "Once"),
-    ("Control Board Type", "CGMiner Logs", "Once"), ("PSU Version", "CGMiner Logs", "Once"),
-    ("AMS Notifications", "AMS REST API", "5 min"), ("Map Location (X,Y)", "AMS Extended", "5 min"),
+    # AMS WebSocket signals — pulled per scan (60 min) + monitored continuously
+    # by the alert listener every 15 seconds for urgent state changes
+    ("Hashrate %", "AMS WebSocket", "60 min + 15s alerts"),
+    ("Chip Temperature", "AMS WebSocket", "60 min + 15s alerts"),
+    ("Board Temperature", "AMS WebSocket", "60 min + 15s alerts"),
+    ("Miner Consumption (W)", "AMS WebSocket", "60 min + 15s alerts"),
+    ("Uptime", "AMS WebSocket", "60 min"),
+    ("Error Codes", "AMS WebSocket", "60 min + 15s alerts"),
+    ("Firmware Version", "AMS WebSocket", "60 min"),
+    ("Current Profile", "AMS WebSocket", "60 min"),
+    # Chain Readings — per-board structured data, parsed each scan
+    ("Board Voltage", "Chain Readings", "60 min"),
+    ("Board Frequency", "Chain Readings", "60 min"),
+    ("Board HW Errors", "Chain Readings", "60 min"),
+    ("Board Power (W)", "Chain Readings", "60 min"),
+    # Pool Readings — share counts pulled each scan
+    ("Pool Accepted Shares", "Pool Readings", "60 min"),
+    ("Pool Rejected Shares", "Pool Readings", "60 min"),
+    ("Pool Rejection Rate", "Calculated", "60 min"),
+    # PDU — per-outlet power draw, polled with the scan
+    ("PDU Power (kW)", "PDU API", "60 min"),
+    # HVAC BAS — supply/return water temps, pressures, polled with the scan
+    ("Supply Water Temp", "HVAC BAS API", "60 min"),
+    ("Return Water Temp", "HVAC BAS API", "60 min"),
+    ("Differential Pressure", "HVAC BAS API", "60 min"),
+    # Weather — Open-Meteo API call per scan
+    ("Outside Temperature", "Open-Meteo", "60 min"),
+    ("Outside Humidity", "Open-Meteo", "60 min"),
+    # CGMiner Logs — parsed each scan from logs collected once per cycle
+    ("Per-Chip Hashrate", "CGMiner Logs", "60 min"),
+    ("PSU Voltage", "CGMiner Logs", "60 min"),
+    ("System CPU/Memory", "CGMiner Logs", "60 min"),
+    ("Board Attach/Detach", "CGMiner Logs", "60 min"),
+    # Hardware identity — parsed once and stored permanently (immutable)
+    ("Board Serial Number", "CGMiner Logs", "Once"),
+    ("Chip Die/Bin/Grade", "CGMiner Logs", "Once"),
+    ("PCB/BOM Version", "CGMiner Logs", "Once"),
+    ("Control Board Type", "CGMiner Logs", "Once"),
+    ("PSU Version", "CGMiner Logs", "Once"),
+    # AMS REST + Extended — scan-cadence pulls
+    ("AMS Notifications", "AMS REST API", "60 min + 15s alerts"),
+    ("Map Location (X,Y)", "AMS Extended", "60 min"),
 ]
 
 

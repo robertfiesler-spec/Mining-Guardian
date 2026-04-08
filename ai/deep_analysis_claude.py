@@ -158,7 +158,8 @@ def build_prompts(data, max_chars: int = 80000):
     context_lines = [
         "You are Mining Guardian AI analyzing a Bitcoin mining fleet at BiXBiT USA in Fort Worth, TX.",
         "All cooling is liquid (hydro racks + immersion tank). No air cooling.",
-        "Chip temp zones: GREEN <76°C | YELLOW 76-85°C | RED 86°C+.",
+        "Chip temp zones: GREEN <84°C (no action) | RED >=84°C (action required). NO yellow tier — this is a liquid-cooled fleet, 67-73°C is normal.",
+        "OPERATOR RULE: Do NOT recommend HVAC investigation based on low delta-T. The HVAC delta-T is intentionally low and rises seasonally. The HVAC system is performing correctly.",
         "",
         "AMS NOTIFICATIONS (top issues by frequency):",
     ]

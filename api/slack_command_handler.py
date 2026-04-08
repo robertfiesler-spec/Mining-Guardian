@@ -8,7 +8,7 @@ Handles fleet queries, miner lookups, and forwards questions to the LLM.
 Commands:
   /status          — current fleet status
   /miner <ip>      — detailed info on a specific miner
-  /hot             — list miners in yellow/red temp zone
+  /hot             — list miners in red temp zone (chip >=84°C)
   /dead            — list known dead boards
   /knowledge       — what the LLM has learned
   /btc             — current Bitcoin price + daily revenue estimate
@@ -134,12 +134,12 @@ class CommandHandler:
         self._reply(channel, thread_ts, "\n".join(lines))
 
     def cmd_hot(self, channel, thread_ts):
-        """List miners in yellow/red temp zone."""
+        """List miners in red temp zone (chip >=84°C)."""
         conn = self._get_db()
         hot = conn.execute("""
             SELECT miner_id, ip, model, temp_chip FROM miner_readings
             WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
-            AND temp_chip >= 76 AND status = 'online'
+            AND temp_chip >= 84 AND status = 'online'
             ORDER BY temp_chip DESC
         """).fetchall()
         conn.close()
@@ -148,7 +148,7 @@ class CommandHandler:
             return
         lines = [f"*🌡️ Hot Miners — {len(hot)} above 76°C*"]
         for m in hot:
-            zone = "🔴" if m['temp_chip'] >= 86 else "🟡"
+            zone = "🔴"
             lines.append(f"  {zone} `{m['ip']}` {m['model']} — *{m['temp_chip']}°C*")
         self._reply(channel, thread_ts, "\n".join(lines))
 

@@ -219,13 +219,34 @@ class AMSClient:
 
         Tokens expire after ~30 minutes (observed from JWT payload).
         We re-auth 60 seconds before expiry to avoid mid-scan failures.
+
+        Bug fix (Apr 8 2026): long-running processes (overnight-automation,
+        alert-listener) were getting HTTP 400 from select_workspace when the
+        token expired. Root cause: stale session cookies were colliding with
+        the new Bearer header during re-auth. Fix: clear the cookie jar before
+        every re-auth, and on failure, reset _ws_token so the next call retries
+        from scratch instead of returning the stale cached value.
         """
         now = datetime.now(timezone.utc)
         if self._ws_token and self._token_expiry and now < self._token_expiry:
             return self._ws_token
 
-        user_token   = self._login()
-        ws_token     = self._select_workspace(user_token)
+        # CRITICAL: clear the cookie jar before re-auth so stale workspace
+        # tokens from a previous expired session do not interfere with the
+        # new login + select_workspace flow.
+        self.session.cookies.clear()
+
+        try:
+            user_token = self._login()
+            ws_token   = self._select_workspace(user_token)
+        except Exception as e:
+            # Hard-reset cached state so the next call re-attempts fresh
+            self._ws_token = None
+            self._token_expiry = None
+            self.session.cookies.clear()
+            logger.error("AMS re-auth failed: %s — cleared cached token", e)
+            raise
+
         self._ws_token     = ws_token
         # Parse expiry from JWT payload (middle segment, base64-encoded JSON)
         try:
@@ -2029,12 +2050,21 @@ class GuardianDB:
         with self._connect() as conn:
             for filename, content in log_files.items():
                 # Dedup check — skip if this exact file was already stored
+                # under the SAME health_status label. The same physical log file
+                # may legitimately be stored under multiple labels (e.g. once as
+                # 'healthy' from a routine scan and again as 'pre-restart' when
+                # the operator approves a restart action) — those are distinct
+                # observations of the system state and both have value.
+                # Bug fix (Apr 8 2026): previously dedup was on (miner_id,
+                # log_file) only, which silently dropped pre/post-restart saves
+                # of files already captured under 'healthy'.
                 existing = conn.execute(
-                    "SELECT id FROM miner_logs WHERE miner_id=? AND log_file=?",
-                    (miner_id, filename)
+                    "SELECT id FROM miner_logs WHERE miner_id=? AND log_file=? AND health_status=?",
+                    (miner_id, filename, health_status)
                 ).fetchone()
                 if existing:
-                    logger.debug("[%s] Log already stored: %s — skipping", miner_id, filename)
+                    logger.debug("[%s] Log already stored under %s: %s — skipping",
+                                 miner_id, health_status, filename)
                     continue
                 conn.execute(
                     "INSERT INTO miner_logs "
@@ -2685,21 +2715,34 @@ class GuardianDB:
 
 class SlackNotifier:
 
+    # Main channel — approvals, dead-board escalations, OpenClaw conversations,
+    # interactive operator messages
     CHANNEL_ID = "C0AQ8SE1448"  # #mining-guardian
+    # Alerts feed channel — periodic scan summaries, AMS-down notifications,
+    # automated status updates that don't need operator interaction
+    ALERTS_CHANNEL_ID = "C0ARJP300J0"  # #mining-guardian-alerts
 
     def __init__(self, webhook_url: Optional[str], channel_id: Optional[str] = None,
-                 bot_token: Optional[str] = None):
-        self.webhook_url = webhook_url
-        self.channel_id  = channel_id or self.CHANNEL_ID
-        self.bot_token   = bot_token
+                 bot_token: Optional[str] = None,
+                 alerts_channel_id: Optional[str] = None):
+        self.webhook_url        = webhook_url
+        self.channel_id         = channel_id or self.CHANNEL_ID
+        self.alerts_channel_id  = alerts_channel_id or self.ALERTS_CHANNEL_ID
+        self.bot_token          = bot_token
 
-    def post_to_channel(self, message: str) -> str:
-        """Post a plain message to the channel. Returns message ts for threading."""
+    def post_to_channel(self, message: str, channel_id: Optional[str] = None) -> str:
+        """Post a plain message to a channel. Defaults to the main channel.
+
+        Pass channel_id to override (e.g. self.alerts_channel_id for feed posts).
+        Webhook fallback only sends to whatever channel the webhook is configured
+        for — bot token path is required for routing.
+        """
+        target = channel_id or self.channel_id
         try:
             if self.bot_token:
                 from slack_sdk import WebClient
                 resp = WebClient(token=self.bot_token).chat_postMessage(
-                    channel=self.channel_id, text=message
+                    channel=target, text=message
                 )
                 return resp.get("ts", "")
             elif self.webhook_url:
@@ -2709,9 +2752,21 @@ class SlackNotifier:
             logger.warning("post_to_channel failed: %s", e)
         return ""
 
-    def post_blocks_to_channel(self, blocks: list, fallback_text: str = "Mining Guardian update") -> str:
-        """Post a Block Kit message to the channel. Returns message ts for threading.
+    def post_to_alerts_channel(self, message: str) -> str:
+        """Post to the #mining-guardian-alerts feed channel.
 
+        Use this for periodic scan summaries, AMS-down notifications, and other
+        automated status updates that don't need operator interaction. Approval
+        requests, dead-board escalations, and OpenClaw conversations stay in
+        the main channel via the regular post_to_channel call.
+        """
+        return self.post_to_channel(message, channel_id=self.alerts_channel_id)
+
+    def post_blocks_to_channel(self, blocks: list, fallback_text: str = "Mining Guardian update",
+                                channel_id: Optional[str] = None) -> str:
+        """Post a Block Kit message. Defaults to the main channel.
+
+        Pass channel_id to override (e.g. self.alerts_channel_id for feed posts).
         Outbound-only (chat.postMessage). Works on the VPS today and on the
         production Mac Mini after May 5 — no public ingress required.
 
@@ -2721,13 +2776,14 @@ class SlackNotifier:
         through OpenClaw socket → localhost approval API, NOT through any URL
         handler that would require public ingress. See docs/CLOUDFLARE_MIGRATION.md.
         """
+        target = channel_id or self.channel_id
         if not self.bot_token:
             logger.warning("post_blocks_to_channel: no bot token, falling back to plain text")
-            return self.post_to_channel(fallback_text)
+            return self.post_to_channel(fallback_text, channel_id=target)
         try:
             from slack_sdk import WebClient
             resp = WebClient(token=self.bot_token).chat_postMessage(
-                channel=self.channel_id,
+                channel=target,
                 blocks=blocks,
                 text=fallback_text,  # required for notifications and accessibility
             )
@@ -2812,10 +2868,14 @@ class SlackNotifier:
             if self.bot_token:
                 from slack_sdk import WebClient
                 client = WebClient(token=self.bot_token)
-                client.chat_postMessage(channel=self.channel_id, text=payload["text"])
+                # AMS-down notifications go to the #mining-guardian-alerts feed
+                # channel, NOT the main channel. They are read-only status alerts
+                # that don't require operator interaction (no approval, no
+                # button click, no thread reply needed).
+                client.chat_postMessage(channel=self.alerts_channel_id, text=payload["text"])
             else:
                 requests.post(self.webhook_url, json=payload, timeout=10)
-            logger.info("AMS-down notification sent to Slack")
+            logger.info("AMS-down notification sent to #mining-guardian-alerts")
         except Exception as e:
             logger.warning("Slack AMS-down notification failed: %s", e)
 
@@ -3143,7 +3203,7 @@ class SlackNotifier:
             # Determine temp color indicator
             try:
                 t = float(temp)
-                temp_icon = "🔴" if t >= 86 else "🟡" if t >= 76 else "🟢"
+                temp_icon = "🔴" if t >= 84 else "🟢"
             except (TypeError, ValueError):
                 temp_icon = "⚪"
 
@@ -3219,7 +3279,9 @@ class MiningGuardian:
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
         self.slack    = SlackNotifier(
             webhook_url=GuardianConfig._resolve(config.slack_webhook_url) if config.slack_webhook_url else None,
-            bot_token=GuardianConfig._resolve(config.slack_bot_token) if hasattr(config, "slack_bot_token") and config.slack_bot_token else None
+            bot_token=GuardianConfig._resolve(config.slack_bot_token) if hasattr(config, "slack_bot_token") and config.slack_bot_token else None,
+            channel_id=getattr(config, "slack_channel_id", None),
+            alerts_channel_id=getattr(config, "slack_alerts_channel_id", None),
         )
         self.db       = GuardianDB()
         self._last_slack_post = 0  # timestamp of last Slack post
@@ -3551,13 +3613,11 @@ class MiningGuardian:
         # the same 76/86 limits apply across air, immersion, and hydro.
         if temp_chip is None:
             issues.append("⚠️ Sensor error — temp reading invalid")
-        elif temp_chip >= 86:
-            issues.append(f"🔴 RED — chip {temp_chip}°C (86°C+ threshold)")
+        elif temp_chip >= 84:
+            issues.append(f"🔴 RED — chip {temp_chip}°C (≥84°C, action required)")
             action = "TEMP_ACTION_REQUIRED"
-        elif temp_chip >= 76:
-            issues.append(f"🟡 YELLOW — chip {temp_chip}°C (76–85°C range)")
-            if not action:
-                action = "MONITOR"
+        # OPERATOR RULE: No yellow tier. Liquid-cooled fleet runs 67-73°C normally.
+        # Do not flag any miner below 84°C as warm/yellow/monitor.
 
         # ── Learning window advisory (non-blocking) ──────────────────────
         if tier == "3_learning":
@@ -3675,8 +3735,18 @@ class MiningGuardian:
         Attempt log collection with a hard timeout.
         Returns log dict (possibly empty) — never raises, never hangs.
         If miner is offline or logs unavailable, returns {} immediately.
+
+        Bug fix (Apr 8 2026): signal.SIGALRM only works on the main thread of
+        the main interpreter. When this function is called from a background
+        thread (e.g. the post-restart capture spawned by execute_restart),
+        signal.signal() raises ValueError immediately and we lose the entire
+        capture. Fix: detect whether we are on the main thread and only use
+        signal-based timeout in that case. Background threads rely on the
+        underlying HTTP timeouts and collect_fresh_miner_logs's own
+        max_wait_seconds parameter for bounded duration.
         """
         import signal
+        import threading
 
         def _timeout_handler(signum, frame):
             raise TimeoutError("log collection timed out")
@@ -3685,15 +3755,24 @@ class MiningGuardian:
         # Fresh-log path needs more time than cached collection
         timeout = 120 if wants_fresh else self.LOG_COLLECT_TIMEOUT
 
+        on_main_thread = threading.current_thread() is threading.main_thread()
+        signal_armed = False
+
         try:
-            signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(timeout)
+            if on_main_thread:
+                signal.signal(signal.SIGALRM, _timeout_handler)
+                signal.alarm(timeout)
+                signal_armed = True
+
             if wants_fresh:
                 logger.info("[%s] Triggering FRESH log export for %s", miner_id, label)
                 logs = self.ams.collect_fresh_miner_logs(int(miner_id), max_wait_seconds=90)
             else:
                 logs = self.ams.collect_miner_logs(int(miner_id))
-            signal.alarm(0)  # cancel alarm
+
+            if signal_armed:
+                signal.alarm(0)  # cancel alarm
+
             if logs:
                 self.db.save_logs(miner_id, model, label, logs)
                 logger.info("[%s] Logs collected (%s): %s files", miner_id, label, len(logs))
@@ -3701,12 +3780,14 @@ class MiningGuardian:
                 logger.info("[%s] No logs available for %s — skipping", miner_id, label)
             return logs or {}
         except TimeoutError:
-            signal.alarm(0)
+            if signal_armed:
+                signal.alarm(0)
             logger.warning("[%s] Log collection timed out after %ss (%s) — continuing",
                            miner_id, timeout, label)
             return {}
         except Exception as e:
-            signal.alarm(0)
+            if signal_armed:
+                signal.alarm(0)
             logger.warning("[%s] Log collection failed (%s): %s — continuing", miner_id, label, e)
             return {}
 
@@ -4212,14 +4293,22 @@ class MiningGuardian:
 
     def execute_restart(self, issue: Dict[str, Any]) -> None:
         """
-        Execute an approved firmware restart with pre-restart log collection.
+        Execute an approved firmware restart with pre AND post log collection.
 
         Flow:
-          1. Attempt pre-restart log collection (non-blocking, 30s timeout)
+          1. Capture FRESH pre-restart logs (blocks up to 120s)
           2. Restart miner via AMS
-          3. Log the action to audit log
+          3. Spawn background thread that waits ~75s for the miner to come
+             back online, then captures FRESH post-restart logs
+          4. Record action to audit log
 
-        Called when operator approves a RESTART action.
+        Both pre and post logs are stored with distinct labels in miner_logs
+        so the LLM can compare them when learning whether the restart actually
+        helped. The background thread is fire-and-forget — failures there do
+        not block this method or affect the main daemon loop.
+
+        Called when operator approves a RESTART action OR overnight automation
+        auto-approves it.
         """
         miner_id = issue["id"]
         ip       = issue["ip"]
@@ -4232,7 +4321,7 @@ class MiningGuardian:
             logger.info("[%s] DRY RUN — firmware restart skipped (set dry_run: false to enable)", miner_id)
             return
 
-        # Step 1 — collect pre-restart logs (skip silently if offline/unavailable)
+        # Step 1 — collect FRESH pre-restart logs
         self._collect_logs_nonblocking(miner_id, model, "pre-restart")
 
         # Step 2 — restart via AMS
@@ -4243,6 +4332,92 @@ class MiningGuardian:
                                    hashrate_before=float(issue.get("hashrate_pct") or 0))
         except Exception as e:
             logger.error("[%s] Firmware restart failed: %s", miner_id, e)
+            return
+
+        # Step 3 — spawn background thread for post-restart log capture.
+        # OPERATOR RULE (Bobby, Apr 8 2026): NO maximum wait time. Bobby has
+        # seen miners take 5-6 HOURS to reach fully-mining-with-settled-hashrate
+        # state. The number one goal is capturing the log AT THE RIGHT MOMENT
+        # (not capturing it quickly). Settled hashrate detection: track the
+        # last 4 hashrate readings; the miner is "settled" when the standard
+        # deviation of those 4 readings is within 5% of their mean.
+        # Fire-and-forget daemon thread; failures are logged but do not raise.
+        # If the parent process exits before the capture completes, the daemon
+        # thread is killed and we accept the post-capture gap for that one
+        # action (the action itself is already in the audit log).
+        def _post_restart_capture():
+            import time as _time
+            from collections import deque
+            try:
+                # Wait 60s before first poll — even reaching AMS takes time
+                _time.sleep(60)
+
+                poll_interval_seconds = 60
+                history_size = 4
+                settled_tolerance_pct = 5.0
+                hashrate_history = deque(maxlen=history_size)
+                poll_num = 0
+                start_time = _time.time()
+
+                while True:  # NO maximum — wait as long as it takes
+                    poll_num += 1
+                    try:
+                        all_miners = self.ams.get_miners()
+                        current = next(
+                            (m for m in all_miners if str(m.get("id")) == str(miner_id)),
+                            None
+                        )
+                        if current is None:
+                            logger.info("[%s] Post-restart poll %d: miner not in fleet list yet",
+                                        miner_id, poll_num)
+                            hashrate_history.clear()
+                        else:
+                            status        = current.get("status", "?")
+                            miner_status  = current.get("minerStatus", -1)
+                            hashrate      = current.get("hashrate", 0) or 0
+                            is_mining = (status == "online" and miner_status == 0 and hashrate > 0)
+
+                            if is_mining:
+                                hashrate_history.append(float(hashrate))
+                                if len(hashrate_history) == history_size:
+                                    mean_hr = sum(hashrate_history) / len(hashrate_history)
+                                    if mean_hr > 0:
+                                        variance = sum((h - mean_hr) ** 2 for h in hashrate_history) / len(hashrate_history)
+                                        stddev = variance ** 0.5
+                                        stddev_pct = (stddev / mean_hr) * 100
+                                        is_settled = stddev_pct < settled_tolerance_pct
+                                        elapsed_min = (_time.time() - start_time) / 60
+                                        logger.info("[%s] Post-restart poll %d (%.1f min): mining=True hashrate=%.1f mean=%.1f stddev=%.2f%% settled=%s",
+                                                    miner_id, poll_num, elapsed_min, hashrate, mean_hr, stddev_pct, is_settled)
+                                        if is_settled:
+                                            logger.info("[%s] Miner is fully mining with SETTLED hashrate after %.1f min — capturing post-restart logs",
+                                                        miner_id, elapsed_min)
+                                            self._collect_logs_nonblocking(miner_id, model, "post-restart")
+                                            return
+                                    else:
+                                        hashrate_history.clear()
+                                else:
+                                    elapsed_min = (_time.time() - start_time) / 60
+                                    logger.info("[%s] Post-restart poll %d (%.1f min): mining=True hashrate=%.1f (building history %d/%d)",
+                                                miner_id, poll_num, elapsed_min, hashrate, len(hashrate_history), history_size)
+                            else:
+                                elapsed_min = (_time.time() - start_time) / 60
+                                logger.info("[%s] Post-restart poll %d (%.1f min): status=%s minerStatus=%s hashrate=%s — not yet mining",
+                                            miner_id, poll_num, elapsed_min, status, miner_status, hashrate)
+                                hashrate_history.clear()
+                    except Exception as poll_e:
+                        logger.warning("[%s] Post-restart poll %d failed: %s", miner_id, poll_num, poll_e)
+                        hashrate_history.clear()
+
+                    _time.sleep(poll_interval_seconds)
+            except Exception as e:
+                logger.warning("[%s] Post-restart log capture thread failed: %s", miner_id, e)
+
+        t = threading.Thread(target=_post_restart_capture, daemon=True,
+                             name=f"post-restart-{miner_id}")
+        t.start()
+        logger.info("[%s] Post-restart log capture scheduled (background, polls until hashrate is fully settled — NO max wait)",
+                    miner_id)
 
     def execute_pdu_cycle(self, issue: Dict[str, Any]) -> None:
         """
@@ -4275,7 +4450,7 @@ class MiningGuardian:
             logger.info("[%s] DRY RUN — PDU cycle skipped (set dry_run: false to enable)", miner_id)
             return
 
-        # Step 1 — collect pre-restart logs (skip silently if offline/unavailable)
+        # Step 1 — collect FRESH pre-pdu-cycle logs
         self._collect_logs_nonblocking(miner_id, model, "pre-pdu-cycle")
 
         # Step 2 — power cycle via AMS
@@ -4287,13 +4462,96 @@ class MiningGuardian:
             logger.error("[%s] PDU cycle failed: %s", miner_id, e)
             return
 
-        # Step 3 — wait 90 seconds then check if miner came back online
+        # Step 3 — wait 90 seconds for the miner to come back online enough
+        # to do basic TCP-level verification. The fresh post-pdu-cycle log
+        # capture happens in the background once the miner is fully mining
+        # with settled hashrate (see step 5).
         logger.info("[%s] Waiting 90s for miner to recover after PDU cycle...", miner_id)
         time.sleep(90)
 
-        # Re-verify miner status
+        # Step 4 — re-verify miner status (TCP-level check)
         from miner_verify import verify_miner_online
         result = verify_miner_online(ip)
+
+        # Step 5 — spawn background thread for FRESH post-pdu-cycle log capture.
+        # OPERATOR RULE (Bobby, Apr 8 2026): NO maximum wait. Wait as long as
+        # it takes for the miner to be fully mining with settled hashrate.
+        # Bobby has seen this take 5-6 hours.
+        if result.get("actually_online"):
+            def _post_pdu_capture():
+                import time as _time
+                from collections import deque
+                try:
+                    _time.sleep(60)  # extra cushion before first poll
+
+                    poll_interval_seconds = 60
+                    history_size = 4
+                    settled_tolerance_pct = 5.0
+                    hashrate_history = deque(maxlen=history_size)
+                    poll_num = 0
+                    start_time = _time.time()
+
+                    while True:  # NO maximum
+                        poll_num += 1
+                        try:
+                            all_miners = self.ams.get_miners()
+                            current = next(
+                                (m for m in all_miners if str(m.get("id")) == str(miner_id)),
+                                None
+                            )
+                            if current is None:
+                                logger.info("[%s] Post-PDU poll %d: miner not in fleet list yet",
+                                            miner_id, poll_num)
+                                hashrate_history.clear()
+                            else:
+                                status        = current.get("status", "?")
+                                miner_status  = current.get("minerStatus", -1)
+                                hashrate      = current.get("hashrate", 0) or 0
+                                is_mining = (status == "online" and miner_status == 0 and hashrate > 0)
+
+                                if is_mining:
+                                    hashrate_history.append(float(hashrate))
+                                    if len(hashrate_history) == history_size:
+                                        mean_hr = sum(hashrate_history) / len(hashrate_history)
+                                        if mean_hr > 0:
+                                            variance = sum((h - mean_hr) ** 2 for h in hashrate_history) / len(hashrate_history)
+                                            stddev = variance ** 0.5
+                                            stddev_pct = (stddev / mean_hr) * 100
+                                            is_settled = stddev_pct < settled_tolerance_pct
+                                            elapsed_min = (_time.time() - start_time) / 60
+                                            logger.info("[%s] Post-PDU poll %d (%.1f min): mining=True hashrate=%.1f mean=%.1f stddev=%.2f%% settled=%s",
+                                                        miner_id, poll_num, elapsed_min, hashrate, mean_hr, stddev_pct, is_settled)
+                                            if is_settled:
+                                                logger.info("[%s] Miner is fully mining with SETTLED hashrate after %.1f min — capturing post-pdu-cycle logs",
+                                                            miner_id, elapsed_min)
+                                                self._collect_logs_nonblocking(miner_id, model, "post-pdu-cycle")
+                                                return
+                                        else:
+                                            hashrate_history.clear()
+                                    else:
+                                        elapsed_min = (_time.time() - start_time) / 60
+                                        logger.info("[%s] Post-PDU poll %d (%.1f min): mining=True hashrate=%.1f (building history %d/%d)",
+                                                    miner_id, poll_num, elapsed_min, hashrate, len(hashrate_history), history_size)
+                                else:
+                                    elapsed_min = (_time.time() - start_time) / 60
+                                    logger.info("[%s] Post-PDU poll %d (%.1f min): status=%s minerStatus=%s hashrate=%s — not yet mining",
+                                                miner_id, poll_num, elapsed_min, status, miner_status, hashrate)
+                                    hashrate_history.clear()
+                        except Exception as poll_e:
+                            logger.warning("[%s] Post-PDU poll %d failed: %s", miner_id, poll_num, poll_e)
+                            hashrate_history.clear()
+
+                        _time.sleep(poll_interval_seconds)
+                except Exception as e:
+                    logger.warning("[%s] Post-PDU log capture thread failed: %s", miner_id, e)
+
+            t = threading.Thread(target=_post_pdu_capture, daemon=True,
+                                 name=f"post-pdu-{miner_id}")
+            t.start()
+            logger.info("[%s] Post-PDU log capture scheduled (background, polls until settled — NO max wait)",
+                        miner_id)
+        else:
+            logger.info("[%s] Skipping post-PDU log capture — miner did not come back online", miner_id)
         self.db.log_action(
             miner_id, ip, model,
             problem="Offline — PDU cycle executed",

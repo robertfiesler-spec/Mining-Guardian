@@ -370,6 +370,23 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         '=== ENVIRONMENT CONTEXT ===',
         env_context[:1500],
         '',
+                '=== OPERATOR RULES (MUST FOLLOW) ===',
+        'These rules are set by the fleet operator and override any default heuristics:',
+        '',
+        '1. TEMPERATURE: This is a LIQUID-COOLED fleet. Chip temps of 67-73°C are NORMAL',
+        '   and require NO action. Do NOT flag, warn about, or recommend action for any',
+        '   miner running below 84°C. Do NOT describe miners under 84°C as "running hot",',
+        '   "overheating", or "thermally stressed". Only chip temps >=84°C warrant action.',
+        '',
+        '2. HVAC: The USA 188 HVAC system is performing CORRECTLY. The supply/return',
+        '   water delta-T is intentionally LOW right now and will rise as outside temps',
+        '   climb (seasonal behavior). Do NOT recommend "check the HVAC because delta-T',
+        '   is low". Do NOT describe low delta-T as "minimal headroom" or "thermal stress".',
+        '   Assume the HVAC is fine unless multiple miners simultaneously exceed 84°C.',
+        '',
+        '3. ACTION RECOMMENDATIONS: Bias toward documenting hardware patterns over',
+        '   recommending environmental changes. The cooling system is rarely the problem.',
+        '',
         '=== YOUR TASK ===',
         f'You are Claude — an expert Bitcoin mining fleet analyst. Analyze this cohort of {summary["member_count"]} miners as a GROUP, not individually.',
         '',
@@ -446,6 +463,23 @@ def build_outlier_prompt(miner_id: str, profile: dict, cohort_key: Tuple,
         '',
         '=== ENVIRONMENT CONTEXT ===',
         env_context[:1000],
+        '',
+                '=== OPERATOR RULES (MUST FOLLOW) ===',
+        'These rules are set by the fleet operator and override any default heuristics:',
+        '',
+        '1. TEMPERATURE: This is a LIQUID-COOLED fleet. Chip temps of 67-73°C are NORMAL',
+        '   and require NO action. Do NOT flag, warn about, or recommend action for any',
+        '   miner running below 84°C. Do NOT describe miners under 84°C as "running hot",',
+        '   "overheating", or "thermally stressed". Only chip temps >=84°C warrant action.',
+        '',
+        '2. HVAC: The USA 188 HVAC system is performing CORRECTLY. The supply/return',
+        '   water delta-T is intentionally LOW right now and will rise as outside temps',
+        '   climb (seasonal behavior). Do NOT recommend "check the HVAC because delta-T',
+        '   is low". Do NOT describe low delta-T as "minimal headroom" or "thermal stress".',
+        '   Assume the HVAC is fine unless multiple miners simultaneously exceed 84°C.',
+        '',
+        '3. ACTION RECOMMENDATIONS: Bias toward documenting hardware patterns over',
+        '   recommending environmental changes. The cooling system is rarely the problem.',
         '',
         '=== YOUR TASK ===',
         'This miner is an OUTLIER within its hardware cohort. Something specific is wrong',
@@ -533,6 +567,23 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
             lines.append(f'[{ts}] {text}')
 
     lines.extend([
+        '',
+                '=== OPERATOR RULES (MUST FOLLOW) ===',
+        'These rules are set by the fleet operator and override any default heuristics:',
+        '',
+        '1. TEMPERATURE: This is a LIQUID-COOLED fleet. Chip temps of 67-73°C are NORMAL',
+        '   and require NO action. Do NOT flag, warn about, or recommend action for any',
+        '   miner running below 84°C. Do NOT describe miners under 84°C as "running hot",',
+        '   "overheating", or "thermally stressed". Only chip temps >=84°C warrant action.',
+        '',
+        '2. HVAC: The USA 188 HVAC system is performing CORRECTLY. The supply/return',
+        '   water delta-T is intentionally LOW right now and will rise as outside temps',
+        '   climb (seasonal behavior). Do NOT recommend "check the HVAC because delta-T',
+        '   is low". Do NOT describe low delta-T as "minimal headroom" or "thermal stress".',
+        '   Assume the HVAC is fine unless multiple miners simultaneously exceed 84°C.',
+        '',
+        '3. ACTION RECOMMENDATIONS: Bias toward documenting hardware patterns over',
+        '   recommending environmental changes. The cooling system is rarely the problem.',
         '',
         '=== YOUR TASK ===',
         'You are Claude — the weekly fleet analyst for BiXBiT USAs Mining Guardian system.',
@@ -673,7 +724,7 @@ def run_cohort_training():
 
         if response:
             logger.info('  ✓ %d chars returned', len(response))
-            km.add_llm_insight(response[:10000], miner_id=f"cohort:{'/'.join(str(k) for k in key)[:80]}")
+            km.add_llm_insight(response[:50000], miner_id=f"cohort:{'/'.join(str(k) for k in key)[:80]}")
             cohort_results.append({
                 'cohort_key': key,
                 'member_count': summary['member_count'],
@@ -720,7 +771,7 @@ def run_cohort_training():
 
         if response:
             logger.info('  ✓ %d chars returned', len(response))
-            km.add_llm_insight(response[:10000], miner_id=miner_id)
+            km.add_llm_insight(response[:50000], miner_id=miner_id)
             outlier_results.append({
                 'miner_id': miner_id,
                 'ip': outlier.get('ip'),
@@ -754,7 +805,7 @@ def run_cohort_training():
 
     if fleet_response:
         logger.info('Fleet synthesis complete: %d chars', len(fleet_response))
-        km.add_llm_insight(fleet_response[:15000], miner_id='fleet')
+        km.add_llm_insight(fleet_response[:50000], miner_id='fleet')
         # Also store in cross_miner_analysis for the local LLM to read next week
         knowledge = json.loads(KNOWLEDGE_PATH.read_text())
         if not isinstance(knowledge.get('cross_miner_analysis'), list):
