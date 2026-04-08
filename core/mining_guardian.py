@@ -4393,6 +4393,11 @@ class MiningGuardian:
                                             logger.info("[%s] Miner is fully mining with SETTLED hashrate after %.1f min — capturing post-restart logs",
                                                         miner_id, elapsed_min)
                                             self._collect_logs_nonblocking(miner_id, model, "post-restart")
+                                            # Wire LLM pre/post comparison — runs against local Qwen,
+                                            # stores result in knowledge.json, posts to Slack
+                                            self._run_post_action_log_comparison(
+                                                miner_id, ip, model, "restart"
+                                            )
                                             return
                                     else:
                                         hashrate_history.clear()
@@ -4418,6 +4423,201 @@ class MiningGuardian:
         t.start()
         logger.info("[%s] Post-restart log capture scheduled (background, polls until hashrate is fully settled — NO max wait)",
                     miner_id)
+
+    def _run_post_action_log_comparison(self, miner_id: str, ip: str,
+                                         model: str, action_label: str) -> None:
+        """Compare the most recent pre/post log pair for a miner via local LLM.
+
+        Called from the background polling thread after a successful
+        post-action fresh log capture lands in the DB. Fetches the most
+        recent pre and post miner.log content for the given action_label
+        ('restart' or 'pdu-cycle'), passes them to the local LLM analyzer,
+        stores the analysis in knowledge.json, and posts a summary to Slack.
+
+        action_label maps to health_status:
+            'restart'    -> ('pre-restart',    'post-restart')
+            'pdu-cycle'  -> ('pre-pdu-cycle',  'post-pdu-cycle')
+
+        NEVER raises. All errors logged and swallowed because this is a
+        non-critical analysis step that runs in a background thread and
+        must not affect the main remediation flow.
+        """
+        pre_label, post_label = {
+            'restart':   ('pre-restart',   'post-restart'),
+            'pdu-cycle': ('pre-pdu-cycle', 'post-pdu-cycle'),
+        }.get(action_label, (None, None))
+        if not pre_label:
+            logger.warning("[%s] Unknown action_label %r — skipping LLM comparison",
+                           miner_id, action_label)
+            return
+
+        try:
+            # Fetch the most recent pre and post miner.log content. We only
+            # care about miner.log here because it has the structured DVFS,
+            # PSU, chip, and event data the LLM uses. power.log and
+            # autotune.log are usually empty in our captures anyway.
+            with self.db._connect() as conn:
+                pre_row = conn.execute(
+                    "SELECT content, datetime(collected_at) FROM miner_logs "
+                    "WHERE miner_id=? AND health_status=? AND log_file LIKE ?"
+                    " ORDER BY collected_at DESC LIMIT 1",
+                    (miner_id, pre_label, '%miner.log')
+                ).fetchone()
+                post_row = conn.execute(
+                    "SELECT content, datetime(collected_at) FROM miner_logs "
+                    "WHERE miner_id=? AND health_status=? AND log_file LIKE ?"
+                    " ORDER BY collected_at DESC LIMIT 1",
+                    (miner_id, post_label, '%miner.log')
+                ).fetchone()
+
+            if not pre_row or not post_row:
+                logger.info("[%s] Skipping LLM log comparison — pre or post miner.log missing (pre=%s post=%s)",
+                            miner_id, bool(pre_row), bool(post_row))
+                return
+
+            pre_log  = pre_row['content'] or ""
+            post_log = post_row['content'] or ""
+            if not pre_log or not post_log:
+                logger.info("[%s] Skipping LLM log comparison — pre or post log content empty",
+                            miner_id)
+                return
+
+            logger.info("[%s] Running DUAL-MODEL log comparison: pre=%s bytes, post=%s bytes",
+                        miner_id, len(pre_log), len(post_log))
+
+            # Import both models. Either may be missing — handle each
+            # independently so a single import error doesn't lose the other
+            # model's analysis.
+            import sys as _sys
+            from pathlib import Path as _Path
+            _ai = str(_Path(__file__).resolve().parent.parent / "ai")
+            if _ai not in _sys.path:
+                _sys.path.insert(0, _ai)
+
+            qwen_available = False
+            claude_available = False
+            try:
+                from llm_scan_hook import run_log_comparison_llm
+                qwen_available = True
+            except ImportError as ie:
+                logger.warning("[%s] Qwen log comparison module unavailable: %s", miner_id, ie)
+            try:
+                import claude_log_comparison
+                claude_available = claude_log_comparison.is_available()
+                if not claude_available:
+                    logger.warning("[%s] Claude API key not configured — Claude comparison disabled", miner_id)
+            except ImportError as ie:
+                logger.warning("[%s] Claude log comparison module unavailable: %s", miner_id, ie)
+
+            if not qwen_available and not claude_available:
+                logger.warning("[%s] Neither Qwen nor Claude log comparison available — skipping", miner_id)
+                return
+
+            miner_info = {
+                "ip":     ip,
+                "model":  model,
+                "action": action_label,
+                "pre_collected_at":  pre_row[1],
+                "post_collected_at": post_row[1],
+                "pre_log_size":      len(pre_log),
+                "post_log_size":     len(post_log),
+            }
+
+            qwen_analysis = None
+            claude_analysis = None
+
+            # Run Qwen first (fast, free, local — usually returns in 25-90s)
+            if qwen_available:
+                try:
+                    logger.info("[%s] Running Qwen 2.5 32B comparison...", miner_id)
+                    qwen_analysis = run_log_comparison_llm(
+                        miner_id=miner_id,
+                        pre_log=pre_log,
+                        post_log=post_log,
+                        miner_info=miner_info,
+                        slack_client=None,  # we'll post a unified message below
+                    )
+                    if qwen_analysis:
+                        logger.info("[%s] Qwen comparison complete (%s chars)", miner_id, len(qwen_analysis))
+                    else:
+                        logger.info("[%s] Qwen comparison returned no analysis", miner_id)
+                except Exception as qe:
+                    logger.warning("[%s] Qwen comparison failed: %s", miner_id, qe)
+
+            # Run Claude in parallel-ish (sequential because we want to compare
+            # outputs side by side, and Claude is faster anyway — usually 8-15s)
+            if claude_available:
+                try:
+                    logger.info("[%s] Running Claude Sonnet 4.6 comparison...", miner_id)
+                    claude_analysis = claude_log_comparison.compare_logs_via_claude(
+                        miner_id=miner_id,
+                        pre_log=pre_log,
+                        post_log=post_log,
+                        miner_info=miner_info,
+                    )
+                    if claude_analysis:
+                        logger.info("[%s] Claude comparison complete (%s chars)", miner_id, len(claude_analysis))
+                    else:
+                        logger.info("[%s] Claude comparison returned no analysis", miner_id)
+                except Exception as ce:
+                    logger.warning("[%s] Claude comparison failed: %s", miner_id, ce)
+
+            if not qwen_analysis and not claude_analysis:
+                logger.info("[%s] Both models returned no analysis", miner_id)
+                return
+
+            # Store BOTH analyses in knowledge.json with distinct miner_ids so
+            # they can be retrieved separately and compared.
+            try:
+                from knowledge_manager import KnowledgeManager
+                km = KnowledgeManager()
+                if qwen_analysis:
+                    km.add_llm_insight(
+                        qwen_analysis,
+                        miner_id=f"compare:{action_label}:qwen:{miner_id}",
+                    )
+                if claude_analysis:
+                    km.add_llm_insight(
+                        claude_analysis,
+                        miner_id=f"compare:{action_label}:claude:{miner_id}",
+                    )
+                logger.info("[%s] Dual-model comparisons stored in knowledge.json", miner_id)
+            except Exception as ke:
+                logger.warning("[%s] Failed to store comparisons in knowledge.json: %s",
+                               miner_id, ke)
+
+            # Post a unified side-by-side message to Slack alerts channel.
+            # Operator can see both models' verdicts and learn the differences.
+            try:
+                if hasattr(self, "slack") and self.slack:
+                    NL = chr(10)
+                    msg_parts = [
+                        f"🔍 *Pre/Post Log Comparison — `{ip}` ({model})*",
+                        f"Action: {action_label} | id: {miner_id}",
+                        f"Pre: {len(pre_log):,} bytes  |  Post: {len(post_log):,} bytes",
+                        "",
+                    ]
+                    if qwen_analysis:
+                        q = qwen_analysis[:1500]
+                        msg_parts.append(f"*🧠 Local Qwen 2.5 32B:*{NL}```{NL}{q}{NL}```")
+                    else:
+                        msg_parts.append("*🧠 Local Qwen 2.5 32B:* _(no analysis returned)_")
+                    msg_parts.append("")
+                    if claude_analysis:
+                        c = claude_analysis[:1500]
+                        msg_parts.append(f"*🤖 Claude Sonnet 4.6:*{NL}```{NL}{c}{NL}```")
+                    else:
+                        msg_parts.append("*🤖 Claude Sonnet 4.6:* _(no analysis returned)_")
+                    full_msg = NL.join(msg_parts)
+                    self.slack.post_to_alerts_channel(full_msg)
+                    logger.info("[%s] Dual-model comparison posted to #mining-guardian-alerts", miner_id)
+            except Exception as se:
+                logger.warning("[%s] Failed to post dual-model comparison to Slack: %s",
+                               miner_id, se)
+
+        except Exception as e:
+            logger.warning("[%s] Post-action dual-model comparison failed (non-fatal): %s",
+                           miner_id, e)
 
     def execute_pdu_cycle(self, issue: Dict[str, Any]) -> None:
         """
@@ -4525,6 +4725,10 @@ class MiningGuardian:
                                                 logger.info("[%s] Miner is fully mining with SETTLED hashrate after %.1f min — capturing post-pdu-cycle logs",
                                                             miner_id, elapsed_min)
                                                 self._collect_logs_nonblocking(miner_id, model, "post-pdu-cycle")
+                                                # Wire LLM pre/post comparison
+                                                self._run_post_action_log_comparison(
+                                                    miner_id, ip, model, "pdu-cycle"
+                                                )
                                                 return
                                         else:
                                             hashrate_history.clear()
