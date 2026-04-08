@@ -4,14 +4,83 @@
 
 ---
 
+## 🎉 LATE-EVENING WIN — OpenClaw Conversational Layer LIVE (18:42 CDT)
+
+**This was THE main goal of the day, and it is now achieved.** OpenClaw is successfully receiving DMs from Bobby on Slack, routing them to Qwen 2.5 32B running on the RTX 4090 over Tailscale, and posting Qwen's replies back to Slack — end-to-end working.
+
+**Verification:** OpenClaw container logs at 23:42:48 UTC: `[slack] delivered reply to user:U07AGTT8CLD`. Slack API `conversations.open` test returns `ok: true, already_open: true, channel: D0APH4RFCDT`.
+
+### What this means in plain English
+
+Mining Guardian now has a Slack-native conversational interface backed by a local LLM running on Bobby's own GPU on Bobby's own network. No cloud API costs. No public ingress. No Cloudflare tunnel. No third-party data leaving the infrastructure. Bobby can DM `@Mining Guardian` from any Slack client and get a real Qwen 2.5 32B response in 5-15 seconds.
+
+This is the architecture we've been talking about for weeks: **bot user `U0APQ4VDKGC` shared by two backends** — the Python daemon (which posts scans, alerts, AI reports, log comparisons) AND OpenClaw (which handles conversational `@mention`s and DMs). One identity in Slack, two brains underneath. As of tonight, both brains are alive and serving.
+
+### The 4 layers that had to be cleared (in order of discovery)
+
+| # | Block | Fix |
+|---|---|---|
+| 1 | Slack App Home → "Allow users to send messages from messages tab" was OFF | Bobby flipped the toggle ON in `https://api.slack.com/apps` → Mining Guardian → App Home |
+| 2 | Slack Event Subscriptions missing `message.im`, `message.channels`, `message.groups`, `app_mention` | Bobby added all four bot events under Event Subscriptions, reinstalled the app |
+| 3 | OpenClaw `dmPolicy` was implicit `pairing-required` — every message generated a fresh pairing code instead of accepting Bobby as an allowlisted user | Edited `/data/.openclaw/openclaw.json` inside the container: set `channels.slack.dmPolicy = "allowlist"` and `channels.slack.allowFrom = ["U07AGTT8CLD"]`. Restarted container. Verified with log line `[slack] users resolved: U07AGTT8CLD→U07AGTT8CLD`. |
+| 4 | Bot OAuth token missing `im:write` scope — OpenClaw could RECEIVE messages but Slack rejected the reply with `missing_scope` error | Bobby added `im:write`, `mpim:write`, `groups:write` to Bot Token Scopes in OAuth & Permissions, manually reinstalled to Bixbitusa workspace. Slack `conversations.open` test then returned `ok: true`. |
+
+Each layer was invisible until the previous one was cleared. That's the nature of layered systems. The total debug time was ~3 hours but the fix is permanent — OpenClaw will keep working across container restarts and recreations because the config changes are persisted in the Docker volume.
+
+### Persisted state (will survive container restarts)
+
+OpenClaw config at `/data/.openclaw/openclaw.json` (inside container, persisted via Docker volume):
+
+```
+channels.slack.mode            = "socket"
+channels.slack.enabled         = true
+channels.slack.dmPolicy        = "allowlist"
+channels.slack.allowFrom       = ["U07AGTT8CLD"]
+channels.slack.groupPolicy     = "open"
+channels.slack.streaming       = "partial"
+channels.slack.nativeStreaming = true
+```
+
+Slack app current Bot Token Scopes (verified live on bot token):
+
+`app_mentions:read`, `channels:history`, `channels:read`, `chat:write`, `chat:write.public`, `groups:history`, `groups:write`, `im:history`, `im:write`, `incoming-webhook`, `mpim:write`, `reactions:read`, `reactions:write`, `users:read`
+
+### What OpenClaw can do RIGHT NOW (no further work needed)
+
+- Receive DMs from Bobby (`U07AGTT8CLD`) via Slack Socket Mode
+- Receive `@mention`s in any channel where the bot is a member
+- Route messages to the `mining-guardian` agent
+- Generate responses using Qwen 2.5 32B (`http://100.110.87.1:11434/v1`) — primary model
+- Generate responses using ANY of 22 Nexos models on demand (GPT-5, Claude Opus 4.6, Claude Sonnet 4.6, Gemini 2.5 Pro, Grok 4, etc.)
+- Post replies back to Slack via the bot user `U0APQ4VDKGC` ("Mining Guardian")
+- Use 7 built-in skills: `slack`, `weather`, `himalaya` (email), `healthcheck`, `clawhub`, `node-connect`, `skill-creator`
+
+### What is still NOT wired up (tomorrow's work, NOT a blocker for tonight's win)
+
+- `openclaw_webhook_url` is null in `/root/Mining-Gaurdian/config.json` — Mining Guardian's `OpenClawNotifier` skips silently. To enable scan-data flow to OpenClaw: set this to `http://127.0.0.1:18789/hooks` and restart the `mining-guardian` systemd service.
+- OpenClaw has zero access to `guardian.db` — needs a small skill written to query it via SQL. Without this, Qwen can answer GENERAL questions but can't say "miner .35 restarted 3 times today."
+- Duplicate response issue: Python `cmd_ask_llm` and OpenClaw both respond to `@mention` in `#mining-guardian` — needs cleanup so only one brain answers per channel.
+- Block Kit interactive buttons not built (deferred to `docs/CLOUDFLARE_MIGRATION.md`).
+- Real-time denial reason interpretation not wired up.
+
+### Tomorrow morning's OpenClaw priorities (in addition to WSL2/Docker debug)
+
+1. Set `openclaw_webhook_url` in `config.json` (1-line change, ~30 sec)
+2. Write a minimal `guardian-db` skill so OpenClaw can query `guardian.db` read-only (~30 min)
+3. Resolve the duplicate-response issue — recommendation: silence Python's `cmd_ask_llm` in `#mining-guardian` and let OpenClaw own all conversational traffic
+4. Ask OpenClaw a real fleet question in Slack and confirm it pulls live data from `guardian.db`
+
+---
+
 ## Today's win column (committed and live)
 
 | Item | Commit | What it does |
 |---|---|---|
+| **OpenClaw conversational layer LIVE** | (config persisted, no commit needed) | DMs work end-to-end. `@Mining Guardian` from any Slack client → Qwen 2.5 32B on RTX 4090 → reply in Slack. The main goal of the day. |
 | OpenClaw / `cmd_ask_llm` "content" KeyError fix | `8ca6b23` | Defensive Claude API handling — retries, fallback to Ollama, useful error messages instead of opaque KeyErrors. Verified end-to-end on production. |
 | 6-channel Slack routing split | `3a1f19d` | `#mg-scans`, `#mg-ai-reports`, `#mg-approvals`, `#mining-guardian-alerts`, `#mg-logs`, `#mining-guardian` — each message type lives in its own stream. Verified on scan #1350. |
 | `os` import bug in `outcome_checker.py` | `ec173f0` | Pre-existing bug that was blocking knowledge.json updates from the outcome feedback loop. One-line fix, deployed, awaiting verification on next scan. |
-| Intelligence catalog architecture + draft files | (this commit) | New `intelligence/` directory with PostgreSQL design, Docker Compose, tuning config, README. NOT yet deployed — waiting on ROBS-PC SSD enclosure. |
+| Intelligence catalog architecture + draft files | `9e3423e` | New `intelligence/` directory with PostgreSQL design, Docker Compose, tuning config, README. NOT yet deployed — waiting on ROBS-PC SSD enclosure. |
 
 **Daily knowledge backup ran clean at 4am today** (commit `13b87ab`): 58 miners, 50 insights, 7 patterns. Cron job verified scheduled.
 
@@ -132,11 +201,7 @@ Hyper-V needs to be fully enabled. But this would conflict with anything else ru
 
 **6. Upload Slack channel icons** — workspace UI upload of `branding/mining_guardian_mg_icon.png` to all 6 mg-* channels. Manual click-through. ~5 minutes.
 
-### Low value — only if Bobby is bored
-
-**7. Watch the Mining Guardian feed** in `#mg-scans` and `#mg-ai-reports` to validate the routing change is staying healthy. Should see one scan post + one AI analysis per hour. If anything misroutes, Bobby just notes it and tells Claude tomorrow.
-
-**8. Read the [`intelligence/README.md`](../intelligence/README.md)** that Claude drafted today, look for anything Bobby disagrees with or wants changed. It's the architecture spec for the catalog.
+**7. NEW — try the OpenClaw DM from your phone** — DM `@Mining Guardian` in Slack and have a conversation. It's alive now. Test what it can and can't do, and notice that it doesn't yet know anything about your fleet (because we haven't wired up the database tool). Tomorrow we fix that.
 
 ### Things Bobby should NOT do tonight
 
@@ -144,6 +209,7 @@ Hyper-V needs to be fully enabled. But this would conflict with anything else ru
 - ❌ Touch `guardian.db` or any production code on the VPS — production is happy, leave it alone
 - ❌ Start writing parsers or ingestion scripts — schema isn't locked yet, would be wasted work
 - ❌ Pay for any cloud services — Bobby and Claude haven't budgeted them yet
+- ❌ Touch the OpenClaw config — it's working, leave it alone
 
 ---
 
@@ -151,6 +217,8 @@ Hyper-V needs to be fully enabled. But this would conflict with anything else ru
 
 | Item | Status | Priority |
 |---|---|---|
+| Wire OpenClaw to `guardian.db` via a query skill | NEW — main next step for OpenClaw | HIGH — ~30 min build, unlocks fleet-aware conversation |
+| Set `openclaw_webhook_url` in `config.json` | NEW — 1-line change | HIGH — enables scan-data flow to OpenClaw |
 | Build `compare-logs <miner_id>` Slack slash command | Designed, not built | Low — demo-quality utility, ~15 min |
 | Daily Log Capture & 14-Day Baseline System | Vision doc complete (`docs/DAILY_LOG_CAPTURE_VISION.md`) | HIGH — 3-5 day build, the firmware-regression catcher |
 | Open Log Uploader build (Phase 1 of intelligence catalog) | Vision doc complete (`docs/OPEN_LOG_UPLOADER_VISION.md`) + new architecture (`intelligence/README.md`) | HIGH — gated on Q2-Q10 + ROBS-PC install |
@@ -163,9 +231,9 @@ Hyper-V needs to be fully enabled. But this would conflict with anything else ru
 
 ## Three things Claude needs to remember tomorrow morning
 
-1. **The WSL2 cosmetic bug.** `wsl --status` is broken on ROBS-PC and reports false errors. Use `wsl --version` instead. WSL2 actually works.
-2. **The hypervisor conflict** is the real Docker issue. Most likely Memory Integrity in Windows Security. Diagnostic commands are in this doc. Do NOT chase BIOS settings — virtualization is hardware-enabled, this is a Windows config layer problem.
-3. **Bobby's time budget for the WSL2/Docker fix tomorrow is 30 minutes.** If we can't fix the Docker route in 30 min, fall back to native Postgres on Windows via EnterpriseDB installer. Don't keep banging on Docker beyond 30 min — the catalog work is more important than the install method.
+1. **OpenClaw IS LIVE.** Do not re-debug the Slack/DM/scope/dmPolicy stack tomorrow. It works. The 4-layer fix is captured at the top of this doc. Test by DMing `@Mining Guardian` and confirming a Qwen response — if that works, move on to wiring it up to `guardian.db`.
+2. **The WSL2 cosmetic bug.** `wsl --status` is broken on ROBS-PC and reports false errors. Use `wsl --version` instead. WSL2 actually works.
+3. **The hypervisor conflict** is the real Docker issue. Most likely Memory Integrity in Windows Security. Diagnostic commands are in this doc. **Bobby's time budget for the WSL2/Docker fix tomorrow is 30 minutes.** If we can't fix Docker in 30 min, fall back to native Postgres on Windows via EnterpriseDB installer. Don't keep banging on Docker beyond 30 min — the catalog work is more important than the install method.
 
 ---
 
@@ -176,6 +244,10 @@ Hyper-V needs to be fully enabled. But this would conflict with anything else ru
 | Mining Guardian repo (Mac) | `/Users/BigBobby/Documents/GitHub/Mining Gaurdian/` |
 | Mining Guardian repo (VPS) | `/root/Mining-Gaurdian/` |
 | Intelligence catalog drafts | `/Users/BigBobby/Documents/GitHub/Mining Gaurdian/intelligence/` |
+| OpenClaw config (inside container) | `/data/.openclaw/openclaw.json` |
+| OpenClaw container name | `openclaw-5b5o-openclaw-1` |
+| OpenClaw container image | `ghcr.io/hostinger/hvps-openclaw:latest` |
+| OpenClaw mining-guardian agent dir | `/data/.openclaw/agents/mining-guardian/` |
 | This resume note | `docs/RESUME_HERE_2026_04_08_EVENING.md` |
 | Vision: Open Log Uploader | `docs/OPEN_LOG_UPLOADER_VISION.md` |
 | Vision: Daily Log Capture | `docs/DAILY_LOG_CAPTURE_VISION.md` |
@@ -186,6 +258,9 @@ Hyper-V needs to be fully enabled. But this would conflict with anything else ru
 | Tailscale VPS IP | `100.106.123.83` |
 | Tailscale ROBS-PC IP | `100.110.87.1` |
 | ROBS-PC LAN IP | `192.168.188.47` |
+| Bobby's Slack user ID | `U07AGTT8CLD` |
+| Mining Guardian bot user ID | `U0APQ4VDKGC` |
+| Slack workspace | Bixbitusa (`T07AYF6A7DX`) |
 
 ---
 
@@ -199,10 +274,12 @@ Claude will read the doc, run the diagnostic commands, and pick up exactly where
 
 ---
 
-## Closing note
+## Closing note — the real story of April 8
 
-**Today's bottom line:** 4 production fixes shipped, 1 new architecture designed, 1 install attempt that hit a Windows configuration wall. The wall is fixable in 5-30 minutes tomorrow. None of today's wins are at risk.
+**What actually happened:** 5 production wins shipped, 1 major architecture designed, the OpenClaw conversational layer that was the main goal of the day went LIVE at 18:42 CDT after clearing 4 sequential layers of Slack/auth/scope debugging, the daily backup ran clean, all 9 production services stayed healthy throughout the day, and tomorrow morning has a clean handoff with zero context loss.
 
-The intelligence catalog is the right call long-term but it's a multi-week build. Tonight's homework (Q2-Q10 answers) is the highest-value thing Bobby can do because it unblocks the entire schema design phase tomorrow.
+**What it felt like by the end of the day:** Frustrating, because the OpenClaw fix took ~3 hours and 4 layers instead of the 30 minutes both Bobby and Claude expected, and because the WSL2/Docker rabbit hole on ROBS-PC ate ~2 hours that should have been budget-capped at 30 minutes. Bobby called the budget violation out at the right moment and was right to. Claude owns the Windows debug overrun.
 
-Sleep well. Drive safe.
+**The gap between those two stories is real, and it matters.** The "felt like failure" feeling is a normal response to a long day where the visible progress curve was non-linear. The actual progress was substantial. Both things are true at the same time. What matters tomorrow is the state we're starting from, and that state is: OpenClaw alive, Slack channels split, 4 production fixes deployed, intelligence catalog architected, handoff doc ready, backups healthy.
+
+Sleep well. Drive safe. The Mining Guardian fleet is fine and the bot is talking.
