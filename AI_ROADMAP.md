@@ -208,3 +208,80 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 | Slack outbound API (`slack.com`) | `chat_postMessage`, etc. | Outbound HTTPS |
 | NTP | System clock | Standard |
 | Tailscale | Support access only | Optional, operator decision |
+
+---
+
+## Mining Intelligence Catalog (NEW — April 8 2026)
+
+**Status:** ARCHITECTURE DESIGNED — install pending hardware
+
+**Purpose:** Standalone backend research and intelligence database for ingesting 50–100 GB of miner spec sheets, community knowledge, repair shop dumps, and historical logs. NOT a replacement for guardian.db — runs in parallel as a parallel research environment.
+
+### Why standalone
+
+| | guardian.db (production) | miner_intelligence (research) |
+|---|---|---|
+| Engine | SQLite | PostgreSQL 16 |
+| Host | VPS (100.106.123.83) | ROBS-PC (192.168.188.47) → NAS in July |
+| Size | ~1 GB max | 50-100 GB target, 1 TB ceiling |
+| Workload | Real-time fleet ops | Batch ingestion + LLM analysis |
+| Volatility | Production-stable | Schema may evolve, rebuilds OK |
+| Audience | Mining Guardian + operator | Bobby + LLMs only |
+
+The two databases are deliberately separated so the research side can iterate freely without risking production stability. Guardian eventually queries the catalog read-only over Tailscale for spec lookups and pattern matches, but never depends on the catalog being available.
+
+### Three data streams (planned)
+
+1. **Vendor spec data** — Every miner ever made. Scraped from manufacturer sites, datasheets, archived pages, operator-uploaded PDFs. One row per miner model with TH/s, watts, voltage, board count, chip type, PSU options, control board variants.
+2. **Community knowledge** — Reddit posts, forum threads, blog reviews, teardown writeups, war stories. Failure modes, reputation, hardware quirks. Full-text indexed.
+3. **Real-world logs and operational data** — Bobby's existing fleet, his friend's repair shop dump (1M+ data points expected), future data dumps Bobby is procuring.
+
+### Hardware
+
+**Phase 1 (now → July 2026): ROBS-PC**
+- AMD Ryzen 7 7800X3D (8c/16t, 96 MB L3 V-Cache)
+- 32 GB RAM (upgrading to 64-128 GB in ~1 month)
+- 2 TB SATA SSD via Thunderbolt 4 enclosure (enclosure on order)
+- Static IP `192.168.188.47` (DHCP reservation)
+- WSL2 + Docker Desktop (install in progress — virtualization conflict to debug)
+- Already runs Qwen 2.5 32B Q4 on RTX 4090
+
+**Phase 2 (July 2026 onward): UGREEN NASync iDX6011 Pro**
+- Intel Core Ultra 7 255H, 16c/16t, 96 TOPS AI
+- 64 GB LPDDR5x RAM
+- 180 TB raw HDD + 18 TB NVMe cache configuration
+- Dual 10 GbE, native Docker support
+- Migration: pg_dump → file copy → pg_restore. ~20 min for 60 GB.
+
+### Files
+
+| Location | Purpose |
+|---|---|
+| `intelligence/README.md` | Project documentation, install procedure, security model |
+| `intelligence/docker-compose.yml` | Postgres 16 container definition |
+| `intelligence/postgres-tuning.conf` | Performance tuning for Ryzen 7800X3D + 32 GB RAM |
+| `intelligence/.env.example` | Secrets file template |
+| `intelligence/schema/` | (TBD) SQL files defining tables, indexes |
+| `intelligence/scripts/` | (TBD) Ingestion, web research, backup scripts |
+
+### Build phases
+
+1. **Phase 0 — install on ROBS-PC** (gated on Thunderbolt 4 SSD enclosure delivery + Docker Desktop fix). Postgres in Docker, listening on `192.168.188.47:5432`, reachable from VPS via existing Tailscale subnet route.
+2. **Phase 1 — schema** (gated on Q2-Q10 design questions). Tables: `model_specs`, `community_knowledge`, `log_archive`, `log_metrics`, `diagnostic_test_results`, `dual_model_verdicts`, `known_patterns`, `ingestion_log`, `web_research_cache`, `miner_hardware_components`.
+3. **Phase 2 — vendor spec scraper** (build pipeline that hits manufacturer sites, archive.org, vendor PDFs, populates `model_specs` for every miner family Bobby has ever heard of). Runs once per model, cached forever, refreshed monthly.
+4. **Phase 3 — community knowledge ingestion** (Reddit/forum/blog scraper, full-text indexed, tagged by miner family).
+5. **Phase 4 — log ingestion pipeline** (folder watcher, content-based detection, parser plugin pattern, dual-model LLM analysis, idempotent re-runs).
+6. **Phase 5 — search interface** (CLI + raw SQL).
+7. **Phase 6 — Guardian integration** (read-only API exposed to Mining Guardian for spec lookups and pattern matches).
+8. **Phase 7 — NAS migration** (July 2026, one pg_dump + restore).
+
+### Backup strategy (3-2-1 rule)
+
+1. **Primary** — live database on ROBS-PC SSD → NAS RAID 5/6 in July
+2. **Secondary local** — daily pg_dump to backup folder, 14 days retained
+3. **Off-site** — encrypted nightly upload to Backblaze B2, 30 days retained
+
+### Open questions to resolve before schema is finalized
+
+See `docs/RESUME_HERE_2026_04_08_EVENING.md` for the full Q2-Q10 list. Bobby is answering them tonight from home.
+
