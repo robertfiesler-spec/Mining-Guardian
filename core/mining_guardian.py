@@ -2715,20 +2715,47 @@ class GuardianDB:
 
 class SlackNotifier:
 
-    # Main channel — approvals, dead-board escalations, OpenClaw conversations,
-    # interactive operator messages
-    CHANNEL_ID = "C0AQ8SE1448"  # #mining-guardian
-    # Alerts feed channel — periodic scan summaries, AMS-down notifications,
-    # automated status updates that don't need operator interaction
-    ALERTS_CHANNEL_ID = "C0ARJP300J0"  # #mining-guardian-alerts
+    # ── Channel routing (Apr 8 2026) ──────────────────────────────────────
+    # The fleet operator (Bobby) split #mining-guardian into 6 dedicated
+    # channels so each message type lives in its own stream. This makes
+    # the AI report channel a clean historical journal of LLM thinking,
+    # the approvals channel an at-a-glance pending queue, etc.
+    #
+    # Each constant can be overridden via environment variable for ops
+    # flexibility. Defaults are the production channel IDs in the
+    # bixbitusa workspace.
+
+    # Main channel — operator chat, natural language queries, manual ops
+    CHANNEL_ID         = "C0AQ8SE1448"  # #mining-guardian
+    # Hourly fleet scan posts — the routine operational stream
+    SCANS_CHANNEL_ID   = "C0ARLJUJ3BQ"  # #mg-scans
+    # Mining Guardian AI Analysis output — LLM interpretations
+    AI_CHANNEL_ID      = "C0ARSB1U604"  # #mg-ai-reports
+    # Pending approval requests + approve/deny threads
+    APPROVALS_CHANNEL_ID = "C0AR79YRZ9V"  # #mg-approvals
+    # Critical alerts — firmware regressions, ticket creation, dead boards
+    ALERTS_CHANNEL_ID  = "C0ARJP300J0"  # #mining-guardian-alerts (existing)
+    # Pre/post log comparisons + dual-model verdicts + manual upload analyses
+    LOGS_CHANNEL_ID    = "C0ASH2CPHBJ"  # #mg-logs
 
     def __init__(self, webhook_url: Optional[str], channel_id: Optional[str] = None,
                  bot_token: Optional[str] = None,
                  alerts_channel_id: Optional[str] = None):
-        self.webhook_url        = webhook_url
-        self.channel_id         = channel_id or self.CHANNEL_ID
-        self.alerts_channel_id  = alerts_channel_id or self.ALERTS_CHANNEL_ID
-        self.bot_token          = bot_token
+        self.webhook_url   = webhook_url
+        self.bot_token     = bot_token
+
+        # Each channel can be overridden via env var for ops flexibility.
+        # Falls back to hardcoded constants if env var is not set.
+        self.channel_id           = (channel_id
+                                     or os.getenv("MG_CHANNEL_MAIN")
+                                     or self.CHANNEL_ID)
+        self.scans_channel_id     = os.getenv("MG_CHANNEL_SCANS")     or self.SCANS_CHANNEL_ID
+        self.ai_channel_id        = os.getenv("MG_CHANNEL_AI")        or self.AI_CHANNEL_ID
+        self.approvals_channel_id = os.getenv("MG_CHANNEL_APPROVALS") or self.APPROVALS_CHANNEL_ID
+        self.alerts_channel_id    = (alerts_channel_id
+                                     or os.getenv("MG_CHANNEL_ALERTS")
+                                     or self.ALERTS_CHANNEL_ID)
+        self.logs_channel_id      = os.getenv("MG_CHANNEL_LOGS")      or self.LOGS_CHANNEL_ID
 
     def post_to_channel(self, message: str, channel_id: Optional[str] = None) -> str:
         """Post a plain message to a channel. Defaults to the main channel.
@@ -2753,14 +2780,31 @@ class SlackNotifier:
         return ""
 
     def post_to_alerts_channel(self, message: str) -> str:
-        """Post to the #mining-guardian-alerts feed channel.
+        """Post to the #mining-guardian-alerts channel.
 
-        Use this for periodic scan summaries, AMS-down notifications, and other
-        automated status updates that don't need operator interaction. Approval
-        requests, dead-board escalations, and OpenClaw conversations stay in
-        the main channel via the regular post_to_channel call.
+        Critical alerts only — firmware regressions, ticket creation, dead
+        board escalations, fleet emergencies. Anything operators need to see
+        ASAP and that warrants a notification ping.
         """
         return self.post_to_channel(message, channel_id=self.alerts_channel_id)
+
+    # ── New category-specific helpers (Apr 8 2026 channel split) ──────────
+
+    def post_to_scans(self, message: str) -> str:
+        """Post to #mg-scans — hourly fleet scan summaries (the routine feed)."""
+        return self.post_to_channel(message, channel_id=self.scans_channel_id)
+
+    def post_to_ai_reports(self, message: str) -> str:
+        """Post to #mg-ai-reports — LLM analysis output, post-scan AI interpretations."""
+        return self.post_to_channel(message, channel_id=self.ai_channel_id)
+
+    def post_to_approvals(self, message: str) -> str:
+        """Post to #mg-approvals — pending approval requests requiring operator decision."""
+        return self.post_to_channel(message, channel_id=self.approvals_channel_id)
+
+    def post_to_logs(self, message: str) -> str:
+        """Post to #mg-logs — pre/post log comparisons, dual-model verdicts, manual upload analyses."""
+        return self.post_to_channel(message, channel_id=self.logs_channel_id)
 
     def post_blocks_to_channel(self, blocks: list, fallback_text: str = "Mining Guardian update",
                                 channel_id: Optional[str] = None) -> str:
@@ -3144,7 +3188,7 @@ class SlackNotifier:
                 from slack_sdk import WebClient
                 client = WebClient(token=self.bot_token)
                 resp   = client.chat_postMessage(
-                    channel=self.channel_id,
+                    channel=self.scans_channel_id,
                     text="\n".join(lines)
                 )
                 thread_ts = resp["ts"]
@@ -4022,7 +4066,7 @@ class MiningGuardian:
                 notes=f"All boards recovered. Pre/post logs saved. Recovered: {recovered_idx}"
             )
             try:
-                self.slack.post_to_channel(msg)
+                self.slack.post_to_alerts_channel(msg)
             except Exception as e:
                 logger.warning("[%s] Slack notification failed: %s", miner_id, e)
 
@@ -4042,7 +4086,7 @@ class MiningGuardian:
                 notes=f"Partial recovery. Recovered: {recovered_idx}. Still dead: {still_dead_idx}"
             )
             try:
-                self.slack.post_to_channel(msg)
+                self.slack.post_to_alerts_channel(msg)
             except Exception as e:
                 logger.warning("[%s] Slack notification failed: %s", miner_id, e)
             self._escalate_board_issue(
@@ -4207,7 +4251,7 @@ class MiningGuardian:
 
                 # Slack notification
                 try:
-                    self.slack.post_to_channel(
+                    self.slack.post_to_alerts_channel(
                         f"🎫 *Auto-ticket created: #{ticket_id}*\n"
                         f"  `{ip}` ({model}) — {failures} FAILURE outcomes, "
                         f"no recovery after repeated restarts.\n"
@@ -4280,7 +4324,7 @@ class MiningGuardian:
             f"Physical inspection and board replacement needed."
         )
         try:
-            self.slack.post_to_channel(slack_msg)
+            self.slack.post_to_alerts_channel(slack_msg)
         except Exception as e:
             logger.warning("[%s] Slack escalation alert failed: %s", miner_id, e)
 
@@ -4609,8 +4653,8 @@ class MiningGuardian:
                     else:
                         msg_parts.append("*🤖 Claude Sonnet 4.6:* _(no analysis returned)_")
                     full_msg = NL.join(msg_parts)
-                    self.slack.post_to_alerts_channel(full_msg)
-                    logger.info("[%s] Dual-model comparison posted to #mining-guardian-alerts", miner_id)
+                    self.slack.post_to_logs(full_msg)
+                    logger.info("[%s] Dual-model comparison posted to #mg-logs", miner_id)
             except Exception as se:
                 logger.warning("[%s] Failed to post dual-model comparison to Slack: %s",
                                miner_id, se)
@@ -4794,7 +4838,7 @@ class MiningGuardian:
 
                 # Slack alert
                 try:
-                    self.slack.post_to_channel(
+                    self.slack.post_to_alerts_channel(
                         f"🔴 *Offline after PDU cycle — physical inspection required*\n"
                         f"  `{ip}` ({model})\n"
                         f"  Ticket #{ticket_id} created.\n"
@@ -5268,7 +5312,7 @@ class MiningGuardian:
                                 try:
                                     # Post as approval request so you can APPROVE or DENY
                                     msg = format_prediction_alert(pred)
-                                    thread = self.slack.post_to_channel(
+                                    thread = self.slack.post_to_approvals(
                                         msg + "\n\n_Reply `APPROVE` to execute restart or `DENY` to skip._"
                                     )
                                     # Register as pending approval so listener picks it up
@@ -5329,7 +5373,7 @@ class MiningGuardian:
                                     f"Reason: {reasons_str}\n\n"
                                     f"_Reply `APPROVE` to execute or `DENY` to skip._"
                                 )
-                                thread = self.slack.post_to_channel(msg)
+                                thread = self.slack.post_to_approvals(msg)
                                 if thread and isinstance(thread, str) and thread:
                                     issue_entry = [{
                                         "id": act["miner_id"],

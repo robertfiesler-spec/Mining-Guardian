@@ -58,13 +58,13 @@ def run_post_scan_llm(scan_id: int, slack_client=None) -> Optional[str]:
         analysis = analyzer.analyze_scan(scan_id)
 
         if analysis and slack_client:
-            # Post to Slack as the AI's interpretation
+            # Post to Slack as the AI's interpretation -> #mg-ai-reports
             try:
                 msg = f":brain: *Mining Guardian AI Analysis — Scan #{scan_id}*\n{analysis}"
                 # Truncate if too long for Slack
                 if len(msg) > 3000:
                     msg = msg[:2950] + "\n_...truncated_"
-                slack_client.post_to_channel(msg)
+                slack_client.post_to_ai_reports(msg)
             except Exception as e:
                 logger.debug("Failed to post LLM analysis to Slack: %s", e)
 
@@ -105,7 +105,7 @@ def run_log_comparison_llm(miner_id: str, pre_log: str, post_log: str,
                 )
                 if len(msg) > 3000:
                     msg = msg[:2950] + "\n_...truncated_"
-                slack_client.post_to_channel(msg)
+                slack_client.post_to_logs(msg)
             except Exception as e:
                 logger.debug("Failed to post log analysis to Slack: %s", e)
 
@@ -142,7 +142,7 @@ def run_denial_processing_llm(ip: str, action: str, reason: str,
                     f"Reason: _{reason}_\n\n"
                     f"*Suggested rule:* {rule}"
                 )
-                slack_client.post_to_channel(msg)
+                slack_client.post_to_ai_reports(msg)
             except Exception as e:
                 logger.debug("Failed to post denial learning to Slack: %s", e)
 
