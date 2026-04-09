@@ -15,6 +15,8 @@
 **FULL-DAY AUTONOMOUS** — Active 24/7
 Overnight automation runs 8pm–6am. LOW-risk actions execute without approval. Max auto-restarts: 2 per window. Miners with 3+ FAILURE outcomes are permanently blocked from overnight auto-restart until human review. All VPS services active.
 
+**Scan cadence:** 1 scan per hour (`scan_interval_seconds: 3600`, `slack_interval_seconds: 3600`). Matches Slack post throttle — one 🧠 AI analysis post to `#mg-ai-reports` per scan. Confirmed April 9 2026 after diagnostic sweep. Faster cadence (5-min) was the early dev value and is not used in production.
+
 ---
 
 ## 48-Hour Test Results (April 6–8 2026)
@@ -80,6 +82,7 @@ Bobby corrected the diagnosis in 5 seconds with one operator insight: "I just up
 - [ ] DB leaks (bare `_connect().execute()`) — 3 locations still need context managers
 - [ ] NameErrors in predictor loop (line 4619) and `_escalate_board_issue` (line 4040)
 - [ ] File handle leak in `overnight_automation.py`
+- [ ] **Log file rotation bug** (found April 9 2026 diagnostic) — `_setup_logging()` in `core/mining_guardian.py` lines 33-48 computes the log filename once at module import from `datetime.now()` and never rolls over at midnight. Result: today's log entries append to yesterday's filename until the process restarts. Fix: replace `FileHandler` with `TimedRotatingFileHandler(when='midnight', backupCount=14)`. Doesn't affect operation — `journalctl -u mining-guardian` has complete records — but file-based log inspection is misleading until fixed. 5-minute fix.
 
 ---
 
@@ -231,39 +234,40 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 8. **CORS audit** — lock all CORS rules to localhost + service-name DNS
 9. **Docker-compose stack definition** — Mining Guardian, OpenClaw, Prometheus, Grafana, Ollama as services
 10. **Shared volumes** — `guardian.db`, `knowledge.json`, `logs/` between containers
+11. **Log rotation fix** — 5-min fix in `core/mining_guardian.py` `_setup_logging()`, see Code Quality section above
 
 ### P2 — Customer installer work (starts May 3)
 
-11. **Update `installer/DEPLOYMENT.md`** on `installer-build` branch with findings from VPS operation
-12. **Build `installer/install.sh`** — OS detection, dependency install
-13. **Build `installer/wizard.py`** — interactive configuration
-14. **Build `installer/setup_services.py`** — launchd plists (macOS) + systemd units (Linux)
-15. **Build `installer/first_run.py`** — initial fleet discovery + baseline learning
-16. **Build `installer/verify.py`** — post-install health check
-17. **Operator guide** — `docs/OPERATOR_GUIDE.md`
-18. **Troubleshooting guide** — `docs/TROUBLESHOOTING.md`
-19. **API reference** — `docs/API_REFERENCE.md`
+12. **Update `installer/DEPLOYMENT.md`** on `installer-build` branch with findings from VPS operation
+13. **Build `installer/install.sh`** — OS detection, dependency install
+14. **Build `installer/wizard.py`** — interactive configuration
+15. **Build `installer/setup_services.py`** — launchd plists (macOS) + systemd units (Linux)
+16. **Build `installer/first_run.py`** — initial fleet discovery + baseline learning
+17. **Build `installer/verify.py`** — post-install health check
+18. **Operator guide** — `docs/OPERATOR_GUIDE.md`
+19. **Troubleshooting guide** — `docs/TROUBLESHOOTING.md`
+20. **API reference** — `docs/API_REFERENCE.md`
 
 ### P3 — Post-Mac mini launch
 
-20. **Open Log Uploader** (2-4 week build) — see `docs/OPEN_LOG_UPLOADER_VISION.md`. 4 phases, 10 open design questions to resolve first. Any-vendor any-format ingestion engine for repair shop bulk drops.
-21. **Mining Intelligence Catalog Phase 1** on ROBS-PC — see `intelligence/README.md`. Blocked on Thunderbolt 4 SSD enclosure delivery AND WSL2/Docker virtualization conflict (Memory Integrity likely). **30-minute hard cap** on WSL2 debug, fall back to native Postgres via EnterpriseDB installer.
-22. **Monthly federation refinement pipeline** — add dual-pass refinement (Claude + local LLM) to `combine_knowledge.py` for higher-quality `master_knowledge.json`
-23. **Auradine AH3880 direct API integration** — port 8443, standby-before-PDU-cut rule, see `docs/AURADINE_API.md`
-24. **Auradine firmware rollback** — waiting on vendor. Roll back `.55` first, observe 24h, then `.28`.
+21. **Open Log Uploader** (2-4 week build) — see `docs/OPEN_LOG_UPLOADER_VISION.md`. 4 phases, 10 open design questions to resolve first. Any-vendor any-format ingestion engine for repair shop bulk drops.
+22. **Mining Intelligence Catalog Phase 1** on ROBS-PC — see `intelligence/README.md`. Blocked on Thunderbolt 4 SSD enclosure delivery AND WSL2/Docker virtualization conflict (Memory Integrity likely). **30-minute hard cap** on WSL2 debug, fall back to native Postgres via EnterpriseDB installer.
+23. **Monthly federation refinement pipeline** — add dual-pass refinement (Claude + local LLM) to `combine_knowledge.py` for higher-quality `master_knowledge.json`
+24. **Auradine AH3880 direct API integration** — port 8443, standby-before-PDU-cut rule, see `docs/AURADINE_API.md`
+25. **Auradine firmware rollback** — waiting on vendor. Roll back `.55` first, observe 24h, then `.28`.
 
 ### P4 — Gated on external inputs
 
-25. **Repair shop data ingestion (Feature 7)** — 1M+ historical data points from James Scaggs / ACS. Blocked on dataset delivery.
-26. **Container monitoring integration** — BiXBiT container system mapped in `docs/CONTAINER_MONITORING.md`. Blocked on live access grant.
-27. **NAS migration (Mining Intelligence Catalog Phase 2)** — July 2026, UGREEN NASync iDX6011 Pro. `pg_dump` → file copy → `pg_restore`. ~20 min for 60 GB.
+26. **Repair shop data ingestion (Feature 7)** — 1M+ historical data points from James Scaggs / ACS. Blocked on dataset delivery.
+27. **Container monitoring integration** — BiXBiT container system mapped in `docs/CONTAINER_MONITORING.md`. Blocked on live access grant.
+28. **NAS migration (Mining Intelligence Catalog Phase 2)** — July 2026, UGREEN NASync iDX6011 Pro. `pg_dump` → file copy → `pg_restore`. ~20 min for 60 GB.
 
 ### P5 — Long-term
 
-28. **Multi-site federation at scale** — sync master knowledge across multiple customer deployments monthly via USB
-29. **Grafana alerting** — replaces Slack-based alerting over time for passive notifications
-30. **Knowledge Score trending** — day-over-day improvement visible in AI dashboard (accumulates over weeks)
-31. **PDU password rotation** — change from defaults on PDUs `.15` and `.16`
+29. **Multi-site federation at scale** — sync master knowledge across multiple customer deployments monthly via USB
+30. **Grafana alerting** — replaces Slack-based alerting over time for passive notifications
+31. **Knowledge Score trending** — day-over-day improvement visible in AI dashboard (accumulates over weeks)
+32. **PDU password rotation** — change from defaults on PDUs `.15` and `.16`
 
 ---
 
@@ -298,6 +302,8 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 - [x] `/query/*` read-only endpoints in `dashboard_api.py` for OpenClaw guardian-db skill consumption
 - [x] OpenClaw Docker container running + Socket Mode connected
 - [x] Vision consolidation (April 9) — `docs/VISION.md` created, `CLAUDE.md` rewritten with Session Kickoff Protocol + Vision Anchors + Failure Modes + Document Map
+- [x] Morning kickoff prompt pinned in `#mg-ai-reports` and saved to `docs/MORNING_KICKOFF_PROMPT.md`
+- [x] Diagnostic sweep (April 9) — confirmed scan cadence is 1/hour by config, confirmed AMS false-offline issue is an AMS upstream bug (not Guardian), identified log rotation bug in `_setup_logging()`
 
 ---
 
@@ -311,7 +317,8 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 - OpenClaw Socket Mode owns the Slack connection — never add Bolt/slack-bolt elsewhere
 - All denial reasons feed into Sunday training via `train_cohort.py` → fleet synthesis pass
 - `train_cohort.py` is the scale-first weekly trainer — it's the reference implementation for the entire production architecture. Same code path runs on customer Mac minis with Qwen 32B instead of Claude.
+- **AMS false-offline is an AMS upstream bug, not a Guardian bug.** AMS periodically reports miners as offline when they're actually online. Guardian handles this correctly with the direct-TCP false-offline detection path in `_analyze_miner` (flags as `AMS_SYNC` for up to 10 consecutive scans, then suppresses). The 9 "missing" miners seen during the April 9 diagnostic (49 visible vs 58 historical) is an expression of this AMS bug — not a Guardian problem. Fix is being worked on by the AMS team separately.
 
 ---
 
-*Last updated: April 9, 2026 — post-48hr-test, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, and `README.md` for current architecture reference.*
+*Last updated: April 9, 2026 — post-48hr-test, diagnostic sweep, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, and `README.md` for current architecture reference.*
