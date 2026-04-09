@@ -5109,22 +5109,50 @@ class MiningGuardian:
         logger.info("Daily log collection: spawning background thread for %d eligible miners", len(eligible))
 
         def _daily_baseline_worker(miner_list):
-            """Background worker — pull one fresh log per miner, sequential.
+            """Background worker — pull one fresh log per miner, PARALLEL (15 workers).
 
-            Sequential (not parallel) because hammering AMS with N simultaneous
-            export requests is a good way to get rate-limited or to blow up
-            the WebSocket connection. One at a time, no cap, however long
-            each miner takes.
+            Concurrency rationale (per operator April 9 2026):
+              - BiXBiT owns AMS so rate limiting is not a concern
+              - The constraint is the REST connection pool and socket capacity
+              - 15 concurrent is a conservative starting point, tune from there
+              - Each worker still has its own 10-minute per-miner cap inside
+                collect_fresh_miner_logs, so one stuck miner cannot starve
+                any other miner — it just burns its own 10 minutes while
+                everyone else finishes normally
+
+            Thread safety:
+              - AMS REST calls use requests.Session (thread-safe for concurrent POSTs)
+              - Database writes use per-call sqlite3 connections with WAL mode
+                (thread-safe; see _connect at line 1396)
+              - Token is refreshed ONCE before spawning the pool (below) to
+                avoid a potential race inside _ensure_token if the token
+                expires mid-run. After that all threads read the cached
+                token without mutation.
             """
+            import concurrent.futures
             DAILY_INTERVAL_SECONDS = 24 * 3600
-            collected = 0
-            skipped_recent = 0
-            failed = 0
-            for entry in miner_list:
+            DAILY_PARALLEL_WORKERS = 15
+
+            # Force a fresh token BEFORE spawning parallel workers to avoid
+            # a race on _ensure_token if the current token is near expiry.
+            try:
+                self.ams._ensure_token()
+                logger.info("Daily log: token refreshed before parallel sweep")
+            except Exception as e:
+                logger.warning("Daily log: pre-sweep token refresh failed: %s — workers will retry", e)
+
+            # Counters — mutated by worker callbacks, guarded by a lock
+            # because Python threading with CPython GIL is NOT guaranteed
+            # to make += on integers atomic in all interpreter versions.
+            counter_lock = _threading.Lock()
+            counters = {"collected": 0, "skipped_recent": 0, "failed": 0}
+
+            def _collect_one(entry):
+                """Collect logs for one miner — runs inside a pool worker thread."""
                 miner_id = entry["id"]
                 model    = entry["model"]
                 if not miner_id:
-                    continue
+                    return
 
                 # 24h dedup check — if this miner got a log in the last
                 # 24 hours (from any source, including a post-restart pull),
@@ -5138,36 +5166,61 @@ class MiningGuardian:
                 if last is not None:
                     age_seconds = (datetime.now() - last).total_seconds()
                     if age_seconds < DAILY_INTERVAL_SECONDS:
-                        skipped_recent += 1
-                        logger.debug("Daily log: %s skipped — last collection was %ds ago", miner_id, int(age_seconds))
-                        continue
+                        with counter_lock:
+                            counters["skipped_recent"] += 1
+                        logger.debug("Daily log: %s skipped — last collection was %ds ago",
+                                     miner_id, int(age_seconds))
+                        return
 
-                # Trigger a fresh export and wait (no cap — logs are critical)
+                # Trigger a fresh export and wait
                 try:
                     logger.info("Daily log: pulling fresh export for miner %s (%s)", miner_id, model)
-                    # 10-minute per-miner cap on daily baseline path only.
-                    # Post-restart log pulls are still uncapped (they only pull one
-                    # miner at a time so a stuck miner cannot starve anything).
-                    # This cap prevents a single broken miner from hanging the
-                    # sequential daily sweep across all 45+ online miners.
+                    # 10-minute per-miner cap. Still applies in the parallel
+                    # path because even with parallelism, we do not want a
+                    # single truly-broken miner to hold any worker slot
+                    # open indefinitely.
                     log_files = self.ams.collect_fresh_miner_logs(
                         int(miner_id),
                         max_wait_seconds=600,  # 10 minutes
                     )
                     if log_files:
                         self.db.save_logs(miner_id, model, "daily_baseline", log_files)
-                        collected += 1
-                        logger.info("Daily log: miner %s collected, %d files saved", miner_id, len(log_files))
+                        with counter_lock:
+                            counters["collected"] += 1
+                        logger.info("Daily log: miner %s collected, %d files saved",
+                                    miner_id, len(log_files))
                     else:
-                        failed += 1
-                        logger.warning("Daily log: miner %s returned no files (fresh export failed)", miner_id)
+                        with counter_lock:
+                            counters["failed"] += 1
+                        logger.warning("Daily log: miner %s returned no files (fresh export failed)",
+                                       miner_id)
                 except Exception as e:
-                    failed += 1
+                    with counter_lock:
+                        counters["failed"] += 1
                     logger.warning("Daily log: miner %s fresh export raised: %s", miner_id, e)
 
+            # Spawn the pool and wait for all miners to complete
+            logger.info("Daily log: starting %d-way parallel sweep across %d miners",
+                        DAILY_PARALLEL_WORKERS, len(miner_list))
+            sweep_start = time.time()
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=DAILY_PARALLEL_WORKERS,
+                thread_name_prefix="daily-log-baseline",
+            ) as executor:
+                futures = [executor.submit(_collect_one, entry) for entry in miner_list]
+                for fut in concurrent.futures.as_completed(futures):
+                    # as_completed just blocks until each future finishes.
+                    # Exceptions are already logged inside _collect_one so
+                    # we do not re-raise here.
+                    try:
+                        fut.result()
+                    except Exception as fe:
+                        logger.warning("Daily log: worker future raised: %s", fe)
+
+            sweep_elapsed = time.time() - sweep_start
             logger.info(
-                "Daily log collection complete: %d collected, %d skipped (already fresh), %d failed",
-                collected, skipped_recent, failed
+                "Daily log collection complete: %d collected, %d skipped (already fresh), %d failed, %.1fs total",
+                counters["collected"], counters["skipped_recent"], counters["failed"], sweep_elapsed,
             )
 
         import threading as _threading
