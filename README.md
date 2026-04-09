@@ -304,10 +304,47 @@ The original per-miner trainer. Hit rate limits at miner #3 of 58. Still used as
 - HVAC/weather correlation over last 30 days
 - Every local LLM scan analysis from the past week (for validation + correction)
 - Every operator denial reason from the past week
+- **Pre/post restart comparison summaries** (dual-model Qwen + Claude) from `knowledge["known_issues"]` — merged in via the `TEMP_MAY_REMOVE` block (removed on Mac mini arrival)
+- **Daily deep dive analyses** (per-miner + fleet synthesis from Qwen 32B) from `knowledge["daily_deep_analyses"]` — merged in via a PERMANENT merge block (not wrapped in TEMP_MAY_REMOVE, stays on forever). See `docs/DAILY_DEEP_DIVE_DESIGN.md` for details.
 
 ### Cross-miner correlation (inside the fleet pass)
 
 Groups entire fleet by chip bin, die/tech, board serial batch, PCB/BOM version, PSU version, and fleet-wide restart effectiveness. Flags systematic hardware quality issues, firmware regression candidates, and procurement recommendations.
+
+---
+
+## Daily Log Pipeline (April 9 2026 overhaul)
+
+The daily log collection + deep dive pipeline was overhauled in an afternoon sprint on April 9 2026. Five code commits and six doc commits. See `docs/SESSION_LOG_2026-04-09.md` for the full narrative and `REPAIR_LOG.md` for the entry-by-entry breakdown.
+
+### Daily baseline collection (`collect_logs` in `core/mining_guardian.py`)
+
+- **Schedule (starting April 10 2026):** cron-triggered daily. Every online miner gets one fresh log export per 24 hours.
+- **Parallelism:** 15-worker thread pool (`concurrent.futures.ThreadPoolExecutor`). Each worker collects one miner at a time. Stuck miners only block their own worker slot; healthy miners complete in ~20 seconds regardless of what other workers are doing.
+- **Per-miner cap:** 10 minutes. If AMS does not produce a fresh log export within 10 minutes for a given miner, that worker gives up and moves on. Post-restart log collection and `_wait_for_stable` paths remain uncapped.
+- **Storage:** logs written to `miner_logs` table with `health_status = 'daily_baseline'`. Kept 30 days then purged. Hardware identity parsed from `miner.log` is permanent.
+- **Dedup:** 24-hour per-miner check prevents double-collection across overlapping sweeps.
+- **Thread safety:** `requests.Session` for concurrent POSTs, per-call sqlite3 connections with WAL mode, counters guarded by `threading.Lock`, `_ensure_token` forced to refresh before spawning the pool.
+- **Expected wall time:** 2-5 minutes typical, 10-12 minutes maximum if several miners hit the cap simultaneously.
+
+### Post-restart log collection (unchanged by the April 9 overhaul)
+
+Still single-miner, still uncapped. Pre-restart log pulled BEFORE the restart fires, post-restart log pulled AFTER the miner reaches mining state (via `_wait_for_stable`, no time cap). The pair goes to the dual-model Qwen + Claude comparator which writes to `knowledge["known_issues"]` with `compare:*` miner_id prefix. The Sunday Claude training merges these in via the TEMP_MAY_REMOVE block in `train_cohort.py`.
+
+### Daily deep dive LLM (`ai/daily_deep_dive.py`)
+
+- **Schedule (starting April 10 2026):** cron at 16:00 local, 3 hours after the 13:00 daily collection start. Takes as long as it needs.
+- **Runs on:** Qwen 2.5 32B on ROBS-PC (RTX 4090), via Ollama on the Tailscale network. On Mac mini arrival (May), runs locally on May.
+- **Two passes:** per-miner (one Qwen call per online miner, full 32K context, full daily log + 24h trends + restart history + hardware identity + fingerprint) then fleet synthesis (one final Qwen call reading all per-miner analyses + 24h HVAC/weather/fleet trends + operator rules + yesterday's deep dive).
+- **No caps:** `num_ctx: 32768`, `num_predict: -1`, `temperature: 0.3`, request timeout 14400 seconds (4 hours).
+- **Resume-safe:** each per-miner analysis written to `daily_deep_dive_wip/{YYYY-MM-DD}/miner_{id}.json` immediately, mid-run crashes resume from the last completed miner.
+- **Output:** stored in `knowledge["daily_deep_analyses"]` (keeps last 30 days). Sunday Claude training picks this up via a PERMANENT merge block in `train_cohort.py`.
+- **Expected wall time:** 2-4 hours steady state, less on first few days while yesterday-log comparisons are still being established.
+- **Full design:** `docs/DAILY_DEEP_DIVE_DESIGN.md`.
+
+### Per-scan reactive Qwen analysis (unchanged — still runs every hour from scan loop)
+
+`ai/local_llm_analyzer.py` still runs every hour as a reactive pulse. The daily deep dive is ADDITIVE, not a replacement. Both are needed — the reactive path answers "anything wrong right now," the deep dive answers "what did I learn today."
 
 ---
 

@@ -214,16 +214,29 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 1. **Wire OpenClaw to `guardian.db` via guardian-db skill**
    Unblock the skill auto-discovery issue. 2hr time budget on the skill-loading investigation. This is the top priority because OpenClaw is the conversational brain of the product and without it, the LLM can't answer real-time operator questions with live fleet data.
 
-2. **Daily Log Capture & 14-day rolling baseline** (3-5 day build)
-   Highest-value build from the April 8 firmware regression. See `docs/DAILY_LOG_CAPTURE_VISION.md`. 5 components:
-   - Day 1: `scripts/daily_baseline_capture.py` cron + label-aware retention extension
-   - Day 2: `firmware_changes` table + scan-loop change detector
-   - Day 3: Generalize `_run_post_action_log_comparison` for arbitrary baseline-vs-current pairs
-   - Day 4: `ai/regression_detector.py` + Slack alert wiring
-   - Day 5: Backfill — capture daily_baseline on every miner today as a starting point
+2. **Daily Log Capture & 14-day rolling baseline** — PARTIALLY SHIPPED April 9 2026
+   See `docs/DAILY_LOG_CAPTURE_VISION.md` for original plan. Status after April 9 afternoon sprint:
+   - ✅ Daily baseline log collection (`collect_logs` in `core/mining_guardian.py`) — parallel 15-worker, 10-min cap per miner, commits `95676b6` + `da1edbd` + `e5b9f5c`
+   - ✅ Daily deep dive LLM (`ai/daily_deep_dive.py`, 953 lines) — Qwen 32B full study of fleet once a day, commit `da1edbd`. See `docs/DAILY_DEEP_DIVE_DESIGN.md`
+   - ✅ Weekly Claude training merges restart comparisons — `TEMP_MAY_REMOVE` block in `ai/train_cohort.py`, commit `e90c2be`
+   - ⏳ `daily_deep_analyses` permanent merge into weekly Claude training — apply script written but not shipped
+   - ⏳ `firmware_changes` table + scan-loop change detector — not started
+   - ⏳ `ai/regression_detector.py` + Slack alert wiring for firmware regression detection — not started
+   - ⏳ Cron entries for 1pm daily collection + 4pm daily deep dive — not yet added to VPS crontab
 
 3. **`weekly_train.py` denial reason ingestion gap**
    Verify denial reasons are actually flowing into Sunday's `train_cohort.py` run. `train_comprehensive.py` reads them; confirm the cohort trainer inherits them via its imports. Fix before next Sunday if broken.
+
+4. **Ship the `daily_deep_analyses` permanent merge block in `ai/train_cohort.py`**
+   Apply script written as `.apply_dd_merge.py` in working tree. Extends the existing merge block to pull `daily_deep_analyses` entries from `knowledge.json` into the Sunday Claude weekly training stream. NOT wrapped in `TEMP_MAY_REMOVE` — this is permanent infrastructure per operator rule.
+
+5. **Add VPS cron entries for daily collection + daily deep dive**
+   - `0 13 * * * ...` daily log collection forced at 1pm local
+   - `0 16 * * * ...` daily deep dive fires at 4pm local
+   Needs a small helper in `mining_guardian.py` (or a standalone script) to force `collect_logs` to run outside the hourly scan loop.
+
+6. **Physically inspect miner 53482 (192.168.188.46)**
+   BiXBiT S19JPro, running 83.5% of target, error codes 412 + 101, firmware `BiXBiT 0.9.9.3-stage29.2799`, AMS log export hung. Discovered during April 9 afternoon sprint. The hourly reactive scan has been silently ignoring it because 83.5% is above the hashrate flag and 70°C is below the temperature flag. Needs operator eyeballs or an AMS ticket.
 
 ### P1 — Before Mac Mini arrival (May 5–9)
 
@@ -284,6 +297,12 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 - [x] Knowledge base → Prometheus — all AI metrics visible in Grafana live
 - [x] Cohort-based weekly training (`train_cohort.py`) — scale-first, replaces per-miner blasting
 - [x] Dual-model pre/post restart log comparison (`ai/claude_log_comparison.py`)
+- [x] Daily log collection fix — removed hidden caps, parallel 15-worker sweep with 10-min per-miner cap (April 9, commits `95676b6` / `da1edbd` / `e5b9f5c`)
+- [x] Weekly Claude training picks up dual-model restart comparisons (April 9, commit `e90c2be`) — silent-skip bug where comparisons were written to `known_issues` but trainer read `llm_scan_analyses`
+- [x] Daily Deep Dive LLM (`ai/daily_deep_dive.py`) — Qwen 32B long-form daily fleet study, per-miner pass + fleet synthesis, no caps (April 9, commit `da1edbd`). See `docs/DAILY_DEEP_DIVE_DESIGN.md`
+- [x] REPAIR_LOG.md created — layman-terms record of bugs and fixes (April 9, commit `d6c2871`)
+- [x] `docs/SESSION_LOG_2026-04-09.md` — full narrative of April 9 afternoon log pipeline sprint
+- [x] CLAUDE.md — added May Migration Changes section, Working Practices section (document-as-you-go + context compaction awareness)
 - [x] Real Auradine API client (`clients/auradine_client.py`, 602 lines)
 - [x] 2-restart escalation — auto-ticket after 2 failed restarts, both manual and overnight
 - [x] Overnight automation — autonomous action engine 8pm–6am

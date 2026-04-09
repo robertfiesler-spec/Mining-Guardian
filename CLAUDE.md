@@ -301,6 +301,7 @@ The Sunday 3am Claude weekly training stays on forever (or at least the next yea
 - **Operator rules** — everything extracted from the week's denials, no change
 - **Cross-miner correlations** — the SQL-based cross-miner analysis from `get_cross_miner_correlations`, no change
 - **Full fleet synthesis pass** — the final `build_fleet_prompt` → Claude call, no change
+- **`daily_deep_analyses` stream** — the daily Qwen 32B deep-dive fleet synthesis + per-miner analyses, merged into the weekly Claude prompt via a PERMANENT merge block in `ai/train_cohort.py` (NOT wrapped in TEMP_MAY_REMOVE markers). Added April 9 2026. Stays on forever.
 
 The whole cohort → outlier → fleet pipeline stays exactly as it is. May is NOT about "turning Claude off."
 
@@ -327,6 +328,40 @@ On May arrival, remove this merge block. Claude will still get everything else l
 ### Origin of this rule
 
 Captured April 9 2026 during the session that diagnosed and fixed the silent-skip bug where the weekly trainer was reading `llm_scan_analyses` while the per-restart comparisons were being written to `known_issues`. See the corresponding REPAIR_LOG.md entry: "Weekly Claude training was missing the pre/post restart comparisons" (2026-04-09). The fix is live on main as commit `e90c2be`.
+
+### The Daily Deep Dive — permanent, not TEMP_MAY_REMOVE
+
+The daily Qwen deep dive (`ai/daily_deep_dive.py`) runs once a day on the local LLM and writes to `knowledge['daily_deep_analyses']`. The Sunday Claude weekly training merges those entries into its prompt via a permanent merge block in `ai/train_cohort.py`. **Unlike the `TEMP_MAY_REMOVE` block for restart comparisons, this block is NOT wrapped in removal markers and MUST NOT be removed on May arrival.** The daily deep dive is the core long-term learning mechanism for the local LLM; it is not scaffolding.
+
+On May arrival, two things happen to the daily deep dive:
+1. The script moves from `/root/Mining-Gaurdian/` to the Mac mini deployment path
+2. The `LLM_URL` config value changes from ROBS-PC Tailscale to Mac mini localhost
+
+No code changes. No merge block removal. If a future session proposes removing the daily deep dive or its Sunday merge block, **stop and re-read this section, REPAIR_LOG.md entry "Daily Deep Dive LLM created," and `docs/DAILY_DEEP_DIVE_DESIGN.md`.**
+
+---
+
+## Working Practices
+
+### Document as you go, not after
+
+Every session that adds a feature or makes a design decision MUST update the relevant docs in the SAME commit as the code. No more deferring documentation to "later." This rule was added at end of day April 9 2026 because the morning session had been shipping code without documentation updates, which is the same silent-skip pattern we keep diagnosing in the code itself.
+
+What this means in practice:
+- If you write a new module or rewrite a function significantly, commit the code change TOGETHER with a REPAIR_LOG.md entry (or SESSION_LOG entry for that day, or updated design doc) explaining what changed and why.
+- If you discover a new operator rule, update CLAUDE.md in the same commit as the code that enforces it.
+- If you find a degraded miner or a production anomaly, flag it in REPAIR_LOG.md before the session ends.
+- If you make a decision that will affect future sessions (like "always use the 10-minute cap on this path"), capture the decision and its rationale before moving on.
+
+Do not split documentation into a separate "I'll do it next session" task. Next session may not happen, or may not remember the context. The documentation is part of the work.
+
+### Context compaction awareness
+
+Claude's context gets compacted periodically. When compaction happens, recent direct conversation may be summarized and the verbatim record may become inaccessible. This means:
+
+- **If you find evidence in git of work you don't remember doing**, the first move is to read the commit content carefully. If the author identity matches yours, the reflog shows it came from this machine, and the commit message is written in your voice, accept it as your own work rather than alarming the operator.
+- **Git is the ground truth for what happened**, not your conversation memory. When in doubt, `git log`, `git show`, `git reflog`.
+- **This was a real incident on April 9 2026**: I wrote the parallel 15-worker rewrite (`e5b9f5c`), a compaction boundary crossed, I lost direct memory of writing it, then found it in git and incorrectly assumed another session must have done it. Bobby had to confirm no other session was running before I could proceed. The lesson: trust git, read commits carefully, don't pattern-match on "I don't remember this so it must not be mine."
 
 ---
 
