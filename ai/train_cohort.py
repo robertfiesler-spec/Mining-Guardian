@@ -675,6 +675,67 @@ def run_cohort_training():
     if KNOWLEDGE_PATH.exists():
         knowledge = json.loads(KNOWLEDGE_PATH.read_text())
     all_local_llm_analyses = knowledge.get('llm_scan_analyses', [])
+
+    # TEMP_MAY_REMOVE: pre/post restart comparison merge for Claude weekly training.
+    # _run_post_action_log_comparison writes dual-model Qwen+Claude verdicts of
+    # each restart's before-vs-after into knowledge['known_issues'] with miner_id
+    # prefix 'compare:restart:*' or 'compare:pdu-cycle:*'. Those entries are the
+    # richest per-restart analysis the system produces, but the weekly trainer
+    # historically only read llm_scan_analyses, so Claude never saw them in the
+    # Sunday synthesis pass. Merge them into the analyses stream here.
+    #
+    # On Mac mini ('May') arrival, remove this entire block. Claude will still get
+    # the llm_scan_analyses, daily logs, and cohort/outlier/fleet synthesis — this
+    # ONLY removes the comparison summary layer, nothing else about the Sunday
+    # training changes.
+    compare_entries = []
+    for ki in knowledge.get('known_issues', []):
+        mid = ki.get('miner_id', '')
+        if not isinstance(mid, str) or not mid.startswith('compare:'):
+            continue
+        # miner_id shapes:
+        #   compare:restart:53487                 (legacy, model unknown)
+        #   compare:restart:qwen:53487            (dual-model qwen half)
+        #   compare:restart:claude:53487          (dual-model claude half)
+        #   compare:pdu-cycle:qwen:<id>
+        #   compare:diagnostic:qwen:auradine_28   (one-off diagnostic runs)
+        parts = mid.split(':')
+        action_label = parts[1] if len(parts) > 1 else 'unknown'
+        if len(parts) >= 4 and parts[2] in ('qwen', 'claude'):
+            model_tag = parts[2]
+            real_miner_id = ':'.join(parts[3:])
+        else:
+            model_tag = 'unspecified'
+            real_miner_id = ':'.join(parts[2:]) if len(parts) > 2 else 'unknown'
+
+        insight_text = ki.get('insight', '') or ''
+        if not insight_text:
+            continue
+
+        # Prepend a clear tag so Claude knows what it is reading in the
+        # fleet prompt. Format matches the existing llm_scan_analyses
+        # convention used by build_fleet_prompt at lines ~563-567.
+        tag = f'[PRE/POST COMPARE | {action_label} | miner {real_miner_id} | {model_tag}]'
+        tagged_analysis = f'{tag}\n{insight_text}'
+
+        # Convert known_issues schema {date, insight, miner_id} into the
+        # llm_scan_analyses schema {timestamp, analysis, model, scan_id, source}
+        # so the existing fleet prompt loop handles it with zero changes.
+        date_str = ki.get('date', '')
+        timestamp = f'{date_str}T00:00:00' if date_str else ''
+        compare_entries.append({
+            'timestamp': timestamp,
+            'analysis': tagged_analysis,
+            'model': model_tag,
+            'scan_id': None,
+            'source': 'restart_comparison',
+        })
+
+    if compare_entries:
+        logger.info('Merging %d pre/post restart comparison entries into analyses stream', len(compare_entries))
+        all_local_llm_analyses = list(all_local_llm_analyses) + compare_entries
+    # END TEMP_MAY_REMOVE
+
     operator_rules = knowledge.get('operator_rules', [])
     logger.info('Loaded %d local LLM analyses and %d operator rules from knowledge.json',
                 len(all_local_llm_analyses), len(operator_rules))
