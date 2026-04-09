@@ -5145,7 +5145,15 @@ class MiningGuardian:
                 # Trigger a fresh export and wait (no cap — logs are critical)
                 try:
                     logger.info("Daily log: pulling fresh export for miner %s (%s)", miner_id, model)
-                    log_files = self.ams.collect_fresh_miner_logs(int(miner_id))
+                    # 10-minute per-miner cap on daily baseline path only.
+                    # Post-restart log pulls are still uncapped (they only pull one
+                    # miner at a time so a stuck miner cannot starve anything).
+                    # This cap prevents a single broken miner from hanging the
+                    # sequential daily sweep across all 45+ online miners.
+                    log_files = self.ams.collect_fresh_miner_logs(
+                        int(miner_id),
+                        max_wait_seconds=600,  # 10 minutes
+                    )
                     if log_files:
                         self.db.save_logs(miner_id, model, "daily_baseline", log_files)
                         collected += 1
