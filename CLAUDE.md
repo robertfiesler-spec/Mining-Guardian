@@ -14,7 +14,7 @@ pattern learning.
 - **Monitoring**: Prometheus + Grafana (grafana.fieslerfamily.com)
 - **LLM**: Qwen2.5 32B on Windows PC RTX 4090 via Ollama + Tailscale (primary), Claude API (weekly training)
 - **Notifications**: Slack via Socket Mode (OpenClaw owns the connection)
-- **Infrastructure**: VPS (Hostinger KVM 8, 187.124.247.182), Tailscale, Cloudflare tunnels
+- **Infrastructure**: VPS (Hostinger KVM 8, 187.124.247.182), Tailscale, Cloudflare tunnels — ALL TEMPORARY, see Deployment Target below
 
 ## Project-Specific Rules
 
@@ -37,6 +37,36 @@ pattern learning.
 **Stop-and-check before irreversible actions.** Commits are reversible. Pushes are reversible-with-effort. Production config edits are reversible-if-backed-up. Config files overwritten via cp are sometimes not recoverable (see the `config_template.json` rule above). When in the last category, back up first, always.
 
 **Time budgets are hard caps.** When a debug path has a stated budget (e.g., "30 min max on WSL2"), that budget is a commitment, not a suggestion. At the cap, stop and pivot to the fallback — do not keep banging. Bobby can always override the cap in the moment if he chooses, but the default is to respect it.
+
+### Deployment Target (locked April 9 2026)
+
+**The product is a single Mac mini running a docker-compose stack at a customer site, with normal internet access.** Between now and May 1 2026 we are building features on a Hostinger VPS with Cloudflare tunnels and host-level systemd services because that is the dev environment we have. None of that is the product. On May 1 we containerize Mining Guardian and move the whole stack to a Mac mini. Between now and then, every new piece of code, config, or infrastructure decision is evaluated by one question:
+
+> *"Does this make the May 1 migration easier, harder, or neutral?"*
+
+The answer should never be "harder." Easier or neutral are both fine.
+
+**Design stance: open and useful by default, tightenable by choice.**
+
+The Mac mini has full internet access. Grafana dashboards, the Mining Guardian dashboard, and the approval API should all be reachable from anywhere the customer wants to reach them — operator's phone, laptop, office, wherever. Slack works normally. Outbound HTTPS works normally. Claude API for weekly training works normally. Monthly knowledge.json sync works normally. **This is a normal internet-connected appliance, not a hardened bunker.**
+
+Customers who want their deployment locked down (private network only, VPN-only access, restricted outbound) get that via configuration — we expose the knobs, they choose the settings. We do NOT pre-lock anything "for their own good." Customer choice beats developer gate-keeping every time.
+
+**Containerization design decisions (applies to new code TODAY, even though the container work happens in May):**
+
+- Do NOT hardcode VPS-specific paths, IPs, or hostnames in new code when the value can be read from config
+- Do NOT add new systemd-specific features to services that will become containers (timers, socket activation, journal-specific log parsing)
+- Do NOT assume Mining Guardian and OpenClaw are on different hosts — they will be two containers in the same docker-compose stack on the same Mac mini. Design inter-service communication as if they already are, using service name DNS inside a shared network and shared volumes for filesystem access
+- DO favor configurable values over hardcoded ones, even if the only current value is a VPS-specific one. Swapping a config value is a May 1 one-line change. Rewriting code is not.
+- DO document any temporary/throwaway values with a `# TEMP:` comment naming what the forever-value will be. Example: `# TEMP: VPS-specific, becomes "http://openclaw:18789/hooks" on May 1`. The May 1 migration should be mechanical, not archaeological.
+
+**The "no media server" rule — scope discipline, not network discipline.**
+
+The Mac mini runs Mining Guardian, OpenClaw, and what they need to do their job. That's it. No adding unrelated services "because why not." No hobbyist sprawl. Every new container or service has to earn its place by solving a real Mining Guardian problem. This is a focused operational tool, not a home lab.
+
+(This rule is about scope and maintenance burden, NOT about network access. Grafana is in scope. Grafana is reachable from the internet. Both things are true.)
+
+**We are NOT containerizing Mining Guardian today or this week.** The refactor is scheduled for May 1. Before then, keep shipping features on the VPS using whatever works today — just don't create new VPS-only assumptions that will need to be unwound.
 
 ### Architecture Rules
 
