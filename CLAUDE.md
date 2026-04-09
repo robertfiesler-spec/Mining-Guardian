@@ -286,6 +286,50 @@ service list, directory structure, hardware recommendations, and timeline.
 
 ---
 
+## May Migration Changes — What Changes and What Stays on Mac Mini Arrival
+
+The Mac mini is called **May** (named April 9 2026). When May arrives between May 5–9 2026, the stack migrates from the VPS to May. Most things stay the same. This section captures the specific things that change, so future sessions don't strip out working pieces by mistake and don't preserve scaffolding that was supposed to come off.
+
+### What STAYS on after May arrival (the permanent weekly training)
+
+The Sunday 3am Claude weekly training stays on forever (or at least the next year). It is the strength of the system and is not going anywhere. On May arrival, Claude continues to receive on every Sunday run:
+
+- **Daily logs** — all logs collected from every miner during the week, no change
+- **`llm_scan_analyses` stream** — every Qwen 32B hourly scan analysis from the week, no change
+- **Cohort analysis results** — the per-cohort Claude responses from the cohort pass, no change
+- **Outlier analysis results** — individual deep analyses of miners >2σ from their cohort, no change
+- **Operator rules** — everything extracted from the week's denials, no change
+- **Cross-miner correlations** — the SQL-based cross-miner analysis from `get_cross_miner_correlations`, no change
+- **Full fleet synthesis pass** — the final `build_fleet_prompt` → Claude call, no change
+
+The whole cohort → outlier → fleet pipeline stays exactly as it is. May is NOT about "turning Claude off."
+
+### What GETS REMOVED on May arrival
+
+**ONE thing only: the pre/post restart comparison summary merge layer.**
+
+The comparison merge block in `ai/train_cohort.py` (tagged `TEMP_MAY_REMOVE` in the code, added April 9 2026 as commit `e90c2be`) pulls the dual-model Qwen+Claude before/after restart verdicts from `knowledge['known_issues']` and merges them into the `all_local_llm_analyses` stream so Claude sees them in the Sunday fleet prompt.
+
+On May arrival, remove this merge block. Claude will still get everything else listed above — this ONLY removes the per-restart comparison summaries from the Sunday prompt.
+
+**Why it comes off:** by May arrival, the local Qwen LLM will have months of accumulated scan analyses under its belt. The separate dual-model before/after comparison summaries will no longer add unique signal on top of what Qwen already captures in the regular scan analysis stream. The merge layer was scaffolding for the current phase where Qwen is still learning; once Qwen has enough accumulated context, the comparison summaries become redundant with the scan analyses.
+
+**How to find the removal target:** `grep -rn 'TEMP_MAY_REMOVE' .` — the block is bracketed by `# TEMP_MAY_REMOVE:` at the top and `# END TEMP_MAY_REMOVE` at the bottom in `ai/train_cohort.py`. Delete everything between and including those markers. No other files need to change for this removal.
+
+**Everything else tagged `# TEMP:`** in the codebase is unrelated to the May migration — those are VPS-specific scaffolding (Cloudflare tunnel URLs, VPS-specific paths, systemd-specific features) that come off for different reasons and follow different timelines. Do not conflate them with `TEMP_MAY_REMOVE`.
+
+### What doesn't get touched until post-May decisions
+
+- The write side of restart comparisons — `_run_post_action_log_comparison` in `core/mining_guardian.py` still writes comparisons to `known_issues` after May. They just stop being merged into the weekly prompt. This preserves operational value (Slack posting still works, in-the-moment comparisons still happen, the data is still in the knowledge file if anyone wants to inspect it) without adding them to Claude's weekly input.
+- The existing `llm_scan_analyses` stream — unchanged before and after May.
+- The `compare:` miner_id prefix convention — unchanged, still used by the writer, still findable via grep for anyone doing later analysis.
+
+### Origin of this rule
+
+Captured April 9 2026 during the session that diagnosed and fixed the silent-skip bug where the weekly trainer was reading `llm_scan_analyses` while the per-restart comparisons were being written to `known_issues`. See the corresponding REPAIR_LOG.md entry: "Weekly Claude training was missing the pre/post restart comparisons" (2026-04-09). The fix is live on main as commit `e90c2be`.
+
+---
+
 ## Architecture Rules
 
 - **AMS first, always.** All miner commands go through the AMS API first

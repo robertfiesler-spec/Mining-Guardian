@@ -21,6 +21,43 @@
 
 ---
 
+### 2026-04-09 · Weekly Claude training was missing the pre/post restart comparisons
+
+**What Bobby thought the program was doing:**
+Every time the program restarts a miner, it pulls a fresh "before" log, does the restart, waits for the miner to reach mining state, pulls a fresh "after" log, then sends both logs to Qwen (local) and Claude (cloud) in parallel for a side-by-side before-and-after analysis. Both verdicts get stored in the knowledge file. Every Sunday, Claude gets all of that — the weekly training's whole point is to give Claude the richest possible context about what happened during the week, and those before/after restart comparisons are some of the most valuable data the system produces. The AH3880 firmware regression investigation on April 8 is a perfect example of the kind of analysis Claude should be reading during Sunday training.
+
+**What was actually happening:**
+The before/after comparison analyses were being stored in a part of the knowledge file called `known_issues`. The weekly Sunday trainer was reading a different array called `llm_scan_analyses`. Same file, different keys, no overlap. Result: 17 dual-model comparison analyses — including the full April 8 AH3880 firmware regression write-up — were being produced and stored correctly, but the Sunday training was silently ignoring all of them. Claude was getting every regular hourly scan analysis (183 of them) but none of the 17 highest-value per-restart verdicts. A completely silent bug — no error, no warning, just missing data.
+
+**Why it mattered:**
+The whole point of running Qwen and Claude side-by-side at each restart is so the weekly training can learn from both verdicts — where they agreed, where they disagreed, which one was right, what the actual root cause turned out to be. If Claude never sees those per-restart comparisons on Sunday, the whole dual-model pipeline is wasted from the learning-loop perspective. The comparisons still helped in-the-moment (they post to Slack so Bobby can read them) but they never became part of Claude's weekly synthesis memory, which means they never got baked into the refined operator rules the weekly training produces.
+
+**What we changed:**
+Added 61 lines to `ai/train_cohort.py` right after the spot where it loads the regular analyses stream. The new code walks through the `known_issues` array, picks out every entry whose miner_id starts with `compare:` (that's the tag the per-restart comparison writer uses), extracts the analysis text and the action type (restart / pdu-cycle / diagnostic) and the model that wrote it (qwen / claude), prepends a clear `[PRE/POST COMPARE | action | miner id | model]` tag so Claude knows what it's reading, translates the entry into the same schema the regular analyses use, and merges it into the analyses list. The rest of the weekly training code treats the merged entries identically to regular scan analyses with zero other changes needed.
+
+**What we deliberately DIDN'T touch:**
+- The write side — the per-restart comparisons still get stored in `known_issues` by `_run_post_action_log_comparison` in `core/mining_guardian.py`. We didn't move them to a new location, didn't add a new array, didn't change any write paths. The read side just learned how to find them.
+- The `llm_scan_analyses` stream itself — still reads the same way, still formats the same way. The comparisons just get appended to it for the fleet synthesis pass.
+- The daily Qwen scan analysis stream that runs every hour — unchanged, still feeding the same array.
+- The cohort pass, outlier pass, or any other part of the weekly training logic.
+- The dedup cap on `known_issues` (currently 50 slots) — we're fine for now with 17 comparison entries sharing that space with other insights. If it ever becomes a constraint we'll give comparisons their own array.
+
+**How we verified the change worked:**
+- Dry-run the merge logic against the live `knowledge.json` on the VPS before committing. Result: 17 entries found, 5 restart comparisons + 12 AH3880 diagnostics, 7 Qwen + 7 Claude + 3 legacy-format. Weekly training prompt grows from 183 to 200 analyses.
+- `python3 -m py_compile ai/train_cohort.py` passes after the change.
+- Tag format renders correctly in the merged entries — Claude will read `[PRE/POST COMPARE | restart | miner 53487 | claude]` followed by the full analysis text, making it impossible to confuse with a regular scan analysis.
+- Scoped diff: 61 lines added, 0 deleted, one anchor point, no other code paths touched.
+
+**Lesson for both of us:**
+This is the second silent-skip bug we found today. The pattern is the same: code writes to Location A, code reads from Location B, nobody notices because there's no error. The fix for THIS kind of bug is the same as the daily log collection fix — it's not about being smarter, it's about actually tracing the data flow end-to-end. Every piece of data the system produces should have a verified path to every place it's supposed to end up. If you can't trace it, it's probably broken.
+
+**The May migration rule this created:**
+After the Mac mini (called **May** from now on) arrives, the comparison-summary merge layer gets removed — Claude will still receive daily logs, llm_scan_analyses, and the full cohort + outlier + fleet synthesis every Sunday because that is the strength of the weekly training and stays on forever. Only the comparison-summary merge layer goes away on May arrival, because by then the local Qwen will have learned enough from the scan analyses alone that the separate comparison summaries aren't adding unique value on top. The code block is tagged `TEMP_MAY_REMOVE` so it's findable via grep.
+
+**Status:** Committed and pushed as `e90c2be`. Not yet deployed to VPS. Will activate naturally on next Sunday 3am cron run, or sooner if we manually run train_cohort.py for verification. Also needs CLAUDE.md updated with the May Migration Changes section capturing the operator rule (done as part of this same repair session).
+
+---
+
 ### 2026-04-09 · Daily log collection was missing 34 of 48 miners
 
 **What Bobby thought the program was doing:**
@@ -62,7 +99,7 @@ Logs are the program's eyes. Without consistent daily log collection, the weekly
 **Lesson for both of us:**
 "Silent skips" are the worst kind of bug because nothing alarms. The program was doing exactly what the code said — it's just that the code said to skip quietly when AMS didn't have a ready log, and Bobby's design intended the program to trigger a fresh export in that case. The gap between "what the code says" and "what the design says" lived in a docstring that was lying: the function was called `collect_miner_logs` and the docstring said "existing only, fresh exports handled separately" — but nothing was actually handling the daily fresh-export path for healthy miners.
 
-**Status:** Edits C and D applied locally and compile. Edit B (fresh log export no-cap) half-applied — signature updated but the internal poll loop didn't match my exact-string replace and still needs to be fixed. Edit A (background thread daily collection) not yet applied. None of the edits are committed, pushed, or deployed to the VPS yet. Need to resume next session.
+**Status:** All five edits (A, B, C, D, E) committed as `95676b6` and pushed to `origin/main`. Compile clean, grep confirms no leftover references to old caps, file is structurally consistent. NOT YET DEPLOYED TO VPS — next step is `ssh root@187.124.247.182`, `cd /root/Mining-Gaurdian && git pull`, `systemctl restart mining-guardian`, then tail the guardian log and watch for the new `Daily log collection: spawning background thread for N eligible miners` message. After ~30-60 minutes of runtime, query `SELECT COUNT(DISTINCT miner_id) FROM miner_logs WHERE collected_at >= datetime('now', '-1 hour') AND health_status = 'daily_baseline'` — target is growing toward 48 as the background thread works through the fleet. When verified working, update this status to Done with the verified count and delete the `core/mining_guardian.py.bak.20260409-141051` safety-net backup file.
 
 ---
 
