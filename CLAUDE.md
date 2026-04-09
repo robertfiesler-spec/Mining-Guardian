@@ -26,6 +26,18 @@ pattern learning.
 - Pool management and miner settings are explicitly OUT OF SCOPE
 - Dead board issues on S19JPros are suppressed after ticket creation — do not re-raise
 
+### Working Principles (locked April 9 2026)
+
+**The 2-vs-10 rule.** When facing any choice between a quick fix and a proper fix, the question is not "which is faster" — it is "which leaves us better off for the rest of the project." The rule: if we can fix it in 2 minutes and it will be ok, OR in 10 minutes and it will be right and better for the future, pick right. No more going back and re-doing things. We have ~3 weeks to finish — every re-do costs more than a deliberate up-front fix.
+
+**Work slowly and verify.** Before editing a file, read it. Before running a command that changes state, say what it does and why. Before assuming a library, API, or tool works a certain way, check. Small verification steps are cheap; cleanup after a wrong assumption is expensive.
+
+**Scope discipline during edits.** When editing a file for purpose A, do NOT also fix unrelated issue B in the same edit — even if B is obvious and easy. Note B separately and handle it as its own task. Mixing scopes is how we lose the ability to cleanly revert a change.
+
+**Stop-and-check before irreversible actions.** Commits are reversible. Pushes are reversible-with-effort. Production config edits are reversible-if-backed-up. Config files overwritten via cp are sometimes not recoverable (see the `config_template.json` rule above). When in the last category, back up first, always.
+
+**Time budgets are hard caps.** When a debug path has a stated budget (e.g., "30 min max on WSL2"), that budget is a commitment, not a suggestion. At the cap, stop and pivot to the fallback — do not keep banging. Bobby can always override the cap in the moment if he chooses, but the default is to respect it.
+
 ### Architecture Rules
 
 - ALL miner commands go through AMS first — direct device APIs (port 4028/4028) are fallback only
