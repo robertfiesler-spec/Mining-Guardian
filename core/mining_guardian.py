@@ -495,7 +495,7 @@ class AMSClient:
 
 
     def collect_fresh_miner_logs(self, miner_id: int,
-                                  max_wait_seconds: int = 90,
+                                  max_wait_seconds: Optional[int] = None,
                                   poll_interval_seconds: int = 5) -> Optional[Dict[str, str]]:
         """Trigger a NEW log export on AMS, poll until ready, then download.
 
@@ -512,8 +512,11 @@ class AMSClient:
 
         Returns None on timeout or any failure. Never raises.
 
-        Cost: 30-90 seconds per miner. Acceptable for infrequent action paths
-        (restart, PDU cycle). NOT acceptable for routine scan log collection.
+        Cost: variable per miner — depends on AMS export timing and miner
+        state. Typical 30-120 seconds; some miners take several minutes.
+        When max_wait_seconds is None (the default) this function waits as
+        long as AMS needs. Pass a number to cap. Per operator spec: logs are
+        too important to miss due to timing, so default is no cap.
         """
         import zipfile, io, time as _time
 
@@ -537,32 +540,47 @@ class AMSClient:
             return None
 
         # 3. Poll for a NEW completed log file
-        deadline = _time.time() + max_wait_seconds
+        # No cap by default — wait as long as AMS needs. Callers can cap
+        # by passing max_wait_seconds. Heartbeat every 5 minutes of waiting.
+        start_time = _time.time()
+        deadline = (start_time + max_wait_seconds) if max_wait_seconds else None
         new_filename = None
-        while _time.time() < deadline:
+        last_heartbeat = 0
+        while True:
+            if deadline is not None and _time.time() >= deadline:
+                break
             _time.sleep(poll_interval_seconds)
             try:
                 logs = self.get_log_list(miner_id)
             except Exception:
                 continue
+
             ready = [l for l in logs if l.get("status") == 2]
             new_ready = [l for l in ready if l.get("fileName") not in before_names]
             if new_ready:
-                # Pick the most recent — log lists are usually newest-first but
-                # be defensive
+                # Pick the most recent — log lists are usually newest-first
+                # but be defensive
                 new_ready.sort(
                     key=lambda l: l.get("createdAt") or l.get("fileName") or "",
                     reverse=True,
                 )
                 new_filename = new_ready[0].get("fileName")
+                waited = int(_time.time() - start_time)
                 logger.info("Fresh log: new file ready for miner %s after %ds: %s",
-                            miner_id, int(_time.time() - (deadline - max_wait_seconds)),
-                            new_filename)
+                            miner_id, waited, new_filename)
                 break
 
+            # Heartbeat every 300s so operators can see progress on long waits
+            waited = int(_time.time() - start_time)
+            if waited - last_heartbeat >= 300:
+                logger.info("Fresh log: still waiting for miner %s export at %ds (no cap)",
+                            miner_id, waited)
+                last_heartbeat = waited
+
         if not new_filename:
-            logger.warning("Fresh log: no new log appeared for %s within %ds",
-                           miner_id, max_wait_seconds)
+            waited = int(_time.time() - start_time)
+            logger.warning("Fresh log: no new log appeared for miner %s within cap (%ds)",
+                           miner_id, waited)
             return None
 
         # 4. Download and extract the fresh zip
@@ -1041,13 +1059,13 @@ class AMSClient:
         resp.raise_for_status()
         return resp.json()
 
-    def pdu_power_cycle(self, pdu_id: int, outlet_index: int, off_delay: int = 5) -> Dict:
+    def pdu_power_cycle(self, pdu_id: int, outlet_index: int, off_delay: int = 30) -> Dict:
         """Power cycle a PDU outlet — turns it off, waits, turns it back on.
 
         Args:
             pdu_id:       PDU ID (from miner's pduOutlet.pduID field)
             outlet_index: Outlet number (from miner's pduOutlet.outletIndex field)
-            off_delay:    Seconds to wait between off and on (default 5)
+            off_delay:    Seconds to wait between off and on (default 30 — PSUs hold charge, need time to drain)
         """
         token = self._ensure_token()
         headers = {"Authorization": f"Bearer {token}"}
@@ -3727,13 +3745,13 @@ class MiningGuardian:
         }
 
     # ── Hashboard restart + verification flow ─────────────────
+    # NO TIME CAPS on the restart wait — logs are too important to miss
+    # due to arbitrary timeouts. The only exits from _wait_for_stable are:
+    # stable mining, emergency state, or miner removed from AMS by the
+    # ticketing flow (after 5 consecutive polls where the miner disappears).
 
-    # Phase 1: wait for status == online
-    PHASE1_MAX_WAIT    = 600    # 10 minutes max for miner to come back online
-    # Phase 2: wait for hashrate stable + minerStatus == 0
-    PHASE2_MAX_WAIT    = 2700   # 45 minutes max for full stability
     REBOOT_POLL_FAST   = 15     # poll interval during phase 1 (seconds)
-    REBOOT_POLL_SLOW   = 30     # poll interval during phase 2 (seconds)
+    REBOOT_POLL_SLOW   = 60     # poll interval during phase 2 (seconds) — per operator spec
     STABLE_CONFIRM     = 2      # consecutive stable polls required before collecting logs
     LOG_COLLECT_TIMEOUT = 30    # seconds to attempt log collection before giving up
     BOARD_DEAD_THRESHOLD = 1000  # MH/s — below this a board is considered dead
@@ -3803,14 +3821,14 @@ class MiningGuardian:
         signal_armed = False
 
         try:
-            if on_main_thread:
+            if on_main_thread and not wants_fresh:
                 signal.signal(signal.SIGALRM, _timeout_handler)
                 signal.alarm(timeout)
                 signal_armed = True
 
             if wants_fresh:
                 logger.info("[%s] Triggering FRESH log export for %s", miner_id, label)
-                logs = self.ams.collect_fresh_miner_logs(int(miner_id), max_wait_seconds=90)
+                logs = self.ams.collect_fresh_miner_logs(int(miner_id))
             else:
                 logs = self.ams.collect_miner_logs(int(miner_id))
 
@@ -3837,21 +3855,34 @@ class MiningGuardian:
 
     def _wait_for_stable(self, miner_id: str, ip: str) -> Optional[Dict]:
         """
-        Two-phase wait after a restart.
+        Two-phase state-based wait after a restart. NO TIME CAPS.
 
-        Phase 1 — wait for status == 'online' (up to PHASE1_MAX_WAIT seconds).
-        Phase 2 — wait for full stability: hashrate > 0 AND minerStatus == 0
-                  on STABLE_CONFIRM consecutive polls (up to PHASE2_MAX_WAIT seconds).
+        Phase 1 — wait for AMS status == 'online'. Poll every REBOOT_POLL_FAST
+                  seconds, forever, until the miner reports online OR
+                  disappears from AMS entirely (sent to ticketing).
 
-        Returns the stable miner dict, or None if timed out.
+        Phase 2 — wait for stable mining state: common_status == 'mining' via
+                  direct TCP port 4029 (primary) or AMS minerStatus == 0 AND
+                  hashrate > 0 (fallback), on STABLE_CONFIRM consecutive polls.
+                  Poll every REBOOT_POLL_SLOW seconds, forever, until stable,
+                  emergency, or miner disappears from AMS.
+
+        Rationale: logs are too important to miss due to arbitrary timeouts.
+        Some miners take 45+ minutes to reach mining state after a restart
+        and that is normal. We wait as long as it takes. The only ways out
+        are: success (stable), emergency (escalate to ticket), or the miner
+        is removed from AMS (handled upstream by the ticketing flow).
+
+        Returns the stable miner dict on success, or None if the miner
+        disappeared from AMS or entered emergency mode.
         """
         # ── Phase 1: wait for online ──────────────────────────────────────
         waited  = 0
         current = None
-        logger.info("[%s] Phase 1 — waiting for status=online (max %ss)",
-                    miner_id, self.PHASE1_MAX_WAIT)
-
-        while waited < self.PHASE1_MAX_WAIT:
+        logger.info("[%s] Phase 1 — waiting for status=online (no cap, polling every %ss)",
+                    miner_id, self.REBOOT_POLL_FAST)
+        consecutive_missing = 0
+        while True:
             time.sleep(self.REBOOT_POLL_FAST)
             waited += self.REBOOT_POLL_FAST
             try:
@@ -3860,16 +3891,33 @@ class MiningGuardian:
                     (m for m in all_miners if str(m.get("id")) == str(miner_id)),
                     None
                 )
-                if current and current.get("status") == "online":
+                if current is None:
+                    # Miner not in AMS list — could be momentary, could be
+                    # that ticketing flow pulled it. Allow a few consecutive
+                    # misses before giving up.
+                    consecutive_missing += 1
+                    if consecutive_missing >= 5:
+                        logger.warning(
+                            "[%s] Phase 1: miner not in AMS for %s consecutive polls — "
+                            "likely pulled by ticketing flow, aborting wait",
+                            miner_id, consecutive_missing
+                        )
+                        return None
+                    logger.debug("[%s] Phase 1: miner missing from AMS (%s/5) at %ss",
+                                 miner_id, consecutive_missing, waited)
+                    continue
+                consecutive_missing = 0
+                if current.get("status") == "online":
                     logger.info("[%s] Phase 1 complete — online after %ss", miner_id, waited)
                     break
                 logger.debug("[%s] Phase 1: still offline at %ss", miner_id, waited)
+                # Periodic heartbeat at 10-minute marks so operators can see
+                # the wait is still progressing on long-running restarts.
+                if waited % 600 == 0:
+                    logger.info("[%s] Phase 1: still waiting for online at %ss (no cap)",
+                                miner_id, waited)
             except Exception as e:
                 logger.warning("[%s] Phase 1 poll error at %ss: %s", miner_id, waited, e)
-        else:
-            logger.warning("[%s] Phase 1 timed out — miner did not come online in %ss",
-                           miner_id, self.PHASE1_MAX_WAIT)
-            return None
 
         # ── Phase 2: wait for stable mining state ────────────────────────
         # Primary signal: common_status == "mining" via TCP port 4029
@@ -3879,12 +3927,13 @@ class MiningGuardian:
         # Fallback signal: AMS minerStatus == 0 AND hashrate > 0
         #   Used when direct TCP is not available (e.g. different network segment).
         # We require STABLE_CONFIRM consecutive passing polls either way.
+        # NO TIME CAP — wait as long as it takes.
         stable_count = 0
         waited2      = 0
-        logger.info("[%s] Phase 2 — waiting for stable mining state (max %ss, need %s consecutive)",
-                    miner_id, self.PHASE2_MAX_WAIT, self.STABLE_CONFIRM)
-
-        while waited2 < self.PHASE2_MAX_WAIT:
+        logger.info("[%s] Phase 2 — waiting for stable mining state (no cap, polling every %ss, need %s consecutive)",
+                    miner_id, self.REBOOT_POLL_SLOW, self.STABLE_CONFIRM)
+        consecutive_missing = 0
+        while True:
             time.sleep(self.REBOOT_POLL_SLOW)
             waited2 += self.REBOOT_POLL_SLOW
             try:
@@ -3900,7 +3949,7 @@ class MiningGuardian:
                         "[%s] Phase 2: device entered EMERGENCY mode at %ss — escalating",
                         miner_id, waited2
                     )
-                    break  # exit loop, board comparison will escalate to ticket
+                    return current  # exit, board comparison will escalate to ticket
 
                 if device_status is not None:
                     # We have a direct device answer — trust it over AMS
@@ -3914,8 +3963,20 @@ class MiningGuardian:
                         None
                     )
                     if not current:
+                        # Miner disappeared from AMS — could be momentary,
+                        # could be ticketing flow. Allow a few consecutive
+                        # misses before giving up.
+                        consecutive_missing += 1
+                        if consecutive_missing >= 5:
+                            logger.warning(
+                                "[%s] Phase 2: miner not in AMS for %s consecutive polls — "
+                                "likely pulled by ticketing flow, aborting wait",
+                                miner_id, consecutive_missing
+                            )
+                            return None
                         stable_count = 0
                         continue
+                    consecutive_missing = 0
                     hashrate     = current.get("hashrate", 0) or 0
                     miner_status = current.get("minerStatus", -1)
                     is_stable    = (hashrate > 0 and miner_status == 0)
@@ -3950,15 +4011,14 @@ class MiningGuardian:
                             miner_id, waited2, status_source
                         )
                     stable_count = 0
+                    # Periodic heartbeat at 10-minute marks so operators can
+                    # see the wait is still progressing on long-running tunes.
+                    if waited2 % 600 == 0:
+                        logger.info("[%s] Phase 2: still waiting for stable mining at %ss (%s)",
+                                    miner_id, waited2, status_source)
             except Exception as e:
                 logger.warning("[%s] Phase 2 poll error at %ss: %s", miner_id, waited2, e)
                 stable_count = 0
-
-        logger.warning(
-            "[%s] Phase 2 timed out — miner online but did not stabilise in %ss",
-            miner_id, self.PHASE2_MAX_WAIT
-        )
-        return current  # return what we have — better than nothing
 
     def execute_board_restart(self, issue: Dict[str, Any]) -> None:
         """
@@ -4983,63 +5043,134 @@ class MiningGuardian:
     # ── Main entry ────────────────────────────────────────────
 
     def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
-        """Download logs for all online miners.
+        """Daily baseline log collection for every online miner.
 
-        Schedule: Every 6 hours per miner (not daily — logs rotate and contain
-        rich per-chip data, PSU readings, and system health we want frequently).
+        Design (per operator spec):
+          * Every online miner gets ONE fresh log export per 24 hours.
+          * No flagged-vs-healthy split — everyone gets the same treatment.
+          * Uses collect_fresh_miner_logs (trigger + wait + download), not
+            the existing-only path, so miners whose AMS export queue is
+            empty still get a fresh log pulled.
+          * No time cap on the fresh export wait — logs are too important
+            to miss due to timing ("as long as it takes").
+          * Runs in a background thread so the scan loop never blocks
+            waiting for slow exports.
+          * Pre/post restart logs are collected separately by the
+            execute_board_restart() / execute_restart() flows — this
+            function only handles the daily baseline.
 
-        AMS only exposes logs that are already exported — we download the most
-        recent ready zip. If no new zip is available since last collection, skip.
-
-        Log content is kept for 30 days then purged. Hardware identity parsed
-        from miner.log is permanent and never purged.
+        Log content is kept for 30 days then purged. Hardware identity
+        parsed from miner.log is permanent and never purged.
         """
         if not self.config.collect_logs:
             logger.debug("Log collection disabled — set collect_logs: true in config to enable")
             return
 
-        now = datetime.now()
-        # Log collection intervals based on miner health:
-        # Healthy miners: 1 log per 24 hours (baseline drift detection)
-        # Flagged miners: 1 log per 6 hours (more frequent monitoring)
-        # Pre/post restart logs are collected separately in execute_board_restart()
-        HEALTHY_LOG_INTERVAL = 24 * 3600  # 24 hours
-        FLAGGED_LOG_INTERVAL = 6 * 3600   # 6 hours
+        # Guard: if a previous background collection is still running, don't
+        # spawn another one on top of it. The per-miner dedup (24h interval
+        # check inside the thread) would handle it safely, but skipping the
+        # whole thread avoids log spam and double AMS sessions.
+        existing = getattr(self, '_daily_log_thread', None)
+        if existing is not None and existing.is_alive():
+            logger.info("Daily log collection: previous background thread still running, skipping this scan cycle")
+            return
 
+        # Snapshot the miner list — the thread runs in the background while
+        # the main scan loop continues, so we hand it a copy of the data
+        # it needs rather than sharing mutable state.
+        eligible = []
         for miner in miners:
-            miner_id  = str(miner.get("id", ""))
-            model     = miner.get("shortModel", miner.get("name", "unknown"))
-            profile_s = miner.get("currentProfile", "")
-            if "TH/s" in profile_s and miner.get("name") and miner.get("name") != model:
-                model = miner["name"]
             status = miner.get("status", "unknown")
-
-            # Skip offline miners — no connection means no logs available
             if status == "offline":
                 continue
             # Skip miners that aren't fully mining yet — don't download during
             # initializing (6), starting, or auto-tuning (3). Wait for mining (0).
             miner_status_val = miner.get("minerStatus")
             if miner_status_val is not None and miner_status_val != 0:
-                logger.debug("[%s] minerStatus=%s — not mining yet, skipping log collection", miner_id, miner_status_val)
                 continue
 
-            # Check health-based collection interval
-            last = self.db.last_log_collected(miner_id)
-            flagged = miner_id in {i["id"] for i in issues}
-            health_status = "flagged" if flagged else "healthy"
-            interval = FLAGGED_LOG_INTERVAL if flagged else HEALTHY_LOG_INTERVAL
-            if last is not None and (now - last).total_seconds() < interval:
-                continue
+            # Resolve display model name the same way the old code did —
+            # prefer shortModel, fall back to name, override with name if the
+            # currentProfile string contains TH/s (BiXBiT firmware convention).
+            model     = miner.get("shortModel", miner.get("name", "unknown"))
+            profile_s = miner.get("currentProfile", "")
+            if "TH/s" in profile_s and miner.get("name") and miner.get("name") != model:
+                model = miner["name"]
 
+            eligible.append({
+                "id":    str(miner.get("id", "")),
+                "model": model,
+            })
 
-            try:
-                log_files = self.ams.collect_miner_logs(int(miner_id))
-                if log_files:
-                    self.db.save_logs(miner_id, model, health_status, log_files)
-                    logger.info("[%s] Logs collected: %s files", miner_id, len(log_files))
-            except Exception as e:
-                logger.warning("Log collection failed for miner %s: %s", miner_id, e)
+        if not eligible:
+            logger.debug("Daily log collection: no eligible miners this scan")
+            return
+
+        logger.info("Daily log collection: spawning background thread for %d eligible miners", len(eligible))
+
+        def _daily_baseline_worker(miner_list):
+            """Background worker — pull one fresh log per miner, sequential.
+
+            Sequential (not parallel) because hammering AMS with N simultaneous
+            export requests is a good way to get rate-limited or to blow up
+            the WebSocket connection. One at a time, no cap, however long
+            each miner takes.
+            """
+            DAILY_INTERVAL_SECONDS = 24 * 3600
+            collected = 0
+            skipped_recent = 0
+            failed = 0
+            for entry in miner_list:
+                miner_id = entry["id"]
+                model    = entry["model"]
+                if not miner_id:
+                    continue
+
+                # 24h dedup check — if this miner got a log in the last
+                # 24 hours (from any source, including a post-restart pull),
+                # skip it. That counts as today's baseline.
+                try:
+                    last = self.db.last_log_collected(miner_id)
+                except Exception as e:
+                    logger.warning("Daily log: last_log_collected failed for %s: %s", miner_id, e)
+                    last = None
+
+                if last is not None:
+                    age_seconds = (datetime.now() - last).total_seconds()
+                    if age_seconds < DAILY_INTERVAL_SECONDS:
+                        skipped_recent += 1
+                        logger.debug("Daily log: %s skipped — last collection was %ds ago", miner_id, int(age_seconds))
+                        continue
+
+                # Trigger a fresh export and wait (no cap — logs are critical)
+                try:
+                    logger.info("Daily log: pulling fresh export for miner %s (%s)", miner_id, model)
+                    log_files = self.ams.collect_fresh_miner_logs(int(miner_id))
+                    if log_files:
+                        self.db.save_logs(miner_id, model, "daily_baseline", log_files)
+                        collected += 1
+                        logger.info("Daily log: miner %s collected, %d files saved", miner_id, len(log_files))
+                    else:
+                        failed += 1
+                        logger.warning("Daily log: miner %s returned no files (fresh export failed)", miner_id)
+                except Exception as e:
+                    failed += 1
+                    logger.warning("Daily log: miner %s fresh export raised: %s", miner_id, e)
+
+            logger.info(
+                "Daily log collection complete: %d collected, %d skipped (already fresh), %d failed",
+                collected, skipped_recent, failed
+            )
+
+        import threading as _threading
+        t = _threading.Thread(
+            target=_daily_baseline_worker,
+            args=(eligible,),
+            name="daily-log-baseline",
+            daemon=True,
+        )
+        t.start()
+        self._daily_log_thread = t
 
     def run_once(self) -> Dict[str, Any]:
         # ── Poll facility infrastructure first ───────────────────────────
