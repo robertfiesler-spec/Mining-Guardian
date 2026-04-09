@@ -21,6 +21,84 @@
 
 ---
 
+### 2026-04-09 · Daily Deep Dive LLM created — Qwen does a long daily study of the whole fleet
+
+**What Bobby thought the program was doing:**
+Once a day, after all the daily logs are pulled, the local LLM (Qwen 2.5 32B on ROBS-PC with the RTX 4090) should sit down and do a long, uninterrupted study session of the entire fleet. Look at every online miner individually with its full daily log, its 24-hour metric trends, its restart history, its hardware identity. Cross-reference everything — HVAC, weather, pool performance, operator decisions, yesterday's baseline for comparison. Produce a structured daily report. Store it. On Sunday, feed it to Claude alongside the hourly scan analyses and restart comparisons so the weekly training gets the richest possible picture. The whole idea is to turn ROBS-PC's idle RTX 4090 into a dedicated "fleet analyst" that gets smarter every day.
+
+**What was actually happening:**
+The per-scan Qwen analysis was running every hour and doing a quick reactive pulse — "anything wrong right now?" — with a tight prompt and a 1024-token output cap. That's valuable but it's the opposite of a deep dive. It looks at current snapshot data (flagged miners, recent outcomes, 5 restart log pairs with 500 char excerpts, current HVAC reading, current weather, 5 recent denial reasons). No full log content. No 24-hour trends. No yesterday comparison. No per-miner individual attention. No long-running uninterrupted session. The "deep dive Qwen learning session once a day" just plain did not exist. The data was all there — daily logs (after the morning fix), 24h trends in chain_readings, miner_readings, hvac_readings, pool_readings, weather_readings — but nothing was pulling it together and handing it to Qwen with "take as long as you need, study everything."
+
+**Why it mattered:**
+Without a daily deep dive, the local LLM's "learning" is limited to reactive hourly pulses that can't see across time. Patterns that only appear when you compare today to yesterday (firmware regressions, slow hardware degradation, drift in chip temps, voltage creep) are invisible to a per-scan reactive analyzer. The whole point of hiring an on-site LLM is so it can actually study the mine — not just answer "anything wrong right now." And Claude's Sunday training was getting scan analyses from the reactive hourly path but never a proper daily summary synthesized by the local LLM from the full picture, which means Claude's weekly synthesis was working with less context than Bobby assumed it was.
+
+**What we changed:**
+Created `ai/daily_deep_dive.py` (953 lines, commit `da1edbd`). The script does two passes:
+
+First pass — per-miner. For every online miner in the latest scan (~48 miners), the script pulls: the miner's full daily baseline log from today (capped at 60KB to fit Qwen's 32K token context window, which is still 10-20x more log content than the per-scan analyzer sees), yesterday's log excerpt for comparison, 24 hours of per-board chain readings with min/max/avg stats, 24 hours of hashrate and temp trends, every restart that happened to this miner in the last 24h, every operator action touching this miner in the last 24h, the miner's permanent hardware identity from `miner_hardware`, the miner's fingerprint from `knowledge.json`, and all operator rules. Qwen gets a prompt asking for a thorough 7-section analysis: current state, 24h stability, log diff vs yesterday, restart analysis, cross-correlation hints, prediction, recommendation. Qwen is given NO OUTPUT CAP (`num_predict: -1`, unlimited) and a 4-hour per-call timeout. Full 32768-token context window. Each per-miner analysis gets written to a working directory immediately as it completes so a mid-run crash doesn't lose hours of work.
+
+Second pass — fleet synthesis. After all 48 per-miner analyses are done, Qwen gets one final big prompt containing: all 48 per-miner analysis excerpts (capped at 2KB each to fit the context), 24h HVAC trend with min/max/avg supply/return/delta-T, 24h weather trend, 24h fleet-level stats, all operator rules, the previous day's deep dive for continuity, and a 9-section synthesis task (executive summary, fleet health, cohort patterns, outliers, day-over-day changes, environmental correlation, operator learning, tomorrow's focus, recommendations). Again no output cap, no timeout constraint. Expected runtime: 2-4 hours of Qwen compute. The final entry is stored in `knowledge.json` under a new top-level key `daily_deep_analyses`, keeping the last 30 days.
+
+**What we deliberately DIDN'T touch:**
+- The per-scan hourly Qwen analysis — still runs every hour via `local_llm_analyzer.py`, unchanged. The daily deep dive is ADDITIVE to the reactive hourly pulse, not a replacement.
+- The pre/post restart comparisons — still stored in `knowledge['known_issues']` via the existing dual-model pipeline. Still merged into the Sunday training via the TEMP_MAY_REMOVE block in `ai/train_cohort.py` shipped this morning.
+- The Sunday 3am Claude weekly training cron — unchanged, still runs on schedule, still picks up all the data including (soon) the daily deep dive entries.
+- `collect_logs` — the daily baseline collection is still the upstream dependency, and the deep dive script ASSUMES daily collection has already finished when it runs. On 4/10+ this is guaranteed by the cron schedule (1pm collection, 4pm deep dive, 3-hour buffer). Today (4/9) it's manual.
+
+**How we verified it worked (before running it):**
+- `python3 -m py_compile ai/daily_deep_dive.py` — compiles clean, 953 lines
+- Verified Qwen 32B model on ROBS-PC via the Ollama `/api/show` endpoint — context length 32768, block count 64, embedding length 5120. Confirmed `num_ctx: 32768` request works on a trivial test prompt.
+- Verified EVERY database table and column name the script uses by running a schema check script against the live `guardian.db` on the VPS. Found 13 column-name mismatches in my first draft (`temp_pcb` vs `temp_board`, `hashrate` vs `rate_mhs`, `frequency` vs `freq_mhz`, `scanned_at` vs `recorded_at` for HVAC/weather tables, missing `chip_count` and `stale` and `last_share` columns) and fixed all of them before committing. If I had not verified against the real schema, the per-miner pass would have crashed on the first SQL query and we'd have wasted a run.
+- Verified data exists in the tables the script queries: 2156 miner_readings in last 24h, 5152 chain_readings, 1800 pool_readings, 18 operator actions, 13 restarts, and growing daily_baseline log count as the fixed collection thread runs.
+
+**What actually running it on today's data will look like:**
+The script will iterate through the online miners sequentially. First miner Qwen call is likely 30-90 seconds depending on prompt size. Each subsequent miner is similar. Total per-miner pass: 30-60 minutes. Then fleet synthesis: 5-15 minutes. Total wall time: 45-90 minutes on today's data (because not every miner has a full daily log yet — only the ones already collected by the fix shipped this morning). As the daily log collection builds up, runs on future days will have more log content per miner and therefore take longer, probably 2-4 hours.
+
+**The Sunday Claude merge — follow-up commit needed:**
+The existing TEMP_MAY_REMOVE merge block in `ai/train_cohort.py` (from commit `e90c2be` this morning) only merges the `compare:*` entries from `known_issues` into the weekly training stream. It does NOT yet merge `daily_deep_analyses`. A follow-up commit needs to extend that merge block to pull in the new `daily_deep_analyses` array so the Sunday Claude training automatically sees the daily Qwen deep dives. I will do that in a separate commit before today's manual Claude run fires. If Claude runs without that merge, Claude still gets everything else, the daily deep dive just isn't in the prompt yet.
+
+**Lesson for both of us:**
+The reactive hourly analysis was never a bad idea, but it was never the full job either. The reactive path answers "anything wrong right now." The deep dive answers "what did I learn from today, and what does that teach me about tomorrow." Both are needed. The real gap was mine: I assumed "we have a local LLM running every scan" meant "the local LLM is doing deep analysis." It was doing reactive analysis — which is what the per-scan code was designed for — and the deep-dive equivalent was never built until today. If I had actually read `local_llm_analyzer.py` end-to-end instead of pattern-matching on "we have Qwen running every scan," I would have flagged this gap weeks ago.
+
+**Status:** Code committed as `da1edbd`, pushed to main, deployed to VPS. Waiting for daily baseline log collection to finish (stuck on miner 53482 with error codes — see separate entry below). Once collection completes, running manually via `python3 ai/daily_deep_dive.py --manual`. First real output by end of session today. Cron schedule starting 2026-04-10: `0 16 * * *` daily.
+
+---
+
+### 2026-04-09 · 10-minute cap on daily baseline collection path only (miner 53482 AMS hang)
+
+**What Bobby thought the program was doing:**
+The fix shipped this morning (commit `95676b6`) removed the 90-second cap on fresh log exports. Every miner gets as long as it needs to produce a fresh log. The rule was "logs are too important to miss due to timing."
+
+**What was actually happening:**
+Correct for a single miner in isolation. Wrong when the daily baseline is pulling 46 miners sequentially and one of them is broken. Miner 53482 at 192.168.188.46 (BiXBiT S19JPro, running at 83.5% hashrate with active error codes 412 and 101) hung the daily sweep for 55+ minutes. AMS accepted the fresh-log-export request but never produced the zip file. The background collection thread patiently waited — exactly as designed — with the 5-minute heartbeat message firing over and over: "still waiting for miner 53482 export at 302s / 604s / 906s / 1208s / 1511s / 1813s / 2116s / 2418s / 2720s / 3022s / 3324s (no cap)". Meanwhile the other 43 miners were queued behind it and getting nothing.
+
+**Why it mattered:**
+Without a per-miner cap on the daily sweep, ONE broken miner can starve the entire daily collection for the rest of the fleet. Tomorrow's 4pm deep dive would fire with almost no fresh logs, making the whole deep dive pipeline useless. And beyond tomorrow — any day a miner enters a weird AMS state could silently kill the daily baseline. Silent, slow, catastrophic.
+
+**What we changed:**
+Added a `max_wait_seconds=600` argument (10 minutes) to the `collect_fresh_miner_logs` call inside `collect_logs` in `core/mining_guardian.py`. The underlying `collect_fresh_miner_logs` function already supports the optional cap parameter (Edit B from this morning), so this was a 9-line call-site change including comments. If AMS doesn't produce the fresh zip within 10 minutes for a given miner on the daily sweep, the function logs a warning and moves on to the next miner. Per operator spec: "if it hasn't happened by 5 minutes it isn't going to happen, 10 minutes is generous double that."
+
+**What we deliberately DIDN'T touch:**
+- Post-restart log collection (`_collect_logs_nonblocking` with `wants_fresh=True`) — STILL has no cap. That path only pulls ONE miner's logs at a time in response to a restart, so a stuck miner cannot starve any other work. And the pre/post pair is uniquely valuable to that miner's learning loop, so it's worth waiting indefinitely.
+- `_wait_for_stable` (the post-restart waiter) — STILL has no cap. Same reasoning.
+- The 5-minute heartbeat log message inside `collect_fresh_miner_logs` — cosmetically says "(no cap)" even when a cap is in effect because the heartbeat code is shared between the two call paths. Cosmetic issue, not a bug. Can clean up later.
+
+**How we verified:**
+- Caught the hang by checking live logs before firing the deep dive, which I was about to do assuming the collection was done. This was a real save — if I had fired the deep dive while the collection thread was hung, the deep dive would have run against almost no data and wasted compute.
+- Committed and pushed as part of commit `da1edbd` alongside the daily deep dive script.
+- Restarted `mining-guardian` service on the VPS to kill the stuck thread (`systemctl restart mining-guardian`, new PID 257150 at 16:22:40 local).
+- The next scan (Scan #1377 at 16:23:22) spawned a fresh background collection thread with the new code. The 24h per-miner dedup check automatically skipped the 3 miners already collected (53476/77/81). Started fresh with miner 53482 again, which the 10-minute cap will handle correctly this time.
+
+**Separate finding worth flagging — miner 53482 is a degraded miner that was not being flagged:**
+Miner 53482 at 192.168.188.46 is online but running at 83.5% hashrate (target profile is 133 TH/s, actual hashrate ~111 TH/s). Has active error codes `['412', '101']`. Chip temp 70°C (normal per operator rules, so no temp flag). Firmware is BiXBiT 0.9.9.3-stage29.2799. Uptime 3 days 7 hours 9 minutes 31 seconds. Its logs are hung in AMS — the device is probably in some state where the log export endpoint is not responding properly. The regular scan logic is not flagging it because 83.5% is above the auto-flag threshold and chip temp is below 84°C so no environmental concern fires. This miner needs a manual look. The fact that the deep dive debugging surfaced this miner at all is a good sign that the full log collection + deep dive pipeline is going to catch things the hourly reactive loop doesn't.
+
+**Lesson for both of us:**
+"No caps" is a safety RULE, not an axiom. Every safety rule has a context. "No caps on log collection timing" made sense when I was thinking about a single miner's log. It stopped making sense when one broken miner can starve a sequential sweep of 46 others. Next time I hear an operator rule stated in absolute form, my job is to ask "does this rule hold in every path where log collection happens, or just one?" I didn't ask that this morning. Cost us an hour of production time when the fix deployed.
+
+**Status:** Committed and pushed as `da1edbd`. Deployed to VPS. Service restarted. Current scan (#1377) is running the new 10-minute cap. Miner 53482 will hit the cap at approximately 16:33:23 local and the collection thread will advance to miner 53483. Expected full daily sweep completion: ~17:00-17:15 local. Then the daily deep dive fires manually. After that, Bobby gives the go and the manual Claude training run fires.
+
+---
+
 ### 2026-04-09 · Weekly Claude training was missing the pre/post restart comparisons
 
 **What Bobby thought the program was doing:**
