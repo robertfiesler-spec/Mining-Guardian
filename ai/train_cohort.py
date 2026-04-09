@@ -736,6 +736,50 @@ def run_cohort_training():
         all_local_llm_analyses = list(all_local_llm_analyses) + compare_entries
     # END TEMP_MAY_REMOVE
 
+    # Daily deep dive merge — PERMANENT, not TEMP_MAY_REMOVE.
+    # ai/daily_deep_dive.py runs once a day and produces a long Qwen 32B
+    # synthesis of the entire fleet (per-miner analyses + fleet synthesis pass).
+    # Each day's entry is stored in knowledge['daily_deep_analyses']. We want
+    # every Sunday Claude run to see the week's daily deep dives so Claude can
+    # build on the local LLM's daily learning. Unlike the restart comparison
+    # merge above, this one is permanent — the daily deep dive IS the local
+    # LLM analysis stream at its richest, and that stream stays on forever
+    # per operator rule (see CLAUDE.md 'May Migration Changes' section).
+    daily_entries = []
+    for dd in knowledge.get('daily_deep_analyses', []):
+        date_str = dd.get('date', '')
+        timestamp = dd.get('timestamp') or (f'{date_str}T00:00:00' if date_str else '')
+        fleet_synth = dd.get('fleet_synthesis', '') or ''
+        if fleet_synth:
+            # The fleet synthesis is the big picture — always include it.
+            tag = f'[DAILY DEEP DIVE FLEET SYNTHESIS | {date_str}]'
+            daily_entries.append({
+                'timestamp': timestamp,
+                'analysis': f'{tag}\n{fleet_synth}',
+                'model': 'qwen_daily_deep_dive',
+                'scan_id': None,
+                'source': 'daily_deep_dive_fleet',
+            })
+        # Include per-miner analyses too so Claude can see miner-level detail.
+        # Each per-miner analysis gets its own entry tagged with the miner id.
+        per_miner = dd.get('per_miner', {}) or {}
+        if isinstance(per_miner, dict):
+            for mid, analysis_text in per_miner.items():
+                if not analysis_text:
+                    continue
+                tag = f'[DAILY DEEP DIVE PER-MINER | {date_str} | miner {mid}]'
+                daily_entries.append({
+                    'timestamp': timestamp,
+                    'analysis': f'{tag}\n{analysis_text}',
+                    'model': 'qwen_daily_deep_dive',
+                    'scan_id': None,
+                    'source': 'daily_deep_dive_per_miner',
+                })
+
+    if daily_entries:
+        logger.info('Merging %d daily deep dive entries into analyses stream', len(daily_entries))
+        all_local_llm_analyses = list(all_local_llm_analyses) + daily_entries
+
     operator_rules = knowledge.get('operator_rules', [])
     logger.info('Loaded %d local LLM analyses and %d operator rules from knowledge.json',
                 len(all_local_llm_analyses), len(operator_rules))
