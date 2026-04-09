@@ -27,7 +27,8 @@ stopped and redirected. Don't be that session.
 3. **`README.md`** — current system architecture, fleet, services, cron jobs
 4. **`AI_ROADMAP.md`** — what's built, what's next, hard deadlines
 5. **Most recent handoff note** — look in `docs/` for `RESUME_HERE_*` or `HANDOFF_*` files, read the latest by date
-6. **Git state** — run `git status`, `git log --oneline -20`, `git branch -a`. Note any uncommitted changes, non-main branches, or unmerged work (especially `installer-build` as the Mac mini deadline approaches).
+6. **`REPAIR_LOG.md`** — skim the most recent entries. This is the running record of bugs found and fixes applied in plain English. Reading it prevents rediscovering problems we already solved and gives context on recent code changes.
+7. **Git state** — run `git status`, `git log --oneline -20`, `git branch -a`. Note any uncommitted changes, non-main branches, or unmerged work (especially `installer-build` as the Mac mini deadline approaches).
 
 ### Then — and only then — come back with a 5-section report
 
@@ -144,6 +145,7 @@ doc before proposing anything.
 | Overall system architecture, fleet, services | `README.md` |
 | AI feature status, roadmap, hard deadlines | `AI_ROADMAP.md` |
 | **Consolidated single-source-of-truth vision** | **`docs/VISION.md`** |
+| **Running record of bugs, misunderstandings, and fixes (layman terms)** | **`REPAIR_LOG.md`** |
 | Full capabilities list (what the product does today + future) | `docs/CAPABILITIES.md` |
 | OpenClaw integration design (5-phase plan) | `docs/OPENCLAW_INTEGRATION.md` |
 | Cloudflare removal before Mac mini arrival | `docs/CLOUDFLARE_MIGRATION.md` |
