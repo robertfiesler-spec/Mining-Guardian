@@ -53,3 +53,16 @@ com.bixbit.mining-guardian.plist
 .claude/visual/diffs/
 .claude/pyramid/
 .ai/
+
+# WIP directories (resume-safety checkpoints, regenerated as needed)
+*_wip/
+
+# SQLite WAL files (runtime only)
+guardian.db-shm
+guardian.db-wal
+
+# Backup files (use git history instead)
+*.bak.*
+
+# Backups directory (local only)
+backups/
