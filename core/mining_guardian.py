@@ -5357,41 +5357,72 @@ class MiningGuardian:
         # Skip when scan data is clearly bad (AMS down = all offline)
         online = sum(1 for m in miners if m.get("status") == "online")
         actionable_issues = [i for i in issues if i["action"] not in ("MONITOR", "PHYSICAL_CYCLE")]
-        # LLM analysis — use Claude API only, runs with Slack post (once per hour)
-        # Ollama local LLM removed — too slow on CPU, hangs up scans
+        # LLM analysis — Qwen on ROBS-PC via Tailscale (RTX 4090, ~4.6s per scan)
+        # Restored 2026-04-10 after diagnosing frozen llm_scan_analyses stream.
+        # Writes to knowledge['llm_scan_analyses'] which weekly_train.py reads.
+        # Two-tier AI: Qwen on every scan here, Claude only in Sunday weekly trainer.
         if actionable_issues and online > 0 and len(actionable_issues) <= 20:
-            # Only run LLM analysis when we're also posting to Slack (once per hour)
-            if now_ts - self._last_slack_post < 60:  # just posted to Slack
-                try:
-                    from llm_analyzer import LLMAnalyzer
-                    analyzer = LLMAnalyzer()
-                    wx_data = {"temp_f": wx.get("temp_f"), "humidity_pct": wx.get("humidity_pct")} if wx else None
-                    hvac_data = None
-                    if hvac_snapshot:
-                        hvac_data = {"supply_temp_f": hvac_snapshot.supply_temp_f,
-                                     "return_temp_f": hvac_snapshot.return_temp_f,
-                                     "delta_t_f": hvac_snapshot.delta_t_f}
-                    analysis = analyzer.deep_analyze(
-                        f"Scan #{scan_id} — {len(actionable_issues)} miners flagged:\n" +
-                        "\n".join(f"- Miner {i['id']} ({i['model']}) @ {i['ip']}: {i.get('action','?')} — {' | '.join(i.get('issues',[]))[:150]}" for i in actionable_issues[:10]) +
-                        f"\nWeather: {wx_data}" +
-                        f"\nHVAC: {hvac_data}" +
-                        "\nProvide: DIAGNOSIS (1 sentence), ACTION (bullet list with miner IPs), PATTERN (1 sentence or none)"
-                    )
-                    if analysis and 'error' not in analysis.lower():
-                        logger.info("Claude analysis: %s", analysis[:200])
-                        try:
-                            from knowledge_manager import KnowledgeManager
-                            km = KnowledgeManager()
-                            km.add_llm_insight(analysis)
-                        except Exception:
-                            pass
-                    else:
-                        logger.info("Claude analysis skipped or errored")
-                except Exception as e:
-                    logger.warning("Claude analysis skipped: %s", e)
-            else:
-                logger.debug("LLM analysis deferred — runs with next Slack post")
+            try:
+                import json as _json
+                import urllib.request as _urlreq
+                from datetime import datetime as _dt
+                from pathlib import Path as _P
+                wx_data = {"temp_f": wx.get("temp_f"), "humidity_pct": wx.get("humidity_pct")} if wx else None
+                hvac_data = None
+                if hvac_snapshot:
+                    hvac_data = {"supply_temp_f": hvac_snapshot.supply_temp_f,
+                                 "return_temp_f": hvac_snapshot.return_temp_f,
+                                 "delta_t_f": hvac_snapshot.delta_t_f}
+                qwen_prompt = (
+                    "You are the local LLM for a 58-miner liquid-cooled Bitcoin mining facility. "
+                    "Operator rules: do NOT flag chip temps below 84C (normal in liquid cooling), "
+                    "do NOT recommend HVAC investigation (HVAC is confirmed correct), "
+                    "2+ failed restarts in 7 days auto-escalates to board check.\n\n"
+                    f"Scan #{scan_id} — {len(actionable_issues)} miners flagged:\n" +
+                    "\n".join(f"- Miner {i['id']} ({i['model']}) @ {i['ip']}: {i.get('action','?')} — {' | '.join(i.get('issues',[]))[:150]}" for i in actionable_issues[:10]) +
+                    f"\nWeather: {wx_data}\nHVAC: {hvac_data}\n\n"
+                    "Provide: DIAGNOSIS (1 sentence), ACTION (bullet list with miner IPs), PATTERN (1 sentence or 'none')."
+                )
+                payload = {
+                    "model": self.config.get("ollama_model", "qwen2.5:32b-instruct-q4_K_M"),
+                    "prompt": qwen_prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3, "num_ctx": 16384},
+                }
+                req = _urlreq.Request(
+                    self.config.get("ollama_url", "http://100.110.87.1:11434/api/generate"),
+                    data=_json.dumps(payload).encode(),
+                    headers={"Content-Type": "application/json"},
+                )
+                with _urlreq.urlopen(req, timeout=60) as r:
+                    resp = _json.loads(r.read().decode())
+                analysis_text = resp.get("response", "").strip()
+                if analysis_text:
+                    logger.info("Qwen scan analysis: %s", analysis_text[:200])
+                    # Write to llm_scan_analyses stream (the one weekly_train.py reads)
+                    kpath = _P("/root/Mining-Gaurdian/knowledge.json")
+                    knowledge = _json.loads(kpath.read_text()) if kpath.exists() else {}
+                    if not isinstance(knowledge.get("llm_scan_analyses"), list):
+                        knowledge["llm_scan_analyses"] = []
+                    knowledge["llm_scan_analyses"].append({
+                        "timestamp": _dt.now().isoformat(),
+                        "analysis": analysis_text,
+                        "model": payload["model"],
+                        "scan_id": scan_id,
+                        "source": "qwen_scan_loop",
+                    })
+                    # Keep last 500 entries to bound file size
+                    knowledge["llm_scan_analyses"] = knowledge["llm_scan_analyses"][-500:]
+                    tmp = str(kpath) + ".tmp"
+                    with open(tmp, "w") as f:
+                        _json.dump(knowledge, f, indent=2)
+                    import os as _os
+                    _os.replace(tmp, str(kpath))
+                    logger.info("llm_scan_analyses written, now %d entries", len(knowledge["llm_scan_analyses"]))
+                else:
+                    logger.warning("Qwen returned empty response for scan #%d", scan_id)
+            except Exception as e:
+                logger.warning("Qwen scan analysis failed: %s", e)
         elif issues and online == 0:
             logger.info("LLM analysis skipped — all miners offline (AMS likely down)")
         elif len(actionable_issues) > 20:
