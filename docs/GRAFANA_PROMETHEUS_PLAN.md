@@ -1,7 +1,7 @@
 # Grafana + Prometheus Integration Plan
 
 Status: **Research / Future Implementation**
-Decided: April 2026 — build the foundation now while small (1 site, 49 miners)
+Decided: April 2026 — build the foundation now while small (1 site, 58 miners)
 rather than retrofitting under pressure at scale (10 sites, 500+ miners).
 
 ---

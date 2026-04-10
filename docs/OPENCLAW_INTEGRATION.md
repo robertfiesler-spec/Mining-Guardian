@@ -149,7 +149,7 @@ OpenClaw (Docker, Socket Mode)
     },
     {
       "type": "section",
-      "text": { "type": "mrkdwn", "text": "Fleet: *49 miners* | 🟢 37 online | 🔴 12 offline" }
+      "text": { "type": "mrkdwn", "text": "Fleet: *58 miners* | 🟢 37 online | 🔴 12 offline" }
     },
     {
       "type": "section",

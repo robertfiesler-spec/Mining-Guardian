@@ -284,7 +284,7 @@ The production weekly trainer. Designed for fleets of 50-50,000+ miners. Read it
 3. **Fleet synthesis pass** — ONE final Claude call with everything: all cohort results, all outlier results, all local LLM scan analyses from the week, operator rules, and cross-miner SQL correlations. Produces the weekly executive report.
 
 **Scale comparison (from the `train_cohort.py` docstring):**
-- 49 miners → 16-26 Claude calls total
+- 58 miners → 16-26 Claude calls total
 - 500 miners → 36-66 calls
 - 5,000 miners → 81-181 calls
 - 50,000 miners → 251-651 calls

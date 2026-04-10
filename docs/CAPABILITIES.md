@@ -7,7 +7,7 @@ BiXBiT USA | Fort Worth, TX | April 2026
 ## What It Does Today
 
 ### 🔍 Fleet Monitoring
-- Scans all 49 miners every 5 minutes via AMS WebSocket API
+- Scans all 58 miners every 5 minutes via AMS WebSocket API
 - Three-tier hashrate evaluation:
   - Tier 1: Parses live BiXBiT firmware profile strings (exact rated TH/s)
   - Tier 2: Known model specs from miner_specs.json
@@ -165,7 +165,7 @@ Right now OpenClaw is a smart Slack writer. The next phase makes it the coordina
 
 | Category | Status |
 |----------|--------|
-| Fleet monitoring (all 49 miners) | ✅ Live |
+| Fleet monitoring (all 58 miners) | ✅ Live |
 | Three-tier hashrate evaluation | ✅ Live |
 | Dead board detection + restart flow | ✅ Live |
 | AMS ticket auto-creation | ✅ Live |
