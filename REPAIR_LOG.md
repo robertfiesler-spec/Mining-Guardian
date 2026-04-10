@@ -23,8 +23,65 @@
 
 ---
 
+### 2026-04-10 · Hourly scans were seeing procurement advice instead of operational patterns
+
+**What Bobby thought the program was doing:**
+The refined insights system has two jobs: (1) help Claude make strategic procurement decisions during weekly training ("don't buy this PCB/BOM combo"), and (2) help Qwen during hourly scans recognize performance and reliability patterns ("this miner matches a known failure mode"). These are fundamentally different use cases — one is strategic/purchasing, one is operational/monitoring. The hourly scans should see operational patterns like "Board 0 death cascade" or "PSU voltage instability precedes failure," NOT procurement advice like "REJECT 0110/0020 boards" or "KEEP buying 0130/0010."
+
+**What was actually happening:**
+When we first wired refined_insights into `scripts/local_llm_analyzer.py`, we dumped ALL 12 insights into the hourly scan prompt with labels like `[DONT BUY]` and `[GOOD]`. Qwen was seeing strategic procurement verdicts during real-time operational scans where they don't belong. The prompt said "FLEET INTELLIGENCE" but it was really "PURCHASING ADVICE" — wrong context entirely.
+
+**Why it mattered:**
+Hourly scans are about "what's happening right now and what action should I take." Showing Qwen "don't buy 0110/0020 boards" during a scan is useless noise — Qwen can't un-buy hardware that's already in the mine. Worse, it clutters the prompt with irrelevant context and might confuse the model about what it's supposed to be doing. The strategic insights belong in weekly Claude training where purchasing decisions can actually be influenced.
+
+**What we changed:**
+Modified `scripts/local_llm_analyzer.py` (backup at `scripts/local_llm_analyzer.py.bak.20260410-pre-insights`) to filter insights by action type:
+
+**Now shown in hourly scans (OPERATIONAL):**
+- `TUNE` — performance rules like restart success threshold
+- `WATCH` — reliability patterns like Board 0 death cascade
+- `INVESTIGATE` — active degradation alerts like PSU voltage instability
+- `REPLACE` with "critical" in key — specific miner failures (not cohort-wide)
+
+**NOT shown in hourly scans (STRATEGIC):**
+- `REJECT` — procurement advice ("don't buy this combo")
+- `KEEP` — procurement advice ("keep buying this combo")
+- `REPLACE` cohort-wide — strategic hardware rotation decisions
+
+Also renamed the prompt section from "FLEET INTELLIGENCE" to "OPERATIONAL INTELLIGENCE" and changed the task instruction from "INSIGHT CORRELATION" to "PATTERN MATCH" to reflect the operational focus.
+
+**What we deliberately DIDN'T touch:**
+- The strategic insights still exist in `knowledge.json` — they're not deleted, just filtered out of the hourly scan prompt.
+- Weekly Claude training still sees ALL insights (operational + strategic) — that's where procurement decisions get made.
+- The refined insights schema and storage format — unchanged.
+- The `InsightManager` class and how insights get created — unchanged.
+
+**How we verified:**
+- Python syntax check: `python3 -m py_compile scripts/local_llm_analyzer.py` passed
+- Restart daemon: `systemctl restart mining-guardian` (PID 287017)
+- Tested prompt builder shows "OPERATIONAL INTELLIGENCE (6 patterns)" with only TUNE/WATCH/INVESTIGATE entries
+- Ran manual Claude training which completed successfully with 18 API calls, generating 3 new insights
+
+**Additional work this session:**
+1. **Insight quality cleanup:** Removed 9 obvious/non-analytical insights (like "BiXBiT is better than stock" and "S21s are stable") that weren't data-driven. Rule established: an insight must be something you CANNOT know without deep data analysis.
+
+2. **Manual Claude training triggered:** Generated 3 new insights:
+   - `bin_3_systematic_failure_hydro` (REJECT, HIGH) — Bin 3 chips 16% worse than Bin 4
+   - `s21exphyd_vendor_failure_hydro` (REPLACE, HIGH) — S21EXPHyd at 46% rated capacity
+   - `chain_3_voltage_failure_hydro` (REPLACE, HIGH) — Chain[3] detachment = PSU failure
+
+3. **Total refined insights now: 15** (6 operational, 9 strategic)
+
+**Lesson for both of us:**
+Different consumers need different views of the same data. The hourly scan analyzer and the weekly strategic trainer both benefit from refined insights, but they need different SUBSETS filtered by purpose. When adding a new data source to multiple consumers, ask: "does every consumer need the same view, or do they need filtered views by use case?"
+
+**Status:** Deployed to VPS. local_llm_analyzer.py changes NOT yet committed to git — need to commit and push.
+
+---
+
 
 ### 2026-04-10 · Three silent-skip bugs fixed — clobber, ghost file, and parallel-path mistake
+
 
 **What Bobby thought the program was doing:**
 The learning loop should work like this: Qwen analyzes every scan and writes to `knowledge['llm_scan_analyses']`. On Sunday, Claude reads that stream plus everything else and produces a fleet synthesis written to `knowledge['cross_miner_analysis']`. The whole point is that every piece of analysis flows to where it needs to be for the next consumer to read it.
