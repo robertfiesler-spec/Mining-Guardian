@@ -24,6 +24,13 @@ for _p in [str(_ROOT / "ai"), str(_ROOT / "core")]:
 
 DB_PATH = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
+
+# Import insight manager for Fleet Intelligence panel
+try:
+    from insight_manager import get_all_insights
+except ImportError:
+    def get_all_insights():
+        return {}
 APPROVAL_API = "https://slack.fieslerfamily.com"
 
 
@@ -287,6 +294,44 @@ def render_ai_dashboard_html():
     for p in insights.get("patterns", []):
         pt_html += f'<div style="background:{CB};padding:8px 12px;border-radius:6px;margin-bottom:4px;color:{T};font-size:13px;border-left:3px solid {P}">🔍 {_e(str(p)[:150])}</div>'
 
+    # Fleet Intelligence (Refined Insights) — THE FLAGSHIP FEATURE
+    fi_html = ""
+    refined_insights = get_all_insights()
+    if refined_insights:
+        for key, insight in sorted(refined_insights.items(), key=lambda x: x[1].get('last_updated', ''), reverse=True):
+            cat = _e(insight.get('category', 'Unknown'))
+            text = _e(insight.get('insight', ''))
+            action = insight.get('action', 'NONE')
+            conf = insight.get('confidence', 'LOW')
+            updated = insight.get('last_updated', '?')
+            miners = insight.get('miners_affected', [])
+            data_pts = insight.get('data_points', 0)
+            
+            # Color code by action
+            action_colors = {'REJECT': R, 'REPLACE': R, 'WATCH': O, 'INVESTIGATE': O, 
+                           'KEEP': G, 'TUNE': B, 'NONE': TD}
+            action_color = action_colors.get(action, TD)
+            
+            # Confidence badge color
+            conf_colors = {'HIGH': G, 'MEDIUM': O, 'LOW': TD}
+            conf_color = conf_colors.get(conf, TD)
+            
+            miners_str = ', '.join(str(m) for m in miners[:5])
+            if len(miners) > 5:
+                miners_str += f' +{len(miners)-5} more'
+            
+            fi_html += f'''<div style="background:{CB};border-radius:8px;padding:12px;margin-bottom:12px;border-left:4px solid {action_color}">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+<span style="color:{C};font-weight:600;font-size:12px">{cat}</span>
+<div><span style="background:{conf_color};color:white;padding:2px 6px;border-radius:3px;font-size:10px;margin-right:4px">{conf}</span>
+<span style="background:{action_color};color:white;padding:2px 6px;border-radius:3px;font-size:10px">{action}</span></div>
+</div>
+<div style="color:{T};font-size:14px;line-height:1.5;margin-bottom:8px"><strong>{text}</strong></div>
+<div style="color:{TD};font-size:11px">Miners: {miners_str} • {data_pts} data points • Updated: {updated}</div>
+</div>'''
+    else:
+        fi_html = f'<div style="color:{TD};text-align:center;padding:20px">No refined insights yet — will populate after weekly training</div>'
+
     # Signal rows
     sr = ""
     for sig, src, freq in DATA_SIGNALS:
@@ -356,9 +401,14 @@ function submitDeny(){let r=document.getElementById('dr').value;fetch('""" + APP
 <div class="cd" style="max-height:350px;overflow-y:auto"><table><thead><tr><th>Time</th><th>Miner</th><th>Action</th><th>Detail</th></tr></thead><tbody>{pr}</tbody></table></div></div>
 </div>
 
+<div class="st">🧠 Fleet Intelligence — Permanent Insights</div>
+<div class="cd" style="margin-bottom:16px"><div class="ct">Data-Backed Findings (accumulates over time)</div>
+<div style="max-height:400px;overflow-y:auto;padding-right:8px">{fi_html}</div>
+</div>
+
 <div class="st">🎓 AI Training Insights</div>
 <div class="g g2">
-<div class="cd"><div class="ct">Cross-Miner Correlation Analysis</div>{cm_html if cm_html else f'<div style="color:{TD}">Awaiting first training run</div>'}</div>
+<div class="cd"><div class="ct">This Week's Summary</div>{cm_html if cm_html else f'<div style="color:{TD}">Awaiting first training run</div>'}</div>
 <div class="cd"><div class="ct">Discovered Patterns ({len(insights.get("patterns",[]))})</div>{pt_html if pt_html else f'<div style="color:{TD}">No patterns yet</div>'}</div>
 </div>
 

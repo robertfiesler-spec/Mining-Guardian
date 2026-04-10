@@ -71,6 +71,7 @@ sys.path.insert(0, str(_ROOT / 'core'))
 
 from llm_analyzer import LLMAnalyzer
 from knowledge_manager import KnowledgeManager
+from insight_manager import process_refined_insights, migrate_legacy_insight
 from train_comprehensive import (
     get_miner_full_profile,
     build_miner_prompt,
@@ -643,6 +644,47 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
         '   system isnt currently capturing that would help future analysis? This goes to',
         '   Bobby for the next sprint.',
         '',
+        '9. REFINED INSIGHTS (CRITICAL — JSON OUTPUT REQUIRED):',
+        '   After your narrative analysis, you MUST output a ```json block containing',
+        '   permanent, data-backed insights for the Fleet Intelligence dashboard.',
+        '   These are NOT weekly summaries — they persist and accumulate.',
+        '',
+        '   GOLD STANDARD EXAMPLE: "PCB=0110/BOM=0020 boards averaging 13.6% hashrate',
+        '   while PCB=0130/BOM=0010 hit 73.5%. Reject all 0110/0020 combinations."',
+        '',
+        '   Output format (after your narrative):',
+        '   ```json',
+        '   {',
+        '     "refined_insights": {',
+        '       "descriptive_key": {',
+        '         "category": "PCB/BOM Failure",',
+        '         "topic": "0110_0020_boards",',
+        '         "insight": "One crisp sentence with specific numbers.",',
+        '         "action": "REJECT",',
+        '         "confidence": "HIGH",',
+        '         "cooling_type": "HYDRO",',
+        '         "miner_type": "Antminer S19J Pro",',
+        '         "data_source": "847 chip readings over 14 days",',
+        '         "miners_affected": ["53482", "64407"],',
+        '         "data_points": 847',
+        '       }',
+        '     }',
+        '   }',
+        '   ```',
+        '',
+        '   CATEGORIES: Chip Quality, PCB/BOM Failure, Serial Batch Pattern, PSU Reliability,',
+        '   Hashboard Reliability, Firmware Insight, Restart Effectiveness, Parts Donor,',
+        '   Golden Miner, Procurement Action',
+        '',
+        '   CONFIDENCE: HIGH (100+ points, 7+ days, >20% gap), MEDIUM (25-99 points),',
+        '   LOW (<25 points)',
+        '',
+        '   ACTION VALUES: REJECT, WATCH, KEEP, REPLACE, INVESTIGATE, TUNE, NONE',
+        '',
+        '   RULES: Only output insights backed by data. Be SPECIFIC with numbers.',
+        '   Quality over quantity — 1-3 strong insights beats 10 weak ones.',
+        '   If no clear insight, output empty: "refined_insights": {}',
+        '',
         'Format with markdown headers. Cite cohorts and miners by name throughout. This',
         'is the most important document the system produces all week — aim for 1500-3000',
         'words of dense, evidence-backed analysis. No filler, no hedging, no executive',
@@ -666,6 +708,9 @@ def run_cohort_training():
     logger.info('=' * 60)
     logger.info('COHORT-BASED WEEKLY TRAINING')
     logger.info('=' * 60)
+
+    # Migrate legacy April 6 insight if not already done (runs once)
+    migrate_legacy_insight()
 
     # Step 0: load context
     env_context = get_hvac_weather_context(conn)
@@ -936,6 +981,12 @@ def run_cohort_training():
         with open(tmp_path, 'w') as f:
             json.dump(knowledge, f, indent=2)
         os.replace(tmp_path, str(KNOWLEDGE_PATH))
+
+        # Extract and store refined insights from Claude's response
+        logger.info('Processing refined insights from fleet response...')
+        insight_result = process_refined_insights(fleet_response, site_id='R&D Home')
+        logger.info('Refined insights: %d added, %d updated, %d errors',
+                    insight_result['added'], insight_result['updated'], insight_result['errors'])
 
     total_calls = len(cohort_results) + len(outlier_results) + (1 if fleet_response else 0)
     logger.info('=' * 60)
