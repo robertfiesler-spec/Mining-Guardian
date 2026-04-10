@@ -5146,6 +5146,7 @@ class MiningGuardian:
             # to make += on integers atomic in all interpreter versions.
             counter_lock = _threading.Lock()
             counters = {"collected": 0, "skipped_recent": 0, "failed": 0}
+            failed_miners = []  # Track failed miners for retry pass
 
             def _collect_one(entry):
                 """Collect logs for one miner — runs inside a pool worker thread."""
@@ -5192,11 +5193,13 @@ class MiningGuardian:
                     else:
                         with counter_lock:
                             counters["failed"] += 1
+                            failed_miners.append(entry)
                         logger.warning("Daily log: miner %s returned no files (fresh export failed)",
                                        miner_id)
                 except Exception as e:
                     with counter_lock:
                         counters["failed"] += 1
+                        failed_miners.append(entry)
                     logger.warning("Daily log: miner %s fresh export raised: %s", miner_id, e)
 
             # Spawn the pool and wait for all miners to complete
@@ -5219,8 +5222,71 @@ class MiningGuardian:
 
             sweep_elapsed = time.time() - sweep_start
             logger.info(
-                "Daily log collection complete: %d collected, %d skipped (already fresh), %d failed, %.1fs total",
+                "Daily log collection pass 1 complete: %d collected, %d skipped, %d failed, %.1fs",
                 counters["collected"], counters["skipped_recent"], counters["failed"], sweep_elapsed,
+            )
+
+            # ── RETRY PASS for failed miners ────────────────────────────────
+            # Miners that timed out or failed get a second chance with a longer
+            # timeout. These simple machines sometimes just need another try.
+            # Added April 10 2026 per operator request — log collection is THE
+            # most important step, we cannot afford to lose logs.
+            if failed_miners:
+                logger.info("Daily log RETRY: attempting %d failed miners with 20-min timeout",
+                            len(failed_miners))
+                retry_counters = {"collected": 0, "failed": 0}
+                retry_start = time.time()
+                
+                def _retry_one(entry):
+                    miner_id = entry["id"]
+                    model = entry["model"]
+                    try:
+                        logger.info("Daily log RETRY: pulling miner %s (%s)", miner_id, model)
+                        # Longer timeout on retry — 20 minutes instead of 10
+                        log_files = self.ams.collect_fresh_miner_logs(
+                            int(miner_id),
+                            max_wait_seconds=1200,  # 20 minutes
+                        )
+                        if log_files:
+                            self.db.save_logs(miner_id, model, "daily_baseline_retry", log_files)
+                            with counter_lock:
+                                retry_counters["collected"] += 1
+                            logger.info("Daily log RETRY: miner %s SUCCESS, %d files",
+                                        miner_id, len(log_files))
+                        else:
+                            with counter_lock:
+                                retry_counters["failed"] += 1
+                            logger.warning("Daily log RETRY: miner %s still no files", miner_id)
+                    except Exception as e:
+                        with counter_lock:
+                            retry_counters["failed"] += 1
+                        logger.warning("Daily log RETRY: miner %s failed: %s", miner_id, e)
+
+                # Run retries with fewer workers to be gentler
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=5,  # Fewer workers for retry
+                    thread_name_prefix="daily-log-retry",
+                ) as executor:
+                    futures = [executor.submit(_retry_one, entry) for entry in failed_miners]
+                    for fut in concurrent.futures.as_completed(futures):
+                        try:
+                            fut.result()
+                        except Exception as fe:
+                            logger.warning("Daily log RETRY: worker raised: %s", fe)
+
+                retry_elapsed = time.time() - retry_start
+                logger.info(
+                    "Daily log RETRY complete: %d recovered, %d still failed, %.1fs",
+                    retry_counters["collected"], retry_counters["failed"], retry_elapsed,
+                )
+                # Update main counters
+                counters["collected"] += retry_counters["collected"]
+                counters["failed"] = retry_counters["failed"]  # Only count final failures
+
+            total_elapsed = time.time() - sweep_start
+            logger.info(
+                "Daily log collection FINAL: %d collected, %d skipped, %d failed, %.1fs total",
+                counters["collected"], counters["skipped_recent"], counters["failed"], total_elapsed,
             )
 
         import threading as _threading
