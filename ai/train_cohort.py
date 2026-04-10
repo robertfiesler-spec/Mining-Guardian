@@ -908,10 +908,19 @@ def run_cohort_training():
         logger.warning('Fleet attempt %d failed — waiting %ds', attempt + 1, wait)
         time.sleep(wait)
 
+    # CRITICAL ORDERING: km.save() writes KnowledgeManager's in-memory state to disk,
+    # which does NOT include the cross_miner_analysis direct-write below. If km.save()
+    # runs AFTER the direct write, it clobbers the fleet synthesis. Fixed 2026-04-10:
+    # km.save() now fires FIRST, then the direct write lands last and survives.
+    # See REPAIR_LOG.md "Weekly training fleet synthesis silently clobbered" (2026-04-10).
+    km.save()
+    conn.close()
+
     if fleet_response:
         logger.info('Fleet synthesis complete: %d chars', len(fleet_response))
         km.add_llm_insight(fleet_response[:50000], miner_id='fleet')
-        # Also store in cross_miner_analysis for the local LLM to read next week
+        # Store in cross_miner_analysis for the local LLM to read next week.
+        # This MUST be the last write to knowledge.json in this function.
         knowledge = json.loads(KNOWLEDGE_PATH.read_text())
         if not isinstance(knowledge.get('cross_miner_analysis'), list):
             knowledge['cross_miner_analysis'] = []
@@ -927,9 +936,6 @@ def run_cohort_training():
         with open(tmp_path, 'w') as f:
             json.dump(knowledge, f, indent=2)
         os.replace(tmp_path, str(KNOWLEDGE_PATH))
-
-    km.save()
-    conn.close()
 
     total_calls = len(cohort_results) + len(outlier_results) + (1 if fleet_response else 0)
     logger.info('=' * 60)

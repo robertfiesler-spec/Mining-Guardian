@@ -1,3 +1,17 @@
+## Weekly training fleet synthesis silently clobbered (2026-04-10)
+
+**Symptom:** Manual weekly Claude training (PID 263793, fired 03:57:43) completed cleanly per log — 18 Claude calls, Fleet synthesis complete: 12188 chars at 04:11:57. But knowledge.json cross_miner_analysis had only 1 stale entry (1038 chars). The 12188-char synthesis was gone.
+
+**Root cause:** Ordering bug in ai/train_cohort.py. Direct cross_miner_analysis file write happened BEFORE km.save(). km held stale in-memory snapshot from before the direct write, so km.save() serialized stale state over the fresh synthesis.
+
+**Fix:** Reordered so km.save() and conn.close() fire FIRST, then direct cross_miner_analysis write fires LAST. Added CRITICAL ORDERING comment block so future sessions do not re-reorder.
+
+**Impact:** Every Sunday weekly training since this regressed lost its fleet synthesis. 18 Claude calls per run producing output that never reached knowledge.json. Sunday merge block could not pull previous weekly Claude insights. Same class as April 9 silent-skip bug.
+
+**Backups:** knowledge.json.bak.20260410-preweeklytrainfix, ai/train_cohort.py.bak.20260410 on VPS.
+
+---
+
 # Mining Guardian — Repair Log
 
 **Purpose:** A running record of bugs, misunderstandings, and fixes. Written in plain English, not dev-speak, so either of us can read it at any point and quickly understand what was broken and why. Every entry has four parts: what Bobby thought the program was doing, what it was actually doing, what we changed, and how we verified the change worked.
