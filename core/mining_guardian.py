@@ -3064,7 +3064,7 @@ class SlackNotifier:
             from collections import defaultdict
             # Load confidence scorer once for the whole report
             try:
-                from confidence_scorer import get_confidence, get_gate
+                from ai.confidence_scorer import get_confidence, get_gate
                 _has_confidence = True
             except ImportError:
                 _has_confidence = False
