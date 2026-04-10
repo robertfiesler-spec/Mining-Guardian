@@ -300,6 +300,7 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 - [x] Daily log collection fix — removed hidden caps, parallel 15-worker sweep with 10-min per-miner cap (April 9, commits `95676b6` / `da1edbd` / `e5b9f5c`)
 - [x] Weekly Claude training picks up dual-model restart comparisons (April 9, commit `e90c2be`) — silent-skip bug where comparisons were written to `known_issues` but trainer read `llm_scan_analyses`
 - [x] Daily Deep Dive LLM (`ai/daily_deep_dive.py`) — Qwen 32B long-form daily fleet study, per-miner pass + fleet synthesis, no caps (April 9, commit `da1edbd`). See `docs/DAILY_DEEP_DIVE_DESIGN.md`
+- [x] 4-Pass Weekly Refinement Chain (`ai/refinement_chain.py`) — Qwen reflects on Claude weekly output, catches errors, Claude merges corrections. Resume-safe with WIP checkpointing. First run April 10 2026 caught 4 Claude errors. See `CLAUDE.md` section "The 4-Pass Weekly Refinement Chain"
 - [x] REPAIR_LOG.md created — layman-terms record of bugs and fixes (April 9, commit `d6c2871`)
 - [x] `docs/SESSION_LOG_2026-04-09.md` — full narrative of April 9 afternoon log pipeline sprint
 - [x] CLAUDE.md — added May Migration Changes section, Working Practices section (document-as-you-go + context compaction awareness)

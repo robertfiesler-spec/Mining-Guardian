@@ -341,6 +341,39 @@ No code changes. No merge block removal. If a future session proposes removing t
 
 ---
 
+
+### The 4-Pass Weekly Refinement Chain — error-catching between models
+
+Added April 10 2026. The refinement chain runs after the Sunday weekly training to catch and correct errors before the output becomes "official" fleet guidance.
+
+**The four passes:**
+1. **Pass 1 (Qwen daily deep dive)** — already exists in `knowledge["daily_deep_analyses"][0]`, produced the day before
+2. **Pass 2 (Claude weekly training)** — already exists in `knowledge["cross_miner_analysis"][0]`, produced by `train_cohort.py` at 3am Sunday  
+3. **Pass 3 (Qwen reflection)** — Qwen reads Claude output and identifies errors, disagreements, and blind spots. Written to `weekly_refinement_chain` immediately (resume-safe).
+4. **Pass 4 (Claude merged report)** — Claude reads its original output plus Qwen critique, corrects errors, and produces a final merged report.
+
+**Storage (the "both slots" rule):**
+Pass 4 writes to TWO locations:
+- `knowledge["weekly_refinement_chain"]` — full chain history for debugging/auditing
+- `knowledge["cross_miner_analysis"][0]` — overwrites the original so Sunday merge block picks up the corrected version next week
+
+This means the REFINED report (not the raw Claude output) becomes the "official" cross-miner analysis that flows into future training runs.
+
+**Resume-safety guarantees (added after a Pass 4 Anthropic 529 crash):**
+- Pre-flight checks validate all dependencies before firing any model call
+- WIP checkpointing after each pass (survives later crashes)
+- `--resume-from {3,4}` flag allows resuming after partial failures
+- `--smoke-test` validates plumbing in ~60s before burning 20+ minutes
+- `--dry-run` shows plan without firing model calls
+
+**Script location:** `ai/refinement_chain.py`
+
+**When to run:** After weekly training completes (either manually or eventually automated after `train_cohort.py`). Not yet wired into cron — currently manual.
+
+**First successful run:** April 10 2026. Qwen caught 4 Claude errors (fleet count 47/49 to 58, inappropriate REPLACE recommendations for S21 EXP Hydro and AH3880, re-proposed already-locked rules) and identified 2 blind spots (miners 53482 and 64347 that Claude missed). Claude accepted all corrections in Pass 4.
+
+---
+
 ## Working Practices
 
 ### Document as you go, not after
