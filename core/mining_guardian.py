@@ -5384,13 +5384,13 @@ class MiningGuardian:
                     "Provide: DIAGNOSIS (1 sentence), ACTION (bullet list with miner IPs), PATTERN (1 sentence or 'none')."
                 )
                 payload = {
-                    "model": getattr(self.config, "ollama_model", "qwen2.5:32b-instruct-q4_K_M"),
+                    "model": self.config.get("ollama_model", "qwen2.5:32b-instruct-q4_K_M"),
                     "prompt": qwen_prompt,
                     "stream": False,
                     "options": {"temperature": 0.3, "num_ctx": 16384},
                 }
                 req = _urlreq.Request(
-                    getattr(self.config, "ollama_url", "http://100.110.87.1:11434/api/generate"),
+                    self.config.get("ollama_url", "http://100.110.87.1:11434/api/generate"),
                     data=_json.dumps(payload).encode(),
                     headers={"Content-Type": "application/json"},
                 )
