@@ -66,3 +66,4 @@ guardian.db-wal
 
 # Backups directory (local only)
 backups/
+deploy/*_LIVE.json
