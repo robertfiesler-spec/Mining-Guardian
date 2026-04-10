@@ -1,58 +1,3 @@
-## llm_scan_analyses stream frozen for 3.5 days — ghost file (2026-04-10)
-
-**Symptom:** `knowledge['llm_scan_analyses']` stream had not written since 2026-04-06 15:33:48, despite the daemon running and the scan loop showing "Local LLM analysis complete for scan #NNNN" log lines every cycle. Discovered while trying to run a Claude → Qwen → Claude refinement loop on the weekly training output — the stream feeding Claude's weekly trainer was 3.5 days stale, meaning both weekly training runs this morning (04:11 and 04:55) analyzed April 6 fleet state, not April 10.
-
-**Root cause (multi-part):**
-1. **Ghost file.** `scripts/llm_scan_hook.py` was UNTRACKED in git. It contained `run_post_scan_llm()`, the background-thread LLM path called from `core/mining_guardian.py` line 5629. Because it was untracked, it never showed up in code review and never got the same scrutiny as tracked files.
-2. **Missing write path.** `run_post_scan_llm()` called Qwen, got the analysis back, posted it to Slack, and returned it — but NEVER wrote it to `knowledge['llm_scan_analyses']`. The write path that weekly_train.py reads from simply did not exist in the function.
-3. **Config key mismatch.** The hook read `cfg.get("local_llm_url")` and `cfg.get("local_llm_model")`, but `config.json` has keys `ollama_url` and `ollama_model`. Result: `llm_url = None`, `model = None`, analyzer fell back to defaults (probably localhost VPS, where Ollama is stopped). Even if the write path had existed, the LLM call itself was hitting the wrong endpoint.
-4. **Stale architectural comment.** `core/mining_guardian.py` line 5361 said `# Ollama local LLM removed — too slow on CPU, hangs up scans`. This was written when Ollama ran on VPS CPU, BEFORE the ROBS-PC RTX 4090 migration made Qwen ~4.6s per scan. The comment is stale; the code change that followed it was never reverted when the architectural reason stopped applying.
-
-**Fix:**
-1. Patched `scripts/llm_scan_hook.py`: fixed config keys to `ollama_url`/`ollama_model`, added full persist path to `knowledge['llm_scan_analyses']` with schema `{timestamp, analysis, model, scan_id, source: 'qwen_scan_hook'}`, bounded to last 500 entries.
-2. Added `scripts/llm_scan_hook.py` to git tracking for the first time (commit `b3a5902`). No more ghost file.
-3. Reverted the misguided Option A parallel inline path in `core/mining_guardian.py` (commit `355bad2`) — the hook now handles it cleanly in a background thread.
-
-**Verification:** Stream count went 196 → 198 within 3 minutes of the restart, last timestamp updated from `2026-04-06T15:33:48` to `2026-04-10T07:07:06`. Stream freshness: ~3 minutes. Confirmed the write path works end-to-end.
-
-**Impact:** For 3.5 days (April 6 15:33 → April 10 06:30), the hourly Qwen scan analysis stream was silently dead. Both of today's Claude weekly training runs (04:11 and 04:55) consumed this stale stream and produced output that referenced April 6 fleet state ("47 of 49 miners online" — the actual fleet is 58 but April 6 saw 49 scanned). The "learning loop" that is the main feature of the product had been broken for 3.5 days without any alerts firing, because the Slack post at the end of `run_post_scan_llm` was succeeding — the operator-visible signal (Slack) was fine, only the invisible-but-critical signal (knowledge.json persistence) was broken. Same failure class as the April 9 pre/post restart comparison bug and today's earlier km.save clobber bug — code logs success but state doesn't actually change.
-
-**Meta-lesson:** Three silent-skip bugs in two days, all same class. Your codebase has a systemic weakness around "log success without verifying state change." Worth a design pass on a post-write verification helper: every write to knowledge.json should read it back and assert the new entry is present before the writer's success log line fires. That would have caught all three bugs within one scan cycle instead of letting them bleed for days.
-
-**Also meta:** UNTRACKED files in the working tree are a latent bug source. Four more untracked `.bak.*` and `scripts/fix_*.py` files are still in the tree from yesterday's Step 8 cleanup list. Next session should finish that cleanup so no more ghost files exist.
-
----
-
-## Weekly training fleet synthesis silently clobbered (2026-04-10)
-
-**Symptom:** Manual weekly Claude training (PID 263793, fired 03:57:43) completed cleanly per the log — 18 Claude API calls, `Fleet synthesis complete: 12188 chars` at 04:11:57. But `knowledge.json` `cross_miner_analysis` had only 1 stale entry (1038 chars, field `summary`), not the 12188-char `analysis` entry the code wrote. `known_issues` still 50, `patterns` still 7 — identical to pre-run state.
-
-**Root cause:** Ordering bug in `ai/train_cohort.py`. Write sequence was: (1) direct file write to insert new `cross_miner_analysis` entry via atomic replace, then (2) `km.save()` which writes KnowledgeManager's in-memory snapshot to knowledge.json. Step 2 clobbered step 1 because `km` held a snapshot from BEFORE the direct write, so its `save()` serialized stale state over the fresh synthesis. Same class as the April 9 pre/post restart comparison write bug — code paths writing to different state stores that do not see each other.
-
-**Fix:** Reordered so `km.save()` and `conn.close()` fire FIRST, then the direct `cross_miner_analysis` file write fires LAST. Added a CRITICAL ORDERING comment block so a future session does not re-reorder them.
-
-**Impact:** Every Sunday weekly training since this regressed has been silently losing its fleet synthesis. 18 Claude API calls per run producing output that never reached knowledge.json, which meant the Sunday merge block could not pull previous weeks' Claude synthesis into new runs, and OpenClaw's guardian-db skill would never see weekly Claude insights. The local LLM training loop has been running without the Claude feedback signal it was designed to consume.
-
-**Verification:** Re-run `weekly_train.py` manually after fix, then check `knowledge['cross_miner_analysis'][0]['analysis']` for the 12K+ char synthesis with `source='claude_weekly_cohort'`.
-
-**Backups on VPS:** `knowledge.json.bak.20260410-preweeklytrainfix`, `ai/train_cohort.py.bak.20260410`.
-
----
-
-## Weekly training fleet synthesis silently clobbered (2026-04-10)
-
-**Symptom:** Manual weekly Claude training (PID 263793, fired 03:57:43) completed cleanly per log — 18 Claude calls, Fleet synthesis complete: 12188 chars at 04:11:57. But knowledge.json cross_miner_analysis had only 1 stale entry (1038 chars). The 12188-char synthesis was gone.
-
-**Root cause:** Ordering bug in ai/train_cohort.py. Direct cross_miner_analysis file write happened BEFORE km.save(). km held stale in-memory snapshot from before the direct write, so km.save() serialized stale state over the fresh synthesis.
-
-**Fix:** Reordered so km.save() and conn.close() fire FIRST, then direct cross_miner_analysis write fires LAST. Added CRITICAL ORDERING comment block so future sessions do not re-reorder.
-
-**Impact:** Every Sunday weekly training since this regressed lost its fleet synthesis. 18 Claude calls per run producing output that never reached knowledge.json. Sunday merge block could not pull previous weekly Claude insights. Same class as April 9 silent-skip bug.
-
-**Backups:** knowledge.json.bak.20260410-preweeklytrainfix, ai/train_cohort.py.bak.20260410 on VPS.
-
----
-
 # Mining Guardian — Repair Log
 
 **Purpose:** A running record of bugs, misunderstandings, and fixes. Written in plain English, not dev-speak, so either of us can read it at any point and quickly understand what was broken and why. Every entry has four parts: what Bobby thought the program was doing, what it was actually doing, what we changed, and how we verified the change worked.
@@ -75,6 +20,38 @@
 ---
 
 ## Entries (newest at top)
+
+---
+
+
+### 2026-04-10 · Three silent-skip bugs fixed — clobber, ghost file, and parallel-path mistake
+
+**What Bobby thought the program was doing:**
+The learning loop should work like this: Qwen analyzes every scan and writes to `knowledge['llm_scan_analyses']`. On Sunday, Claude reads that stream plus everything else and produces a fleet synthesis written to `knowledge['cross_miner_analysis']`. The whole point is that every piece of analysis flows to where it needs to be for the next consumer to read it.
+
+**What was actually happening:**
+Three separate bugs, all in the same "silent-skip" class — code logs success but state doesn't actually change:
+
+1. **Clobber bug in weekly training.** `ai/train_cohort.py` wrote Claude's 12,188-char fleet synthesis to `knowledge['cross_miner_analysis']` via a direct file write, then called `km.save()` immediately after. Problem: `km` (the KnowledgeManager object) held an in-memory snapshot from BEFORE the direct write, so `km.save()` serialized stale state right over the fresh synthesis. Result: every Sunday weekly training since the regression was losing its fleet synthesis — 18 Claude API calls producing output that never reached knowledge.json.
+
+2. **Frozen stream bug via ghost file.** `scripts/llm_scan_hook.py` was UNTRACKED in git (never committed, invisible to code review). It had config key mismatches (`local_llm_url` vs the actual key `ollama_url`), so the LLM call was hitting the wrong endpoint. Even worse, the function had NO write path to `knowledge['llm_scan_analyses']` at all — it called Qwen, posted to Slack, and returned, but never persisted anything. Result: the stream feeding Claude's weekly training had been frozen since April 6 (3.5 days stale) while the Slack posts kept working fine so nobody noticed.
+
+3. **Parallel-path mistake.** During debugging, an inline Qwen call was added to the main scan loop as "Option A" to work around the ghost file. Once the ghost file was fixed properly, this parallel path became redundant and confusing — two places calling Qwen for the same purpose. Reverted.
+
+**What we changed:**
+- **Clobber fix (commit f7fee4f):** Reordered `ai/train_cohort.py` so `km.save()` fires FIRST, then the direct `cross_miner_analysis` write fires LAST. Added a CRITICAL ORDERING comment block so future sessions don't re-reorder them.
+- **Ghost file fix (commit b3a5902):** Fixed config keys in `scripts/llm_scan_hook.py` to use `ollama_url`/`ollama_model`. Added the missing persist path to write analyses to `knowledge['llm_scan_analyses']` with proper schema. Added the file to git tracking for the first time.
+- **Parallel-path revert (commit 355bad2):** Removed the inline Qwen call from `core/mining_guardian.py` — the hook now handles it cleanly in a background thread.
+
+**How we verified:**
+- Weekly training: re-ran `weekly_train.py` manually. `knowledge['cross_miner_analysis'][0]['analysis']` now shows the 10,998-char synthesis with `source='claude_weekly_cohort'`. Verified the CRITICAL ORDERING comment is in place.
+- Scan stream: watched `llm_scan_analyses` go from 196 → 198+ entries within 3 minutes of the daemon restart. Timestamps confirmed fresh writes (2026-04-10T07:07:06 vs the old frozen 2026-04-06T15:33:48).
+- All three commits pushed to main and deployed to VPS.
+
+**Lesson for both of us:**
+Three bugs in two days, all same class: code logs success but state doesn't actually change. The codebase has a systemic weakness here. Every write to knowledge.json should read it back and assert the new entry is present before the success log line fires. That would have caught all three bugs within one scan cycle instead of letting them bleed for days. Also: UNTRACKED files in the working tree are a latent bug source — the ghost file was invisible to git status because nobody ever ran `git add` on it.
+
+**Status:** All three fixes shipped, verified in production, and pushed to GitHub.
 
 ---
 
