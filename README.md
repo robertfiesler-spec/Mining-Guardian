@@ -175,6 +175,8 @@ Mining Guardian is a learning loop — every scan feeds it, every operator decis
 
 **Weekly (Sunday 3am):** `train_cohort.py` groups all miners into ~10-15 cohorts by hardware identity (model, firmware, chip bin, PCB version, cooling). Cohort pass analyzes each cohort as a group. Outlier pass does per-miner deep-dive on anything >2σ from cohort mean. Fleet pass synthesizes everything into the weekly report, refines operator rules, and predicts next week's failures. Same code path runs on customer Mac minis with Qwen 32B instead of Claude — cohort count grows sub-linearly with fleet size, keeping cost flat at any scale.
 
+**Weekly refinement (after training):** `ai/refinement_chain.py` runs a 4-pass error-catching loop: (1) read Qwen daily deep dive, (2) read Claude weekly output, (3) Qwen reflects on Claude and identifies errors, (4) Claude merges corrections into final report. The refined report overwrites `cross_miner_analysis[0]` so next week's training picks up the corrected version. Added April 10 2026 after Qwen caught 4 Claude errors in the first run.
+
 **Monthly federation:** each customer site exports `knowledge.json` → Bobby runs `combine_knowledge.py` → master knowledge pushed back to every site → every customer's fleet makes every other customer's fleet smarter. No internet required for the sync.
 
 ---
