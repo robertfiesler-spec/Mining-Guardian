@@ -259,13 +259,28 @@ def render_ai_dashboard_html():
             f'<div style="color:{TD};font-size:12px;margin-top:4px">{_e(f["desc"])}</div></div>'
         )
 
-    # Cross-miner analysis
+    # Cross-miner analysis — show ALL entries in scrollable container
     cm_html = ""
     cma = insights.get("cross_miner", [])
-    if cma and cma[0].get("summary"):
-        raw = _e(cma[0]["summary"])
-        styled = re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#e2e8f0">\1</strong>', raw)
-        cm_html = f'<div style="color:{TD};font-size:13px;line-height:1.6">{styled.replace(chr(10),"<br>")}</div>'
+    if cma:
+        entries_html = ""
+        for i, entry in enumerate(cma):
+            text = entry.get("analysis") or entry.get("summary") or ""
+            if not text:
+                continue
+            ts = entry.get("timestamp") or entry.get("analyzed_at") or "unknown"
+            source = entry.get("source", "legacy")
+            # Format timestamp nicely
+            if "T" in str(ts):
+                ts_display = str(ts).replace("T", " ").split(".")[0]
+            else:
+                ts_display = str(ts)
+            raw = _e(text)
+            styled = re.sub(r'\*\*(.+?)\*\*', r'<strong style="color:#e2e8f0">\1</strong>', raw)
+            # Each entry gets a card with header
+            entries_html += f'<div style="background:{CB};border-radius:8px;padding:12px;margin-bottom:12px;border-left:3px solid {C}"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:{C};font-weight:600;font-size:12px">{ts_display}</span><span style="color:{TD};font-size:11px">{_e(source)}</span></div><div style="color:{TD};font-size:13px;line-height:1.6;white-space:pre-wrap">{styled}</div></div>'
+        if entries_html:
+            cm_html = f'<div style="max-height:400px;overflow-y:auto;padding-right:8px">{entries_html}</div>'
 
     # Patterns
     pt_html = ""
