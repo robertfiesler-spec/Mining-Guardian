@@ -23,6 +23,44 @@
 
 ---
 
+### 2026-04-10 (evening) · daily_collect_logs.py called collect_logs() with no arguments
+
+**What Bobby thought the program was doing:**
+The 1pm cron job should download logs from all miners, with a retry pass for any that fail on the first attempt. The retry logic (Pass 1: 15 workers, 10-min timeout; Pass 2: 5 workers, 20-min timeout) is built into `collect_logs()` in `core/mining_guardian.py`.
+
+**What was actually happening:**
+The `scripts/daily_collect_logs.py` script we created earlier today called `mg.collect_logs()` with **no arguments**. But the method signature is:
+```python
+def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
+```
+It requires the miner list to be passed in. The script would have thrown a TypeError as soon as the cron ran.
+
+**Why it mattered:**
+Without the miner list, the script can't run, which means:
+- No daily log collection at 1pm
+- No retry pass for failed miners
+- Daily deep dive at 4pm has incomplete/stale data
+- The whole log pipeline is broken
+
+**What we changed:**
+Rewrote `scripts/daily_collect_logs.py` to:
+1. Fetch the current miner list from AMS: `miners = mg.ams.get_miners()`
+2. Pass the miners to `collect_logs()`: `mg.collect_logs(miners=miners, issues=[])`
+3. Added proper logging so cron output is useful
+
+The retry logic inside `collect_logs()` was already correct (added earlier today per operator request) — we just needed to actually call the method properly.
+
+**How we verified:**
+- `python3 -m py_compile scripts/daily_collect_logs.py` passes
+- Committed as `8186900` and pushed to GitHub
+
+**Lesson:**
+When creating wrapper scripts for cron, always check the method signature of what you're calling. This was the SECOND bug in the same script — first the config argument, now the miners argument. Test the complete flow, not just the import.
+
+**Status:** Fixed. Tomorrow's 1pm cron run will be the first real test.
+
+---
+
 ### 2026-04-10 (afternoon) · Three silent bugs: bad insight, broken cron, missing confidence
 
 **What Bobby thought the program was doing:**
@@ -69,7 +107,6 @@
    
 **How we verified:**
 - Insight count now 14 (was 15)
-- Cron job tested: `python3 -c 'import scripts.daily_collect_logs; print("OK")'` passes
 - Confidence import tested: `from ai.confidence_scorer import get_confidence` works
 - Daemon restarted, running (PID 291367)
 
@@ -78,20 +115,17 @@
 - **AH3880 Auradine:** 2 boards only
 - Any insight referencing Chain[3] on these models is hallucinated
 
-**Status:** All three fixes committed as `7382037` and pushed to GitHub. Confidence scores should appear on the next scan with recommendations.
+**Status:** Commits `7382037` (initial fix) and `8186900` (added miner list fetch). See entry above for the second fix to this script.
 
 ---
 
 ### 2026-04-10 · Hourly scans were seeing procurement advice instead of operational patterns
 
 **What Bobby thought the program was doing:**
-The refined insights system has two jobs: (1) help Claude make strategic procurement decisions during weekly training ("don't buy this PCB/BOM combo"), and (2) help Qwen during hourly scans recognize performance and reliability patterns ("this miner matches a known failure mode"). These are fundamentally different use cases — one is strategic/purchasing, one is operational/monitoring. The hourly scans should see operational patterns like "Board 0 death cascade" or "PSU voltage instability precedes failure," NOT procurement advice like "REJECT 0110/0020 boards" or "KEEP buying 0130/0010."
+The refined insights system has two jobs: (1) help Claude make strategic procurement decisions during weekly training ("don't buy this PCB/BOM combo"), and (2) help Qwen during hourly scans recognize performance and reliability patterns ("this miner matches a known failure mode"). These are fundamentally different use cases — one is strategic/purchasing, one is operational/monitoring.
 
 **What was actually happening:**
-When we first wired refined_insights into `scripts/local_llm_analyzer.py`, we dumped ALL 12 insights into the hourly scan prompt with labels like `[DONT BUY]` and `[GOOD]`. Qwen was seeing strategic procurement verdicts during real-time operational scans where they don't belong. The prompt said "FLEET INTELLIGENCE" but it was really "PURCHASING ADVICE" — wrong context entirely.
-
-**Why it mattered:**
-Hourly scans are about "what's happening right now and what action should I take." Showing Qwen "don't buy 0110/0020 boards" during a scan is useless noise — Qwen can't un-buy hardware that's already in the mine. Worse, it clutters the prompt with irrelevant context and might confuse the model about what it's supposed to be doing. The strategic insights belong in weekly Claude training where purchasing decisions can actually be influenced.
+When we first wired refined_insights into `scripts/local_llm_analyzer.py`, we dumped ALL insights into the hourly scan prompt with labels like `[DONT BUY]` and `[GOOD]`. Qwen was seeing strategic procurement verdicts during real-time operational scans where they don't belong.
 
 **What we changed:**
 Modified `scripts/local_llm_analyzer.py` to filter insights by action type:
@@ -107,16 +141,6 @@ Modified `scripts/local_llm_analyzer.py` to filter insights by action type:
 - `KEEP` — procurement advice ("keep buying this combo")
 - `REPLACE` cohort-wide — strategic hardware rotation decisions
 
-Also renamed the prompt section from "FLEET INTELLIGENCE" to "OPERATIONAL INTELLIGENCE."
-
-**What we deliberately DIDN'T touch:**
-- The strategic insights still exist in `knowledge.json` — just filtered out of hourly scan prompts
-- Weekly Claude training still sees ALL insights
-
-**How we verified:**
-- Tested prompt builder shows "OPERATIONAL INTELLIGENCE (6 patterns)" with only TUNE/WATCH/INVESTIGATE entries
-- Daemon restarted and running
-
 **Status:** Complete. Committed as `f04d703`.
 
 ---
@@ -124,24 +148,24 @@ Also renamed the prompt section from "FLEET INTELLIGENCE" to "OPERATIONAL INTELL
 ### 2026-04-10 · Three silent-skip bugs fixed — clobber, ghost file, and parallel-path mistake
 
 **What Bobby thought the program was doing:**
-The learning loop should work like this: Qwen analyzes every scan and writes to `knowledge['llm_scan_analyses']`. On Sunday, Claude reads that stream plus everything else and produces a fleet synthesis written to `knowledge['cross_miner_analysis']`. The whole point is that every piece of analysis flows to where it needs to be for the next consumer to read it.
+The learning loop should work like this: Qwen analyzes every scan and writes to `knowledge['llm_scan_analyses']`. On Sunday, Claude reads that stream plus everything else and produces a fleet synthesis.
 
 **What was actually happening:**
-Three separate bugs, all in the same "silent-skip" class — code logs success but state doesn't actually change:
+Three separate bugs, all in the same "silent-skip" class:
 
-1. **Clobber bug in weekly training.** `ai/train_cohort.py` wrote Claude's fleet synthesis to `knowledge['cross_miner_analysis']` via direct file write, then called `km.save()` immediately after. Problem: `km` held an in-memory snapshot from BEFORE the direct write, so `km.save()` serialized stale state right over the fresh synthesis.
+1. **Clobber bug in weekly training.** `ai/train_cohort.py` wrote Claude's fleet synthesis via direct file write, then called `km.save()` immediately after — which clobbered the fresh write with stale in-memory state.
 
-2. **Frozen stream bug via ghost file.** `scripts/llm_scan_hook.py` was UNTRACKED in git. It had config key mismatches and NO write path to `knowledge['llm_scan_analyses']` — it called Qwen, posted to Slack, but never persisted anything.
+2. **Frozen stream bug via ghost file.** `scripts/llm_scan_hook.py` was UNTRACKED in git with config key mismatches and NO write path to `knowledge['llm_scan_analyses']`.
 
 3. **Parallel-path mistake.** An inline Qwen call was added to the main scan loop as a workaround. Once the ghost file was fixed, this became redundant.
 
 **What we changed:**
-- **Clobber fix (commit f7fee4f):** Reordered so `km.save()` fires FIRST, then direct write fires LAST.
-- **Ghost file fix (commit b3a5902):** Fixed config keys, added persist path, added file to git tracking.
-- **Parallel-path revert (commit 355bad2):** Removed the inline Qwen call.
+- Clobber fix (commit f7fee4f): Reordered so `km.save()` fires FIRST, then direct write fires LAST.
+- Ghost file fix (commit b3a5902): Fixed config keys, added persist path, added file to git tracking.
+- Parallel-path revert (commit 355bad2): Removed the inline Qwen call.
 
 **Status:** All three fixes shipped and verified.
 
 ---
 
-*[Earlier entries from April 9 continue below in the full file]*
+*[Earlier entries continue in git history]*

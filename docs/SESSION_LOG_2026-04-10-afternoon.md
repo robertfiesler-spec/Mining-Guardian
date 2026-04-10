@@ -7,7 +7,7 @@
 
 ## Session Summary
 
-This session fixed three silent bugs and created a comprehensive Monday build plan for the Mining Intelligence Catalog.
+This session fixed **four** silent bugs and created a comprehensive Monday build plan for the Mining Intelligence Catalog.
 
 ---
 
@@ -25,22 +25,30 @@ This session fixed three silent bugs and created a comprehensive Monday build pl
 
 ---
 
-### 2. Daily Log Collection Cron Fixed
+### 2. Daily Log Collection Cron Fixed (TWICE)
 
-**Problem:** The cron job was:
+**Problem #1:** The original cron job was:
 ```
 python -c "from core.mining_guardian import MiningGuardian; mg = MiningGuardian(); mg.collect_logs()"
 ```
-This failed silently because `MiningGuardian()` requires a `config` argument.
+This failed because `MiningGuardian()` requires a `config` argument.
 
-**Fix:** Created `scripts/daily_collect_logs.py` wrapper:
+**First fix (commit `7382037`):** Created `scripts/daily_collect_logs.py` wrapper that loads config.
+
+**Problem #2:** The wrapper called `mg.collect_logs()` with NO arguments, but the method signature requires `miners` and `issues`:
 ```python
-config = GuardianConfig.from_file('/root/Mining-Gaurdian/config.json')
-mg = MiningGuardian(config)
-mg.collect_logs()
+def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
 ```
 
-Updated crontab to use the new script with log redirect.
+**Second fix (commit `8186900`):** Updated script to:
+1. Fetch miner list from AMS: `miners = mg.ams.get_miners()`
+2. Pass to method: `mg.collect_logs(miners=miners, issues=[])`
+
+**Why the retry logic matters:** The `collect_logs()` method has built-in retry:
+- Pass 1: 15 workers, 10-minute timeout per miner
+- Pass 2 (RETRY): 5 workers, 20-minute timeout for any failures
+
+This was already implemented but never ran because the script couldn't even call the method.
 
 ---
 
@@ -50,14 +58,22 @@ Updated crontab to use the new script with log redirect.
 ```python
 from confidence_scorer import get_confidence
 ```
-But the file lives at `ai/confidence_scorer.py`. The try/except block silently set `_has_confidence = False`.
+But the file lives at `ai/confidence_scorer.py`. The try/except silently disabled confidence scoring.
 
 **Fix:** Changed to:
 ```python
 from ai.confidence_scorer import get_confidence, get_gate
 ```
 
-Daemon restarted. Confidence scores should appear on next scan with recommendations.
+---
+
+### 4. Operational vs Strategic Insight Filtering
+
+**Problem:** Hourly scans were showing procurement advice ("don't buy this PCB") instead of operational patterns.
+
+**Fix:** Modified `scripts/local_llm_analyzer.py` to filter by action type:
+- OPERATIONAL (hourly): TUNE, WATCH, INVESTIGATE, critical-REPLACE
+- STRATEGIC (weekly only): REJECT, KEEP, cohort-REPLACE
 
 ---
 
@@ -65,78 +81,62 @@ Daemon restarted. Confidence scores should appear on next scan with recommendati
 
 | Commit | Description |
 |--------|-------------|
+| `f04d703` | feat(ai): wire operational insights into hourly Qwen scan prompts |
 | `7382037` | fix: confidence scorer import path + daily log collection cron script |
-| `cd316ea` | docs: add Apr 10 afternoon fixes — bad insight, broken cron, missing confidence |
+| `cd316ea` | docs: add Apr 10 afternoon fixes |
+| `6dd87f7` | docs: add Monday Intelligence Catalog plan + session log |
+| `8186900` | fix: daily_collect_logs.py now fetches miners from AMS before calling collect_logs |
 
 ---
 
-## Documents Created
+## Documents Created/Updated
 
-1. **`docs/MONDAY_INTELLIGENCE_CATALOG_PLAN.md`** — Comprehensive build plan for Monday:
-   - Phase 1: Environment check (Docker/WSL2 on ROBS-PC)
-   - Phase 2: Directory setup
-   - Phase 3: Docker Postgres startup
-   - Phase 4: Initial schema (model_specs, known_patterns, error_codes, community_knowledge)
-   - Phase 5: Seed data with Bobby's fleet specs
-   - Phase 6: VPS connectivity test
-   - Fallback: Native Postgres via EnterpriseDB if Docker fails
-   - 30-minute hard cap on WSL2 debugging
-
-2. **`REPAIR_LOG.md`** — Updated with today's three fixes
+1. **`docs/MONDAY_INTELLIGENCE_CATALOG_PLAN.md`** — 75-minute build plan for Monday
+2. **`REPAIR_LOG.md`** — Updated with all four fixes
+3. **This session log**
 
 ---
 
 ## Current State
+
+### Daily Deep Dive Status
+- **Running now** — started 4pm CDT, currently on miner 32/45
+- Using logs collected earlier today (30 of 49 miners have fresh logs)
+- Will complete in ~1 hour
+
+### Log Collection Stats (today)
+- 30 unique miners with fresh logs
+- 176 MB total log data
+- 19 miners missing logs (some offline, some AMS timeouts)
+- Tomorrow's 1pm cron will run the fixed script with retry pass
 
 ### Refined Insights: 14 total
 - 6 operational (shown in hourly scans)
 - 8 strategic (weekly training only)
 - 1 deleted (hallucinated Chain[3])
 
-### Daemon Status
-- PID 291367, running since 14:37:06 CDT
-- All fixes applied
-
 ### Cron Jobs (all 6 configured)
 ```
 0 4 * * *   backup_knowledge.py
 0 7 * * *   morning_briefing.py  
-0 13 * * *  daily_collect_logs.py  ← FIXED
-0 16 * * *  daily_deep_dive.py
+0 13 * * *  daily_collect_logs.py  ← FIXED (twice!)
+0 16 * * *  daily_deep_dive.py     ← RUNNING NOW
 0 0 * * *   weekly_train.py
 0 1 * * *   refinement_chain.py
 ```
 
 ---
 
-## Monday Plan Summary
+## Verification Items
 
-**Goal:** Stand up PostgreSQL 16 on ROBS-PC as the Mining Intelligence Catalog.
-
-**Time budget:** ~75 minutes
-- 15 min: Environment check
-- 5 min: Directory setup  
-- 10 min: Docker startup
-- 20 min: Schema creation
-- 15 min: Seed data
-- 10 min: VPS connectivity test
-
-**Hard cap:** 30 minutes on WSL2/Docker debugging. If it doesn't work, fall back to native Postgres via EnterpriseDB.
-
-**Success criteria:**
-- PostgreSQL running on ROBS-PC
-- `model_specs` table with Bobby's fleet data
-- `error_codes` table with S19JPro codes
-- VPS can connect via Tailscale
+| Item | Status |
+|------|--------|
+| Confidence scores in Slack | ⏳ Next scan |
+| OPERATIONAL INTELLIGENCE in Qwen prompts | ✅ Deployed |
+| Daily deep dive completion | 🔄 Running (32/45) |
+| Daily log cron (tomorrow 1pm) | ⏳ Will verify |
+| Retry pass for failed log downloads | ⏳ Will verify tomorrow |
 
 ---
 
-## Verification Items for Next Scan
-
-1. ✅ Confidence scores should appear in Slack recommendations
-2. ✅ OPERATIONAL INTELLIGENCE section with 6 patterns (not procurement advice)
-3. ⏳ Check `/tmp/daily_log_collection.log` tomorrow at 1pm
-
----
-
-*Session ended ~14:45 CDT. All fixes committed and pushed.*
+*Session ended ~18:45 CDT. All fixes committed and pushed.*
