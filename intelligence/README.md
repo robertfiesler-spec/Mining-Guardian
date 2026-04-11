@@ -101,7 +101,7 @@ Four interconnected tables ensure no data point is ever skipped:
 | `database/intelligence_catalog_schema_v3_additions.sql` | V3 additions — 14+ new tables, 170+ columns, auto-discovery mechanism (1,256 lines) |
 | `docs/intelligence_catalog_design_notes.md` | Design philosophy, decisions, and evolution notes |
 | `docs/intelligence_catalog_gap_analysis.md` | Gap analysis — what was missing, what V3 added |
-| `docs/mining_intelligence_catalog_paper.pdf` | 24-page comprehensive paper documenting everything about the catalog |
+| `docs/mining_intelligence_catalog_paper.pdf` | 34-page comprehensive paper documenting everything about the catalog |
 | `docs/schema_inventory.json` | Machine-readable inventory of all 90 tables and 2,363 columns |
 | `scripts/` | (TBD) Ingestion, web research, backup, and migration scripts |
 | `README.md` | This file |
