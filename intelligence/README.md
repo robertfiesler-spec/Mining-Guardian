@@ -55,20 +55,39 @@ Because the 2 TB SSD lives in a Thunderbolt 4 enclosure rather than internal SAT
 
 Postgres bind mounts are absolute paths (`D:\miner-intelligence\...`), so a wrong drive letter would prevent the container from starting. Better to fail fast with a clear error than to silently lose data.
 
-## What this catalog will hold (planned tables)
+## Schema — Completed
 
-To be finalized through Q2-Q10 design questions. Initial sketch:
+**90 tables | 2,363 columns | 10 schemas | 10-year design horizon**
 
-- **`model_specs`** — vendor-published spec sheets (TH/s, watts, voltage, board count, chip type, PSU, control board, etc.). One row per miner model. Source-tagged with confidence score.
-- **`community_knowledge`** — Reddit posts, forum threads, blog reviews, teardown writeups, war stories. Full-text indexed. Tagged by miner family.
-- **`log_archive`** — pointer to raw log files on disk + extracted metadata (brand, model, firmware, serial, MAC, ingestion timestamp, source).
-- **`log_metrics`** — structured data parsed out of logs (per-chip hashrate, voltages, error counts, panic traces).
-- **`diagnostic_test_results`** — what tests fired against what logs and what the verdict was.
-- **`dual_model_verdicts`** — Qwen and Claude analyses side by side, for jump-start training.
-- **`known_patterns`** — cross-miner patterns once they emerge (e.g., "AH3880 Board 3 failures cluster around chassis serials 080010xxx batch").
-- **`ingestion_log`** — provenance of every file ever fed in (source, timestamp, who/what fed it).
-- **`web_research_cache`** — every URL ever fetched, content cached, expiry date — so we don't rehit vendor sites.
-- **`miner_hardware_components`** — hashboard variants, PSU revisions, control board flavors, chip generations, BOM details, cross-referenced with `model_specs`.
+The schema is implemented across three SQL files, designed to run in sequence:
+
+| File | Lines | Content |
+|---|---|---|
+| `database/intelligence_catalog_schema.sql` | 4,431 | Base schema: 63 tables, 10 schemas, 16 enums, extensions, triggers |
+| `database/intelligence_catalog_schema_v2_additions.sql` | 887 | V2: 9 new tables, 113 new columns — PSU serials, chip bins, board serials, fan specs, pinouts, known issues, reviews |
+| `database/intelligence_catalog_schema_v3_additions.sql` | 1,256 | V3: 14+ new tables, 170+ columns — auto-discovery, container reference, immersion fluids, electricity, curtailment, depreciation, diagnostics, weather |
+
+### Schemas
+
+| Schema | Tables | Columns | Purpose |
+|---|---|---|---|
+| knowledge | 10 | 173 | Source tracking, citations, data conflicts, auto-discovery mechanism, LLM pattern accuracy |
+| hardware | 19 | 637 | Miner hardware — manufacturers, chips, PSUs, control boards, hashboards, serial batches, chip bins, fan specs, pinouts, signal chains |
+| firmware | 7 | 169 | Firmware releases, compatibility, API capabilities, telemetry fields, known bugs, changelogs, autotuning profiles |
+| ops | 9 | 240 | Failure patterns, symptoms, probabilistic diagnosis, thresholds, environmental correlations, baselines |
+| market | 10 | 239 | User reviews, pricing, manufacturer reputation, forum posts, teardowns, war stories, depreciation, resale values |
+| repair | 10 | 257 | Parts catalog, suppliers, repair procedures, step-by-step guides, shop directory, repair records, diagnostic tools |
+| pool | 7 | 152 | Pool directory, endpoints, stratum configs, reliability history, incidents, Bitcoin network snapshots |
+| facility | 13 | 395 | Cooling solutions, HVAC patterns, container hydraulics/cooling/environment, immersion fluids, electricity rates, demand response, curtailment, weather |
+| regulatory | 5 | 101 | Legal frameworks, environmental regs, import/export rules, insurance, tax treatment |
+
+### Auto-Discovery Mechanism
+
+Four interconnected tables ensure no data point is ever skipped:
+1. **`knowledge.field_registry`** — master dictionary of all known fields (75 pre-seeded entries)
+2. **`knowledge.unknown_fields`** — captures any field not in the registry, with LLM auto-classification
+3. **`knowledge.raw_ingestion_log`** — complete raw payload of every API response (partitioned by quarter)
+4. **`knowledge.field_discovery_log`** — lifecycle audit trail for every discovered field
 
 ## Files in this directory
 
@@ -77,7 +96,13 @@ To be finalized through Q2-Q10 design questions. Initial sketch:
 | `docker-compose.yml` | Defines the Postgres container — image, port binding, bind mounts, healthcheck, resource limits |
 | `postgres-tuning.conf` | Postgres performance config tuned for Ryzen 7800X3D + 32 GB RAM. Re-tune notes inside the file. |
 | `.env.example` | Template for the secrets file. Copy to `.env` and fill in. NEVER commit `.env` to git. |
-| `schema/` | (TBD) SQL files defining tables, indexes, extensions |
+| `database/intelligence_catalog_schema.sql` | Base schema — 63 tables, 10 schemas, 16 enums, extensions, triggers (4,431 lines) |
+| `database/intelligence_catalog_schema_v2_additions.sql` | V2 additions — 9 new tables, 113 new columns (887 lines) |
+| `database/intelligence_catalog_schema_v3_additions.sql` | V3 additions — 14+ new tables, 170+ columns, auto-discovery mechanism (1,256 lines) |
+| `docs/intelligence_catalog_design_notes.md` | Design philosophy, decisions, and evolution notes |
+| `docs/intelligence_catalog_gap_analysis.md` | Gap analysis — what was missing, what V3 added |
+| `docs/mining_intelligence_catalog_paper.pdf` | 24-page comprehensive paper documenting everything about the catalog |
+| `docs/schema_inventory.json` | Machine-readable inventory of all 90 tables and 2,363 columns |
 | `scripts/` | (TBD) Ingestion, web research, backup, and migration scripts |
 | `README.md` | This file |
 
