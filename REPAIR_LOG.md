@@ -142,3 +142,29 @@ Filter by action type: OPERATIONAL (TUNE/WATCH/INVESTIGATE) for hourly, STRATEGI
 ---
 
 *[Earlier entries in git history]*
+
+
+---
+
+## April 10, 2026 — Late Night AI Wiring Sprint
+
+### FIX: Hourly LLM Blind to Most Knowledge (c83070b)
+**Problem:** Hourly LLM only saw patterns, refined_insights, and previous analyses.
+
+**Fix:** Added predictions, operator_rules, fingerprints, cross_miner_analysis, known_issues to context. Created 5 new prompt sections.
+
+### FIX: Predictor Ignoring Fingerprints (fc4935b)
+**Fix:** Added fingerprint risk modifier. Poor history = +15 risk points.
+
+### FIX: Prediction Validation Loop Missing (fc4935b)
+**Fix:** outcome_checker now validates predictions against actual outcomes. Tracks accuracy.
+
+### FIX: Confidence Scorer Ignoring Predictions (fc4935b)
+**Fix:** Pre-failure signals now reduce confidence by -5 to -15 points.
+
+### FIX: Prediction Alerts Paused (be5f9a2)
+**Fix:** Enabled alerts for >= 75% confidence predictions.
+
+**Files modified:** 6 files
+**Testing:** Daemon restarted
+
