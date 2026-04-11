@@ -293,3 +293,37 @@ All 6 cron jobs confirmed operational:
 - 1am: Refinement chain (Pass 3+4)
 
 
+
+
+---
+
+## April 11, 2026 — Daily Log Collection Fix (CRITICAL)
+
+### Problem
+Only 7 miners getting fresh logs daily instead of 39 eligible miners.
+
+**Root causes:**
+1. 24-hour dedup check was skipping miners that had any log in past 24h
+2. When fresh export failed, system gave up instead of trying existing logs
+3. Some miners (64407, 54567, 53529) have broken AMS log exports — all exports status=3 (failed)
+4. A2 model (53476) returns False from trigger_log_export
+
+### Fix (commit 81edb54)
+
+1. **REMOVED 24-hour dedup** — every miner now attempts fresh log collection every day
+2. **ADDED fallback to existing logs** — when fresh export fails, download most recent ready log
+3. **Tagged fallback logs** as "daily_baseline_fallback" to distinguish from fresh
+
+### New Operator Rule
+> DAILY LOG COLLECTION MANDATORY: Every online miner MUST get a fresh log export every day.
+> No 24-hour dedup — fresh logs are critical for AI learning. If fresh export fails,
+> fall back to most recent existing ready log. Problem miners with broken AMS exports
+> should be investigated physically.
+
+### Problem Miners (require physical investigation)
+- **64407** (S21e XP Hyd, 192.168.188.26) — 92 failed exports, 0 ready
+- **54567** (S19JPro, 192.168.188.35) — 55 failed exports, 0 ready
+- **53529** (S21EXPHyd, 192.168.188.25) — 92 failed, 1 ready from March 30
+- **53476** (A2, 192.168.188.31) — trigger_log_export returns False (model limitation?)
+
+
