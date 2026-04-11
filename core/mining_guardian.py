@@ -5130,7 +5130,7 @@ class MiningGuardian:
                 token without mutation.
             """
             import concurrent.futures
-            DAILY_INTERVAL_SECONDS = 24 * 3600
+            # DAILY_INTERVAL_SECONDS removed — every miner gets fresh logs every day
             DAILY_PARALLEL_WORKERS = 15
 
             # Force a fresh token BEFORE spawning parallel workers to avoid
@@ -5155,23 +5155,9 @@ class MiningGuardian:
                 if not miner_id:
                     return
 
-                # 24h dedup check — if this miner got a log in the last
-                # 24 hours (from any source, including a post-restart pull),
-                # skip it. That counts as today's baseline.
-                try:
-                    last = self.db.last_log_collected(miner_id)
-                except Exception as e:
-                    logger.warning("Daily log: last_log_collected failed for %s: %s", miner_id, e)
-                    last = None
-
-                if last is not None:
-                    age_seconds = (datetime.now() - last).total_seconds()
-                    if age_seconds < DAILY_INTERVAL_SECONDS:
-                        with counter_lock:
-                            counters["skipped_recent"] += 1
-                        logger.debug("Daily log: %s skipped — last collection was %ds ago",
-                                     miner_id, int(age_seconds))
-                        return
+                # OPERATOR RULE (April 11 2026): Every miner gets fresh logs EVERY day.
+                # No 24h dedup — fresh logs are critical for AI learning.
+                # Pre/post restart logs are separate; this is the daily baseline.
 
                 # Trigger a fresh export and wait
                 try:
@@ -5191,11 +5177,28 @@ class MiningGuardian:
                         logger.info("Daily log: miner %s collected, %d files saved",
                                     miner_id, len(log_files))
                     else:
-                        with counter_lock:
-                            counters["failed"] += 1
-                            failed_miners.append(entry)
-                        logger.warning("Daily log: miner %s returned no files (fresh export failed)",
-                                       miner_id)
+                        # Fresh export failed — try to download most recent EXISTING ready log
+                        logger.info("Daily log: fresh export failed for %s, trying existing logs", miner_id)
+                        try:
+                            existing_logs = self.ams.collect_miner_logs(int(miner_id))
+                            if existing_logs:
+                                self.db.save_logs(miner_id, model, "daily_baseline_fallback", existing_logs)
+                                with counter_lock:
+                                    counters["collected"] += 1
+                                logger.info("Daily log: miner %s collected via fallback (existing log)",
+                                            miner_id)
+                            else:
+                                with counter_lock:
+                                    counters["failed"] += 1
+                                    failed_miners.append(entry)
+                                logger.warning("Daily log: miner %s no fresh or existing logs available",
+                                               miner_id)
+                        except Exception as fallback_err:
+                            with counter_lock:
+                                counters["failed"] += 1
+                                failed_miners.append(entry)
+                            logger.warning("Daily log: miner %s fallback also failed: %s",
+                                           miner_id, fallback_err)
                 except Exception as e:
                     with counter_lock:
                         counters["failed"] += 1
