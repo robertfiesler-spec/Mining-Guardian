@@ -161,6 +161,32 @@ class LocalLLMAnalyzer:
         # Get our OWN previous analyses to learn from
         prev_analyses = knowledge.get("llm_scan_analyses", [])[-3:]  # Last 3
         
+        # Get flagged miner IDs for fingerprint lookup
+        flagged_ids = []
+        flagged_ips = []
+        for r in flagged:
+            rd = dict(r)
+            if "miner_id" in rd:
+                flagged_ids.append(rd["miner_id"])
+            if "ip" in rd:
+                flagged_ips.append(rd["ip"])
+        
+        # Get fingerprints for flagged miners only (keeps prompt focused)
+        all_fingerprints = knowledge.get("miner_fingerprints", {})
+        flagged_fingerprints = {}
+        for mid in flagged_ids:
+            if mid in all_fingerprints:
+                flagged_fingerprints[mid] = all_fingerprints[mid]
+        # Also try matching by IP
+        for ip in flagged_ips:
+            for fid, fp in all_fingerprints.items():
+                if fp.get("ip") == ip and fid not in flagged_fingerprints:
+                    flagged_fingerprints[fid] = fp
+        
+        # Get predictions for flagged miners
+        all_predictions = knowledge.get("predictions", [])
+        relevant_predictions = [p for p in all_predictions if p.get("ip") in flagged_ips][:10]
+        
         return {
             "scan": dict(scan) if scan else {},
             "flagged": [dict(r) for r in flagged],
@@ -171,9 +197,14 @@ class LocalLLMAnalyzer:
             "hvac": dict(hvac) if hvac else {},
             "weather": dict(weather) if weather else {},
             "patterns": knowledge.get("patterns", []),
-            "known_issues_count": len(knowledge.get("known_issues", [])),
+            "known_issues": knowledge.get("known_issues", [])[-20:],
             "refined_insights": knowledge.get("refined_insights", {}),
             "previous_analyses": prev_analyses,
+            # NEW: Full AI context
+            "predictions": relevant_predictions,
+            "operator_rules": knowledge.get("operator_rules", []),
+            "fingerprints": flagged_fingerprints,
+            "cross_miner_analysis": knowledge.get("cross_miner_analysis", [])[:3],
         }
 
     def _build_scan_prompt(self, ctx: Dict) -> str:
@@ -278,6 +309,63 @@ class LocalLLMAnalyzer:
                     txt = p.get("analysis", "")[:150]
                     lines.append(f"  [{ts}] {txt}...")
         
+        # OPERATOR RULES (Bobby taught these via denial reasons)
+        rules = ctx.get("operator_rules", [])
+        if rules:
+            lines.append(f"\n--- OPERATOR RULES ({len(rules)}) ---")
+            lines.append("The operator has taught these rules. RESPECT THEM:")
+            for rule in rules:
+                if isinstance(rule, str):
+                    lines.append(f"  • {rule}")
+                elif isinstance(rule, dict):
+                    lines.append(f"  • {rule.get(rule, str(rule))}")
+
+        # PREDICTIONS (pre-failure signals for flagged miners)
+        preds = ctx.get("predictions", [])
+        if preds:
+            lines.append(f"\n--- PRE-FAILURE PREDICTIONS ({len(preds)}) ---")
+            lines.append("These flagged miners show early warning signs:")
+            for p in preds[:8]:
+                ip = p.get("ip", "?")
+                signals = p.get("signals", [])
+                conf = p.get("confidence", "?")
+                sig_str = ", ".join(signals[:3]) if signals else "unknown"
+                lines.append(f"  {ip}: {sig_str} (confidence: {conf})")
+
+        # FINGERPRINTS (behavioral history for flagged miners)
+        fps = ctx.get("fingerprints", {})
+        if fps:
+            lines.append(f"\n--- MINER BEHAVIORAL HISTORY ({len(fps)}) ---")
+            for mid, fp in list(fps.items())[:8]:
+                ip = fp.get("ip", mid)
+                success = fp.get("restart_success_rate", "?")
+                total = fp.get("total_restarts", 0)
+                issues = fp.get("known_issues", [])
+                issue_str = ", ".join(issues[:2]) if issues else "none"
+                lines.append(f"  {ip}: {success}% restart success ({total} restarts), issues: {issue_str}")
+
+        # CROSS-MINER ANALYSIS (weekly strategic insights)
+        cma = ctx.get("cross_miner_analysis", [])
+        if cma:
+            lines.append(f"\n--- WEEKLY STRATEGIC INSIGHTS ---")
+            lines.append("Key findings from weekly fleet analysis:")
+            for c in cma[:2]:
+                if isinstance(c, dict):
+                    summary = c.get("summary", c.get("analysis", ""))[:200]
+                    if summary:
+                        lines.append(f"  • {summary}...")
+
+        # KNOWN ISSUES (recent discovered problems)
+        ki = ctx.get("known_issues", [])
+        if ki:
+            lines.append(f"\n--- KNOWN ISSUES ({len(ki)}) ---")
+            for issue in ki[:5]:
+                if isinstance(issue, dict):
+                    insight = issue.get("insight", str(issue))[:100]
+                    lines.append(f"  • {insight}")
+                elif isinstance(issue, str):
+                    lines.append(f"  • {issue[:100]}")
+
         # Known patterns
         if ctx["patterns"]:
             lines.append(f"\n--- KNOWN PATTERNS ({len(ctx['patterns'])}) ---")
