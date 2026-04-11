@@ -219,3 +219,40 @@ Conducted full research audit of every AI component. Created ai/comprehensive_au
 **Testing:** Daemon restarted, all loops verified closed
 
 
+
+
+---
+
+## April 11, 2026 — CRITICAL FIX: Wrong File Running in Production
+
+### Issue (Caught by External Auditor)
+
+**All April 10-11 sprint work was NOT running in production.**
+
+-  (456 lines) — OLD code, no sprint fixes
+-  (539 lines) — FIXED code with all sprint work
+
+The daemon adds  to , so when  imports , Python found the OLD  version.
+
+The hourly LLM was STILL running blind despite all our sprint work.
+
+### Fix (46eaafe)
+
+Copied  → 
+
+Now production actually uses:
+- Predictions for flagged miners
+- Miner fingerprints (baselines)
+- Refined insights from Claude
+- Previous analyses (scan-to-scan memory)
+- HVAC correlation data
+- Operator rules (internal, not echoed)
+- Full known issues text
+- Cross-miner analysis
+
+### Lesson Learned
+
+When files exist in both  and , verify which one the daemon imports. 
+The  manipulation in  line 5520 adds  but NOT .
+
+
