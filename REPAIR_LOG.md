@@ -23,6 +23,51 @@
 
 ---
 
+### 2026-04-10 (evening) · LLM kept recommending HVAC inspection + repeating 20-min cooldown rule
+
+**What Bobby thought the program was doing:**
+The LLM should NOT recommend HVAC inspection — the HVAC is working correctly. Low delta-T is normal and seasonal. Also, once the system learns a rule (like the 20-minute post-restart cooldown), it shouldn't keep mentioning it in every single report.
+
+**What was actually happening:**
+1. **HVAC recommendations:** The LLM was including "review HVAC system to address environmental overheating concerns" in recommendations, even though the HVAC is fine.
+
+2. **Repeating OPERATOR LEARNING:** Every report included the same 20-minute cooldown rule under "OPERATOR LEARNING" even though that rule was learned days ago and is already in `operator_rules`.
+
+**Why it mattered:**
+- False HVAC alerts waste operator attention on a system that's working correctly
+- Repeating the same "learning" every report is noise — the system should only report NEW learnings
+
+**What we changed:**
+Modified `scripts/local_llm_analyzer.py`:
+
+1. **Added HVAC disclaimer** right after HVAC data line:
+   ```
+   NOTE: HVAC is WORKING CORRECTLY. Low delta-T is normal. Do NOT recommend HVAC inspection.
+   ```
+
+2. **Updated OPERATOR LEARNING instructions:**
+   ```
+   ONLY include this section if there are NEW denials with NEW reasons.
+   The 20-minute post-restart cooldown rule is ALREADY KNOWN — do not repeat it.
+   Skip this section entirely if there are no new lessons to learn.
+   ```
+
+3. **Added warning in RECOMMENDATION section:**
+   ```
+   CRITICAL: Do NOT recommend HVAC inspection — the cooling system is working correctly.
+   ```
+
+**How we verified:**
+- `python3 -m py_compile scripts/local_llm_analyzer.py` passes
+- Committed as `45b954f`
+
+**Lesson:**
+LLMs need explicit negative instructions ("do NOT do X") when they keep doing something unwanted. Positive instructions alone aren't enough — the model will keep making the same suggestions unless explicitly told not to.
+
+**Status:** Fixed. Next hourly scan should show cleaner recommendations.
+
+---
+
 ### 2026-04-10 (evening) · daily_collect_logs.py called collect_logs() with no arguments
 
 **What Bobby thought the program was doing:**
@@ -71,100 +116,37 @@ When creating wrapper scripts for cron, always check the method signature of wha
 **What was actually happening:**
 1. **Bad insight:** Claude training generated `chain_3_voltage_failure_hydro` claiming "Chain[3] detachment" on S19JPro. But S19JPro only has 3 boards — Chain[3] doesn't exist. This was a hallucination.
 
-2. **Broken cron:** The daily log collection cron entry was:
-   ```
-   python -c "from core.mining_guardian import MiningGuardian; mg = MiningGuardian(); mg.collect_logs()"
-   ```
-   This failed because `MiningGuardian()` requires a `config` argument. The cron job was silently failing every day at 1pm.
+2. **Broken cron:** The daily log collection cron entry was calling `MiningGuardian()` without the required `config` argument. The cron job was silently failing every day at 1pm.
 
-3. **Missing confidence:** The import in `core/mining_guardian.py` was `from confidence_scorer import get_confidence`, but the file lives at `ai/confidence_scorer.py`. The try/except block caught the ImportError and silently set `_has_confidence = False`, so all confidence scoring was disabled.
-
-**Why it mattered:**
-- Bad insights pollute the knowledge base and give wrong advice
-- Broken cron means no daily log collection = daily deep dive has no fresh data
-- Missing confidence removes a key operator feedback signal from Slack
+3. **Missing confidence:** The import in `core/mining_guardian.py` was `from confidence_scorer import get_confidence`, but the file lives at `ai/confidence_scorer.py`. The try/except silently disabled confidence scoring.
 
 **What we changed:**
-
-1. **Deleted the bad insight:**
-   ```python
-   del k['refined_insights']['chain_3_voltage_failure_hydro']
-   ```
-   Now 14 insights remain.
-
-2. **Created `scripts/daily_collect_logs.py`** — a proper wrapper script that loads config:
-   ```python
-   config = GuardianConfig.from_file('/root/Mining-Gaurdian/config.json')
-   mg = MiningGuardian(config)
-   mg.collect_logs()
-   ```
-   Updated crontab to use the new script.
-
-3. **Fixed import path:**
-   ```python
-   from ai.confidence_scorer import get_confidence, get_gate
-   ```
-   
-**How we verified:**
-- Insight count now 14 (was 15)
-- Confidence import tested: `from ai.confidence_scorer import get_confidence` works
-- Daemon restarted, running (PID 291367)
+1. Deleted the bad insight from `knowledge.json`
+2. Created `scripts/daily_collect_logs.py` wrapper script
+3. Fixed import path to `from ai.confidence_scorer import get_confidence, get_gate`
 
 **Hardware facts established:**
-- **S19JPro:** 3 boards (Chain 0, 1, 2) — runs in immersion (air machine converted)
+- **S19JPro:** 3 boards (Chain 0, 1, 2) — air machine running in immersion
 - **AH3880 Auradine:** 2 boards only
-- Any insight referencing Chain[3] on these models is hallucinated
 
-**Status:** Commits `7382037` (initial fix) and `8186900` (added miner list fetch). See entry above for the second fix to this script.
+**Status:** Commits `7382037` (initial fix) and `8186900` (added miner list fetch).
 
 ---
 
 ### 2026-04-10 · Hourly scans were seeing procurement advice instead of operational patterns
 
 **What Bobby thought the program was doing:**
-The refined insights system has two jobs: (1) help Claude make strategic procurement decisions during weekly training ("don't buy this PCB/BOM combo"), and (2) help Qwen during hourly scans recognize performance and reliability patterns ("this miner matches a known failure mode"). These are fundamentally different use cases — one is strategic/purchasing, one is operational/monitoring.
+The refined insights system has two jobs: (1) help Claude make strategic procurement decisions during weekly training, and (2) help Qwen during hourly scans recognize performance patterns. Hourly scans should see operational patterns, NOT procurement advice.
 
 **What was actually happening:**
-When we first wired refined_insights into `scripts/local_llm_analyzer.py`, we dumped ALL insights into the hourly scan prompt with labels like `[DONT BUY]` and `[GOOD]`. Qwen was seeing strategic procurement verdicts during real-time operational scans where they don't belong.
+All insights were being dumped into the hourly scan prompt — including "REJECT 0110/0020 boards" and "KEEP buying 0130/0010" which are strategic, not operational.
 
 **What we changed:**
-Modified `scripts/local_llm_analyzer.py` to filter insights by action type:
-
-**Now shown in hourly scans (OPERATIONAL):**
-- `TUNE` — performance rules like restart success threshold
-- `WATCH` — reliability patterns like Board 0 death cascade
-- `INVESTIGATE` — active degradation alerts like PSU voltage instability
-- `REPLACE` with "critical" in key — specific miner failures (not cohort-wide)
-
-**NOT shown in hourly scans (STRATEGIC):**
-- `REJECT` — procurement advice ("don't buy this combo")
-- `KEEP` — procurement advice ("keep buying this combo")
-- `REPLACE` cohort-wide — strategic hardware rotation decisions
+Modified `scripts/local_llm_analyzer.py` to filter by action type:
+- OPERATIONAL (hourly): TUNE, WATCH, INVESTIGATE, critical-REPLACE
+- STRATEGIC (weekly only): REJECT, KEEP, cohort-REPLACE
 
 **Status:** Complete. Committed as `f04d703`.
-
----
-
-### 2026-04-10 · Three silent-skip bugs fixed — clobber, ghost file, and parallel-path mistake
-
-**What Bobby thought the program was doing:**
-The learning loop should work like this: Qwen analyzes every scan and writes to `knowledge['llm_scan_analyses']`. On Sunday, Claude reads that stream plus everything else and produces a fleet synthesis.
-
-**What was actually happening:**
-Three separate bugs, all in the same "silent-skip" class:
-
-1. **Clobber bug in weekly training.** `ai/train_cohort.py` wrote Claude's fleet synthesis via direct file write, then called `km.save()` immediately after — which clobbered the fresh write with stale in-memory state.
-
-2. **Frozen stream bug via ghost file.** `scripts/llm_scan_hook.py` was UNTRACKED in git with config key mismatches and NO write path to `knowledge['llm_scan_analyses']`.
-
-3. **Parallel-path mistake.** An inline Qwen call was added to the main scan loop as a workaround. Once the ghost file was fixed, this became redundant.
-
-**What we changed:**
-- Clobber fix (commit f7fee4f): Reordered so `km.save()` fires FIRST, then direct write fires LAST.
-- Ghost file fix (commit b3a5902): Fixed config keys, added persist path, added file to git tracking.
-- Parallel-path revert (commit 355bad2): Removed the inline Qwen call.
-
-**Status:** All three fixes shipped and verified.
 
 ---
 
