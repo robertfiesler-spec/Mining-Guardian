@@ -256,3 +256,40 @@ When files exist in both  and , verify which one the daemon imports.
 The  manipulation in  line 5520 adds  but NOT .
 
 
+
+
+---
+
+## April 11, 2026 — Operator Rule Consolidation + Offline Miner Fix
+
+### Consolidated Operator Rules (3 → 1)
+**Problem:** Three operator rules were all variations of the same thing (20-minute post-restart cooldown).
+
+**Fix:** Consolidated into single well-worded rule:
+> 20-MINUTE POST-RESTART COOLDOWN: After any restart or power cycle, wait 20 minutes before initiating profile changes, additional restarts, or any other actions. The miner needs time to stabilize and reach steady-state operation.
+
+### New Operator Rule: Offline Miner Logic (1b02374)
+**Problem:** System was recommending RESTART for truly offline miners. But firmware restart requires network connectivity — if miner has no power, restart command cannot reach it.
+
+**Symptom:** Miner 192.168.188.231 (S19JPro, no PDU) showed "OFFLINE — attempting firmware restart" for 5+ consecutive scans despite being unreachable.
+
+**Fix:** Changed offline decision tree:
+- BEFORE: offline → RESTART first → PDU_CYCLE → PHYSICAL_INSPECTION
+- AFTER: offline + has PDU → PDU_CYCLE; offline + no PDU → PHYSICAL_INSPECTION
+
+Firmware RESTART is now only recommended for reachable-but-underperforming miners.
+
+### Current Operator Rules (2 total)
+1. 20-MINUTE POST-RESTART COOLDOWN
+2. OFFLINE MINER LOGIC (firmware restart requires connectivity)
+
+### Cron Jobs Verified Working
+All 6 cron jobs confirmed operational:
+- 4am: Knowledge backup → GitHub
+- 7am: Morning briefing → Slack
+- 1pm: Daily log collection
+- 4pm: Daily deep dive (Qwen)
+- 12am: Claude training
+- 1am: Refinement chain (Pass 3+4)
+
+
