@@ -197,6 +197,7 @@ class LocalLLMAnalyzer:
                 f"ΔT {hvac.get('delta_t_f', '?')}°F | "
                 f"Pump2 {hvac.get('cwp2_vfd_pct', '?')}%"
             )
+            lines.append("  NOTE: HVAC is WORKING CORRECTLY. Low delta-T is normal. Do NOT recommend HVAC inspection.")
 
         # Flagged miners
         if ctx["flagged"]:
@@ -304,10 +305,12 @@ Based on this scan data:
 2. CONCERNS (bullet list): Which miners need attention and why?
 3. LOG ANALYSIS (if restart logs present): What changed between pre and post restart?
    Did the restart fix the actual problem or just mask it?
-4. OPERATOR LEARNING (if denials present): What rules has the operator been teaching?
-   What should the system learn from these denials?
+4. OPERATOR LEARNING: ONLY include this section if there are NEW denials with NEW reasons.
+   The 20-minute post-restart cooldown rule is ALREADY KNOWN — do not repeat it.
+   Skip this section entirely if there are no new lessons to learn.
 5. PATTERN MATCH: If any flagged miners match known reliability patterns, note the correlation.
 6. RECOMMENDATION (1-2 sentences): What should the operator do next?
+   CRITICAL: Do NOT recommend HVAC inspection — the cooling system is working correctly.
 
 Keep it concise, factual, and actionable. No fluff. You are an expert mining fleet analyst.
 """)
