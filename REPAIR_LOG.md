@@ -168,3 +168,54 @@ Filter by action type: OPERATIONAL (TUNE/WATCH/INVESTIGATE) for hourly, STRATEGI
 **Files modified:** 6 files
 **Testing:** Daemon restarted
 
+
+
+---
+
+## April 11, 2026 — Comprehensive AI Audit & Final Wiring
+
+### AUDIT: All 12 Feedback Loops Now Closed
+
+Conducted full research audit of every AI component. Created ai/comprehensive_audit.py to document all data flows.
+
+**Feedback loops verified working:**
+- PREDICTION → VALIDATION (Apr 10)
+- FINGERPRINT → PREDICTION (Apr 10)
+- FINGERPRINT → CONFIDENCE
+- PREDICTION → CONFIDENCE (Apr 10)
+- FINGERPRINT → ACTION_DIVERSITY (Apr 10)
+- OUTCOME → MINER_PROFILES
+- OPERATOR RULES → HOURLY LLM (Apr 11)
+- CROSS_MINER_ANALYSIS → HOURLY LLM (Apr 10)
+- DAILY_DEEP_ANALYSES → WEEKLY
+- LLM_SCAN_ANALYSES → SELF (Apr 9)
+- REFINED_INSIGHTS → ALL
+- HVAC_CORRELATION → PREDICTOR + LLM (Apr 11) - FIXED THIS SESSION
+
+### FIX: hvac_correlation Was Orphaned (66634b6)
+**Problem:** hvac_correlator.py computed correlation weekly but nobody read it.
+
+**Fix:**
+- Added hvac_correlation to local_llm_analyzer context
+- Displays correlation when significant (>0.3 or <-0.3)
+- Predictor now uses correlation to determine if facility stress matters
+- Only suppresses temp signals if historical correlation confirms impact
+
+### FIX: Hourly LLM Echoing Operator Rules (1586939)
+**Problem:** LLM was repeating operator rules back in every report.
+
+**Fix:**
+- Changed rules to internal-only guidance
+- Added ABSOLUTE RULES section forbidding echoing
+- Removed OPERATOR LEARNING section requirement
+
+### REMAINING MEDIUM PRIORITY ITEMS
+- miner_ams_extended: collected but unused in AI
+- miner_profiles: duplicates miner_fingerprints (consider consolidating)
+- chip_readings: empty stub table
+- miner_baselines: empty, never implemented
+
+**Files modified:** 4 files
+**Testing:** Daemon restarted, all loops verified closed
+
+
