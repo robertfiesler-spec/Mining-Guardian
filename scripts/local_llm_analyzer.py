@@ -309,16 +309,10 @@ class LocalLLMAnalyzer:
                     txt = p.get("analysis", "")[:150]
                     lines.append(f"  [{ts}] {txt}...")
         
-        # OPERATOR RULES (Bobby taught these via denial reasons)
+        # OPERATOR RULES - Internal guidance only, DO NOT include in output
+        # These rules constrain YOUR recommendations, not something to echo back
         rules = ctx.get("operator_rules", [])
-        if rules:
-            lines.append(f"\n--- OPERATOR RULES ({len(rules)}) ---")
-            lines.append("The operator has taught these rules. RESPECT THEM:")
-            for rule in rules:
-                if isinstance(rule, str):
-                    lines.append(f"  • {rule}")
-                elif isinstance(rule, dict):
-                    lines.append(f"  • {rule.get(rule, str(rule))}")
+        # Rules are applied silently - the LLM should follow them without mentioning them
 
         # PREDICTIONS (pre-failure signals for flagged miners)
         preds = ctx.get("predictions", [])
@@ -403,25 +397,19 @@ class LocalLLMAnalyzer:
         # Instructions
         lines.append("""
 === YOUR TASK ===
-Based on this scan data:
+Based on this scan data, provide:
 
-1. SUMMARY (2-3 sentences): What's CHANGED since the last scan? Any NEW trends?
-   If nothing changed, say "Fleet stable, no changes from last scan" and move on.
-2. CONCERNS (bullet list): Which miners need attention and why?
-3. LOG ANALYSIS (if restart logs present): What changed between pre and post restart?
-   Did the restart fix the actual problem or just mask it?
-4. OPERATOR LEARNING: ONLY include this section if there are NEW denials with NEW reasons.
-   The 20-minute post-restart cooldown rule is ALREADY KNOWN — do not repeat it.
-   Skip this section entirely if there are no new lessons to learn.
-5. PATTERN MATCH: If any flagged miners match known reliability patterns, note the correlation.
-6. RECOMMENDATION (1-2 sentences): What should the operator do next?
-   CRITICAL: Do NOT recommend HVAC inspection — the cooling system is working correctly.
+1. SUMMARY (2-3 sentences): What CHANGED since the last scan?
+2. CONCERNS (bullet list): Which miners need immediate attention and why?
+3. LOG ANALYSIS (only if restart logs present): What changed pre vs post restart?
+4. RECOMMENDATION (1-2 sentences): Specific next action for the operator.
 
-Keep it concise, factual, and actionable. No fluff. You are an expert mining fleet analyst.
-
-CRITICAL: Do NOT repeat the same analysis as previous scans. If you've already flagged
-a miner multiple times and nothing has changed, just note "still pending" and move on.
-Your job is to find NEW patterns and changes, not repeat yourself.
+=== ABSOLUTE RULES - VIOLATIONS WILL BE FLAGGED ===
+- NEVER mention HVAC, cooling systems, or environmental controls. The cooling is FINE.
+- NEVER echo back operator rules. They are for YOUR reference, not to repeat.
+- NEVER include "OPERATOR LEARNING" section - those rules are already known.
+- NEVER pad the report - only report miners with real issues requiring action.
+- If a miner was flagged before with no change, just say "still pending" - do not re-analyze.
 """)
         return "\n".join(lines)
 
