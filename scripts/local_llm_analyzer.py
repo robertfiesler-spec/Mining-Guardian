@@ -158,6 +158,9 @@ class LocalLLMAnalyzer:
 
         conn.close()
 
+        # Get our OWN previous analyses to learn from
+        prev_analyses = knowledge.get("llm_scan_analyses", [])[-3:]  # Last 3
+        
         return {
             "scan": dict(scan) if scan else {},
             "flagged": [dict(r) for r in flagged],
@@ -170,6 +173,7 @@ class LocalLLMAnalyzer:
             "patterns": knowledge.get("patterns", []),
             "known_issues_count": len(knowledge.get("known_issues", [])),
             "refined_insights": knowledge.get("refined_insights", {}),
+            "previous_analyses": prev_analyses,
         }
 
     def _build_scan_prompt(self, ctx: Dict) -> str:
@@ -262,6 +266,18 @@ class LocalLLMAnalyzer:
                     f"{lg['log_file']} ({lg['size_bytes']} bytes)"
                 )
 
+        # YOUR PREVIOUS ANALYSES (learn from yourself!)
+        prev = ctx.get("previous_analyses", [])
+        if prev:
+            lines.append(f"\n--- YOUR PREVIOUS ANALYSES ({len(prev)}) ---")
+            lines.append("Here's what you said in recent scans. DO NOT REPEAT THIS.")
+            lines.append("Focus on what's CHANGED or NEW since then:")
+            for p in prev:
+                if isinstance(p, dict):
+                    ts = p.get("timestamp", "?")[:16]
+                    txt = p.get("analysis", "")[:150]
+                    lines.append(f"  [{ts}] {txt}...")
+        
         # Known patterns
         if ctx["patterns"]:
             lines.append(f"\n--- KNOWN PATTERNS ({len(ctx['patterns'])}) ---")
@@ -301,7 +317,8 @@ class LocalLLMAnalyzer:
 === YOUR TASK ===
 Based on this scan data:
 
-1. SUMMARY (2-3 sentences): What's the fleet health right now? Any trends?
+1. SUMMARY (2-3 sentences): What's CHANGED since the last scan? Any NEW trends?
+   If nothing changed, say "Fleet stable, no changes from last scan" and move on.
 2. CONCERNS (bullet list): Which miners need attention and why?
 3. LOG ANALYSIS (if restart logs present): What changed between pre and post restart?
    Did the restart fix the actual problem or just mask it?
@@ -313,6 +330,10 @@ Based on this scan data:
    CRITICAL: Do NOT recommend HVAC inspection — the cooling system is working correctly.
 
 Keep it concise, factual, and actionable. No fluff. You are an expert mining fleet analyst.
+
+CRITICAL: Do NOT repeat the same analysis as previous scans. If you've already flagged
+a miner multiple times and nothing has changed, just note "still pending" and move on.
+Your job is to find NEW patterns and changes, not repeat yourself.
 """)
         return "\n".join(lines)
 
