@@ -49,7 +49,7 @@ class LocalLLMAnalyzer:
         self.QUICK_ANALYSIS_INTERVAL = 300  # quick check every scan
 
     def _query_llm(self, prompt: str, max_tokens: int = 1024,
-                   timeout: int = 240) -> Optional[str]:
+                   timeout: int = 60) -> Optional[str]:
         """Send prompt to local Ollama LLM and return response."""
         try:
             resp = requests.post(
@@ -79,7 +79,7 @@ class LocalLLMAnalyzer:
 
     def _get_scan_context(self, scan_id: int) -> Dict:
         """Build context from the latest scan data."""
-        conn = sqlite3.connect(DB_PATH, timeout=120)
+        conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
 
         # Current scan summary
@@ -148,7 +148,7 @@ class LocalLLMAnalyzer:
             FROM weather_readings ORDER BY id DESC LIMIT 1
         """).fetchone()
 
-        # Knowledge — includes both Claude's weekly analysis and local LLM history
+        # Knowledge patterns
         knowledge = {}
         if KNOWLEDGE_PATH.exists():
             try:
@@ -156,14 +156,37 @@ class LocalLLMAnalyzer:
             except Exception:
                 pass
 
-        # Claude's cross-miner analysis (from weekly training)
-        cross_miner = knowledge.get("cross_miner_analysis", {})
-
-        # Operator rules extracted by local LLM or Claude
-        operator_rules = knowledge.get("operator_rules", [])
-
         conn.close()
 
+        # Get our OWN previous analyses to learn from
+        prev_analyses = knowledge.get("llm_scan_analyses", [])[-3:]  # Last 3
+        
+        # Get flagged miner IDs for fingerprint lookup
+        flagged_ids = []
+        flagged_ips = []
+        for r in flagged:
+            rd = dict(r)
+            if "miner_id" in rd:
+                flagged_ids.append(rd["miner_id"])
+            if "ip" in rd:
+                flagged_ips.append(rd["ip"])
+        
+        # Get fingerprints for flagged miners only (keeps prompt focused)
+        all_fingerprints = knowledge.get("miner_fingerprints", {})
+        flagged_fingerprints = {}
+        for mid in flagged_ids:
+            if mid in all_fingerprints:
+                flagged_fingerprints[mid] = all_fingerprints[mid]
+        # Also try matching by IP
+        for ip in flagged_ips:
+            for fid, fp in all_fingerprints.items():
+                if fp.get("ip") == ip and fid not in flagged_fingerprints:
+                    flagged_fingerprints[fid] = fp
+        
+        # Get predictions for flagged miners
+        all_predictions = knowledge.get("predictions", [])
+        relevant_predictions = [p for p in all_predictions if p.get("ip") in flagged_ips][:10]
+        
         return {
             "scan": dict(scan) if scan else {},
             "flagged": [dict(r) for r in flagged],
@@ -174,9 +197,15 @@ class LocalLLMAnalyzer:
             "hvac": dict(hvac) if hvac else {},
             "weather": dict(weather) if weather else {},
             "patterns": knowledge.get("patterns", []),
-            "known_issues_count": len(knowledge.get("known_issues", [])),
-            "cross_miner_analysis": cross_miner,
-            "operator_rules": operator_rules,
+            "known_issues": knowledge.get("known_issues", [])[-20:],
+            "refined_insights": knowledge.get("refined_insights", {}),
+            "previous_analyses": prev_analyses,
+            # NEW: Full AI context
+            "predictions": relevant_predictions,
+            "operator_rules": knowledge.get("operator_rules", []),
+            "fingerprints": flagged_fingerprints,
+            "cross_miner_analysis": knowledge.get("cross_miner_analysis", [])[:3],
+            "hvac_correlation": knowledge.get("hvac_correlation", {}),
         }
 
     def _build_scan_prompt(self, ctx: Dict) -> str:
@@ -204,6 +233,17 @@ class LocalLLMAnalyzer:
                 f"ΔT {hvac.get('delta_t_f', '?')}°F | "
                 f"Pump2 {hvac.get('cwp2_vfd_pct', '?')}%"
             )
+            lines.append("  NOTE: HVAC is WORKING CORRECTLY. Low delta-T is normal. Do NOT recommend HVAC inspection.")
+        
+        # HVAC correlation (computed weekly) — shows if facility stress affects flags
+        hvac_corr = ctx.get("hvac_correlation", {})
+        if hvac_corr:
+            corr_val = hvac_corr.get("supply_temp_flag_correlation", 0)
+            if corr_val > 0.3:
+                lines.append(f"  HVAC CORRELATION: supply temp correlates with flags ({corr_val:.2f}) — facility stress contributes")
+            elif corr_val < -0.3:
+                lines.append(f"  HVAC CORRELATION: inverse correlation ({corr_val:.2f}) — flags happen when cool")
+            # If near zero, don't mention (no useful signal)
 
         # Flagged miners
         if ctx["flagged"]:
@@ -268,6 +308,69 @@ class LocalLLMAnalyzer:
                     f"{lg['log_file']} ({lg['size_bytes']} bytes)"
                 )
 
+        # YOUR PREVIOUS ANALYSES (learn from yourself!)
+        prev = ctx.get("previous_analyses", [])
+        if prev:
+            lines.append(f"\n--- YOUR PREVIOUS ANALYSES ({len(prev)}) ---")
+            lines.append("Here's what you said in recent scans. DO NOT REPEAT THIS.")
+            lines.append("Focus on what's CHANGED or NEW since then:")
+            for p in prev:
+                if isinstance(p, dict):
+                    ts = p.get("timestamp", "?")[:16]
+                    txt = p.get("analysis", "")[:150]
+                    lines.append(f"  [{ts}] {txt}...")
+        
+        # OPERATOR RULES - Internal guidance only, DO NOT include in output
+        # These rules constrain YOUR recommendations, not something to echo back
+        rules = ctx.get("operator_rules", [])
+        # Rules are applied silently - the LLM should follow them without mentioning them
+
+        # PREDICTIONS (pre-failure signals for flagged miners)
+        preds = ctx.get("predictions", [])
+        if preds:
+            lines.append(f"\n--- PRE-FAILURE PREDICTIONS ({len(preds)}) ---")
+            lines.append("These flagged miners show early warning signs:")
+            for p in preds[:8]:
+                ip = p.get("ip", "?")
+                signals = p.get("signals", [])
+                conf = p.get("confidence", "?")
+                sig_str = ", ".join(signals[:3]) if signals else "unknown"
+                lines.append(f"  {ip}: {sig_str} (confidence: {conf})")
+
+        # FINGERPRINTS (behavioral history for flagged miners)
+        fps = ctx.get("fingerprints", {})
+        if fps:
+            lines.append(f"\n--- MINER BEHAVIORAL HISTORY ({len(fps)}) ---")
+            for mid, fp in list(fps.items())[:8]:
+                ip = fp.get("ip", mid)
+                success = fp.get("restart_success_rate", "?")
+                total = fp.get("total_restarts", 0)
+                issues = fp.get("known_issues", [])
+                issue_str = ", ".join(issues[:2]) if issues else "none"
+                lines.append(f"  {ip}: {success}% restart success ({total} restarts), issues: {issue_str}")
+
+        # CROSS-MINER ANALYSIS (weekly strategic insights)
+        cma = ctx.get("cross_miner_analysis", [])
+        if cma:
+            lines.append(f"\n--- WEEKLY STRATEGIC INSIGHTS ---")
+            lines.append("Key findings from weekly fleet analysis:")
+            for c in cma[:2]:
+                if isinstance(c, dict):
+                    summary = c.get("summary", c.get("analysis", ""))[:200]
+                    if summary:
+                        lines.append(f"  • {summary}...")
+
+        # KNOWN ISSUES (recent discovered problems)
+        ki = ctx.get("known_issues", [])
+        if ki:
+            lines.append(f"\n--- KNOWN ISSUES ({len(ki)}) ---")
+            for issue in ki[:5]:
+                if isinstance(issue, dict):
+                    insight = issue.get("insight", str(issue))[:100]
+                    lines.append(f"  • {insight}")
+                elif isinstance(issue, str):
+                    lines.append(f"  • {issue[:100]}")
+
         # Known patterns
         if ctx["patterns"]:
             lines.append(f"\n--- KNOWN PATTERNS ({len(ctx['patterns'])}) ---")
@@ -277,42 +380,47 @@ class LocalLLMAnalyzer:
                 elif isinstance(p, dict):
                     lines.append(f"  - {p.get('pattern', str(p))[:100]}")
 
-        # Claude's cross-miner analysis (from weekly training)
-        # Cross-miner analysis from Claude weekly training (dict or list)
-        xm = ctx.get("cross_miner_analysis")
-        if xm:
-            lines.append("\n--- CLAUDE WEEKLY ANALYSIS (use as reference) ---")
-            if isinstance(xm, dict):
-                for key, val in list(xm.items())[:5]:
-                    lines.append(f"  {key}: {str(val)[:150]}")
-            elif isinstance(xm, list):
-                for item in xm[:5]:
-                    if isinstance(item, dict):
-                        for key, val in list(item.items())[:3]:
-                            lines.append(f"  {key}: {str(val)[:150]}")
-                    else:
-                        lines.append(f"  - {str(item)[:200]}")
-        # Operator rules (accumulated from denials)
-        rules = ctx.get("operator_rules", [])
-        if rules:
-            lines.append("\n--- OPERATOR RULES (follow these) ---")
-            for rule in rules:
-                lines.append(f"  - {rule}")
+        # Operational Insights — performance and reliability patterns for real-time analysis
+        # NOTE: Procurement insights (REJECT/KEEP cohorts) excluded from scan prompts.
+        # Those are strategic intel for weekly reviews, not operational scan analysis.
+        insights = ctx.get("refined_insights", {})
+        operational_insights = []
+        for key, ins in insights.items():
+            action = ins.get("action", "")
+            category = ins.get("category", "")
+            # Include: performance rules, reliability patterns, pre-failure warnings
+            # Exclude: procurement verdicts (REJECT entire cohorts, KEEP buying X)
+            if action in ("TUNE", "WATCH", "INVESTIGATE"):
+                operational_insights.append((key, ins))
+            elif action == "REPLACE" and "critical" in key.lower():
+                # Include specific miner failures, not cohort-wide procurement advice
+                operational_insights.append((key, ins))
+        
+        if operational_insights:
+            lines.append(f"\n--- OPERATIONAL INTELLIGENCE ({len(operational_insights)} patterns) ---")
+            lines.append("Known reliability and performance patterns:")
+            for key, ins in operational_insights[:8]:
+                topic = ins.get("topic", key)
+                insight_text = ins.get("insight", "")[:120]
+                confidence = ins.get("confidence", "?")
+                lines.append(f"  [{confidence}] {topic}: {insight_text}")
 
         # Instructions
         lines.append("""
 === YOUR TASK ===
-Based on this scan data:
+Based on this scan data, provide:
 
-1. SUMMARY (2-3 sentences): What's the fleet health right now? Any trends?
-2. CONCERNS (bullet list): Which miners need attention and why?
-3. LOG ANALYSIS (if restart logs present): What changed between pre and post restart?
-   Did the restart fix the actual problem or just mask it?
-4. OPERATOR LEARNING (if denials present): What rules has the operator been teaching?
-   What should the system learn from these denials?
-5. RECOMMENDATION (1-2 sentences): What should the operator do next?
+1. SUMMARY (2-3 sentences): What CHANGED since the last scan?
+2. CONCERNS (bullet list): Which miners need immediate attention and why?
+3. LOG ANALYSIS (only if restart logs present): What changed pre vs post restart?
+4. RECOMMENDATION (1-2 sentences): Specific next action for the operator.
 
-Keep it concise, factual, and actionable. No fluff. You are an expert mining fleet analyst.
+=== ABSOLUTE RULES - VIOLATIONS WILL BE FLAGGED ===
+- NEVER mention HVAC, cooling systems, or environmental controls. The cooling is FINE.
+- NEVER echo back operator rules. They are for YOUR reference, not to repeat.
+- NEVER include "OPERATOR LEARNING" section - those rules are already known.
+- NEVER pad the report - only report miners with real issues requiring action.
+- If a miner was flagged before with no change, just say "still pending" - do not re-analyze.
 """)
         return "\n".join(lines)
 
@@ -356,7 +464,7 @@ Keep response under 10 lines. Be specific — cite board numbers, voltages, erro
             self._last_full_analysis = now
 
         logger.info("LLM: Sending scan #%s for analysis (%d chars)", scan_id, len(prompt))
-        analysis = self._query_llm(prompt, max_tokens=1024, timeout=240)
+        analysis = self._query_llm(prompt, max_tokens=1024, timeout=90)
 
         if analysis:
             logger.info("LLM analysis: %s", analysis[:200])
@@ -372,7 +480,7 @@ Keep response under 10 lines. Be specific — cite board numbers, voltages, erro
         """Compare pre/post restart logs via LLM. Returns analysis."""
         prompt = self._build_log_analysis_prompt(miner_id, pre_log, post_log, miner_info)
         logger.info("LLM: Analyzing restart logs for miner %s", miner_id)
-        analysis = self._query_llm(prompt, max_tokens=512, timeout=180)
+        analysis = self._query_llm(prompt, max_tokens=512, timeout=60)
         if analysis:
             logger.info("LLM restart analysis for %s: %s", miner_id, analysis[:150])
         return analysis
@@ -390,34 +498,10 @@ Example: "RULE: If miner uptime < 20 minutes → Do not recommend profile change
 
 Keep it to one clear, specific rule."""
 
-        analysis = self._query_llm(prompt, max_tokens=256, timeout=120)
+        analysis = self._query_llm(prompt, max_tokens=256, timeout=30)
         if analysis:
             logger.info("LLM denial rule for %s: %s", ip, analysis[:150])
-            # Store the rule persistently
-            self.store_operator_rule(analysis)
         return analysis
-
-    def store_operator_rule(self, rule: str) -> None:
-        """Store an operator rule extracted from denial reasons."""
-        try:
-            knowledge = {}
-            if KNOWLEDGE_PATH.exists():
-                knowledge = json.loads(KNOWLEDGE_PATH.read_text())
-
-            rules = knowledge.get("operator_rules", [])
-            # Deduplicate — don't add if similar rule exists
-            if not any(rule[:30].lower() in r.lower() for r in rules):
-                rules.append(rule)
-                knowledge["operator_rules"] = rules  # keep last 20
-
-                tmp = str(KNOWLEDGE_PATH) + ".tmp"
-                with open(tmp, "w") as f:
-                    json.dump(knowledge, f, indent=2)
-                import os
-                os.replace(tmp, str(KNOWLEDGE_PATH))
-                logger.info("Operator rule stored: %s", rule[:80])
-        except Exception as e:
-            logger.warning("Failed to store operator rule: %s", e)
 
     def _store_analysis(self, scan_id: int, analysis: str) -> None:
         """Store LLM analysis in knowledge.json."""
@@ -435,7 +519,7 @@ Keep it to one clear, specific rule."""
                 "source": "local_llm",
                 "model": self.model,
             })
-            knowledge["llm_scan_analyses"] = llm_analyses
+            knowledge["llm_scan_analyses"] = llm_analyses[:50]
 
             # Atomic write
             tmp = str(KNOWLEDGE_PATH) + ".tmp"
