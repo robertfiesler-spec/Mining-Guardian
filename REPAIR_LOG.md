@@ -327,3 +327,32 @@ Only 7 miners getting fresh logs daily instead of 39 eligible miners.
 - **53476** (A2, 192.168.188.31) — trigger_log_export returns False (model limitation?)
 
 
+
+
+---
+
+## April 11, 2026 — Daily Log Collection v2 (commit 769cda0)
+
+### Final Implementation
+1. **No 24h dedup** — every miner attempts fresh export daily
+2. **No old log fallback** — fresh exports only (old logs are waste)
+3. **Slack report** — after retry pass, sends report of failed miners with:
+   - Miner IP address
+   - Model name  
+   - Last successful log date
+4. **DB tracking** — log_collection_failures table for history
+
+### How It Works Now
+- Pass 1: 15 parallel workers, 10-min timeout per miner
+- Pass 2 (retry): 5 workers, 20-min timeout for failed miners
+- Slack Report: Lists all miners that still failed after retry
+
+### Problem Miners to Fix Physically
+| IP | Model | Issue |
+|----|-------|-------|
+| 192.168.188.26 | S21e XP Hyd | 92 failed exports |
+| 192.168.188.35 | S19JPro | Never got a log |
+| 192.168.188.25 | S21EXPHyd | Last log March 30 |
+| 192.168.188.31 | A2 | Model doesnt support AMS export |
+
+
