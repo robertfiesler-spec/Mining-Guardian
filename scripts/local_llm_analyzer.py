@@ -205,6 +205,7 @@ class LocalLLMAnalyzer:
             "operator_rules": knowledge.get("operator_rules", []),
             "fingerprints": flagged_fingerprints,
             "cross_miner_analysis": knowledge.get("cross_miner_analysis", [])[:3],
+            "hvac_correlation": knowledge.get("hvac_correlation", {}),
         }
 
     def _build_scan_prompt(self, ctx: Dict) -> str:
@@ -233,6 +234,16 @@ class LocalLLMAnalyzer:
                 f"Pump2 {hvac.get('cwp2_vfd_pct', '?')}%"
             )
             lines.append("  NOTE: HVAC is WORKING CORRECTLY. Low delta-T is normal. Do NOT recommend HVAC inspection.")
+        
+        # HVAC correlation (computed weekly) — shows if facility stress affects flags
+        hvac_corr = ctx.get("hvac_correlation", {})
+        if hvac_corr:
+            corr_val = hvac_corr.get("supply_temp_flag_correlation", 0)
+            if corr_val > 0.3:
+                lines.append(f"  HVAC CORRELATION: supply temp correlates with flags ({corr_val:.2f}) — facility stress contributes")
+            elif corr_val < -0.3:
+                lines.append(f"  HVAC CORRELATION: inverse correlation ({corr_val:.2f}) — flags happen when cool")
+            # If near zero, don't mention (no useful signal)
 
         # Flagged miners
         if ctx["flagged"]:

@@ -202,7 +202,17 @@ def _predict_miner(miner_id: str, ip: str, model: str,
     hvac = conn.execute("""
         SELECT supply_temp_f FROM hvac_readings ORDER BY id DESC LIMIT 1
     """).fetchone()
-    facility_stressed = bool(hvac and float(hvac["supply_temp_f"] or 0) > 80.0)
+    supply_temp = float(hvac["supply_temp_f"] or 0) if hvac else 0
+    
+    # Load hvac_correlation to check if facility stress actually correlates with flags
+    hvac_corr = _load_knowledge().get("hvac_correlation", {})
+    corr_value = hvac_corr.get("supply_temp_flag_correlation", 0)
+    
+    # Only consider facility stressed if:
+    # 1. Supply temp is actually high (>80F), AND
+    # 2. Historical correlation shows facility stress matters (>0.3)
+    # If correlation is near zero or negative, HVAC stress doesn't cause flags
+    facility_stressed = bool(supply_temp > 80.0 and corr_value > 0.3)
 
     conn.close()
 
