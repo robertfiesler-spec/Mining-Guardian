@@ -23,131 +23,122 @@
 
 ---
 
+### 2026-04-10 (evening) · Hourly LLM was repeating the same analysis every scan — not learning
+
+**What Bobby thought the program was doing:**
+The hourly LLM should be learning and evolving. Each scan should find NEW patterns, note what CHANGED, and avoid repeating the same analysis over and over. The system should get smarter over time.
+
+**What was actually happening:**
+The LLM was storing its analyses to `knowledge.json['llm_scan_analyses']`, but it **never read them back**. Every hour it analyzed from scratch with no memory of what it said before. Result: the same miners got flagged with the same recommendations over and over — "miner 53517 offline, restart it" repeated for days.
+
+**Why it mattered:**
+- The LLM wasn't learning from itself
+- Operator got spammed with the same recommendations repeatedly
+- No sense of progression ("this was flagged 5 times, it's probably hardware")
+- Defeats the purpose of an intelligent learning system
+
+**What we changed:**
+Modified `scripts/local_llm_analyzer.py`:
+
+1. **Added previous analyses to context:**
+   ```python
+   prev_analyses = knowledge.get("llm_scan_analyses", [])[-3:]  # Last 3
+   ```
+
+2. **Added new prompt section:**
+   ```
+   --- YOUR PREVIOUS ANALYSES (3) ---
+   Here's what you said in recent scans. DO NOT REPEAT THIS.
+   Focus on what's CHANGED or NEW since then:
+   ```
+
+3. **Updated SUMMARY instruction:**
+   ```
+   What's CHANGED since the last scan? Any NEW trends?
+   If nothing changed, say "Fleet stable, no changes" and move on.
+   ```
+
+4. **Added anti-repetition rule:**
+   ```
+   CRITICAL: Do NOT repeat the same analysis as previous scans.
+   If you've already flagged a miner multiple times and nothing has changed,
+   just note "still pending" and move on. Your job is to find NEW patterns.
+   ```
+
+**How we verified:**
+- `python3 -m py_compile scripts/local_llm_analyzer.py` passes
+- Committed as `49a5740`
+
+**Lesson:**
+An AI system that stores data but never reads it back is NOT learning. The feedback loop has to be closed — outputs must become inputs for the next cycle. This was a fundamental architecture miss.
+
+**Status:** Fixed. Next hourly scan should show different behavior — focusing on changes rather than repeating.
+
+---
+
 ### 2026-04-10 (evening) · LLM kept recommending HVAC inspection + repeating 20-min cooldown rule
 
 **What Bobby thought the program was doing:**
 The LLM should NOT recommend HVAC inspection — the HVAC is working correctly. Low delta-T is normal and seasonal. Also, once the system learns a rule (like the 20-minute post-restart cooldown), it shouldn't keep mentioning it in every single report.
 
 **What was actually happening:**
-1. **HVAC recommendations:** The LLM was including "review HVAC system to address environmental overheating concerns" in recommendations, even though the HVAC is fine.
-
-2. **Repeating OPERATOR LEARNING:** Every report included the same 20-minute cooldown rule under "OPERATOR LEARNING" even though that rule was learned days ago and is already in `operator_rules`.
-
-**Why it mattered:**
-- False HVAC alerts waste operator attention on a system that's working correctly
-- Repeating the same "learning" every report is noise — the system should only report NEW learnings
+1. **HVAC recommendations:** The LLM kept saying "review HVAC system to address environmental overheating concerns"
+2. **Repeating OPERATOR LEARNING:** Every report included the same 20-minute cooldown rule
 
 **What we changed:**
-Modified `scripts/local_llm_analyzer.py`:
+1. Added explicit HVAC disclaimer: "HVAC is WORKING CORRECTLY. Do NOT recommend HVAC inspection."
+2. Updated OPERATOR LEARNING to only show for NEW denials with NEW reasons
+3. Added warning: "The 20-minute cooldown rule is ALREADY KNOWN — do not repeat it."
 
-1. **Added HVAC disclaimer** right after HVAC data line:
-   ```
-   NOTE: HVAC is WORKING CORRECTLY. Low delta-T is normal. Do NOT recommend HVAC inspection.
-   ```
-
-2. **Updated OPERATOR LEARNING instructions:**
-   ```
-   ONLY include this section if there are NEW denials with NEW reasons.
-   The 20-minute post-restart cooldown rule is ALREADY KNOWN — do not repeat it.
-   Skip this section entirely if there are no new lessons to learn.
-   ```
-
-3. **Added warning in RECOMMENDATION section:**
-   ```
-   CRITICAL: Do NOT recommend HVAC inspection — the cooling system is working correctly.
-   ```
-
-**How we verified:**
-- `python3 -m py_compile scripts/local_llm_analyzer.py` passes
-- Committed as `45b954f`
-
-**Lesson:**
-LLMs need explicit negative instructions ("do NOT do X") when they keep doing something unwanted. Positive instructions alone aren't enough — the model will keep making the same suggestions unless explicitly told not to.
-
-**Status:** Fixed. Next hourly scan should show cleaner recommendations.
+**Status:** Fixed. Committed as `45b954f`.
 
 ---
 
 ### 2026-04-10 (evening) · daily_collect_logs.py called collect_logs() with no arguments
 
 **What Bobby thought the program was doing:**
-The 1pm cron job should download logs from all miners, with a retry pass for any that fail on the first attempt. The retry logic (Pass 1: 15 workers, 10-min timeout; Pass 2: 5 workers, 20-min timeout) is built into `collect_logs()` in `core/mining_guardian.py`.
+The 1pm cron job should download logs from all miners with a retry pass for failures.
 
 **What was actually happening:**
-The `scripts/daily_collect_logs.py` script we created earlier today called `mg.collect_logs()` with **no arguments**. But the method signature is:
-```python
-def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
-```
-It requires the miner list to be passed in. The script would have thrown a TypeError as soon as the cron ran.
-
-**Why it mattered:**
-Without the miner list, the script can't run, which means:
-- No daily log collection at 1pm
-- No retry pass for failed miners
-- Daily deep dive at 4pm has incomplete/stale data
-- The whole log pipeline is broken
+The script called `mg.collect_logs()` with no arguments, but the method requires `miners` and `issues`.
 
 **What we changed:**
-Rewrote `scripts/daily_collect_logs.py` to:
-1. Fetch the current miner list from AMS: `miners = mg.ams.get_miners()`
-2. Pass the miners to `collect_logs()`: `mg.collect_logs(miners=miners, issues=[])`
-3. Added proper logging so cron output is useful
+Script now fetches miners from AMS first: `mg.collect_logs(miners=mg.ams.get_miners(), issues=[])`
 
-The retry logic inside `collect_logs()` was already correct (added earlier today per operator request) — we just needed to actually call the method properly.
-
-**How we verified:**
-- `python3 -m py_compile scripts/daily_collect_logs.py` passes
-- Committed as `8186900` and pushed to GitHub
-
-**Lesson:**
-When creating wrapper scripts for cron, always check the method signature of what you're calling. This was the SECOND bug in the same script — first the config argument, now the miners argument. Test the complete flow, not just the import.
-
-**Status:** Fixed. Tomorrow's 1pm cron run will be the first real test.
+**Status:** Fixed. Committed as `8186900`. Tomorrow's 1pm cron will be the first test.
 
 ---
 
 ### 2026-04-10 (afternoon) · Three silent bugs: bad insight, broken cron, missing confidence
 
-**What Bobby thought the program was doing:**
-1. The refined insights should only contain accurate hardware info — S19JPro has 3 boards (Chain 0,1,2), not 4
-2. The daily 1pm cron job should collect fresh logs from all miners
-3. Confidence scores should appear on Slack recommendations ("85% confident in this choice")
-
-**What was actually happening:**
-1. **Bad insight:** Claude training generated `chain_3_voltage_failure_hydro` claiming "Chain[3] detachment" on S19JPro. But S19JPro only has 3 boards — Chain[3] doesn't exist. This was a hallucination.
-
-2. **Broken cron:** The daily log collection cron entry was calling `MiningGuardian()` without the required `config` argument. The cron job was silently failing every day at 1pm.
-
-3. **Missing confidence:** The import in `core/mining_guardian.py` was `from confidence_scorer import get_confidence`, but the file lives at `ai/confidence_scorer.py`. The try/except silently disabled confidence scoring.
+**What was wrong:**
+1. Claude generated `chain_3_voltage_failure_hydro` — S19JPro only has 3 boards, not 4
+2. Cron job called `MiningGuardian()` without config argument
+3. Import was `from confidence_scorer` but file is at `ai/confidence_scorer.py`
 
 **What we changed:**
-1. Deleted the bad insight from `knowledge.json`
-2. Created `scripts/daily_collect_logs.py` wrapper script
-3. Fixed import path to `from ai.confidence_scorer import get_confidence, get_gate`
+1. Deleted the bad insight
+2. Created proper wrapper script
+3. Fixed import path
 
 **Hardware facts established:**
-- **S19JPro:** 3 boards (Chain 0, 1, 2) — air machine running in immersion
-- **AH3880 Auradine:** 2 boards only
+- S19JPro: 3 boards (Chain 0, 1, 2)
+- AH3880 Auradine: 2 boards only
 
-**Status:** Commits `7382037` (initial fix) and `8186900` (added miner list fetch).
+**Status:** Fixed. Commits `7382037`, `8186900`.
 
 ---
 
-### 2026-04-10 · Hourly scans were seeing procurement advice instead of operational patterns
+### 2026-04-10 · Hourly scans showing procurement advice instead of operational patterns
 
-**What Bobby thought the program was doing:**
-The refined insights system has two jobs: (1) help Claude make strategic procurement decisions during weekly training, and (2) help Qwen during hourly scans recognize performance patterns. Hourly scans should see operational patterns, NOT procurement advice.
-
-**What was actually happening:**
-All insights were being dumped into the hourly scan prompt — including "REJECT 0110/0020 boards" and "KEEP buying 0130/0010" which are strategic, not operational.
+**What was wrong:**
+All insights dumped into hourly prompts — including "REJECT" and "KEEP" which are strategic.
 
 **What we changed:**
-Modified `scripts/local_llm_analyzer.py` to filter by action type:
-- OPERATIONAL (hourly): TUNE, WATCH, INVESTIGATE, critical-REPLACE
-- STRATEGIC (weekly only): REJECT, KEEP, cohort-REPLACE
+Filter by action type: OPERATIONAL (TUNE/WATCH/INVESTIGATE) for hourly, STRATEGIC (REJECT/KEEP) for weekly.
 
-**Status:** Complete. Committed as `f04d703`.
+**Status:** Fixed. Committed as `f04d703`.
 
 ---
 
-*[Earlier entries continue in git history]*
+*[Earlier entries in git history]*
