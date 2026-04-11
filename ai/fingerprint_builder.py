@@ -267,6 +267,15 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     if max_board_temp_ever and max_board_temp_ever > 75: known_issues.append(f"high_board_temp:{max_board_temp_ever}C")
     if chain_detaches > 100:              known_issues.append(f"board_cycling:{chain_detaches}_detaches")
 
+    # ── 9b. AMS extended data (location, pool) ───────────────────────────────
+    ams_ext = conn.execute("""
+        SELECT map_location_id, map_x, map_y, stratum_url
+        FROM miner_ams_extended WHERE miner_id=? ORDER BY id DESC LIMIT 1
+    """, (miner_id,)).fetchone()
+    map_location_id = int(ams_ext["map_location_id"]) if ams_ext and ams_ext["map_location_id"] else None
+    map_position = f"{ams_ext['map_x']},{ams_ext['map_y']}" if ams_ext and ams_ext["map_x"] else None
+    stratum_url = ams_ext["stratum_url"] if ams_ext else None
+
     conn.close()
 
     # ── 10. Confidence modifier ───────────────────────────────────────────────
@@ -325,6 +334,10 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
         "total_scans_flagged":    flagged_cnt,
         "known_issues":           known_issues,
         "confidence_modifier":    modifier,
+        # Location data from miner_ams_extended
+        "map_location_id":        map_location_id,
+        "map_position":           map_position,
+        "stratum_url":            stratum_url,
         "last_updated":           datetime.now().isoformat()
     }
 
