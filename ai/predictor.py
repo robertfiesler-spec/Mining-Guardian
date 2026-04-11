@@ -26,6 +26,56 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 _ROOT = Path(__file__).resolve().parent.parent
+
+def _load_knowledge() -> Dict:
+    """Load knowledge.json for fingerprints."""
+    try:
+        return json.loads(Path(KNOWLEDGE_PATH).read_text())
+    except:
+        return {}
+
+def _get_fingerprint_risk_modifier(miner_id: str, ip: str) -> float:
+    """
+    Get risk modifier from fingerprint.
+    Returns 0 to +20 points based on behavioral history.
+    Miners with poor restart success or frequent issues get boosted risk.
+    """
+    knowledge = _load_knowledge()
+    fps = knowledge.get("miner_fingerprints", {})
+    
+    # Try to find fingerprint by miner_id or ip
+    fp = fps.get(miner_id) or fps.get(str(miner_id))
+    if not fp:
+        for fid, fdata in fps.items():
+            if fdata.get("ip") == ip:
+                fp = fdata
+                break
+    
+    if not fp:
+        return 0.0  # No fingerprint = no modifier
+    
+    modifier = 0.0
+    
+    # Low restart success rate = higher risk
+    success_rate = fp.get("restart_success_rate", 100)
+    if success_rate is not None and success_rate < 50:
+        modifier += 15.0  # Very unreliable miner
+    elif success_rate is not None and success_rate < 70:
+        modifier += 8.0   # Somewhat unreliable
+    
+    # Many known issues = higher risk
+    issues = fp.get("known_issues", [])
+    if isinstance(issues, list) and len(issues) >= 3:
+        modifier += 5.0
+    
+    # Frequent reboots = higher risk
+    if isinstance(issues, list):
+        for issue in issues:
+            if "frequent_reboots" in str(issue):
+                modifier += 5.0
+                break
+    
+    return min(modifier, 20.0)  # Cap at +20
 for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -231,7 +281,13 @@ def _predict_miner(miner_id: str, ip: str, model: str,
     # Combine scores — each additional signal amplifies the base
     base = max(scores)
     bonus = sum(s * 0.10 for s in scores[1:])
-    confidence = min(100, round(base + bonus))
+    
+    # Add fingerprint risk modifier (poor history = higher risk)
+    fp_modifier = _get_fingerprint_risk_modifier(miner_id, ip)
+    if fp_modifier > 0:
+        signals.append(f"behavioral_risk: +{fp_modifier:.0f}pts from poor restart history")
+    
+    confidence = min(100, round(base + bonus + fp_modifier))
 
     if confidence < PRED_CONFIDENCE_MIN:
         return None

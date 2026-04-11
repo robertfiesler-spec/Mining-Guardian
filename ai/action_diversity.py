@@ -78,6 +78,70 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
+def _load_knowledge() -> Dict:
+    """Load knowledge.json for fingerprints and predictions."""
+    try:
+        return json.loads(Path(KNOWLEDGE_PATH).read_text())
+    except:
+        return {}
+
+
+def _get_miner_context(ip: str, miner_id: str) -> Dict[str, Any]:
+    """
+    Get fingerprint and prediction context for a miner.
+    Returns dict with behavioral history to inform action selection.
+    """
+    knowledge = _load_knowledge()
+    ctx = {
+        "has_predictions": False,
+        "prediction_signals": [],
+        "restart_success_rate": None,
+        "known_issues": [],
+        "total_restarts": 0
+    }
+    
+    # Get fingerprint
+    fps = knowledge.get("miner_fingerprints", {})
+    fp = None
+    for fid, fdata in fps.items():
+        if fdata.get("ip") == ip or fid == str(miner_id):
+            fp = fdata
+            break
+    
+    if fp:
+        ctx["restart_success_rate"] = fp.get("restart_success_rate")
+        ctx["known_issues"] = fp.get("known_issues", [])
+        ctx["total_restarts"] = fp.get("total_restarts", 0)
+    
+    # Get predictions
+    preds = knowledge.get("predictions", [])
+    for p in preds:
+        if p.get("ip") == ip:
+            ctx["has_predictions"] = True
+            ctx["prediction_signals"] = p.get("signals", [])
+            ctx["prediction_confidence"] = p.get("confidence", 0)
+            break
+    
+    return ctx
+
+
+def _should_prefer_alternatives(ctx: Dict) -> bool:
+    """
+    Based on miner context, should we prefer non-restart actions?
+    Returns True if restart has poor history or pre-failure predicted.
+    """
+    # If restart success rate is low, prefer alternatives
+    rate = ctx.get("restart_success_rate")
+    if rate is not None and rate < 50:
+        return True
+    
+    # If pre-failure predicted with high confidence, prefer investigation
+    if ctx.get("has_predictions") and ctx.get("prediction_confidence", 0) >= 70:
+        return True
+    
+    return False
+
+
 def evaluate_all_actions(scan_id: int) -> List[Dict[str, Any]]:
     """
     Main entry point. Evaluate all miners in a scan for new action types.

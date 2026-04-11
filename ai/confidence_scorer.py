@@ -57,6 +57,36 @@ def get_db() -> sqlite3.Connection:
     return conn
 
 
+def _get_prediction_penalty(ip: str) -> float:
+    """
+    Check if this miner has pre-failure predictions.
+    Returns a penalty (negative adjustment) if so.
+    
+    Miners with pre-failure signals should have LOWER confidence
+    for restart actions because the issue may be hardware, not software.
+    """
+    try:
+        knowledge = json.loads(Path(KNOWLEDGE_PATH).read_text())
+        predictions = knowledge.get("predictions", [])
+        
+        for p in predictions:
+            if p.get("ip") == ip:
+                conf = p.get("confidence", 0)
+                signals = p.get("signals", [])
+                
+                # The more signals and higher confidence, the bigger the penalty
+                if conf >= 80:
+                    return -15.0  # Strong pre-failure signal = significant penalty
+                elif conf >= 70:
+                    return -10.0
+                elif conf >= 60:
+                    return -5.0
+        
+        return 0.0  # No prediction = no penalty
+    except Exception:
+        return 0.0
+
+
 def get_confidence(miner_id: str, ip: str, action_type: str,
                    hashrate_pct: float = None) -> Tuple[int, str]:
     """
@@ -87,6 +117,9 @@ def get_confidence(miner_id: str, ip: str, action_type: str,
     except Exception:
         fingerprint_adjustment = 0.0
 
+    # Feature: Apply prediction penalty (pre-failure signals = lower confidence)
+    prediction_penalty = _get_prediction_penalty(ip)
+
     # Blend scores — weight miner history more when we have enough data
     if miner_count >= MIN_OUTCOMES_FOR_MINER_SCORE:
         # Enough miner-specific data to weight heavily
@@ -105,12 +138,12 @@ def get_confidence(miner_id: str, ip: str, action_type: str,
         # No miner-specific data yet — use fleet rate only
         history_score = fleet_score
 
-    # Final weighted score with fingerprint modifier
+    # Final weighted score with fingerprint modifier and prediction penalty
     raw_confidence = (
         history_score   * (WEIGHT_MINER_HISTORY + WEIGHT_FLEET_HISTORY) +
         stability_score * WEIGHT_STABILITY
     )
-    confidence = max(0, min(100, round(raw_confidence + fingerprint_adjustment)))
+    confidence = max(0, min(100, round(raw_confidence + fingerprint_adjustment + prediction_penalty)))
 
     # Build human-readable reason
     parts = []
