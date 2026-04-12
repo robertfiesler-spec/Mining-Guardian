@@ -3269,13 +3269,25 @@ class SlackNotifier:
             except (TypeError, ValueError):
                 temp_icon = "⚪"
 
+            # Get confidence score for this action
+            conf_str = ""
+            try:
+                from ai.confidence_scorer import get_confidence, get_gate
+                score, _ = get_confidence(str(issue.get("id", "")), ip, issue["action"],
+                                          hashrate_pct=hr if hr != "?" else None)
+                gate = get_gate(score)
+                gate_emoji = "🟢" if gate == "AUTO" else "🟡" if gate == "ASK" else "🔴"
+                conf_str = f"  |  {gate_emoji} Conf: *{score}%*"
+            except Exception:
+                pass
+
             blocks.append({
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
                     "text": (
                         f"*{idx}.* ☐  {icon} `{ip}` — *{label}*\n"
-                        f"      {model}  |  📍 {loc}  |  ⚡ HR: *{hr}%*  |  {temp_icon} Temp: *{temp}°C*"
+                        f"      {model}  |  📍 {loc}  |  ⚡ HR: *{hr}%*  |  {temp_icon} Temp: *{temp}°C*{conf_str}"
                     )
                 }
             })

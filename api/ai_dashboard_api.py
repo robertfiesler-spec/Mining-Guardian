@@ -31,6 +31,15 @@ try:
 except ImportError:
     def get_all_insights():
         return {}
+
+# Import confidence scorer for displaying confidence %
+try:
+    from confidence_scorer import get_confidence, get_gate
+except ImportError:
+    def get_confidence(miner_id, ip, action, **kwargs):
+        return 75, "default"
+    def get_gate(score):
+        return "ASK" if score < 80 else "AUTO"
 APPROVAL_API = "https://slack.fieslerfamily.com"
 
 
@@ -207,18 +216,25 @@ def render_ai_dashboard_html():
         hc = G if hr > 80 else O if hr > 50 else R
         tc = G if tp < 76 else O if tp < 86 else R
         qid = q.get("id", "")
+        # Calculate confidence for this pending action
+        try:
+            conf_score, _ = get_confidence(str(q.get("miner_id","")), q.get("ip",""), q.get("action_type",""), hashrate_pct=hr)
+        except:
+            conf_score = 75
+        conf_color = G if conf_score >= 80 else O if conf_score >= 50 else R
         qr += (
             f'<tr><td style="font-family:monospace;color:{C}">{_e(q.get("ip",""))}</td>'
             f'<td>{_e(q.get("model",""))}</td>'
             f'<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{_e(str(q.get("problem",""))[:100])}</td>'
             f'<td><span style="background:{B};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{_e(q.get("action_type",""))}</span></td>'
+            f'<td style="color:{conf_color};font-weight:bold">{conf_score}%</td>'
             f'<td style="color:{hc};font-weight:bold">{hr:.0f}%</td>'
             f'<td style="color:{tc}">{tp:.0f}°C</td>'
             f'<td><button onclick="approveAction(\'{qid}\')" style="background:{G};color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;margin-right:4px;font-size:12px">✓ Approve</button>'
             f'<button onclick="denyAction(\'{qid}\')" style="background:{R};color:white;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:12px">✗ Deny</button></td></tr>'
         )
     if not qr:
-        qr = f'<tr><td colspan="7" style="text-align:center;color:{G};padding:20px">✓ No pending actions — system is running autonomously</td></tr>'
+        qr = f'<tr><td colspan="8" style="text-align:center;color:{G};padding:20px">✓ No pending actions — system is running autonomously</td></tr>'
 
     # Auto-action rows
     ar = ""
@@ -229,29 +245,60 @@ def render_ai_dashboard_html():
         }.get(oc, TD)
         badge = f'<span style="background:{bc};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{_e(oc)}</span>'
         ts = str(a.get("timestamp", ""))[:16]
+        # Get confidence from notes if available
+        notes = str(a.get("notes", "") or "")
+        auto_conf = 75
+        if "Conf:" in notes:
+            try:
+                auto_conf = int(notes.split("Conf:")[1].split("%")[0].strip())
+            except:
+                pass
+        elif "confidence" in notes.lower():
+            try:
+                # re already imported at top
+                m = re.search(r'(\d+)%', notes)
+                if m:
+                    auto_conf = int(m.group(1))
+            except:
+                pass
+        auto_conf_color = G if auto_conf >= 80 else O if auto_conf >= 50 else R
         ar += (
             f'<tr><td style="color:{TD};font-size:12px">{_e(ts)}</td>'
             f'<td style="font-family:monospace;color:{C}">{_e(a.get("ip",""))}</td>'
             f'<td>{_e(a.get("model",""))}</td>'
             f'<td>{_e(a.get("action_taken",""))}</td>'
+            f'<td style="color:{auto_conf_color};font-weight:bold">{auto_conf}%</td>'
             f'<td>{badge}</td>'
             f'<td style="color:{TD}">{_e(str(a.get("problem",""))[:60])}</td></tr>'
         )
     if not ar:
-        ar = f'<tr><td colspan="6" style="text-align:center;color:{TD}">No auto-actions yet</td></tr>'
+        ar = f'<tr><td colspan="7" style="text-align:center;color:{TD}">No auto-actions yet</td></tr>'
 
     # Prediction rows
     pr = ""
     for p in predictions:
         ts = str(p.get("timestamp", ""))[:16]
+        # Extract confidence from problem/notes field
+        prob = str(p.get("problem", "") or "")
+        pred_conf = 75
+        if "%" in prob:
+            try:
+                # re already imported at top
+                m = re.search(r'(\d+)%', prob)
+                if m:
+                    pred_conf = int(m.group(1))
+            except:
+                pass
+        pred_conf_color = G if pred_conf >= 80 else O if pred_conf >= 50 else R
         pr += (
             f'<tr><td style="color:{TD};font-size:12px">{_e(ts)}</td>'
             f'<td style="font-family:monospace;color:{C}">{_e(p.get("ip",""))}</td>'
             f'<td>{_e(p.get("action_taken",""))}</td>'
-            f'<td style="color:{TD};font-size:12px">{_e(str(p.get("problem",""))[:80])}</td></tr>'
+            f'<td style="color:{pred_conf_color};font-weight:bold">{pred_conf}%</td>'
+            f'<td style="color:{TD};font-size:12px">{_e(str(p.get("problem",""))[:70])}</td></tr>'
         )
     if not pr:
-        pr = f'<tr><td colspan="4" style="text-align:center;color:{TD}">Predictions paused — re-enabling at 7am</td></tr>'
+        pr = f'<tr><td colspan="5" style="text-align:center;color:{TD}">Predictions paused — re-enabling at 7am</td></tr>'
 
     # Feature cards
     fc = ""
@@ -392,13 +439,13 @@ function submitDeny(){let r=document.getElementById('dr').value;fetch('""" + APP
 </div>
 
 <div class="st">⚡ Live Action Queue</div>
-<div class="cd"><table><thead><tr><th>Miner IP</th><th>Model</th><th>Issue</th><th>Action</th><th>HR</th><th>Temp</th><th>Decision</th></tr></thead><tbody>{qr}</tbody></table></div>
+<div class="cd"><table><thead><tr><th>Miner IP</th><th>Model</th><th>Issue</th><th>Action</th><th>Conf</th><th>HR</th><th>Temp</th><th>Decision</th></tr></thead><tbody>{qr}</tbody></table></div>
 
 <div class="g g2">
 <div><div class="st">🤖 Recent Autonomous Actions</div>
-<div class="cd" style="max-height:350px;overflow-y:auto"><table><thead><tr><th>Time</th><th>Miner</th><th>Model</th><th>Action</th><th>Outcome</th><th>Issue</th></tr></thead><tbody>{ar}</tbody></table></div></div>
+<div class="cd" style="max-height:350px;overflow-y:auto"><table><thead><tr><th>Time</th><th>Miner</th><th>Model</th><th>Action</th><th>Conf</th><th>Outcome</th><th>Issue</th></tr></thead><tbody>{ar}</tbody></table></div></div>
 <div><div class="st">🔮 Pre-Failure Predictions</div>
-<div class="cd" style="max-height:350px;overflow-y:auto"><table><thead><tr><th>Time</th><th>Miner</th><th>Action</th><th>Detail</th></tr></thead><tbody>{pr}</tbody></table></div></div>
+<div class="cd" style="max-height:350px;overflow-y:auto"><table><thead><tr><th>Time</th><th>Miner</th><th>Action</th><th>Conf</th><th>Detail</th></tr></thead><tbody>{pr}</tbody></table></div></div>
 </div>
 
 <div class="st">🧠 Fleet Intelligence — Permanent Insights</div>
