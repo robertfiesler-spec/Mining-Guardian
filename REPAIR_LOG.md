@@ -297,62 +297,56 @@ All 6 cron jobs confirmed operational:
 
 ---
 
-## April 11, 2026 — Daily Log Collection Fix (CRITICAL)
+## April 12, 2026 — AMS Log Queue Overflow (CRITICAL FIX)
 
 ### Problem
-Only 7 miners getting fresh logs daily instead of 39 eligible miners.
+- **0 logs collected** from any miner today
+- AMS returning error: "too many log files for device" (HTTP 453)
+- 708 failed log exports were clogging the AMS queue
+- Root cause: Previous export attempts that failed (status=3) were never cleaned up
 
-**Root causes:**
-1. 24-hour dedup check was skipping miners that had any log in past 24h
-2. When fresh export failed, system gave up instead of trying existing logs
-3. Some miners (64407, 54567, 53529) have broken AMS log exports — all exports status=3 (failed)
-4. A2 model (53476) returns False from trigger_log_export
+### Investigation
+- Log collection cron ran at 1pm as scheduled
+- Pass 1: All 31 miners failed immediately  
+- Pass 2 (retry): All 31 miners failed again
+- AMS API check revealed the "too many log files" error
 
-### Fix (commit 81edb54)
+### Fix (commit 1735b9b)
 
-1. **REMOVED 24-hour dedup** — every miner now attempts fresh log collection every day
-2. **ADDED fallback to existing logs** — when fresh export fails, download most recent ready log
-3. **Tagged fallback logs** as "daily_baseline_fallback" to distinguish from fresh
+1. **Created cleanup_ams_logs.py**
+   - Deletes ALL log files from AMS for every miner
+   - Safe because logs are stored in guardian.db after download
+   - Location: scripts/cleanup_ams_logs.py
 
-### New Operator Rule
-> DAILY LOG COLLECTION MANDATORY: Every online miner MUST get a fresh log export every day.
-> No 24-hour dedup — fresh logs are critical for AI learning. If fresh export fails,
-> fall back to most recent existing ready log. Problem miners with broken AMS exports
-> should be investigated physically.
+2. **Added 10am daily cron for AMS cleanup**
+   - Runs BEFORE 1pm log collection
+   - Keeps AMS queue clean
 
-### Problem Miners (require physical investigation)
-- **64407** (S21e XP Hyd, 192.168.188.26) — 92 failed exports, 0 ready
-- **54567** (S19JPro, 192.168.188.35) — 55 failed exports, 0 ready
-- **53529** (S21EXPHyd, 192.168.188.25) — 92 failed, 1 ready from March 30
-- **53476** (A2, 192.168.188.31) — trigger_log_export returns False (model limitation?)
+3. **Reduced parallel workers 15 to 10**
+   - Connection pool was hitting limits
+   - 10 workers is more conservative
 
+4. **Immediate cleanup performed**
+   - Deleted 708 failed logs
+   - Deleted 121 ready logs  
+   - Total: 829 logs removed from AMS
 
+### New Cron Job
+0 10 * * * - AMS log cleanup (scripts/cleanup_ams_logs.py)
 
+### Operator Rule Added
+Delete all files from AMS not just failed attempts. For clean up and house 
+cleaning overall do not let it clutter. We store the logs in the db anyway.
 
----
+### Data Retention Summary
+| Location | Retention |
+|----------|-----------|
+| AMS | Deleted daily at 10am |
+| guardian.db (miner_logs) | 30 days then auto-purged |
+| knowledge.json | Permanent |
 
-## April 11, 2026 — Daily Log Collection v2 (commit 769cda0)
+### Documentation Added
+- Created docs/CRON_SCHEDULE.md with full schedule explanation
 
-### Final Implementation
-1. **No 24h dedup** — every miner attempts fresh export daily
-2. **No old log fallback** — fresh exports only (old logs are waste)
-3. **Slack report** — after retry pass, sends report of failed miners with:
-   - Miner IP address
-   - Model name  
-   - Last successful log date
-4. **DB tracking** — log_collection_failures table for history
-
-### How It Works Now
-- Pass 1: 15 parallel workers, 10-min timeout per miner
-- Pass 2 (retry): 5 workers, 20-min timeout for failed miners
-- Slack Report: Lists all miners that still failed after retry
-
-### Problem Miners to Fix Physically
-| IP | Model | Issue |
-|----|-------|-------|
-| 192.168.188.26 | S21e XP Hyd | 92 failed exports |
-| 192.168.188.35 | S19JPro | Never got a log |
-| 192.168.188.25 | S21EXPHyd | Last log March 30 |
-| 192.168.188.31 | A2 | Model doesnt support AMS export |
-
-
+### Verification
+After cleanup, tested 4 miners — all exports triggered successfully.
