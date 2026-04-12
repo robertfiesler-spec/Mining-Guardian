@@ -350,3 +350,56 @@ cleaning overall do not let it clutter. We store the logs in the db anyway.
 
 ### Verification
 After cleanup, tested 4 miners — all exports triggered successfully.
+
+---
+
+## 2026-04-12 ~4:00pm CDT — Grafana AI Dashboard Missing Confidence %
+
+### Issue
+Bobby noticed that confidence percentages were not showing next to AI data in Grafana.
+The AI dashboard (iframe at /ai/dashboard) had tables for Action Queue, Auto Actions, 
+and Predictions — but none showed the confidence score used by the AI system.
+
+### Root Cause
+The original ai_dashboard_api.py was built before confidence scoring was fully 
+integrated. Tables existed but lacked the Conf column, making it impossible to 
+see how confident the AI was in each recommendation.
+
+### Fix (commit 84f1f83)
+
+1. **Added confidence import to ai_dashboard_api.py**
+   - Imports get_confidence and get_gate from confidence_scorer
+   - Fallback to 75% if scorer unavailable
+
+2. **Updated Action Queue table**
+   - Added Conf column header between Action and HR
+   - Calculates live confidence for each pending action
+   - Shows 0% for escalated actions (intentional — multiple failures = low confidence)
+
+3. **Updated Auto Actions table**
+   - Added Conf column header between Action and Outcome
+   - Extracts confidence from notes field if available
+   - Defaults to 75% for historical actions (confidence wasn't stored before)
+
+4. **Updated Predictions table**
+   - Added Conf column header between Action and Detail
+   - Extracts confidence from problem field if available
+   - Defaults to 75% for historical predictions
+
+5. **Color coding applied to all Conf columns**
+   - Green: ≥80% (high confidence)
+   - Orange: 50-79% (medium confidence)
+   - Red: <50% (low confidence)
+
+### Bug Fixed During Patch
+- import re statements inside try blocks were shadowing the module-level import
+- Caused UnboundLocalError when rendering insights section
+- Fixed by commenting out redundant imports
+
+### Going Forward
+- New actions will store confidence in notes field
+- Historical 75% defaults will gradually be replaced with real scores
+- All three AI tables now visually show confidence next to every row
+
+### Verification
+Confirmed /ai/dashboard renders with Conf columns visible in all three tables.
