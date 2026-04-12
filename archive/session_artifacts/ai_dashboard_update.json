@@ -1,0 +1,257 @@
+{
+  "dashboard": {
+    "uid": "llm_learning_001",
+    "title": "Mining Guardian — AI & Learning",
+    "tags": ["mining-guardian", "ai"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 13,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "type": "text",
+        "title": "",
+        "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
+        "transparent": true,
+        "options": {
+          "mode": "html",
+          "content": "<div style=\"text-align:center; padding:5px;\"><h1 style=\"margin:0; color:#22d3ee; font-size:28px;\">🧠 AI & Learning Dashboard</h1><p style=\"margin:5px 0 0 0; color:#94a3b8;\">Mining Guardian Knowledge System</p></div>"
+        }
+      },
+      {
+        "id": 2,
+        "type": "gauge",
+        "title": "Knowledge Score",
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 3},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_knowledge_score", "refId": "A"}],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 30},
+                {"color": "yellow", "value": 60},
+                {"color": "green", "value": 80}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "type": "stat",
+        "title": "Refined Insights",
+        "gridPos": {"h": 3, "w": 3, "x": 6, "y": 3},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_knowledge_insights_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "blue", "value": null}]}}}
+      },
+      {
+        "id": 4,
+        "type": "stat",
+        "title": "Miner Fingerprints",
+        "gridPos": {"h": 3, "w": 3, "x": 9, "y": 3},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_knowledge_miner_profiles_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "purple", "value": null}]}}}
+      },
+      {
+        "id": 5,
+        "type": "stat",
+        "title": "Patterns Discovered",
+        "gridPos": {"h": 3, "w": 3, "x": 12, "y": 3},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_knowledge_patterns_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "orange", "value": null}]}}}
+      },
+      {
+        "id": 6,
+        "type": "stat",
+        "title": "Operator Rules",
+        "gridPos": {"h": 3, "w": 3, "x": 15, "y": 3},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_operator_rules_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}}}
+      },
+      {
+        "id": 7,
+        "type": "stat",
+        "title": "AI Autonomy Rate",
+        "gridPos": {"h": 3, "w": 3, "x": 18, "y": 3},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_ai_autonomy", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "yellow", "value": null}, {"color": "green", "value": 50}]}}}
+      },
+      {
+        "id": 8,
+        "type": "stat",
+        "title": "AI Accuracy",
+        "gridPos": {"h": 3, "w": 3, "x": 21, "y": 3},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_ai_accuracy", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 70}, {"color": "green", "value": 85}]}}}
+      },
+      {
+        "id": 9,
+        "type": "stat",
+        "title": "Data Depth",
+        "gridPos": {"h": 3, "w": 3, "x": 6, "y": 6},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_ai_data_depth", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "blue", "value": null}]}}}
+      },
+      {
+        "id": 10,
+        "type": "stat",
+        "title": "Experience Level",
+        "gridPos": {"h": 3, "w": 3, "x": 9, "y": 6},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_ai_experience", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "none", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "purple", "value": null}]}}}
+      },
+      {
+        "id": 11,
+        "type": "text",
+        "title": "",
+        "gridPos": {"h": 2, "w": 24, "x": 0, "y": 9},
+        "transparent": true,
+        "options": {"mode": "html", "content": "<h2 style=\"margin:0; padding:10px 0; color:#f59e0b; border-bottom:1px solid #334155;\">⚡ Action Metrics</h2>"}
+      },
+      {
+        "id": 12,
+        "type": "stat",
+        "title": "Actions Approved",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 11},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_actions_approved_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}}}
+      },
+      {
+        "id": 13,
+        "type": "stat",
+        "title": "Actions Denied",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 11},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_actions_denied_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "red", "value": null}]}}}
+      },
+      {
+        "id": 14,
+        "type": "stat",
+        "title": "Auto-Overnight",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 11},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_actions_auto_overnight_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "blue", "value": null}]}}}
+      },
+      {
+        "id": 15,
+        "type": "stat",
+        "title": "Actions Expired",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 11},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_actions_expired_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "orange", "value": null}]}}}
+      },
+      {
+        "id": 16,
+        "type": "text",
+        "title": "",
+        "gridPos": {"h": 2, "w": 24, "x": 0, "y": 15},
+        "transparent": true,
+        "options": {"mode": "html", "content": "<h2 style=\"margin:0; padding:10px 0; color:#22d3ee; border-bottom:1px solid #334155;\">📈 Knowledge Growth Over Time</h2>"}
+      },
+      {
+        "id": 17,
+        "type": "timeseries",
+        "title": "Knowledge Score Trend",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 17},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_knowledge_score", "legendFormat": "Knowledge Score", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineWidth": 2, "fillOpacity": 20}}}
+      },
+      {
+        "id": 18,
+        "type": "timeseries",
+        "title": "Insights & Patterns Growth",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 17},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [
+          {"expr": "mining_guardian_knowledge_insights_total", "legendFormat": "Insights", "refId": "A"},
+          {"expr": "mining_guardian_knowledge_patterns_total", "legendFormat": "Patterns", "refId": "B"},
+          {"expr": "mining_guardian_knowledge_miner_profiles_total", "legendFormat": "Fingerprints", "refId": "C"}
+        ],
+        "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"lineWidth": 2, "fillOpacity": 10}}}
+      },
+      {
+        "id": 19,
+        "type": "text",
+        "title": "",
+        "gridPos": {"h": 2, "w": 24, "x": 0, "y": 25},
+        "transparent": true,
+        "options": {"mode": "html", "content": "<h2 style=\"margin:0; padding:10px 0; color:#a855f7; border-bottom:1px solid #334155;\">🎯 Fleet Health & Predictions</h2>"}
+      },
+      {
+        "id": 20,
+        "type": "stat",
+        "title": "Fleet Online",
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 27},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_fleet_online", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}}}
+      },
+      {
+        "id": 21,
+        "type": "stat",
+        "title": "Fleet Offline",
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 27},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_fleet_offline", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}}
+      },
+      {
+        "id": 22,
+        "type": "stat",
+        "title": "Currently Flagged",
+        "gridPos": {"h": 4, "w": 4, "x": 8, "y": 27},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "sum(mining_guardian_flagged)", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}}}
+      },
+      {
+        "id": 23,
+        "type": "stat",
+        "title": "Dead Boards",
+        "gridPos": {"h": 4, "w": 4, "x": 12, "y": 27},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "sum(mining_guardian_dead_boards)", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 3}]}}}
+      },
+      {
+        "id": 24,
+        "type": "stat",
+        "title": "Tickets Created",
+        "gridPos": {"h": 4, "w": 4, "x": 16, "y": 27},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_tickets_created_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "blue", "value": null}]}}}
+      },
+      {
+        "id": 25,
+        "type": "stat",
+        "title": "Restarts Total",
+        "gridPos": {"h": 4, "w": 4, "x": 20, "y": 27},
+        "datasource": {"type": "prometheus", "uid": "efi3m84mbf668b"},
+        "targets": [{"expr": "mining_guardian_restarts_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "purple", "value": null}]}}}
+      }
+    ]
+  },
+  "overwrite": true
+}

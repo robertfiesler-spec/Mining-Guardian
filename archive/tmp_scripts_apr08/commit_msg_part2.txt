@@ -1,0 +1,118 @@
+demo sprint Apr 8 part 2: dual-model LLM, auradine client, vision doc
+
+Continuation of the Apr 8 demo sprint. Builds on commit 1497712 with the
+LLM analysis layer Bobby asked for ("the whole point of this is to compare
+and learn"), real Auradine API client (replacing the 51-line stub), the
+manual log upload tool, and the long-term open-uploader vision doc.
+
+Dual-model LLM pre/post comparison
+----------------------------------
+- New ai/claude_log_comparison.py: mirrors ai/local_llm_analyzer's
+  prompt structure but routes to Claude Sonnet 4.6 via Anthropic API.
+  Same operator rules (84°C threshold, HVAC delta-T is correct).
+  Reads ANTHROPIC_API_KEY or CLAUDE_API_KEY from .env. Truncates at
+  80K chars per log to stay focused inside Claude's 200K context.
+- core/mining_guardian.py: new MiningGuardian._run_post_action_log_comparison
+  helper that fetches the most recent pre and post miner.log entries
+  for a given miner_id+action_label, calls BOTH Qwen and Claude, stores
+  each analysis in knowledge.json with distinct miner_id format
+  (compare:<action>:<model>:<miner_id>) so they're separately retrievable
+  for side-by-side review and future training-data extraction. Posts a
+  unified side-by-side message to #mining-guardian-alerts. The post-restart
+  and post-pdu-cycle background polling threads now call this helper
+  immediately after the post-capture lands in the DB.
+- Dual-model is a "jump-start phase" — until each model has 10+ runs
+  on real fleet data, BOTH run on every comparison so the operator can
+  see the differences and the local Qwen can learn from Claude's
+  diagnostic style. After enough runs, the cohort training script can
+  use the accumulated dual-model pairs as gold-standard training data.
+
+Verified live before commit
+---------------------------
+- Miner 53487 (S19jPro/BiXBiT): pre+post restart logs from this morning's
+  test (1.78 MB miner.log each, 21:40 apart, settled hashrate proven).
+  Qwen produced 597-char verdict in 44s. Claude produced 3,168-char
+  verdict in 25s. Both correctly identified Chain[3] detached + restart
+  did not fix it. Claude additionally pinpointed specific bad chip
+  positions (27/28/29 + 90-95 dead across multiple chains) and
+  recommended hashboard re-seat or replace with HIGH confidence.
+- Miner auradine_28 (AH3880): 18 MB tech-support PDF Bobby downloaded
+  (3,534 pages, 197K log lines, 16-hour window). Extracted to text,
+  saved to miner_logs as diagnostic snapshot, dual-model analysis run.
+  Qwen identified Board 3 zero-voltage events. Claude additionally
+  identified 11 PSU IOUT 0x02 overcurrent shutdowns, attributed the
+  DVFS clipping events as CONSEQUENCES of PSU instability not
+  independent faults, and gave a clear two-action repair sequence
+  (replace PSU first, then Board 3). Confidence HIGH.
+
+Real Auradine client (replaces 51-line stub)
+---------------------------------------------
+clients/auradine_client.py — 602 lines, full implementation:
+- JWT token auth with the Auradine quirk: POST /token expects
+  {command:"token", user:"admin", password:"admin"} (NOT username/password)
+- _ensure_token re-acquires the JWT 5 minutes before expiry
+- Read endpoints (GET /<command>): summary, devs, devdetails, version,
+  pools, psu, temperature, mode, network
+- Log endpoints discovered from the React JS bundle:
+  POST /log with Token header (capital T, NOT Authorization: Bearer)
+  body {command:"getLog", daemon:[<name>], level:[...], filters:[...]}
+- get_all_logs() iterates all 8 daemons (gcminer, monitord, osutil,
+  kernel, webui-server, api-server, etc-files, factory-files) and
+  pulls every available log
+- request_techsupport(), techsupport_status(jobid), fetch_techsupport()
+  for the long-form tech support file workflow
+- health_snapshot() — single call returns the union of summary +
+  devs + temperature + psu + pools + mode for daemon scan use
+- parse_auradine_log_text() + render_auradine_findings() — Auradine-
+  specific structured-data extractor for DVFS chip voltage out-of-range
+  events, DVFS power reductions, PowerState voltage clips, board zero-
+  voltage detection, dead chain identification
+
+Manual log upload CLI
+---------------------
+scripts/manual_log_upload.py — 650 lines:
+- Auto-detects miner type from filenames + path structure + file content:
+  BiXBiT (nvdata/cglog_init_*), Auradine (per-daemon dirs or AH3880 markers),
+  Stock Antminer (kern.log/monitorAPI.log)
+- Supports --source-dir (recursive walk) or --tech-support-zip (in-memory
+  extraction)
+- Saves files into miner_logs under whatever label is specified
+  (pre-restart, post-restart, healthy, diagnostic)
+- Auto-runs LLM comparison if a matching opposite-label exists in the DB,
+  falls back to single-snapshot diagnostic otherwise
+- Posts results to #mining-guardian-alerts
+
+Open Log Uploader vision doc
+----------------------------
+docs/OPEN_LOG_UPLOADER_VISION.md captures Bobby's broader ask: a system
+that can ingest ANY miner log from ANY vendor (~10K logs incoming),
+auto-detect brand/model/firmware, web-search manufacturer specs to build
+a model_specs database, run a diagnostic test battery, dual-model LLM
+analysis, confirm/refine diagnoses across logs, and promote model-level
+patterns. Includes table schemas, architecture diagram, 10 open questions
+to resolve before building, 4-phase build plan, and a list of what's
+already built that this can reuse. Build is post-demo, ETA 2-4 weeks of
+focused work. Bobby explicitly asked to get this right the first time
+and have a thorough review session before any code is written.
+
+Branding directory placeholder
+------------------------------
+branding/ — empty directory. Bobby uploaded 5 Mining Guardian logo files
+(horizontal wordmark, MG circle icon, primary shield with miner+pickaxes+
+bitcoin, stacked wordmark, uploaded wordmark) which will be saved here.
+Dashboard rework to use the new branding is a focused post-demo session.
+
+Slack channel routing
+---------------------
+Slack newline rendering bug in the dual-model post fixed (was using \\n
+escapes that became literal backslash-n in the output). Production bot
+verified to be a member of #mining-guardian-alerts (Bobby invited it
+earlier this morning).
+
+Pending for next service restart
+--------------------------------
+- mining_guardian.py + claude_log_comparison.py are deployed to the VPS
+  but services have NOT been restarted to load the dual-model wiring
+  so any in-flight post-restart polling threads from earlier today
+  could continue without interruption. Restart will pick up the new
+  code on the next planned cycle.

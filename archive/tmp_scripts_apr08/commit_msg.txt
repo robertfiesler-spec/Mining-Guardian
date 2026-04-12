@@ -1,0 +1,124 @@
+demo sprint Apr 8: log pipeline fixes, operator rules, slack routing
+
+Pre-demo sprint completing 8 changes across the AI, API, and core layers.
+All changes deployed to VPS and verified live before commit.
+
+Bug fixes (core/mining_guardian.py)
+-----------------------------------
+1. AMS auth re-acquisition: _ensure_token() now clears stale workspace cookies
+   before re-auth and resets _ws_token/_token_expiry on failure. Root cause of
+   the silent zero-pre-restart-logs issue from overnight automation: after
+   token expiry, _login() wrote a new user_token cookie but the stale
+   workspace cookie collided with the new Bearer header and AMS returned
+   HTTP 400 from /auth/select_workspace.
+
+2. signal-in-thread crash: _collect_logs_nonblocking now detects whether it
+   is running on the main thread before arming signal.SIGALRM. Background
+   threads (post-restart capture, post-pdu capture) used to crash silently
+   with "signal only works in main thread of the main interpreter" and
+   produce zero post-action logs.
+
+3. save_logs dedup ignored health_status: dedup key was (miner_id, log_file)
+   only, so a file already saved as 'healthy' from a routine scan would
+   silently fail to save again under 'pre-restart' or 'post-restart' labels.
+   The 'saved' counter incremented based on dedup-skip not actual INSERT, so
+   logs LIED about saving. Fix: dedup key is now (miner_id, log_file,
+   health_status) so the same physical file can be stored under multiple
+   labels (those are distinct observations of system state).
+
+Pre/post log capture pipeline (core/mining_guardian.py)
+-------------------------------------------------------
+4. Pre-restart fresh log capture: execute_restart now triggers a FRESH
+   miner.log export via AMS before sending the reboot command. Verified
+   capturing 1.9 MB miner.log + 6 boards parsed + 5,533 PSU samples + 1,343
+   sys events + 945 chip samples per restart in production DB.
+
+5. Post-restart fresh log capture (NO MAX WAIT): execute_restart spawns a
+   daemon background thread that polls AMS every 60 seconds, tracks the last
+   4 hashrate readings, and only triggers the fresh log export once the
+   miner is in fully-mining state with SETTLED hashrate (stddev within 5% of
+   mean across 4 consecutive polls). Operator rule: AMS will not generate a
+   new fresh log until the miner is fully up and mining — not in starting
+   or autotuning state. This can take 5-35 minutes typically, up to 5-6
+   HOURS in some cases. There is no maximum wait time. The number one goal
+   is capturing the log when the hashrate has settled, not capturing it
+   quickly.
+
+6. Same poll-until-settled pattern applied to execute_pdu_cycle for the
+   post-pdu-cycle log capture.
+
+Operator rules (7 files)
+------------------------
+7. TEMPERATURE ALERTING — 84°C threshold: do not flag/warn about a miner
+   "overheating" until chip temp reaches 84°C. Liquid-cooled fleet runs
+   67-73°C normally; previous 76°C threshold was wrong and produced false
+   positives. Removed yellow tier entirely. Applied to:
+   - core/mining_guardian.py: temp_icon thresholds, _check_miner flagging,
+     SlackNotifier approval card temp icons
+   - core/llm_analyzer.py: SYSTEM_PROMPT chip temp zones, explicit
+     "do not describe under 84°C as overheating" guidance
+   - ai/deep_analysis_claude.py: weekly training prompt
+   - ai/action_diversity.py: TEMP_CHIP_POWER_DOWN constant 76.0 -> 84.0
+   - api/slack_command_handler.py: /hot command query and emoji
+   - ai/train_cohort.py: operator rules block injected into all 3 prompts
+     (cohort, outlier, fleet)
+
+8. HVAC DELTA-T IS CORRECT: USA 188 HVAC is performing perfectly. The
+   supply/return water delta-T is intentionally low now and will naturally
+   rise as outside temps climb. Do not recommend "check HVAC because
+   delta-T is low" anywhere. Applied to system prompts in core/llm_analyzer.py
+   and ai/deep_analysis_claude.py, plus operator rules block in
+   ai/train_cohort.py.
+
+Tier 2 truncation bumps (ai/train_cohort.py, ai/knowledge_manager.py,
+                         core/llm_analyzer.py)
+---------------------------------------------------------------------
+9. All four LLM response truncation locations bumped to 50,000 chars
+   (cohort, outlier, fleet synthesis in train_cohort.py + add_llm_insight
+   hard cap in knowledge_manager.py). max_tokens in llm_analyzer.py raised
+   from 4096 to 16384 (Sonnet 4.5 actual ceiling) so storage caps can be
+   reached. This was the bottleneck preventing fleet synthesis from running
+   to completion in the previous training cycles.
+
+Data Signals table corrections (api/ai_dashboard_api.py)
+--------------------------------------------------------
+10. DATA_SIGNALS table on the AI dashboard had stale "5 min" frequency
+    labels left over from when the scan interval was 300 seconds. Production
+    scans run every 60 minutes now. Updated to two-tier labels:
+    - AMS WebSocket signals get "60 min + 15s alerts" (honest about both
+      cadences — periodic scan + continuous alert listener monitoring)
+    - Pool / PDU / HVAC / Weather get "60 min"
+    - CGMiner Logs derived metrics get "60 min" (was wrongly "6 hrs")
+    - Hardware identity (chip die/bin, PCB version, etc.) stays "Once"
+
+Slack channel routing (core/mining_guardian.py)
+-----------------------------------------------
+11. SlackNotifier now supports a second channel for read-only feed posts.
+    New ALERTS_CHANNEL_ID constant (C0ARJP300J0 = #mining-guardian-alerts).
+    post_to_channel and post_blocks_to_channel accept an optional channel_id
+    override; default behavior unchanged (sends to main #mining-guardian).
+    New helper post_to_alerts_channel(message). MiningGuardian.__init__
+    passes alerts_channel_id from config via getattr default-fallback so
+    existing config.json files without the new key continue working.
+    send_ams_down now routes to the alerts channel (it's a read-only status
+    alert, not an operator interaction). Scan summaries with approval cards
+    stay in the main channel because operators interact with them there.
+
+NOTE: the production bot must be invited to #mining-guardian-alerts before
+the routing will work. Until invited, send_ams_down logs a warning and the
+rest of the system is unaffected.
+
+Verified live before commit
+---------------------------
+- Pre-restart capture: miner 53487 captured 3 files (1.9 MB miner.log +
+  full structured data) into production DB at 05:14:26 CDT
+- Post-restart polling thread alive in screen test_final (PID 201185),
+  watching for settled hashrate (NO max wait)
+- All 9 services active: mining-guardian, mining-guardian-alerts,
+  dashboard-api, approval-api, slack-listener, slack-commands,
+  overnight-automation, prometheus, grafana-server
+- Daemon scanning cleanly every ~15 min, fleet 42 online / 7 offline
+- knowledge.json rolling window intact: 49/50 entries, 42 cohort insights,
+  6 outlier insights, 1 fleet synthesis at full 10K chars
+- No errors in any service journal in the last hour
+- Resources healthy: 33G/387G disk (9%), 1.7G/31G RAM
