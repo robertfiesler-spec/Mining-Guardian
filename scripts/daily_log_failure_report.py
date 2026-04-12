@@ -74,7 +74,7 @@ def main():
     logger.info("=== DAILY LOG FAILURE REPORT ===")
     
     slack = get_slack_client()
-    channel = "C0AQ8SE1448"  # #mining-guardian
+    channel = "C0ASH2CPHBJ"  # #mg-logs
     
     missing = get_miners_without_logs()
     fleet, with_logs = get_fleet_stats()
