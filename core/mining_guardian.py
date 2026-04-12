@@ -5185,7 +5185,7 @@ class MiningGuardian:
             """
             import concurrent.futures
             # DAILY_INTERVAL_SECONDS removed — every miner gets fresh logs every day
-            DAILY_PARALLEL_WORKERS = 15
+            DAILY_PARALLEL_WORKERS = 10
 
             # Force a fresh token BEFORE spawning parallel workers to avoid
             # a race on _ensure_token if the current token is near expiry.
