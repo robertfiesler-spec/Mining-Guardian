@@ -403,3 +403,63 @@ see how confident the AI was in each recommendation.
 
 ### Verification
 Confirmed /ai/dashboard renders with Conf columns visible in all three tables.
+
+---
+
+## 2026-04-12 ~4:30pm CDT — Chain Events Not Saved to Fingerprints
+
+### Issue
+During comprehensive data gap audit, discovered that  and 
+ were being computed from log_metrics (27K rows) but NOT
+included in the fingerprint output.
+
+### Root Cause
+The fingerprint_builder.py computed these values on lines 251-252 but the
+return statement starting at line 300 didn't include them.
+
+### Fix (commit fcabbcf)
+Added to fingerprint output:
+
+
+### Impact
+- 27K chain_event records now feed into miner fingerprints
+- AI can see board attach/detach patterns for every miner
+- Board cycling issues (>100 detaches) now visible in fingerprints
+
+### Data Gap Audit Also Found (documented for future):
+1. chip_hashrate: 2.6M rows NOT USED (per-chip data)
+2. psu_voltage: 9.5M rows, only min extracted
+3. system_health: 2.3M rows NOT USED
+4. llm_analysis: 839 rows not feeding back to training
+5. pending_approvals: approval patterns not analyzed
+
+
+---
+
+## 2026-04-12 ~4:30pm CDT — Chain Events Not Saved to Fingerprints
+
+### Issue
+During comprehensive data gap audit, discovered that chain_detaches and 
+chain_attaches were being computed from log_metrics (27K rows) but NOT
+included in the fingerprint output.
+
+### Root Cause
+The fingerprint_builder.py computed these values on lines 251-252 but the
+return statement starting at line 300 did not include them.
+
+### Fix (commit fcabbcf)
+Added to fingerprint output after stratum_url:
+- chain_detaches: count of board detach events
+- chain_attaches: count of board attach events
+
+### Impact
+- 27K chain_event records now feed into miner fingerprints
+- AI can see board attach/detach patterns for every miner
+- Board cycling issues (>100 detaches) now visible in fingerprints
+
+### Data Gap Audit Also Found (documented for future):
+1. chip_hashrate: 2.6M rows NOT USED (per-chip data)
+2. psu_voltage: 9.5M rows, only min extracted
+3. system_health: 2.3M rows NOT USED
+4. llm_analysis: 839 rows not feeding back to training
+5. pending_approvals: approval patterns not analyzed
