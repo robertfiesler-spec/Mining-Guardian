@@ -5100,7 +5100,7 @@ class MiningGuardian:
             ])
             
             message = "\n".join(lines)
-            self.slack.post_message(message, channel="#mining-guardian")
+            self.slack.post_to_channel(message)
             logger.info("Sent log failure report to Slack: %d miners", len(enriched))
             
         except Exception as e:
