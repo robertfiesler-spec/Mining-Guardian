@@ -121,3 +121,32 @@ Last Updated: April 12, 2026
 - All times are CDT (Central Daylight Time)
 - The accelerated daily training schedule (midnight Claude) is temporary — scheduled to revert to Sunday-only after April 25, 2026
 - Log files in /tmp/ are not persistent across reboots but are useful for debugging
+
+---
+
+## 4:15pm — Daily Log Failure Report
+
+**Script:** 
+**Purpose:** Send Slack report of miners that FAILED to get logs today
+
+This gives the operator time to investigate problem miners before leaving work.
+The report groups miners by online vs offline status and shows IP + model.
+
+**Sample Output:**
+```
+⚠️ Daily Log Failures — 29 miners need investigation
+Coverage: 20/49 (41%) — 2026-04-12 04:15 PM
+
+Online but no logs (15):
+  • 192.168.188.12 — Antminer S19JPro
+  • 192.168.188.127 — Antminer S19j Pro
+  ...
+
+Offline (14):
+  • 192.168.188.35 — S19JPro
+  ...
+
+Check AMS web UI for export errors or try manual export.
+```
+
+**Added:** April 12, 2026
