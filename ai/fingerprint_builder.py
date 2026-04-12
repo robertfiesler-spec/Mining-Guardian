@@ -338,6 +338,9 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
         "map_location_id":        map_location_id,
         "map_position":           map_position,
         "stratum_url":            stratum_url,
+        # Chain events from log_metrics (board attach/detach cycles)
+        "chain_detaches":         chain_detaches,
+        "chain_attaches":         chain_attaches,
         "last_updated":           datetime.now().isoformat()
     }
 
