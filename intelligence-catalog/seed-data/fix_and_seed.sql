@@ -9,6 +9,20 @@ ALTER TABLE hardware.manufacturers
 ALTER TABLE hardware.manufacturers 
   ADD CONSTRAINT manufacturers_brand_unique UNIQUE (brand);
 
+-- Step 1b: Add catalog_id column to miner_models (human-friendly integer IDs)
+-- Numbering: 1000s=Bitmain, 2000s=MicroBT, 3000s=Canaan, 4000s=Bitdeer,
+--            5000s=Auradine, 6000s=Innosilicon, 7000s=Ebang, 8000s=StrongU,
+--            9000-9099=Bitfury, 9100s=KnCMiner, 9200s=Spondoolies,
+--            9300s=Butterfly Labs, 9400s=Halong, 9500-9999=Future/Other
+ALTER TABLE hardware.miner_models 
+  ADD COLUMN IF NOT EXISTS catalog_id INTEGER;
+ALTER TABLE hardware.miner_models 
+  DROP CONSTRAINT IF EXISTS miner_models_catalog_id_unique;
+ALTER TABLE hardware.miner_models 
+  ADD CONSTRAINT miner_models_catalog_id_unique UNIQUE (catalog_id);
+COMMENT ON COLUMN hardware.miner_models.catalog_id IS
+  'Human-friendly ID. 1000s=Bitmain, 2000s=MicroBT, 3000s=Canaan, 4000s=Bitdeer, 5000s=Auradine, 6000s=Innosilicon, 7000s=Ebang, 8000s=StrongU, 9xxx=Historical/Other';
+
 -- Step 2: Add missing enum values
 ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'innosilicon';
 ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'bitdeer';
