@@ -101,8 +101,16 @@ def _extract_zip(archive_path: str, dest_dir: str) -> list[str]:
             # Skip macOS resource forks and hidden files
             if info.filename.startswith("__MACOSX") or "/." in info.filename:
                 continue
-            out_path = zf.extract(info, dest_dir)
-            extracted.append(out_path)
+            try:
+                out_path = zf.extract(info, dest_dir)
+                extracted.append(out_path)
+            except RuntimeError as e:
+                if "encrypted" in str(e).lower() or "password" in str(e).lower():
+                    logger.warning("Skipping encrypted file in zip: %s — %s", info.filename, e)
+                else:
+                    logger.error("Failed to extract %s: %s", info.filename, e)
+            except Exception as e:
+                logger.error("Failed to extract %s: %s", info.filename, e)
     return extracted
 
 
@@ -155,17 +163,37 @@ def _extract_gzip(archive_path: str, dest_dir: str) -> list[str]:
         return []
 
 
+def _is_archive(filepath: str) -> bool:
+    """Check if a filepath looks like a supported archive, handling special characters in names."""
+    ext = "".join(Path(filepath).suffixes).lower()
+    if ext in SUPPORTED_ARCHIVE_EXTS:
+        return True
+    # Fallback: check the lowered filename directly for known archive endings
+    filename_lower = filepath.lower()
+    return any(
+        filename_lower.endswith(suffix)
+        for suffix in (".tar.gz", ".tgz", ".tar.bz2", ".tar", ".zip", ".7z", ".gz")
+    )
+
+
 def extract_archive(archive_path: str, dest_dir: str) -> list[str]:
     """Extract any supported archive format and return list of extracted file paths."""
     ext = "".join(Path(archive_path).suffixes).lower()
+    filename_lower = archive_path.lower()
 
-    if ext in {".zip"}:
+    # Try Path-based extension first, then fall back to string endswith for
+    # filenames with special characters (e.g. parentheses) that confuse Path.suffixes
+    if ext in {".zip"} or filename_lower.endswith(".zip"):
         return _extract_zip(archive_path, dest_dir)
-    elif ext in {".tar", ".tar.gz", ".tgz", ".tar.bz2"}:
+    elif ext in {".tar", ".tar.gz", ".tgz", ".tar.bz2"} or filename_lower.endswith(
+        (".tar.gz", ".tgz", ".tar.bz2", ".tar")
+    ):
         return _extract_tar(archive_path, dest_dir)
-    elif ext in {".7z"}:
+    elif ext in {".7z"} or filename_lower.endswith(".7z"):
         return _extract_7z(archive_path, dest_dir)
-    elif ext in {".gz"} and ".tar" not in ext:
+    elif (ext in {".gz"} and ".tar" not in ext) or (
+        filename_lower.endswith(".gz") and not filename_lower.endswith(".tar.gz")
+    ):
         return _extract_gzip(archive_path, dest_dir)
     else:
         logger.warning("Unsupported archive format: %s", ext)
@@ -216,7 +244,7 @@ def _process_single_file(
         return
 
     # Handle archives — extract and recurse
-    if ext in SUPPORTED_ARCHIVE_EXTS or combined_ext in SUPPORTED_ARCHIVE_EXTS:
+    if ext in SUPPORTED_ARCHIVE_EXTS or combined_ext in SUPPORTED_ARCHIVE_EXTS or _is_archive(filepath):
         archive_dest = os.path.join(temp_dir, Path(filepath).stem)
         os.makedirs(archive_dest, exist_ok=True)
         extracted_paths = extract_archive(filepath, archive_dest)

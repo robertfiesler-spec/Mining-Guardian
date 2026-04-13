@@ -53,7 +53,12 @@ FILENAME_PATTERNS = {
         (re.compile(r"M33[Ss]?\+?\+?", re.I), "M33", 0.25),
         (re.compile(r"M36[Ss]?\+?\+?", re.I), "M36", 0.25),
         (re.compile(r"M66[Ss]?\+?", re.I), "M66", 0.30),
+        (re.compile(r"M20[Ss]?\+?", re.I), "M20S", 0.25),
+        (re.compile(r"M21[Ss]?\+?", re.I), "M21S", 0.25),
         (re.compile(r"[Ww]hats[Mm]iner", re.I), None, 0.25),
+        (re.compile(r"pools\.log", re.I), None, 0.15),  # WhatsMiner-specific log
+        (re.compile(r"system\.log", re.I), None, 0.10),  # Common in WhatsMiner
+        (re.compile(r"antiv", re.I), None, 0.20),  # WhatsMiner antivirus logs
     ],
     "auradine": [
         (re.compile(r"[Tt]eraflux", re.I), None, 0.30),
@@ -98,6 +103,10 @@ HEADER_BRAND_PATTERNS = {
         (re.compile(r"microbt", re.I), 0.30),
         (re.compile(r"whatsminer", re.I), 0.30),
         (re.compile(r"eeprom_hw_ver", re.I), 0.20),
+        (re.compile(r"antiv[-_]state", re.I), 0.25),  # WhatsMiner antivirus state log
+        (re.compile(r"board_plug\d", re.I), 0.20),  # WhatsMiner board plug config
+        (re.compile(r"ALLWINNER", re.I), 0.25),  # WhatsMiner uses Allwinner SoC
+        (re.compile(r"HP3D\d+", re.I), 0.20),  # WhatsMiner chip identifiers
     ],
     "auradine": [
         (re.compile(r"Teraflux\s+(AT\d+)", re.I), 0.35),
@@ -226,6 +235,9 @@ class MinerDetector:
         if "btminer" in full_path:
             brand_scores["microbt"] = brand_scores.get("microbt", 0) + 0.20
             evidence.append("path:btminer=WhatsMiner")
+        if "whats" in full_path or "whatsminer" in full_path:
+            brand_scores["microbt"] = brand_scores.get("microbt", 0) + 0.30
+            evidence.append("path:whats=WhatsMiner")
 
         # ── Layer 3: Header content scan ──────────────────────────────────
         content = extracted.content or ""
