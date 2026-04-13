@@ -463,3 +463,37 @@ Added to fingerprint output after stratum_url:
 3. system_health: 2.3M rows NOT USED
 4. llm_analysis: 839 rows not feeding back to training
 5. pending_approvals: approval patterns not analyzed
+
+---
+
+## April 13, 2026 — S19J Pro HVAC Integration
+
+### Issue
+S19J Pro miners were being correlated against the WRONG HVAC system (warehouse instead of their own container cooling).
+
+### Root Cause
+Mining Guardian only knew about one HVAC system (warehouse at 192.168.188.235). The S19J Pro container has a completely separate cooling system at 192.168.189.235.
+
+### Fix
+1. Added multi-system HVAC support to hvac_client.py
+2. Created Mac HVAC collector (hvac_collector.py) that polls both systems
+3. Updated ALL AI scripts to select correct HVAC based on miner model
+4. Added operator rule #5: S19J Pro CT fans manually at 100%
+
+### Files Changed
+- clients/hvac_client.py — Multi-system support
+- ai/hvac_correlator.py — System-aware correlation
+- ai/daily_deep_dive.py — Per-miner HVAC selection
+- ai/local_llm_analyzer.py — Shows both systems
+- ai/predictor.py — System-aware predictions
+- api/dashboard_api.py — HVAC ingest endpoint
+
+### Simple Rule
+S19JPro -> s19jpro system (192.168.189.235)
+Everything else -> warehouse (192.168.188.235)
+
+### Commits
+- 43ac433 — S19J Pro HVAC integration
+- 0b3aab9 — Wire AI scripts to correct HVAC
+- 9d4ece4 — CT fan note
+- df699ca — Documentation
