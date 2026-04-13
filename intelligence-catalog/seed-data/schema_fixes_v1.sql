@@ -520,13 +520,15 @@ BEGIN
          'S21 Immersion variant hashboard. 3 boards = 208 TH/s stock, max 360 TH/s.'),
 
         -- Auradine AH3880 hashboard
+        -- chips_per_board: ~345 estimated (600 TH/s total ÷ 0.87 TH/chip ≈ 690 chips ÷ 2 boards)
+        -- board_power_w_nom: ~2500W estimated (5000W total ÷ 2 boards)
         (v_hb_ah3880,
          v_mfr_auradine,
          'Auradine Teraflux AH3880 Hashboard',
          'v1.0',
          v_chip_at7200,
-         NULL,
-         NULL,
+         345,
+         2500.0,
          150.0, 300.0,
          4, 85,
          '10000000-0000-0000-0000-000000000002',
