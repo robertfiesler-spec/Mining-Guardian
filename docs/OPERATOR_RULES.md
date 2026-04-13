@@ -34,3 +34,51 @@ See [HVAC_SYSTEMS.md](./HVAC_SYSTEMS.md) for complete HVAC documentation.
 
 ---
 *Last updated: April 13, 2026*
+
+## Rule 6: S19J Pro Overheating Boards (Aging Hardware)
+
+When an S19J Pro shows overheating (chip temp >= 84°C):
+
+1. **Try ONE restart** with log capture before and after
+2. **Compare logs** to see if the restart helped
+3. **If restart doesn't fix it** — these are old boards, let them run as-is
+
+**Do NOT:**
+- Repeatedly restart overheating S19J Pros
+- Create tickets for aging thermal issues after first attempt fails
+- Flag these miners on every scan
+
+**Rationale:** S19J Pros are older hardware. As boards age, some will run hotter. One restart attempt is worth trying, but if it doesn't help, the hardware is simply aging and should be allowed to run until it fails naturally.
+
+### Database Table
+The  table tracks:
+-  — Unique miner identifier
+-  — When overheating was first detected
+-  — When we tried the restart
+-  /  — Logs for comparison
+-  — 1=yes, 0=no, NULL=pending
+-  — When we gave up and marked as aging
+
+### Logic Flow
+1. S19J Pro hits 84°C+ → Check tracking table
+2. If new → Record, try restart with log capture
+3. After restart → Compare logs
+4. If temps still high → Mark as aging, suppress future flags
+5. If temps normal → Remove from tracking
+
+
+### Database Table
+The s19jpro_overheat_tracking table tracks:
+- miner_id — Unique miner identifier
+- first_overheat_at — When overheating was first detected
+- restart_attempted_at — When we tried the restart
+- log_before / log_after — Logs for comparison
+- restart_helped — 1=yes, 0=no, NULL=pending
+- marked_aging_at — When we gave up and marked as aging
+
+### Logic Flow
+1. S19J Pro hits 84C+ -> Check tracking table
+2. If new -> Record, try restart with log capture
+3. After restart -> Compare logs
+4. If temps still high -> Mark as aging, suppress future flags
+5. If temps normal -> Remove from tracking
