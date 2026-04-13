@@ -150,3 +150,26 @@ Check AMS web UI for export errors or try manual export.
 ```
 
 **Added:** April 12, 2026
+
+---
+
+## Mac-Side Scheduled Jobs
+
+These jobs run on Bobby's Mac, not the VPS.
+
+### Every 5 Minutes — HVAC Collector
+**Script:** /Users/BigBobby/Documents/GitHub/mac-scripts/hvac_collector.py  
+**Service:** com.bixbit.hvac-collector (launchd)  
+**Log:** /Users/BigBobby/Library/Logs/hvac_collector.log  
+**Purpose:**
+- Polls BOTH HVAC systems (warehouse + S19J Pro)
+- Pushes readings to VPS API at /api/hvac/ingest
+- Required because VPS cannot reach local network directly
+
+**Systems Polled:**
+- Warehouse HVAC (192.168.188.235) — Hydros, S21 Imm
+- S19J Pro Container (192.168.189.235) — S19J Pros only
+
+**Added:** April 13, 2026
+
+See [HVAC_SYSTEMS.md](./HVAC_SYSTEMS.md) for complete HVAC documentation.

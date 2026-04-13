@@ -1,35 +1,26 @@
 # Warehouse Mechanical System
 
-## XpressENVYSION Building Automation / HVAC Controller
+> **NOTE**: This document is superseded by [HVAC_SYSTEMS.md](./HVAC_SYSTEMS.md) which covers BOTH cooling systems.
 
-URL: https://192.168.188.235/eclypse/envysion/viewer.html?proj=XpressENVYSION#mode=view&node=AM9A91A-362-DD8-B1A-B46M113
+## Quick Reference
 
-This is the building automation system (BAS) for the BiXBiT USA warehouse / R&D center.
-It monitors and controls the mechanical side of the facility — HVAC, cooling, environmental.
+Mining Guardian now monitors **TWO HVAC systems**:
 
-## Why This Matters for Mining Guardian
+1. **Warehouse HVAC** (192.168.188.235) — Hydros, S21 Imm, Auradines
+2. **S19J Pro Container** (192.168.189.235) — S19J Pro miners only
 
-The warehouse miners (Auradine AH3880s, S21 EXP Hydros, S21 Imm) are all liquid cooled.
-Their chip temps are directly correlated with the facility's mechanical performance:
-- If chilled water supply temp rises → hydro miners run hotter
-- If ambient room temp rises → affects all equipment in the warehouse
-- If a pump or cooling circuit fails → miners will thermally throttle or shut down
+See [HVAC_SYSTEMS.md](./HVAC_SYSTEMS.md) for complete documentation including:
+- BACnet point mappings
+- Typical values
+- Data collection architecture
+- AI integration details
+- Operator rules
 
-Correlating BAS data with miner chip temps gives early warning of cooling problems
-BEFORE miners start faulting. A rising return water temp across the whole warehouse
-fleet is a building problem, not a miner problem.
+## Legacy Notes (for historical reference)
 
-## Integration Plan (Future)
+The original XpressENVYSION integration was explored in early April 2026.
+The Eclypse BAS controllers use REST API over HTTPS with basic auth.
+Both systems share credentials: BigStar / BigSt@r2020
 
-1. Explore the API — check if XpressENVYSION exposes a REST or BACnet/IP endpoint
-2. If accessible: poll supply/return temps, ambient room temp, chiller status each scan
-3. Add to FacilityMonitor alongside PDU and immersion tank data
-4. Correlate: if warehouse ambient > threshold AND miner chip temps rising → flag as
-   "cooling system issue" not "miner issue"
-
-## Access Notes
-
-- IP: 192.168.188.235 (local warehouse network — accessible from Mac Mini on-site)
-- System: Distech Controls Eclypse / XpressENVYSION BAS platform
-- Credentials: TBD (Rob to provide)
-- Protocol: Likely BACnet/IP or REST over HTTP — needs exploration
+---
+*Updated: April 13, 2026 — See HVAC_SYSTEMS.md for current documentation*
