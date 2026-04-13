@@ -219,21 +219,19 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
    - ✅ Daily baseline log collection (`collect_logs` in `core/mining_guardian.py`) — parallel 15-worker, 10-min cap per miner, commits `95676b6` + `da1edbd` + `e5b9f5c`
    - ✅ Daily deep dive LLM (`ai/daily_deep_dive.py`, 953 lines) — Qwen 32B full study of fleet once a day, commit `da1edbd`. See `docs/DAILY_DEEP_DIVE_DESIGN.md`
    - ✅ Weekly Claude training merges restart comparisons — `TEMP_MAY_REMOVE` block in `ai/train_cohort.py`, commit `e90c2be`
-   - ⏳ `daily_deep_analyses` permanent merge into weekly Claude training — apply script written but not shipped
+   - ✅ `daily_deep_analyses` permanent merge into weekly Claude training — SHIPPED (commit `2cbc271`, lines 784–826 in `train_cohort.py`)
    - ⏳ `firmware_changes` table + scan-loop change detector — not started
    - ⏳ `ai/regression_detector.py` + Slack alert wiring for firmware regression detection — not started
-   - ⏳ Cron entries for 1pm daily collection + 4pm daily deep dive — not yet added to VPS crontab
+   - ✅ Cron entries for 1pm daily collection + 4pm daily deep dive — OPERATIONAL (confirmed in REPAIR_LOG, documented in docs/CRON_SCHEDULE.md)
 
-3. **`weekly_train.py` denial reason ingestion gap**
-   Verify denial reasons are actually flowing into Sunday's `train_cohort.py` run. `train_comprehensive.py` reads them; confirm the cohort trainer inherits them via its imports. Fix before next Sunday if broken.
+3. ~~**`weekly_train.py` denial reason ingestion gap**~~ — **VERIFIED CONNECTED ✅** (April 13, 2026)
+   Two independent paths confirmed: (1) raw denials from DB via `get_cross_miner_correlations()` and (2) pre-extracted operator rules via `knowledge.json['operator_rules']`. Both flow to `build_fleet_prompt()` → Claude. No fix needed.
 
-4. **Ship the `daily_deep_analyses` permanent merge block in `ai/train_cohort.py`**
-   Apply script written as `.apply_dd_merge.py` in working tree. Extends the existing merge block to pull `daily_deep_analyses` entries from `knowledge.json` into the Sunday Claude weekly training stream. NOT wrapped in `TEMP_MAY_REMOVE` — this is permanent infrastructure per operator rule.
+4. ~~**Ship the `daily_deep_analyses` permanent merge block in `ai/train_cohort.py`**~~ — **ALREADY SHIPPED ✅** (commit `2cbc271`, April 13, 2026)
+   Lines 784–826 in `train_cohort.py`. Permanent infrastructure — NOT wrapped in `TEMP_MAY_REMOVE`. Merges `daily_deep_analyses` entries from `knowledge.json` into Sunday Claude weekly training stream.
 
-5. **Add VPS cron entries for daily collection + daily deep dive**
-   - `0 13 * * * ...` daily log collection forced at 1pm local
-   - `0 16 * * * ...` daily deep dive fires at 4pm local
-   Needs a small helper in `mining_guardian.py` (or a standalone script) to force `collect_logs` to run outside the hourly scan loop.
+5. ~~**Add VPS cron entries for daily collection + daily deep dive**~~ — **ALREADY OPERATIONAL ✅** (April 13, 2026)
+   Standalone trigger `scripts/daily_collect_logs.py` exists (43 lines). `ai/daily_deep_dive.py` is fully standalone with `__main__` + argparse. REPAIR_LOG confirms "All 6 cron jobs confirmed operational" and "Log collection cron ran at 1pm as scheduled." Full schedule documented in `docs/CRON_SCHEDULE.md` (7 cron entries total). Only verification remaining: `crontab -l` on VPS to visually confirm entries are present.
 
 6. **Physically inspect miner 53482 (192.168.188.46)**
    BiXBiT S19JPro, running 83.5% of target, error codes 412 + 101, firmware `BiXBiT 0.9.9.3-stage29.2799`, AMS log export hung. Discovered during April 9 afternoon sprint. The hourly reactive scan has been silently ignoring it because 83.5% is above the hashrate flag and 70°C is below the temperature flag. Needs operator eyeballs or an AMS ticket.
