@@ -611,6 +611,8 @@ def build_fleet_synthesis_prompt(
         retur = [h.get("return_temp_f", 0) or 0 for h in hvac]
         delta = [h.get("delta_t_f", 0) or 0 for h in hvac]
         lines.append(f"--- 24-HOUR HVAC TREND ({system_label}) ---")
+        if hvac_system == "s19jpro":
+            lines.append("  NOTE: S19J Pro CT fans are manually at 100% - no VFD feedback shown. This is intentional.")
         lines.append(
             f"  Supply: min={min(supply):.1f}°F max={max(supply):.1f}°F avg={sum(supply)/len(supply):.1f}°F"
         )

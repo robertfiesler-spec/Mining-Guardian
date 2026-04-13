@@ -256,6 +256,7 @@ class LocalLLMAnalyzer:
                 f"Container {hvac_s19.get('container_temp_f', '?')}°F"
             )
         lines.append("  NOTE: Compare miners to THEIR cooling system. S19JPros -> S19J Pro HVAC. Others -> Warehouse.")
+        lines.append("  NOTE: S19J Pro CT fans are manually at 100% - no VFD feedback shown. This is intentional, NOT a fault.")
         
         # HVAC correlation (computed weekly) — shows if facility stress affects flags
         hvac_corr = ctx.get("hvac_correlation", {})
