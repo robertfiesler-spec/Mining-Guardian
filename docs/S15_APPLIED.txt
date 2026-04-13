@@ -1,0 +1,1 @@
+S-15: Added EnvironmentFile=/root/Mining-Gaurdian/.env to 5 systemd services (mining-guardian, approval-api, dashboard-api, slack-listener, overnight-automation). systemctl daemon-reload executed.
