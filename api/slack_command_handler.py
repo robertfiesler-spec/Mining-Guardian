@@ -209,7 +209,7 @@ class CommandHandler:
                 # Rough estimate: S19J Pro fleet avg ~130 TH/s per miner
                 est_fleet_ths = scan['online'] * 130
                 # Network difficulty-based revenue estimate (very rough)
-                daily_btc = (est_fleet_ths / 750_000_000) * 6.25 * 144  # simplified
+                daily_btc = (est_fleet_ths / 750_000_000) * 3.125 * 144  # simplified
                 daily_usd = daily_btc * price
                 lines.append(f"Fleet: ~{est_fleet_ths:,.0f} TH/s ({scan['online']} miners online)")
                 lines.append(f"Est. daily: ~{daily_btc:.4f} BTC (~${daily_usd:,.0f})")
