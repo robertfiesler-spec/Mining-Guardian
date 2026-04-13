@@ -153,7 +153,7 @@ def evaluate_all_actions(scan_id: int) -> List[Dict[str, Any]]:
     # Get HVAC context once for the whole scan
     hvac = conn.execute(
         "SELECT supply_temp_f, return_temp_f, delta_t_f, cwp1_vfd_pct, cwp2_vfd_pct "
-        "FROM hvac_readings ORDER BY id DESC LIMIT 1"
+        "FROM hvac_readings WHERE system_id = 'warehouse' ORDER BY recorded_at DESC LIMIT 1"
     ).fetchone()
     hvac_supply   = float(hvac["supply_temp_f"] or 0) if hvac else 0
     hvac_delta_t  = float(hvac["delta_t_f"]     or 0) if hvac else 0

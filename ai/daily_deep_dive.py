@@ -287,17 +287,23 @@ def get_miner_fingerprint(knowledge: Dict, miner_id: str) -> Optional[Dict]:
 
 
 def get_facility_24h(conn: sqlite3.Connection) -> Dict:
-    """Get 24-hour facility state: HVAC, weather, fleet-level stats."""
+    """Get 24-hour facility state: HVAC by system, weather, fleet-level stats."""
     facility = {}
 
-    hvac = conn.execute("""
-        SELECT recorded_at, supply_temp_f, return_temp_f, delta_t_f,
-               diff_pressure, spray_pump_on, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct
-        FROM hvac_readings
-        WHERE recorded_at >= datetime('now', '-24 hours')
-        ORDER BY recorded_at ASC
-    """).fetchall()
-    facility["hvac"] = [dict(r) for r in hvac]
+    # Get HVAC data for both systems
+    for system_id in ['warehouse', 's19jpro']:
+        hvac = conn.execute("""
+            SELECT recorded_at, supply_temp_f, return_temp_f, delta_t_f,
+                   diff_pressure, spray_pump_on, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
+                   outside_air_f, container_temp_f
+            FROM hvac_readings
+            WHERE system_id = ? AND recorded_at >= datetime('now', '-24 hours')
+            ORDER BY recorded_at ASC
+        """, (system_id,)).fetchall()
+        facility[f"hvac_{system_id}"] = [dict(r) for r in hvac]
+    
+    # Keep backward compatibility - warehouse is default
+    facility["hvac"] = facility.get("hvac_warehouse", [])
 
     weather = conn.execute("""
         SELECT recorded_at, temp_f, humidity_pct, feels_like_f,
@@ -594,13 +600,17 @@ def build_fleet_synthesis_prompt(
         lines.append(prev_synth)
         lines.append("")
 
-    # Facility context
-    hvac = facility.get("hvac", [])
+    # Facility context - select HVAC system based on miner model
+    miner_model = miner.get("model", "") or ""
+    hvac_system = "s19jpro" if miner_model.startswith("S19JPro") else "warehouse"
+    hvac_key = f"hvac_{hvac_system}"
+    hvac = facility.get(hvac_key, facility.get("hvac", []))
+    system_label = "S19J Pro Container" if hvac_system == "s19jpro" else "Warehouse"
     if hvac:
         supply = [h.get("supply_temp_f", 0) or 0 for h in hvac]
         retur = [h.get("return_temp_f", 0) or 0 for h in hvac]
         delta = [h.get("delta_t_f", 0) or 0 for h in hvac]
-        lines.append("--- 24-HOUR HVAC TREND (USA 188) ---")
+        lines.append(f"--- 24-HOUR HVAC TREND ({system_label}) ---")
         lines.append(
             f"  Supply: min={min(supply):.1f}°F max={max(supply):.1f}°F avg={sum(supply)/len(supply):.1f}°F"
         )
@@ -816,6 +826,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
             hardware=hardware,
             fingerprint=fingerprint,
             operator_rules=operator_rules,
+            facility=facility,
         )
 
         analysis = query_qwen(prompt, label=f"miner {mid} ({idx}/{len(online_miners)})")

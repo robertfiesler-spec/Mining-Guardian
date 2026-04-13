@@ -135,12 +135,23 @@ class LocalLLMAnalyzer:
             LIMIT 20
         """).fetchall()
 
-        # HVAC current state
-        hvac = conn.execute("""
+        # HVAC current state - get both systems for fleet-level analysis
+        hvac_warehouse = conn.execute("""
             SELECT supply_temp_f, return_temp_f, delta_t_f, diff_pressure,
-                   spray_pump_on, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct
-            FROM hvac_readings ORDER BY id DESC LIMIT 1
+                   spray_pump_on, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
+                   'warehouse' as system_id
+            FROM hvac_readings WHERE system_id = 'warehouse' ORDER BY recorded_at DESC LIMIT 1
         """).fetchone()
+        
+        hvac_s19jpro = conn.execute("""
+            SELECT supply_temp_f, return_temp_f, delta_t_f, outside_air_f, container_temp_f,
+                   cwp1_vfd_pct, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
+                   's19jpro' as system_id
+            FROM hvac_readings WHERE system_id = 's19jpro' ORDER BY recorded_at DESC LIMIT 1
+        """).fetchone()
+        
+        # Combine for backward compatibility (warehouse as default)
+        hvac = hvac_warehouse
 
         # Weather
         weather = conn.execute("""
@@ -195,6 +206,8 @@ class LocalLLMAnalyzer:
             "recent_logs": [dict(r) for r in recent_logs],
             "restart_logs": [dict(r) for r in restart_logs],
             "hvac": dict(hvac) if hvac else {},
+            "hvac_warehouse": dict(hvac_warehouse) if hvac_warehouse else {},
+            "hvac_s19jpro": dict(hvac_s19jpro) if hvac_s19jpro else {},
             "weather": dict(weather) if weather else {},
             "patterns": knowledge.get("patterns", []),
             "known_issues": knowledge.get("known_issues", [])[-20:],
@@ -223,17 +236,26 @@ class LocalLLMAnalyzer:
 
         # Weather/HVAC
         wx = ctx.get("weather", {})
-        hvac = ctx.get("hvac", {})
+        hvac_wh = ctx.get("hvac_warehouse", {})
+        hvac_s19 = ctx.get("hvac_s19jpro", {})
         if wx:
             lines.append(f"Weather: {wx.get('temp_f', '?')}°F, {wx.get('humidity_pct', '?')}% humidity")
-        if hvac:
+        
+        # Show BOTH HVAC systems - S19J Pros use different cooling than Warehouse
+        if hvac_wh:
             lines.append(
-                f"HVAC: Supply {hvac.get('supply_temp_f', '?')}°F | "
-                f"Return {hvac.get('return_temp_f', '?')}°F | "
-                f"ΔT {hvac.get('delta_t_f', '?')}°F | "
-                f"Pump2 {hvac.get('cwp2_vfd_pct', '?')}%"
+                f"HVAC WAREHOUSE (Hydros/S21 Imm): Supply {hvac_wh.get('supply_temp_f', '?')}°F | "
+                f"Return {hvac_wh.get('return_temp_f', '?')}°F | "
+                f"ΔT {hvac_wh.get('delta_t_f', '?')}°F"
             )
-            lines.append("  NOTE: HVAC is WORKING CORRECTLY. Low delta-T is normal. Do NOT recommend HVAC inspection.")
+        if hvac_s19:
+            lines.append(
+                f"HVAC S19J PRO CONTAINER: Supply {hvac_s19.get('supply_temp_f', '?')}°F | "
+                f"Return {hvac_s19.get('return_temp_f', '?')}°F | "
+                f"ΔT {hvac_s19.get('delta_t_f', '?')}°F | "
+                f"Container {hvac_s19.get('container_temp_f', '?')}°F"
+            )
+        lines.append("  NOTE: Compare miners to THEIR cooling system. S19JPros -> S19J Pro HVAC. Others -> Warehouse.")
         
         # HVAC correlation (computed weekly) — shows if facility stress affects flags
         hvac_corr = ctx.get("hvac_correlation", {})

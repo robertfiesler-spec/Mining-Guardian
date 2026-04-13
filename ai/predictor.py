@@ -199,9 +199,11 @@ def _predict_miner(miner_id: str, ip: str, model: str,
     """, (miner_id,)).fetchall()
 
     # HVAC context — is facility stressed?
+    # Use the correct HVAC system based on miner model
+    hvac_system = 's19jpro' if model and model.startswith('S19JPro') else 'warehouse'
     hvac = conn.execute("""
-        SELECT supply_temp_f FROM hvac_readings ORDER BY id DESC LIMIT 1
-    """).fetchone()
+        SELECT supply_temp_f FROM hvac_readings WHERE system_id = ? ORDER BY recorded_at DESC LIMIT 1
+    """, (hvac_system,)).fetchone()
     supply_temp = float(hvac["supply_temp_f"] or 0) if hvac else 0
     
     # Load hvac_correlation to check if facility stress actually correlates with flags
