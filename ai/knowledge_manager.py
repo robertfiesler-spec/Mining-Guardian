@@ -240,6 +240,89 @@ class KnowledgeManager:
                 if isinstance(p, dict):
                     parts.append(f"  {p.get("ip", "?")}: {len(p.get("triggered_signals", []))} signals")
 
+
+        # DG-3 FULL: Remaining 11 sections
+
+        # 1. Patterns
+        patterns = self.knowledge.get("patterns", [])
+        if patterns:
+            parts.append("\n=== PATTERNS ===")
+            for p in patterns:
+                if isinstance(p, dict):
+                    parts.append(f"  {p.get("pattern", "")}")
+
+        # 2. Cross-miner analysis (recent 10)
+        cross = self.knowledge.get("cross_miner_analysis", [])
+        if cross:
+            parts.append(f"\n=== CROSS-MINER ANALYSIS ({len(cross)} total, recent 10)")
+            for c in cross[-10:]:
+                if isinstance(c, dict):
+                    parts.append(f"  {c.get("insight", "")}")
+
+        # 3. Weekly refinement chain (recent 3)
+        weekly = self.knowledge.get("weekly_refinement_chain", [])
+        if weekly:
+            parts.append(f"\n=== WEEKLY REFINEMENTS (recent 3)")
+            for w in weekly[-3:]:
+                if isinstance(w, dict):
+                    parts.append(f"  {w.get("date", "")} refinement")
+
+        # 4. Daily deep analyses (recent 3)
+        daily = self.knowledge.get("daily_deep_analyses", [])
+        if daily:
+            parts.append(f"\n=== DAILY DEEP ANALYSES (recent 3)")
+            for d in daily[-3:]:
+                if isinstance(d, dict):
+                    parts.append(f"  {d.get("date", "")}: {d.get("summary", "")[:80]}")
+
+        # 5. LLM scan analyses (recent 20)
+        scans = self.knowledge.get("llm_scan_analyses", [])
+        if scans:
+            parts.append(f"\n=== LLM SCAN ANALYSES ({len(scans)} total, recent 20)")
+            for s in scans[-20:]:
+                if isinstance(s, dict):
+                    parts.append(f"  Scan {s.get("scan_id", "?")}: {len(s.get("issues", []))} issues")
+
+        # 6. HVAC correlation
+        hvac = self.knowledge.get("hvac_correlation", {})
+        if hvac:
+            parts.append("\n=== HVAC CORRELATION ===")
+            for key, val in hvac.items():
+                parts.append(f"  {key}: {val}")
+
+        # 7. Facility events
+        events = self.knowledge.get("facility_events", [])
+        if events:
+            parts.append(f"\n=== FACILITY EVENTS ({len(events)} total)")
+            for e in events[-10:]:
+                if isinstance(e, dict):
+                    parts.append(f"  {e.get("date", "")}: {e.get("event", "")}")
+
+        # 8. Prediction accuracy
+        acc = self.knowledge.get("prediction_accuracy", {})
+        if acc:
+            parts.append("\n=== PREDICTION ACCURACY ===")
+            parts.append(f"  Total predictions: {acc.get("total", 0)}")
+            parts.append(f"  Correct: {acc.get("correct", 0)}")
+
+        # 9. Miner profiles (chronic problem miners, top 15)
+        profiles = self.knowledge.get("miner_profiles", {})
+        if profiles:
+            parts.append("\n=== CHRONIC PROBLEM MINERS (top 15)")
+            sorted_miners = sorted(profiles.items(), key=lambda x: x[1].get('issue_count', 0), reverse=True)[:15]
+            for ip, prof in sorted_miners:
+                parts.append(f"  {ip}: {prof.get("issue_count", 0)} issues")
+
+        # 10. Miner fingerprints (full 42-field expansion)
+        fingerprints = self.knowledge.get("miner_fingerprints", {})
+        if fingerprints:
+            parts.append(f"\n=== MINER FINGERPRINTS ({len(fingerprints)} miners)")
+            for ip, fp in list(fingerprints.items())[:20]:
+                if isinstance(fp, dict):
+                    model = fp.get("model", "?")
+                    issues = fp.get("known_issues", [])
+                    parts.append(f"  {ip} ({model}): {len(issues)} known issues")
+
         return "\n".join(parts)
 
     def store_operator_rule(self, category: str, rule_text: str, source: str = "operator_denial", confidence: int = 100):
