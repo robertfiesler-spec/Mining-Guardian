@@ -434,12 +434,15 @@ Claude's context gets compacted periodically. When compaction happens, recent di
 ## Domain Conventions
 
 **Fleet:** 58 miners, all liquid-cooled.
-- ~36 Antminer S19J Pro on BiXBiT firmware
-- 5 Antminer S19J Pro on stock firmware
-- 4 Antminer S19j Pro (alternate AMS model code)
-- 2 Teraflux AH3880 on Auradine firmware (2-board chassis — NOT 3)
-- 2 Antminer S21 EXP Hydro on BiXBiT firmware
-- 2 Antminer S21 Immersion on BiXBiT firmware
+- ~36 Antminer S19J Pro on BiXBiT firmware (3 boards each: Chain 0, 1, 2 — NO Chain 3)
+- 5 Antminer S19J Pro on stock firmware (3 boards each)
+- 4 Antminer S19j Pro alternate model code (3 boards each)
+- 2 Teraflux AH3880 on Auradine firmware (2 boards ONLY — NOT 3)
+- 2 Antminer S21 EXP Hydro on BiXBiT firmware (3 boards each)
+- 2 Antminer S21 Immersion on BiXBiT firmware (3 boards each)
+
+**Hardware fact:** S19J Pro has exactly 3 boards (Chain 0, 1, 2). There is NO
+Chain 3. Any insight or analysis referencing Chain 3 on an S19J Pro is a bug.
 
 **Miner status:** `ONLINE` / `OFFLINE` / `AMS_SYNC` (verified online via direct
 TCP but AMS says offline).
@@ -458,11 +461,31 @@ removed from the operator rule set. This applies to all prompts, all LLM
 templates, all flagging logic.
 
 **OPERATOR RULE — HVAC delta-T:**
-The USA 188 HVAC system is performing correctly. The supply/return water delta-T
+Both HVAC systems are performing correctly. The supply/return water delta-T
 is intentionally LOW in cooler months and will rise as outside temps climb.
 **Do NOT recommend HVAC investigation based on low delta-T.** Do NOT describe
-low delta-T as "minimal headroom" or "thermal stress." Assume the HVAC is fine
-unless multiple miners simultaneously exceed 84°C.
+low delta-T as "minimal headroom" or "thermal stress." Assume both HVAC systems
+are fine unless multiple miners simultaneously exceed 84°C.
+
+**OPERATOR RULE — Dual HVAC Systems (added April 13 2026):**
+Two separate cooling systems exist:
+- **Warehouse HVAC (192.168.188.235):** Serves Hydros, S21 Immersion, AH3880
+- **S19J Pro Container (192.168.189.235):** Serves S19J Pros ONLY
+Simple routing rule: if model starts with "S19JPro" → use s19jpro HVAC,
+otherwise → use warehouse HVAC. Mac polls both systems every 5 minutes.
+All AI analysis must use the CORRECT HVAC system per miner type.
+
+**OPERATOR RULE — S19J Pro CT Fans (added April 13 2026):**
+S19J Pro container CT fans are manually set to 100%. No VFD feedback will
+appear in HVAC data. This is intentional, NOT a fault. Do NOT flag missing
+CT fan feedback as a problem.
+
+**OPERATOR RULE — S19J Pro Overheating (added April 13 2026):**
+When an S19J Pro shows overheating (chip temp >= 84°C):
+1. Try ONE restart with log capture before/after
+2. If restart does not fix it, mark as aging hardware and let it run
+Do NOT repeatedly restart overheating S19J Pros. The s19jpro_overheat_tracking
+table tracks which miners have already had their restart attempt.
 
 **OPERATOR RULE — Dead S19JPro boards:**
 Suppressed after ticket creation. Do not re-raise. Do not add new flagging
