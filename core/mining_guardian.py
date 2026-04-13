@@ -2944,7 +2944,8 @@ class SlackNotifier:
     def send_scan(self, miners: List[Dict], issues: List[Dict],
                   wx: Optional[Dict] = None,
                   ams_notifs: Optional[List[Dict]] = None,
-                  hvac=None) -> None:
+                  hvac=None,
+                  hvac_s19jpro=None) -> None:
         """POST a formatted scan summary to Slack via incoming webhook."""
         if not self.webhook_url:
             logger.debug("Slack webhook not configured — skipping Slack notification")
@@ -3035,6 +3036,37 @@ class SlackNotifier:
                 pass
 
             lines.extend(hvac_lines)
+
+        # S19J Pro Container HVAC (separate system for S19J Pros)
+        if hvac_s19jpro is not None:
+            s19_lines = [f"\n*🏭 S19J Pro Container*"]
+            
+            sup = f"{hvac_s19jpro.supply_temp_f:.1f}°F" if hvac_s19jpro.supply_temp_f is not None else "N/A"
+            ret = f"{hvac_s19jpro.return_temp_f:.1f}°F" if hvac_s19jpro.return_temp_f is not None else "N/A"
+            dlt = f"{hvac_s19jpro.delta_t_f:+.1f}°F" if hvac_s19jpro.delta_t_f is not None else "N/A"
+            
+            s19_lines.append(f"  Supply: *{sup}* | Return: *{ret}* | ΔT: *{dlt}*")
+            
+            # S19J Pro container has simpler controls - no CT fans shown (manually at 100%)
+            pump = "🟢 ON" if getattr(hvac_s19jpro, 'spray_pump_on', False) else "🔴 OFF"
+            cwp1 = f"{hvac_s19jpro.cwp1_vfd_pct:.0f}%" if getattr(hvac_s19jpro, 'cwp1_vfd_pct', None) is not None else "?"
+            cwp2 = f"{hvac_s19jpro.cwp2_vfd_pct:.0f}%" if getattr(hvac_s19jpro, 'cwp2_vfd_pct', None) is not None else "?"
+            
+            s19_lines.append(f"  Spray Pump: {pump} | CW Pump 1: {cwp1} | CW Pump 2: {cwp2}")
+            
+            # Check alarms
+            alarms = []
+            if getattr(hvac_s19jpro, 'leak_alarm', False):
+                alarms.append("🔴 LEAK DETECTED")
+            if getattr(hvac_s19jpro, 'pump_fault', False):
+                alarms.append("🔴 Pump FAULT")
+            
+            if alarms:
+                s19_lines.append(f"  ⚠️ *ALARMS:* {' | '.join(alarms)}")
+            else:
+                s19_lines.append("  ✅ All alarms clear")
+            
+            lines.extend(s19_lines)
 
         lines.append(status_line)
 
@@ -5505,7 +5537,7 @@ class MiningGuardian:
         import time as _time
         now_ts = _time.time()
         if now_ts - self._last_slack_post >= self.config.slack_interval_seconds:
-            thread_ts = self.slack.send_scan(miners, issues, wx, new_notifs, hvac_snapshot)
+            thread_ts = self.slack.send_scan(miners, issues, wx, new_notifs, hvac_snapshot, hvac_s19jpro)
             self._last_slack_post = now_ts
             if thread_ts and issues:
                 self.db.save_pending_approvals(thread_ts, scan_id, issues)
