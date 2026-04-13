@@ -77,7 +77,8 @@ Anthropic Claude API                    — weekly training, knowledge merges, d
 ### Operator rules (LOCKED)
 
 - **Temperature:** No yellow tier. 84°C is the only threshold. Below 84°C is normal regardless of cohort average. The previous "76°C yellow / 86°C red" rule is wrong and has been removed. This applies to all prompts, all flagging logic, and the local LLM system prompt.
-- **HVAC delta-T:** The USA 188 HVAC system is performing correctly. Low delta-T is intentional and will rise as outside temps climb. Do NOT recommend HVAC investigation based on delta-T.
+- **HVAC delta-T:** Both HVAC systems are performing correctly. Low delta-T is intentional and will rise as outside temps climb. Do NOT recommend HVAC investigation based on delta-T.
+- **Dual HVAC (April 2026):** Two separate cooling systems — warehouse (192.168.188.235) for Hydros/S21/AH3880, s19jpro container (192.168.189.235) for S19J Pros only. Mac polls both every 5 min, pushes to VPS. AI uses correct HVAC per miner.
 - **Firmware regression:** When N+ miners of the same model show identical fault patterns within hours of a firmware update, prefer "firmware regression" diagnosis over individual hardware failure.
 - **20-minute post-restart grace period:** After any restart (manual or overnight auto), suppress the miner from action recommendations for 20 minutes.
 - **Dead S19JPro boards:** Suppressed after ticket creation. Do not re-raise.

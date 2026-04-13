@@ -14,7 +14,7 @@ BiXBiT USA | Fort Worth, TX | April 2026
   - Tier 3: 3-day learned baseline for unknown models
 - Per-board hashboard analysis — detects which specific board is dead
 - Offline verification — checks miner directly before flagging (avoids false alarms)
-- Temperature monitoring — 76°C yellow, 86°C red, same threshold across all cooling types
+- Temperature monitoring — 84°C red only (no yellow tier), same threshold across all cooling types
 - Sensor error detection — flags invalid temp readings separately from true overheats
 - PDU power reading always takes priority over miner-reported consumption
 - AMS sync detection — catches when AMS says offline but miner is actually alive
@@ -72,16 +72,25 @@ Ask anything in #mining-guardian and get a fleet-aware answer:
 - Environment chart: 5-day supply/return water + outside temp + humidity trend
 - AI Insights panel: last 20 LLM analyses with miner IDs and response times
 
-### 🏭 Warehouse Mechanical (HVAC)
+### 🏭 Dual HVAC Systems (April 2026)
+**Two separate cooling systems monitored:**
+
+**Warehouse HVAC (192.168.188.235)** — Serves Hydros, S21 Immersion, AH3880
 - Supply/return water temps, differential pressure, ΔT
-- Spray pump status, CW pump 1 & 2 VFD frequencies
-- CT fan 1 & 2 VFD frequencies
+- CW pump 1 & 2 VFD frequencies, CT fan 1 & 2 VFD frequencies
 - Alarm detection: leak, tower vibration, CT fault, pump fault
-- All readings in every Slack scan report and morning briefing
+
+**S19J Pro Container (192.168.189.235)** — Serves S19J Pros only
+- Supply/return water temps, ΔT, container space temp, outside air temp
+- CT fans manually at 100% (no VFD feedback — intentional)
+- CT trip detection, CWP trip detection, leak/basin alarms
+
+**Architecture:** Mac polls both systems every 5 min, pushes to VPS API.
+All AI analysis uses correct HVAC system per miner type.
 
 ### 🧪 Persistent Learning (Knowledge System)
 - knowledge.json updates after every scan
-- 58 miners tracked, 32 known issues, 7 confirmed patterns (as of Apr 2026)
+- 58 miners, 50 known issues, 22 refined insights, 6 operator rules (as of Apr 2026)
 - Patterns include: Chain[3] detachment signatures, dead board vs firmware distinction,
   environmental vs single-miner overheating, firmware mismatch detection
 - Deduplication runs on every save — patterns never repeat

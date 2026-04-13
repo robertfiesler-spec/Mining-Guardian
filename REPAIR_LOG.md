@@ -497,3 +497,157 @@ Everything else -> warehouse (192.168.188.235)
 - 0b3aab9 — Wire AI scripts to correct HVAC
 - 9d4ece4 — CT fan note
 - df699ca — Documentation
+
+---
+
+## April 13, 2026 — Comprehensive S19J Pro Integration + Bug Fixes
+
+### Session 1: S19J Pro HVAC System Integration (3:30am - 5:15am CDT)
+
+#### Issue
+S19J Pro miners were being correlated against the WRONG HVAC system. The warehouse HVAC (192.168.188.235) serves Hydros, S21 Immersion, and AH3880. But S19J Pros have their own separate container cooling system at 192.168.189.235.
+
+#### Root Cause
+Mining Guardian only knew about one HVAC system. All miners were being correlated with warehouse temps, leading to incorrect thermal analysis for S19J Pros.
+
+#### Fix (Commits: 43ac433, 0b3aab9, 9d4ece4, df699ca, e3e18d5)
+
+1. **clients/hvac_client.py** — Multi-system HVAC support
+   - Added SYSTEMS dict with both warehouse and s19jpro configs
+   - Created poll_all_systems() function
+   - Added get_hvac_system_for_miner(model) routing function
+
+2. **Mac HVAC Collector** — New polling service
+   - Created /Users/BigBobby/Documents/GitHub/mac-scripts/hvac_collector.py
+   - Polls BOTH systems every 5 minutes via launchd
+   - Pushes to VPS POST /api/hvac/ingest endpoint
+   - VPS cannot reach local network directly — Mac is the bridge
+
+3. **api/dashboard_api.py** — HVAC ingest endpoint
+   - Added POST /api/hvac/ingest to receive data from Mac
+   - Added GET /api/hvac/latest to return latest per system
+   - Added system_id column to hvac_readings table
+
+4. **AI Scripts Updated** — Correct HVAC per miner
+   - ai/hvac_correlator.py — get_hvac_system_for_model(), system-aware stress levels
+   - ai/daily_deep_dive.py — Per-miner HVAC selection in prompts
+   - ai/local_llm_analyzer.py — Shows BOTH systems in context
+   - ai/predictor.py — Uses miner model to select correct HVAC
+   - ai/action_diversity.py — Fleet-level defaults to warehouse
+
+5. **Operator Rule #5 Added**
+   S19J Pro CT fans are manually set to 100%. No VFD feedback will appear in HVAC data. This is intentional, NOT a fault. Never flag zero CT feedback as a problem.
+
+#### Simple Routing Rule
+```python
+hvac_system = 's19jpro' if model.startswith('S19JPro') else 'warehouse'
+```
+
+#### Files Created
+- docs/HVAC_SYSTEMS.md — Complete HVAC documentation
+- docs/OPERATOR_RULES.md — All operator rules in one place
+- Mac: hvac_collector.py + com.bixbit.hvac-collector.plist
+
+---
+
+### Session 2: Bug Fixes (5:35am CDT)
+
+#### Issue 1: Log Failure Reports Going to Wrong Channel
+**Problem:** Log failure reports from daemon went to #mining-guardian instead of #mg-logs.
+**Root Cause:** Line 5103 used self.slack.post_to_channel(message) which defaults to #mining-guardian.
+**Fix:** Changed to self.slack.post_to_logs(message) which posts to #mg-logs (C0ASH2CPHBJ).
+**Commit:** e886720
+
+#### Issue 2: Grafana Recent AI Analyses Panel Error
+**Problem:** Panel showed "<!DOCTYPE... is not valid JSON" error.
+**Root Cause:** Panel used relative URL /ai/recent_analyses. When accessed via grafana.fieslerfamily.com, this tried to fetch from Grafana server instead of dashboard API.
+**Fix:** Updated Grafana panel to use absolute URL http://dashboard.fieslerfamily.com/ai/recent_analyses.
+**Verification:** API endpoint works, returns varied confidence scores (60-100%).
+
+#### Issue 3: AI Analysis Reports Missing Confidence Scores
+**Problem:** AI Analysis reports in Slack did not show confidence percentages.
+**Fix:** Updated LLM prompt in ai/local_llm_analyzer.py to request per-miner confidence.
+**New format:** "- **[IP]** (XX% confidence): [issue and reason]"
+**Commit:** e886720
+
+---
+
+### Session 2: Operator Rule #6 Added (5:35am CDT)
+
+#### S19J Pro Overheating Boards (Aging Hardware)
+**Problem:** S19J Pros are older hardware. As boards age, some run hotter. System was repeatedly flagging and restarting the same miners with no improvement.
+
+**Rule:** When an S19J Pro shows overheating (chip temp >= 84C):
+1. Try ONE restart with log capture before and after
+2. Compare logs to see if restart helped
+3. If restart does not fix it, mark as aging hardware and let it run
+
+**Implementation:**
+- Created s19jpro_overheat_tracking table in guardian.db
+- Created core/s19jpro_overheat_handler.py with tracking functions
+- Functions: check_s19jpro_overheat_status(), record_overheat_first_seen(), record_restart_attempt(), record_restart_result(), get_aging_s19jpros()
+
+**Commit:** 7e7c6d8
+
+---
+
+### Session 3: S19J Pro HVAC in Scan Context (6:00am CDT)
+
+#### Issue
+Daemon only sent warehouse HVAC data to Qwen during scans. S19J Pro thermal issues were being analyzed against the wrong cooling system.
+
+#### Fix (Commit: 086c6bf)
+
+1. **Import:** Added poll_all_systems from hvac_client
+2. **Polling:** Changed hvac_snapshot = self.hvac.poll() to poll BOTH systems
+3. **Context:** hvac_data now contains both systems:
+   ```python
+   hvac_data = {
+       "warehouse": {"supply_f": 75, "return_f": 86, "delta_t": 11},
+       "s19jpro": {"supply_f": 89, "return_f": 104, "delta_t": 15,
+                   "container_f": 94, "outside_air_f": 85}
+   }
+   ```
+4. **System Prompt:** Updated to explain "TWO HVAC systems"
+5. **Output Label:** Changed to "HVAC (both systems)"
+
+---
+
+### Hardware Facts Established Today
+
+| Miner | Boards | HVAC System | IP |
+|-------|--------|-------------|-----|
+| S19JPro | 3 (Chain 0,1,2) | s19jpro | 192.168.189.235 |
+| S21 EXP Hydro | 3 | warehouse | 192.168.188.235 |
+| S21 Immersion | 3 | warehouse | 192.168.188.235 |
+| AH3880 Auradine | 2 | warehouse | 192.168.188.235 |
+
+### Current Operator Rules (6 total)
+
+1. **20-MINUTE POST-RESTART COOLDOWN** — Wait 20 min before additional actions
+2. **OFFLINE MINER LOGIC** — No firmware restart for unreachable miners
+3. **DAILY LOG COLLECTION MANDATORY** — Fresh logs required every day
+4. **AMS LOG CLEANUP** — Delete ALL AMS logs daily at 10am
+5. **S19J PRO CT FANS AT 100%** — No VFD feedback is intentional
+6. **S19J PRO OVERHEATING BOARDS** — ONE restart attempt, then let run
+
+### All Commits Today (10 total)
+```
+c9d942e docs: add session 3 notes
+086c6bf feat: include S19J Pro HVAC data in scans
+e867eeb Add PostgreSQL deployment package
+d565a27 docs: add session 2 fixes to log
+e886720 fix: AI analysis improvements
+7e7c6d8 feat: add operator rule #6 - S19J Pro aging hardware
+e3e18d5 docs: add S19J Pro HVAC fix to REPAIR_LOG
+df699ca docs: comprehensive HVAC systems documentation
+9d4ece4 docs: add S19J Pro CT fan note
+0b3aab9 fix: wire all AI scripts to correct HVAC per miner
+43ac433 feat: add S19J Pro HVAC system integration
+```
+
+### Services Status (Verified Working)
+- mining-guardian.service — Active
+- dashboard-api.service — Active
+- Mac HVAC collector (launchd) — Active, pushing both systems
+
