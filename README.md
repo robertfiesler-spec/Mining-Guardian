@@ -16,9 +16,11 @@ The system learns continuously. Every 5-minute scan updates the knowledge base. 
 
 ## Architecture (current R&D phase)
 
+See `docs/ARCHITECTURE.md` for the full system architecture document with network topology and migration timeline.
+
 ```
 Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83)   ← TEMPORARY
-  ├── mining-guardian (systemd)         — scans fleet every 5 min
+  ├── mining-guardian (systemd)         — scans fleet every hour
   ├── dashboard-api (systemd :8585)     — Retool + Grafana data + Prometheus /metrics + /query/* endpoints
   ├── approval-api (systemd :8686)      — APPROVE/DENY/approve_selected execution
   ├── slack-listener (systemd)          — polls Slack threads for text approvals
@@ -29,9 +31,14 @@ Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83)   ← TEMPORARY
   ├── Grafana (systemd :3000)           — 6 dashboards
   └── OpenClaw (Docker)                 — Slack Socket Mode, conversational LLM gateway
 
-ROBS-PC (Windows, facility R&D center, Tailscale 100.110.87.1)
+ROBS-PC (Windows 11, facility R&D center, Tailscale 100.110.87.1)
   ├── Subnet gateway                    — routes 192.168.188.0/24 to VPS
-  └── Ollama + Qwen2.5 32B Q4 on RTX 4090 (port 11434)  — local LLM for every-scan analysis
+  ├── Ollama + Qwen2.5 32B Q4 on RTX 4090 (port 11434)  — local LLM for every-scan analysis
+  └── Mining Intelligence Catalog DB     — PostgreSQL 16 in Docker (mining-guardian-db, port 5432)
+      └── 90 tables, 2,363 columns, 313 seed models — LIVE since April 13 2026
+
+External HDD (Samsung SSD 860 EVO 1TB, Drive D: on ROBS-PC)
+  └── D:\MiningGuardian\                — db-backups, research-csv, seed-data, fleet-logs, docs
 
 Anthropic Claude API                    — weekly training, knowledge merges, deep analysis
 ```
@@ -137,9 +144,13 @@ Six dashboards, all fed by Prometheus scraping `dashboard-api:8585/metrics`. Sea
 
 ---
 
-## Database Tables
+## Databases
 
-16 tables in `guardian.db` (SQLite). Atomic writes, migrations handled in `GuardianDB._init_db`.
+Mining Guardian operates two completely separate databases. See `docs/DATABASE_STATUS.md` for full details.
+
+### guardian.db — Production Fleet Operations (SQLite, VPS)
+
+16+ tables. Atomic writes, WAL mode, migrations handled in `GuardianDB._init_db`.
 
 | Table | Purpose |
 |-------|---------|
@@ -162,6 +173,21 @@ Six dashboards, all fed by Prometheus scraping `dashboard-api:8585/metrics`. Sea
 | `chip_readings` (stub) | Ready for direct-API per-chip data |
 | `miner_baselines` | Tier 3 hashrate baseline learning state (for unknown models) |
 | `facility_events` | HVAC correlator detected fleet-wide events |
+| `s19jpro_overheat_tracking` | S19J Pro aging board tracking (added April 13 2026) |
+
+### Mining Intelligence Catalog — Research DB (PostgreSQL 16, ROBS-PC)
+
+Standalone research database separate from production fleet ops. Holds comprehensive specs, part numbers, chip data, hashboard info, PSU details, and operational intelligence for every known Bitcoin SHA-256 ASIC miner ever manufactured. **LIVE as of April 13, 2026.**
+
+- **Host:** ROBS-PC in Docker (`mining-guardian-db` container)
+- **Schema:** 90 tables, 2,363 columns, 10 schemas (knowledge, hardware, firmware, ops, market, repair, pool, facility, regulatory)
+- **Seed data:** 313 distinct Bitcoin SHA-256 miner variants across 13 manufacturers
+- **Deep research enrichment:** 211 models enriched with chip, process node, power, and cooling data from 4-phase deep research
+- **Design horizon:** 10 years. "Capture everything. Discard nothing."
+- **Auto-discovery:** Unknown fields are automatically captured and classified, never skipped
+- **Migration path:** ROBS-PC → UGREEN NAS (July 2026) → cloud backup on top
+
+See `intelligence/README.md` for architecture, `intelligence-catalog/` for seed data and research, and `docs/DATABASE_STATUS.md` for deployment status.
 
 ---
 
@@ -459,6 +485,15 @@ AI answers include: current fleet state, 14-day miner history, audit trail, dead
 | `guardian.db` | SQLite database — never delete, never overwrite with template |
 | `installer/DEPLOYMENT.md` | Mac mini installer spec (on `installer-build` branch) — 313 lines |
 | `intelligence/README.md` | Mining Intelligence Catalog architecture (Postgres research DB) |
+| `intelligence-catalog/seed-data/seed_miner_models.sql` | 313 miner model INSERT statements for hardware.miner_models |
+| `intelligence-catalog/seed-data/deep_research_enrichment.sql` | V2 enrichment SQL — 223 models with chip, process, power data |
+| `intelligence-catalog/seed-data/schema_fixes_v1.sql` | Schema fixes — enum additions, AH3880 NULL fixes |
+| `intelligence-catalog/research/*.csv` | Deep research CSVs — 4 phases, 223 models total |
+| `intelligence-catalog/research/MINER_CATALOG_RESEARCH_NOTES.md` | Research methodology and findings |
+| `docs/ARCHITECTURE.md` | Full system architecture, deployment topology, migration timeline |
+| `docs/DATABASE_STATUS.md` | Current state of both databases, schema details, deployment status |
+| `docs/HVAC_SYSTEMS.md` | Complete HVAC documentation (warehouse + S19J Pro CT) |
+| `docs/OPERATOR_RULES.md` | All operator rules in one place |
 
 ---
 
@@ -495,4 +530,4 @@ Slash commands for Claude Code (VS Code extension):
 
 ---
 
-*Last updated: April 9 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines.*
+*Last updated: April 13, 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines. See `docs/DATABASE_STATUS.md` for current database state and `docs/ARCHITECTURE.md` for system architecture.*

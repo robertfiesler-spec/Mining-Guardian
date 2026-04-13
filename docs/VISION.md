@@ -1,6 +1,6 @@
 # Mining Guardian — Vision & Canonical Plan
 
-**Last synthesized:** April 9, 2026
+**Last synthesized:** April 13, 2026
 **Status:** Living document — update when any of the source docs change
 **Purpose:** Single source of truth for Mining Guardian's vision, architecture,
 and roadmap. Every new Claude session reads this FIRST before touching code.
@@ -342,6 +342,7 @@ handled in `GuardianDB._init_db`.)
 - UGREEN NASync iDX6011 Pro arrives
 - Postgres + intelligence catalog moves from ROBS-PC to NAS
 - `pg_dump` → file copy → `pg_restore` (~20 minutes for 60GB)
+- ROBS-PC stays as subnet gateway + LLM host, freed of DB duties
 
 ## 8. Build Queue (in priority order)
 
@@ -386,10 +387,13 @@ handled in `GuardianDB._init_db`.)
 12. **Open Log Uploader** (2-4 week build) — any-vendor any-format ingestion
     engine. See `docs/OPEN_LOG_UPLOADER_VISION.md`. 4 phases, 10 open design
     questions to resolve first.
-13. **Intelligence catalog Phase 1** on ROBS-PC — blocked on Thunderbolt SSD
-    enclosure delivery and WSL2/Docker virtualization conflict (Memory
-    Integrity likely). 30-min hard cap on WSL2 debug, fall back to native
-    Postgres via EnterpriseDB installer.
+13. ~~**Intelligence catalog Phase 1**~~ — **COMPLETED April 13, 2026.**
+    PostgreSQL 16 deployed on ROBS-PC in Docker. 90-table schema (V1+V2+V3).
+    313 Bitcoin SHA-256 miner models seeded. Deep research enrichment applied
+    to 211 models. See `docs/DATABASE_STATUS.md`.
+13a. **Intelligence catalog enrichment** — ongoing. PSU data, hashboard details,
+    control board specs, chip data, source table population, firmware/ops/repair
+    schema tables. See `intelligence-catalog/research/MINER_CATALOG_RESEARCH_NOTES.md`.
 14. **Monthly federation refinement pipeline** — add dual-pass refinement
     (Claude + local LLM) to `combine_knowledge.py` for higher-quality master
     knowledge synthesis.
@@ -432,4 +436,5 @@ full version in `CLAUDE.md` under "Session Kickoff Protocol."
 ---
 
 *This document exists so that no Claude session ever again asks "what is the
-vision for Mining Guardian?" The answer is above. Read it first.*
+vision for Mining Guardian?" The answer is above. Read it first.
+Last updated April 13, 2026.*

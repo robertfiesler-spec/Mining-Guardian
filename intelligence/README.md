@@ -55,9 +55,11 @@ Because the 2 TB SSD lives in a Thunderbolt 4 enclosure rather than internal SAT
 
 Postgres bind mounts are absolute paths (`D:\miner-intelligence\...`), so a wrong drive letter would prevent the container from starting. Better to fail fast with a clear error than to silently lose data.
 
-## Schema — Completed
+## Schema — DEPLOYED (April 13, 2026)
 
 **90 tables | 2,363 columns | 10 schemas | 10-year design horizon**
+
+The schema has been deployed to the live database on ROBS-PC. 313 Bitcoin SHA-256 miner models seeded, deep research enrichment applied to 211 models. See `docs/DATABASE_STATUS.md` for full deployment status.
 
 The schema is implemented across three SQL files, designed to run in sequence:
 
@@ -106,18 +108,26 @@ Four interconnected tables ensure no data point is ever skipped:
 | `scripts/` | (TBD) Ingestion, web research, backup, and migration scripts |
 | `README.md` | This file |
 
-## Install procedure (Phase 1 — ROBS-PC)
+## Install procedure (Phase 1 — ROBS-PC) — COMPLETED April 13, 2026
 
-**Prerequisites verified before install:**
+**Prerequisites:**
 - ✅ Static IP `192.168.188.47` set on router (DHCP reservation)
 - ✅ Gateway `192.168.188.1`, subnet `255.255.255.0`
 - ✅ WSL2 installed
-- ⏳ Docker Desktop installed
-- ⏳ Thunderbolt 4 enclosure arrived, 2 TB SSD installed
-- ⏳ SSD assigned to drive letter `D:` via Disk Management
-- ⏳ Directory created: `D:\miner-intelligence\` (with subdirs: `postgres-data\`, `backups\`, `logs\`)
-- ⏳ `.env` file created from `.env.example` with strong random password
-- ⏳ Cloud backup account created (Backblaze B2 recommended)
+- ✅ Docker Desktop installed
+- ✅ External HDD available (Samsung SSD 860 EVO 1TB, Drive D:)
+- ✅ Backup directory created: `D:\MiningGuardian\db-backups\` (with subdirs: daily, weekly, pre-migration)
+- ✅ Database deployed and seeded
+- ✅ First backup created: `D:\MiningGuardian\db-backups\pre-migration\mining_guardian_2026-04-13.dump` (804 KB)
+- ⏳ Cloud backup account (Backblaze B2 recommended) — not yet set up
+
+**Actual deployment details:**
+- Container name: `mining-guardian-db`
+- Database: `mining_guardian`
+- User: `guardian_admin`
+- Port: 5432
+- Windows username on ROBS-PC: `user` (not Bobby)
+- Repo path: `C:\Users\user\Mining-Guardian`
 
 **Install commands** (will be added to this README once we walk through them step by step):
 

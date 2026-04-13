@@ -264,10 +264,21 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ### P3 — Post-Mac mini launch
 
 21. **Open Log Uploader** (2-4 week build) — see `docs/OPEN_LOG_UPLOADER_VISION.md`. 4 phases, 10 open design questions to resolve first. Any-vendor any-format ingestion engine for repair shop bulk drops.
-22. **Mining Intelligence Catalog Phase 1** on ROBS-PC — see `intelligence/README.md`. Blocked on Thunderbolt 4 SSD enclosure delivery AND WSL2/Docker virtualization conflict (Memory Integrity likely). **30-minute hard cap** on WSL2 debug, fall back to native Postgres via EnterpriseDB installer.
+22. ~~**Mining Intelligence Catalog Phase 1**~~ — **COMPLETED April 13, 2026.** PostgreSQL 16 deployed on ROBS-PC in Docker. 90-table schema deployed (V1+V2+V3). 313 Bitcoin SHA-256 miner models seeded. Deep research enrichment applied to 211 models. First backup created. See `docs/DATABASE_STATUS.md`.
 23. **Monthly federation refinement pipeline** — add dual-pass refinement (Claude + local LLM) to `combine_knowledge.py` for higher-quality `master_knowledge.json`
 24. **Auradine AH3880 direct API integration** — port 8443, standby-before-PDU-cut rule, see `docs/AURADINE_API.md`
 25. **Auradine firmware rollback** — waiting on vendor. Roll back `.55` first, observe 24h, then `.28`.
+
+### P3.5 — Intelligence Catalog Enrichment (ongoing)
+
+22a. **Resolve 12 unmatched enrichment entries** — Fix naming mismatches for remaining Canaan Gen summaries, M63 Hydro 356TH, Nano 3/3S combined entry
+22b. **Deep research: PSU data** — Part numbers, efficiency curves, compatibility matrices for all major miners
+22c. **Deep research: Hashboard details** — PCB versions, known defects, serial batch tracking
+22d. **Deep research: Control boards** — SoC specs, firmware compatibility
+22e. **Deep research: Chip data** — Die markings, process nodes, binning data per manufacturer
+22f. **Source table population** — Create entries in `knowledge.sources` for all research sources used
+22g. **Schema V2/V3 table population** — Begin populating firmware, ops, repair, and market schema tables
+22h. **Customer Mac mini READ copies** — Monthly catalog snapshots pushed to customer sites
 
 ### P4 — Gated on external inputs
 
@@ -285,6 +296,22 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ---
 
 ## Completed Items (for reference)
+
+### ✅ Completed April 13, 2026 (Intelligence Catalog + HVAC)
+
+- [x] **Mining Intelligence Catalog Phase 1 — COMPLETE** — PostgreSQL 16 deployed on ROBS-PC in Docker (mining-guardian-db container). 90-table schema (V1+V2+V3) across 10 schemas with 2,363 columns. 313 Bitcoin SHA-256 miner models seeded across 13 manufacturers (Bitmain 114, MicroBT 78, Canaan 64, Bitdeer 12, Innosilicon 11, Ebang 10, StrongU 9, Auradine 3, plus 5 historical). Deep research enrichment applied — 211/223 models matched with chip, process node, power, and cooling data from 4-phase research. First backup created (804 KB pg_dump). Schema fixes deployed (19/20 PASS). AH3880 chips_per_board NULL fixed to 345.
+- [x] **4-phase deep research completed** — Bitmain (32 models), MicroBT (80), Canaan (71), Phase 4 mixed (48) = 223 total models deeply researched with chip names, process nodes, power consumption, cooling variants, efficiency ratings, and source citations
+- [x] **Enrichment SQL V2 written and deployed** — Fixed 3 critical bugs in V1 (wrong column name research_notes→metadata, wrong column model_name→canonical_name, transaction wrapper causing total rollback). Each UPDATE now independent.
+- [x] **Catalog ID numbering system** — 1000s=Bitmain, 2000s=MicroBT, 3000s=Canaan, 4000s=Bitdeer, 5000s=Auradine, 6000s=Innosilicon, 7000s=Ebang, 8000s=StrongU, 9xxx=Historical
+- [x] **Non-SHA-256 miners identified and excluded** — StrongU U1/U1+/U1++/U2/U6 (Decred), SealMiner DL1 (Scrypt), KnCMiner Titan (Scrypt)
+- [x] **S19J Pro HVAC integration** — Second HVAC system at 192.168.189.235 added. All AI scripts (daily_deep_dive, local_llm_analyzer, predictor, action_diversity, hvac_correlator) updated to use correct HVAC per miner. Mac HVAC collector polling both systems.
+- [x] **Operator Rule #5** — S19J Pro CT fans manually at 100%, no VFD feedback, intentional not a fault
+- [x] **Operator Rule #6** — S19J Pro overheating boards = aging hardware. Try ONE restart with log capture, if no help mark as aging. New table: s19jpro_overheat_tracking
+- [x] **Log failure reports** — Fixed routing to mg-logs channel (was going to mining-guardian)
+- [x] **Grafana AI panel** — Fixed DOCTYPE JSON error by using absolute URL
+- [x] **AI confidence scores** — LLM prompt updated to include per-miner confidence percentages
+- [x] **External HDD backup structure** — Samsung SSD 860 EVO 1TB (Drive D:) with structured backup directories for db-backups, intelligence-catalog, guardian-ai, fleet-logs, docs
+- [x] **Comprehensive documentation update** — SESSION_LOG, DATABASE_STATUS.md, ARCHITECTURE.md, README, AI_ROADMAP, VISION, research notes all updated
 
 ### ✅ Completed April 4–9 2026
 
@@ -341,4 +368,4 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 
 ---
 
-*Last updated: April 9, 2026 — post-48hr-test, diagnostic sweep, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, and `README.md` for current architecture reference.*
+*Last updated: April 13, 2026 — Intelligence Catalog Phase 1 COMPLETE, HVAC integration done, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, `README.md` for current architecture, and `docs/DATABASE_STATUS.md` for database state.*

@@ -160,4 +160,55 @@ The `primary_source_id` column (required FK to `knowledge.sources`) is NOT set i
 
 ---
 
-*This research forms the foundation of the Mining Intelligence Catalog seed data for Mining Guardian. The data should be treated as a living dataset — new models are announced quarterly, and existing models receive firmware updates that change performance characteristics.*
+## Deployment Status (April 13, 2026)
+
+All research data has been deployed to the live Intelligence Catalog database on ROBS-PC.
+
+### Seed Data Deployment
+- **seed_miner_models.sql** deployed: 313 INSERT statements executed successfully
+- **schema_fixes_v1.sql** deployed: 19/20 PASS (1 minor alias ON CONFLICT, non-critical)
+- **deep_research_enrichment.sql** (V2) deployed: 211/223 matched, 12 UPDATE 0
+
+### Deep Research Enrichment Details
+
+The enrichment SQL was generated from the four research CSV files using `generate_enrichment_sql_v2.py`. Each UPDATE writes structured deep research data into the `metadata` JSONB column of `hardware.miner_models`.
+
+| Phase | CSV File | Models | Matched in DB |
+|-------|----------|--------|---------------|
+| Phase 1 | bitmain_deep_research_phase1.csv | 32 | ~31 |
+| Phase 2 | microbt_deep_research_phase2.csv | 80 | ~78 |
+| Phase 3 | canaan_deep_research_phase3.csv | 71 | ~60 |
+| Phase 4 | phase4_deep_research.csv | 48 | ~42 |
+| **Total** | | **223** | **211** |
+
+### 12 Unmatched Models (UPDATE 0)
+
+These 12 research entries did not match any canonical_name in the seed data:
+
+1. **Canaan "Gen" summaries** (6 entries) — A8 Gen, A11 Gen, A13 Gen, A14 Gen, A15 Gen, A16 Gen. These are series-level summary rows in the research CSV, not individual hardware models. Expected behavior.
+2. **M63 Hydro 356TH** — Specific hashrate bin not present in seed data as a separate entry.
+3. **Nano 3/3S combined entry** — Research CSV combined two models into one row.
+4. **KnCMiner Titan** — Scrypt miner, correctly excluded from Bitcoin SHA-256-only database.
+5. **Other minor naming mismatches** — Small differences in how the research CSV named a model vs the canonical_name in the seed SQL.
+
+### Enrichment SQL V2 Bug Fixes
+
+The original enrichment SQL (V1) had three critical bugs that caused it to fail entirely:
+
+1. **Wrong column: `research_notes`** — This text column does not exist in the schema. V2 uses `metadata` (JSONB column) with proper merge: `metadata = metadata || '{"deep_research": {...}}'::jsonb`
+2. **Wrong column: `model_name`** — This column does not exist. V2 uses `canonical_name` in all WHERE clauses.
+3. **Transaction wrapper** — V1 used `BEGIN; ... COMMIT;` which meant one failed UPDATE rolled back all 223. V2 makes each UPDATE independent.
+
+### What's Next for Research
+
+1. Resolve the 12 unmatched entries where possible
+2. Deep research phase for PSU part numbers, efficiency curves, compatibility
+3. Deep research phase for hashboard PCB versions, known defects, serial batches
+4. Deep research phase for control board SoC specs and firmware compatibility
+5. Deep research phase for chip die markings, process nodes, binning data
+6. Populate `knowledge.sources` table with all research sources used
+7. Begin populating firmware, ops, repair, and market schema tables
+
+---
+
+*This research forms the foundation of the Mining Intelligence Catalog seed data for Mining Guardian. The data should be treated as a living dataset — new models are announced quarterly, and existing models receive firmware updates that change performance characteristics. Last updated April 13, 2026.*
