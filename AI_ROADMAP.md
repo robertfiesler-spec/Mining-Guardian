@@ -264,7 +264,7 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ### P3 — Post-Mac mini launch
 
 21. **Open Log Uploader** (2-4 week build) — see `docs/OPEN_LOG_UPLOADER_VISION.md`. 4 phases, 10 open design questions to resolve first. Any-vendor any-format ingestion engine for repair shop bulk drops.
-22. ~~**Mining Intelligence Catalog Phase 1**~~ — **COMPLETED April 13, 2026.** PostgreSQL 16 deployed on ROBS-PC in Docker. 90-table schema deployed (V1+V2+V3). 313 Bitcoin SHA-256 miner models seeded. Deep research enrichment applied to 211 models. First backup created. See `docs/DATABASE_STATUS.md`.
+22. ~~**Mining Intelligence Catalog Phase 1**~~ — **COMPLETED April 13, 2026.** PostgreSQL 16 deployed on ROBS-PC in Docker. 94-table schema deployed (V1+V2+V3 + importer additions). 313 Bitcoin SHA-256 miner models seeded. Deep research enrichment applied to 211 models. Data importer deployed and first live import completed (1,244 files processed, 0 failed, 62+ auto-discovered fields). See `docs/DATABASE_STATUS.md`.
 23. **Monthly federation refinement pipeline** — add dual-pass refinement (Claude + local LLM) to `combine_knowledge.py` for higher-quality `master_knowledge.json`
 24. **Auradine AH3880 direct API integration** — port 8443, standby-before-PDU-cut rule, see `docs/AURADINE_API.md`
 25. **Auradine firmware rollback** — waiting on vendor. Roll back `.55` first, observe 24h, then `.28`.
@@ -272,13 +272,14 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ### P3.5 — Intelligence Catalog Enrichment (ongoing)
 
 22a. **Resolve 12 unmatched enrichment entries** — Fix naming mismatches for remaining Canaan Gen summaries, M63 Hydro 356TH, Nano 3/3S combined entry
-22b. **Deep research: PSU data** — Part numbers, efficiency curves, compatibility matrices for all major miners
-22c. **Deep research: Hashboard details** — PCB versions, known defects, serial batch tracking
-22d. **Deep research: Control boards** — SoC specs, firmware compatibility
-22e. **Deep research: Chip data** — Die markings, process nodes, binning data per manufacturer
-22f. **Source table population** — Create entries in `knowledge.sources` for all research sources used
-22g. **Schema V2/V3 table population** — Begin populating firmware, ops, repair, and market schema tables
-22h. **Customer Mac mini READ copies** — Monthly catalog snapshots pushed to customer sites
+22b. **Review 1,136 needs_review import files** — First import flagged 1,136 files for human review. Triage into categories: auto-approve, needs model matching, duplicate, corrupt.
+22c. **Deep research: PSU data** — Part numbers, efficiency curves, compatibility matrices for all major miners
+22d. **Deep research: Hashboard details** — PCB versions, known defects, serial batch tracking
+22e. **Deep research: Control boards** — SoC specs, firmware compatibility
+22f. **Deep research: Chip data** — Die markings, process nodes, binning data per manufacturer
+22g. **Source table population** — Create entries in `knowledge.sources` for all research sources used
+22h. **Schema V2/V3 table population** — Begin populating firmware, ops, repair, and market schema tables
+22i. **Customer Mac mini READ copies** — Monthly catalog snapshots pushed to customer sites
 
 ### P4 — Gated on external inputs
 
@@ -297,9 +298,10 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 
 ## Completed Items (for reference)
 
-### ✅ Completed April 13, 2026 (Intelligence Catalog + HVAC)
+### ✅ Completed April 13, 2026 (Intelligence Catalog + HVAC + Importer)
 
-- [x] **Mining Intelligence Catalog Phase 1 — COMPLETE** — PostgreSQL 16 deployed on ROBS-PC in Docker (mining-guardian-db container). 90-table schema (V1+V2+V3) across 10 schemas with 2,363 columns. 313 Bitcoin SHA-256 miner models seeded across 13 manufacturers (Bitmain 114, MicroBT 78, Canaan 64, Bitdeer 12, Innosilicon 11, Ebang 10, StrongU 9, Auradine 3, plus 5 historical). Deep research enrichment applied — 211/223 models matched with chip, process node, power, and cooling data from 4-phase research. First backup created (804 KB pg_dump). Schema fixes deployed (19/20 PASS). AH3880 chips_per_board NULL fixed to 345.
+- [x] **Mining Intelligence Catalog Phase 1 — COMPLETE** — PostgreSQL 16 deployed on ROBS-PC in Docker (mining-guardian-db container). 94-table schema (V1+V2+V3 + importer additions) across 10 schemas with 2,363+ columns. 313 Bitcoin SHA-256 miner models seeded across 13 manufacturers (Bitmain 114, MicroBT 78, Canaan 64, Bitdeer 12, Innosilicon 11, Ebang 10, StrongU 9, Auradine 3, plus 5 historical). Deep research enrichment applied — 211/223 models matched with chip, process node, power, and cooling data from 4-phase research. First backup created (804 KB pg_dump). Schema fixes deployed (19/20 PASS). AH3880 chips_per_board NULL fixed to 345.
+- [x] **Intelligence Catalog Data Importer — DEPLOYED + FIRST IMPORT COMPLETE** — 22-file Python importer (4,602+ lines) at `intelligence-catalog/importer/`. Brand detection for Bitmain, MicroBT, Canaan, Auradine with confidence scoring. Manufacturer-specific parsers, auto-discovery integration, diagnostic test battery. 4 new schema tables + 5 indexes deployed. Three bugs fixed in commit `bdca6e5`: T21 special-character filenames, encrypted zip crash, MicroBT misdetection. First live import on Bobby's Telegram log archive: 1,796 total files, 1,244 processed, 552 skipped, 0 failed, 1,136 flagged needs_review. Miners detected: S19 XP, S19 Pro+ Hyd, S19i, S19j+, S19j Pro, S19j Pro+, S19j XP, S19k Pro, T21, M20S, M21S, M30S++. 62+ fields auto-discovered from WhatsMiner system logs.
 - [x] **4-phase deep research completed** — Bitmain (32 models), MicroBT (80), Canaan (71), Phase 4 mixed (48) = 223 total models deeply researched with chip names, process nodes, power consumption, cooling variants, efficiency ratings, and source citations
 - [x] **Enrichment SQL V2 written and deployed** — Fixed 3 critical bugs in V1 (wrong column name research_notes→metadata, wrong column model_name→canonical_name, transaction wrapper causing total rollback). Each UPDATE now independent.
 - [x] **Catalog ID numbering system** — 1000s=Bitmain, 2000s=MicroBT, 3000s=Canaan, 4000s=Bitdeer, 5000s=Auradine, 6000s=Innosilicon, 7000s=Ebang, 8000s=StrongU, 9xxx=Historical
@@ -368,4 +370,4 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 
 ---
 
-*Last updated: April 13, 2026 — Intelligence Catalog Phase 1 COMPLETE, HVAC integration done, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, `README.md` for current architecture, and `docs/DATABASE_STATUS.md` for database state.*
+*Last updated: April 13, 2026 — Intelligence Catalog Phase 1 COMPLETE, data importer deployed with first live import (1,244 files), HVAC integration done, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, `README.md` for current architecture, and `docs/DATABASE_STATUS.md` for database state.*

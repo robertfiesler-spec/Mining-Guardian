@@ -63,7 +63,7 @@ Migrations are handled in `GuardianDB._init_db`. Atomic writes. WAL mode for con
 - **Port:** 5432
 - **Backup:** `D:\MiningGuardian\db-backups\pre-migration\mining_guardian_2026-04-13.dump` (804 KB — first backup)
 
-### Schema — 90 Tables, 2,363 Columns, 10 Schemas
+### Schema — 94 Tables, 2,363+ Columns, 10 Schemas
 
 The schema was designed with a 10-year horizon. "Capture everything. Discard nothing."
 
@@ -150,6 +150,46 @@ Four interconnected tables enforce this:
 - Each UPDATE independent (no transaction wrapper)
 - 12 UPDATE 0: Canaan "Gen" summary rows, combined entries, and 1 Scrypt miner correctly excluded
 
+### Data Importer — DEPLOYED April 13, 2026
+
+The Intelligence Catalog now has a complete data importer pipeline that ingests miner log files, spec sheets, and archives directly into the database. Located at `intelligence-catalog/importer/` — 22 files, 4,602+ lines of Python.
+
+**Architecture:**
+- Brand detection engine (`detector.py`) — identifies Bitmain, MicroBT, Canaan, Auradine via filename patterns, content signatures, and MAC/IP prefixes. Confidence scoring 0.0–1.0.
+- Manufacturer-specific parsers (`parsers/`) — Bitmain, MicroBT, Canaan, Auradine, CSV, and generic fallback parsers
+- Auto-discovery integration (`discovery.py`) — unknown fields are registered in `knowledge.unknown_fields`, never skipped
+- Diagnostic test battery (`diagnostics/`) — universal tests + brand-specific tests run on every file
+- PostgreSQL storage (`db.py`) — writes to 4 new import tables (see schema additions below)
+- Archive handling — supports .zip, .tar.gz, .7z with recursive extraction; encrypted archives are gracefully skipped
+
+**Schema additions** (`importer/schema_additions.sql`) — 4 new tables + 5 indexes:
+
+| Table | Schema | Purpose |
+|-------|--------|---------|
+| `knowledge.import_jobs` | knowledge | Tracks every import job — start/end times, file counts, status |
+| `knowledge.imported_files` | knowledge | Every file processed — hash, detected brand/model/firmware, parsed data JSONB |
+| `ops.import_diagnostic_results` | ops | Diagnostic test results per file — pass/warn/fail with evidence |
+| `ops.import_patterns` | ops | Cross-file patterns — model defects, firmware regressions, batch issues |
+
+**Bug fixes deployed** (commit `bdca6e5`):
+- T21 archive filenames with special characters (parentheses, spaces) no longer crash extraction
+- Encrypted zip files are gracefully skipped instead of crashing the entire import
+- MicroBT WhatsMiner logs no longer misidentified as Bitmain (confidence improved to 0.95)
+
+**First live import results** (April 13, 2026):
+
+| Metric | Count |
+|--------|-------|
+| Total files found | 1,796 |
+| Files processed | 1,244 |
+| Files skipped | 552 |
+| Files failed | 0 |
+| Flagged needs_review | 1,136 |
+
+Miners detected in the import: S19 XP, S19 Pro+ Hyd, S19i, S19j+, S19j Pro, S19j Pro+, S19j XP, S19k Pro, T21, MicroBT M20S, M21S, M30S++. The importer also auto-discovered 62+ unique fields from WhatsMiner system logs that were not in the field registry.
+
+Source archive: `C:\Users\user\Downloads\Telegram Desktop\logs (3).zip`
+
 ### Deployment Status: LIVE
 
 | Component | Status | Details |
@@ -158,9 +198,11 @@ Four interconnected tables enforce this:
 | Base schema (V1) | DEPLOYED | 63 tables, 10 schemas |
 | Schema V2 additions | DEPLOYED | 9 new tables, 113 new columns |
 | Schema V3 additions | DEPLOYED | 14+ new tables, 170+ columns, auto-discovery |
+| Importer schema additions | DEPLOYED | 4 new tables, 5 indexes |
 | Seed data (313 models) | DEPLOYED | All Bitcoin SHA-256 miners |
 | Schema fixes | DEPLOYED | 19/20 PASS |
 | Deep research enrichment | DEPLOYED | 211/223 matched |
+| Data importer | DEPLOYED | 22 files, 4,602+ lines, first import complete |
 | First backup | CREATED | 804 KB pg_dump, April 13 2026 |
 
 ### What's Next for the Intelligence Catalog
@@ -194,4 +236,4 @@ Bobby's rule: "I will stress bitcoin only." These are tracked in documentation b
 
 ---
 
-*This document tracks the current state of both databases. Update it whenever schema changes are deployed, seed data is added, or backup procedures change.*
+*This document tracks the current state of both databases. Update it whenever schema changes are deployed, seed data is added, backup procedures change, or import operations complete.*

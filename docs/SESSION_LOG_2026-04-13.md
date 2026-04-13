@@ -1,7 +1,7 @@
 # Session Log — April 13, 2026
 
 ## Summary
-Three major work streams completed today: (1) S19J Pro HVAC integration, (2) morning operational fixes, and (3) Mining Intelligence Catalog database deployment — the catalog is now live on ROBS-PC with 313 seed models, schema fixes verified, and deep research enrichment applied to 211 models.
+Four major work streams completed today: (1) S19J Pro HVAC integration, (2) morning operational fixes, (3) Mining Intelligence Catalog database deployment — the catalog is now live on ROBS-PC with 313 seed models, schema fixes verified, and deep research enrichment applied to 211 models, and (4) Intelligence Catalog data importer — built, bug-fixed, deployed, and first live import completed (1,244 files processed, 0 failed).
 
 ---
 
@@ -192,6 +192,92 @@ Each enrichment UPDATE writes into the `metadata` JSONB column with structured d
 
 ---
 
+## Session 4 — Intelligence Catalog Data Importer (~9:00–11:10 AM CDT)
+
+This session built, debugged, and deployed the Intelligence Catalog's data importer, then ran the first live import on Bobby's Telegram log archive.
+
+### Background
+
+With the catalog schema deployed and 313 models seeded, the next step was building the machinery to actually ingest miner data — log files, spec sheets, archives from repair shops, Telegram dumps, etc. The importer needed to detect which manufacturer and model a file belongs to, parse it with the right brand-specific parser, run diagnostics, register unknown fields via auto-discovery, and store everything in PostgreSQL.
+
+### Work Completed
+
+#### 1. Importer Built and Deployed (commit `0a37f94`)
+Complete importer pipeline at `intelligence-catalog/importer/` — 22 files, 4,602+ lines:
+
+| Component | File(s) | Purpose |
+|-----------|---------|--------|
+| Brand detector | `detector.py` | Identifies Bitmain, MicroBT, Canaan, Auradine from filenames, content, MAC/IP prefixes |
+| Parsers | `parsers/*.py` | 6 parsers: Bitmain, MicroBT, Canaan, Auradine, CSV, generic fallback |
+| Auto-discovery | `discovery.py` | Registers unknown fields in `knowledge.unknown_fields` — never skips |
+| Diagnostics | `diagnostics/*.py` | Universal + brand-specific test battery on every file |
+| DB layer | `db.py` | PostgreSQL writes to 4 new tables |
+| Orchestrator | `importer.py` | Walks archives/folders, coordinates detection → parsing → diagnostics → storage |
+| Models | `models.py` | Data classes for import results, file metadata, diagnostic outcomes |
+| Config | `config.py` | Database connection, paths, thresholds |
+| Schema | `schema_additions.sql` | 4 new tables + 5 indexes |
+
+Schema additions deployed to ROBS-PC:
+- `knowledge.import_jobs` — tracks every import run
+- `knowledge.imported_files` — every file with hash, detected brand/model, parsed JSONB data
+- `ops.import_diagnostic_results` — per-file test results
+- `ops.import_patterns` — cross-file pattern detection
+
+#### 2. Dry Run #1 — Identified 3 Bugs
+First dry run on Bobby's Telegram archive revealed:
+- T21 archive files with special characters (parentheses, spaces) crashed the zip extraction
+- Encrypted zip files crashed the entire import instead of being skipped
+- MicroBT WhatsMiner system logs were being misidentified as Bitmain (wrong brand detection)
+
+#### 3. Bug Fixes (commit `bdca6e5`)
+All three bugs fixed in `extractor.py` and `detector.py`:
+- T21 fix: Archive name sanitization before extraction, handles parentheses/spaces/special chars
+- Encrypted zip fix: Try-catch around zip extraction, graceful skip with `processing_status='skipped'` and note "Encrypted archive"
+- MicroBT fix: Added WhatsMiner-specific content signatures ("WhatsMiner", "btminerng", "MicroBT"), boosted MicroBT filename pattern weights, added negative signal for Bitmain when WhatsMiner patterns detected. Confidence improved to 0.95.
+
+Bobby deployed: `git pull` — 2 files changed, 47 insertions, 7 deletions.
+
+#### 4. Dry Run #2 — All Fixes Confirmed
+Second dry run showed dramatic improvement:
+
+| Metric | Dry Run 1 | Dry Run 2 |
+|--------|-----------|----------|
+| Total files | 622 | 1,796 |
+| Processed | 307 | 1,244 |
+| T21 extracting | No (crash) | Yes |
+| Encrypted files | Crash | Graceful skip |
+| MicroBT detection | Misidentified | 0.95 confidence |
+
+#### 5. First Live Import — SUCCESS
+Bobby approved and ran the live import:
+
+| Metric | Count |
+|--------|-------|
+| Total files found | 1,796 |
+| Files processed | 1,244 |
+| Files skipped | 552 |
+| Files failed | 0 |
+| Flagged needs_review | 1,136 |
+
+Miners detected: S19 XP, S19 Pro+ Hyd, S19i, S19j+, S19j Pro, S19j Pro+, S19j XP, S19k Pro, T21, MicroBT M20S, M21S, M30S++
+
+The importer auto-discovered 62+ unique fields from WhatsMiner system logs that were not in the field registry — validating the auto-discovery mechanism built into the V3 schema.
+
+Source archive: `C:\Users\user\Downloads\Telegram Desktop\logs (3).zip`
+
+### Key Technical Decisions Made
+
+1. **Confidence-based brand detection** — Instead of simple pattern matching, the detector uses a weighted scoring system across filename patterns, content signatures, MAC prefixes, and IP ranges. This handles ambiguous files (e.g., WhatsMiner logs that mention Bitmain chip names) by looking at the preponderance of evidence.
+2. **Independent file processing** — Each file is processed independently. One failure does not stop the import. Files that fail are marked `failed` with a note, not silently dropped.
+3. **needs_review as default** — Any file that the importer cannot confidently match to a catalog model gets flagged `needs_review` rather than auto-approved. Bobby reviews these manually. This is conservative by design.
+4. **Auto-discovery first** — Unknown fields are registered in `knowledge.unknown_fields` before any parsing happens. The importer literally cannot skip a field it doesn't recognize.
+
+### Commits
+- `0a37f94` — feat(importer): add complete Intelligence Catalog data importer
+- `bdca6e5` — fix: importer — T21 archive names, encrypted zips, MicroBT detection
+
+---
+
 ## Cumulative Commits Today (feature/intelligence-catalog branch)
 
 | Hash | Message |
@@ -202,6 +288,9 @@ Each enrichment UPDATE writes into the `metadata` JSONB column with structured d
 | e886720 | fix: log failure reports to mg-logs channel |
 | 7e7c6d8 | feat: S19J Pro overheat tracking + operator rule 6 |
 | 8b6e66c | Fix enrichment SQL V2: correct column names + fix AH3880 NULL chips_per_board |
+| cc829e2 | docs: comprehensive documentation update — Intelligence Catalog LIVE, HVAC integration, architecture |
+| 0a37f94 | feat(importer): add complete Intelligence Catalog data importer |
+| bdca6e5 | fix: importer — T21 archive names, encrypted zips, MicroBT detection |
 
 ---
 
@@ -215,14 +304,15 @@ Each enrichment UPDATE writes into the `metadata` JSONB column with structured d
 - Intelligence Catalog DB — LIVE on ROBS-PC in Docker (mining-guardian-db container)
 
 ### What's Next
-- Comprehensive documentation update (this session log, README, ROADMAP, etc.)
-- Continue intelligence catalog research enrichment for the 12 unmatched models
-- Begin deep research phases for PSU data, hashboard details, control board specs
-- Schema V2/V3 additions deployment when ready
+- Resolve 12 unmatched enrichment entries (Canaan Gen summaries, M63 Hydro 356TH, Nano 3/3S combined, naming mismatches)
+- Triage the 1,136 needs_review import files
+- Continue intelligence catalog research enrichment (PSU data, hashboard details, control board specs)
+- Begin populating Schema V2/V3 tables with operational and firmware data
 
 ---
 
 *Session 1 started: ~3:30 AM CDT*
 *Session 2 started: ~5:35 AM CDT*
 *Session 3 started: ~6:00 AM CDT*
-*Documentation update: ~8:39 AM CDT*
+*Session 4 started: ~9:00 AM CDT*
+*Documentation update: ~11:10 AM CDT*
