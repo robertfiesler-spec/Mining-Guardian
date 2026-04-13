@@ -1,0 +1,62 @@
+# Mining Intelligence Catalog — PostgreSQL 16
+# Owner: Bobby (Rob Fiesler) — Mining Guardian
+# Target: ROBS-PC (Windows), later migrated to Mac mini
+#
+# Usage:
+#   docker-compose up -d        (start in background)
+#   docker-compose down          (stop, data preserved)
+#   docker-compose logs -f db    (watch logs)
+#
+# Data is stored in a named volume. To migrate to external drive later:
+#   1. docker-compose down
+#   2. Copy volume data: docker cp mining-guardian-db:/var/lib/postgresql/data ./pg_backup
+#   3. Update the volume mount below to point to external drive
+#   4. docker-compose up -d
+
+services:
+  db:
+    image: postgres:16-bookworm
+    container_name: mining-guardian-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: mining_guardian
+      POSTGRES_USER: guardian_admin
+      POSTGRES_PASSWORD: MiningGuardian2026!
+      # Performance tuning for a single-machine setup
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # PostgreSQL tuning for 8-16GB RAM workstation
+    command:
+      - "postgres"
+      - "-c" 
+      - "shared_buffers=2GB"
+      - "-c"
+      - "effective_cache_size=6GB"
+      - "-c"
+      - "maintenance_work_mem=512MB"
+      - "-c"
+      - "work_mem=64MB"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=64MB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "log_min_duration_statement=1000"
+      - "-c"
+      - "log_statement=ddl"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guardian_admin -d mining_guardian"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+    name: mining-guardian-pgdata
