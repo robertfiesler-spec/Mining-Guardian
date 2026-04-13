@@ -21,9 +21,8 @@ cp "$SRC/knowledge_backup.json" "$BACKUP_DIR/knowledge_backup.json" 2>/dev/null
 cp "$SRC/miner_specs.json" "$BACKUP_DIR/miner_specs.json" 2>/dev/null
 
 # SQLite safe backup (copy while WAL is active)
-cp "$SRC/guardian.db" "$BACKUP_DIR/guardian.db" 2>/dev/null
-cp "$SRC/guardian.db-wal" "$BACKUP_DIR/guardian.db-wal" 2>/dev/null
-cp "$SRC/guardian.db-shm" "$BACKUP_DIR/guardian.db-shm" 2>/dev/null
+# A-2 FIX: Use sqlite3 .backup instead of cp
+sqlite3 "$SRC/guardian.db" ".backup '$BACKUP_DIR/guardian.db'"
 
 # Compress the DB to save space
 gzip -1 -f "$BACKUP_DIR/guardian.db" 2>/dev/null
