@@ -103,15 +103,27 @@ def get_training_insights():
 
 
 def get_prediction_status():
-    conn = _db()
-    preds = conn.execute("""
-        SELECT timestamp, ip, model, action_taken, problem, notes
-        FROM action_audit_log
-        WHERE action_taken LIKE '%PREEMPTIVE%' OR action_taken LIKE '%POWER_PROFILE%'
-        ORDER BY timestamp DESC LIMIT 15
-    """).fetchall()
-    conn.close()
-    return [dict(r) for r in preds]
+    """Get pre-failure predictions from knowledge.json with REAL confidence values."""
+    try:
+        with open(KNOWLEDGE_PATH) as f:
+            knowledge = json.load(f)
+        preds = knowledge.get("predictions", [])
+        # Sort by predicted_at descending, take last 15
+        preds = sorted(preds, key=lambda x: x.get("predicted_at", ""), reverse=True)[:15]
+        # Transform to expected format
+        result = []
+        for p in preds:
+            result.append({
+                "timestamp": p.get("predicted_at", ""),
+                "ip": p.get("ip", ""),
+                "model": p.get("model", ""),
+                "action_taken": p.get("action", ""),
+                "confidence": p.get("confidence", 0),  # REAL confidence value!
+                "problem": ", ".join(p.get("signals", [])[:2]),
+            })
+        return result
+    except Exception as e:
+        return []
 
 
 def get_feature_status():
@@ -274,21 +286,18 @@ def render_ai_dashboard_html():
     if not ar:
         ar = f'<tr><td colspan="7" style="text-align:center;color:{TD}">No auto-actions yet</td></tr>'
 
-    # Prediction rows
+    # Prediction rows — uses REAL confidence from knowledge.json
     pr = ""
     for p in predictions:
         ts = str(p.get("timestamp", ""))[:16]
-        # Extract confidence from problem/notes field
-        prob = str(p.get("problem", "") or "")
-        pred_conf = 75
-        if "%" in prob:
+        # Use actual confidence field directly (not parsed from text!)
+        pred_conf = p.get("confidence", 75)
+        if not isinstance(pred_conf, (int, float)):
             try:
-                # re already imported at top
-                m = re.search(r'(\d+)%', prob)
-                if m:
-                    pred_conf = int(m.group(1))
+                pred_conf = int(pred_conf)
             except:
-                pass
+                pred_conf = 75
+        pred_conf = int(pred_conf)
         pred_conf_color = G if pred_conf >= 80 else O if pred_conf >= 50 else R
         pr += (
             f'<tr><td style="color:{TD};font-size:12px">{_e(ts)}</td>'
