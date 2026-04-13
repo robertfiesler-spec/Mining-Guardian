@@ -216,3 +216,42 @@ class KnowledgeManager:
                 parts.append(f"  [{i['date']}] {i['insight'][:200]}")
 
         return "\n".join(parts)
+
+    def store_operator_rule(self, category: str, rule_text: str, source: str = "operator_denial", confidence: int = 100):
+        """Store a new operator rule learned from denial reasons or explicit guidance.
+        
+        Args:
+            category: Rule category (e.g. "temperature", "offline_logic", "timing")
+            rule_text: The actual rule text
+            source: Where this rule came from ("operator_denial", "manual", "escalation")
+            confidence: How confident we are in this rule (0-100)
+        """
+        from datetime import datetime
+        
+        # Load current rules
+        rules = self.knowledge.get("operator_rules", [])
+        
+        # Check if similar rule already exists (avoid duplicates)
+        for existing_rule in rules:
+            if isinstance(existing_rule, dict):
+                if existing_rule.get("rule", "").lower() == rule_text.lower():
+                    # Rule already exists, dont add duplicate
+                    return
+            elif isinstance(existing_rule, str) and existing_rule.lower() == rule_text.lower():
+                return
+        
+        # Add new structured rule
+        new_rule = {
+            "rule": rule_text,
+            "category": category,
+            "source": source,
+            "confidence": confidence,
+            "added_at": datetime.now().isoformat(),
+            "times_applied": 0
+        }
+        
+        rules.append(new_rule)
+        self.knowledge["operator_rules"] = rules
+        self.save()
+        
+        print(f"✓ Stored operator rule: {category} - {rule_text[:60]}...")

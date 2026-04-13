@@ -192,6 +192,7 @@ async def deny_actions(request: Request):
     thread_ts = body.get("thread_ts")
     user = body.get("user", "unknown")
     user_id = body.get("user_id", "")
+    denial_reason = body.get("denial_reason", "")
 
     if not thread_ts:
         return {"error": "thread_ts required"}
@@ -216,7 +217,28 @@ async def deny_actions(request: Request):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (now, now[:10], action["scan_id"], action["miner_id"], action["ip"],
               action["model"], action["problem"], action["action_type"],
-              "DENIED", user, user_id, f"Denied via Slack thread {thread_ts}"))
+              "DENIED", user, user_id, f"Denied via Slack thread {thread_ts}: {denial_reason}" if denial_reason else f"Denied via Slack thread {thread_ts}"))
+
+
+    # DG-2 FIX: Extract rules from denial
+    if denial_reason and len(denial_reason.strip()) > 10:
+        try:
+            from ai.knowledge_manager import KnowledgeManager
+            km = KnowledgeManager()
+            category = "general"
+            dr_lower = denial_reason.lower()
+            if "temp" in dr_lower or "heat" in dr_lower:
+                category = "temperature"
+            elif "offline" in dr_lower:
+                category = "offline_logic"
+            elif "restart" in dr_lower:
+                category = "restart_policy"
+            elif "wait" in dr_lower or "time" in dr_lower:
+                category = "timing"
+            if any(w in dr_lower for w in ["should", "must", "dont", "never", "always"]):
+                km.store_operator_rule(category, denial_reason, source="operator_denial")
+        except Exception as e:
+            logger.debug("Rule extraction failed: %s", e)
 
     conn.commit()
     conn.close()
