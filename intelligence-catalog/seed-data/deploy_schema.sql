@@ -14,13 +14,13 @@
 -- =============================================================================
 
 -- Run the base schema (63 tables)
-\i /sql/intelligence_catalog_schema.sql
+\i /docker-entrypoint-initdb.d/intelligence_catalog_schema.sql
 
 -- Run V2 additions (9 tables)
-\i /sql/intelligence_catalog_schema_v2_additions.sql
+\i /docker-entrypoint-initdb.d/intelligence_catalog_schema_v2_additions.sql
 
 -- Run V3 additions (14+ tables)
-\i /sql/intelligence_catalog_schema_v3_additions.sql
+\i /docker-entrypoint-initdb.d/intelligence_catalog_schema_v3_additions.sql
 
 -- =============================================================================
 -- ENUM EXTENSIONS — Add manufacturer brands not in original schema
