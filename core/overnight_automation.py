@@ -30,9 +30,31 @@ from dotenv import load_dotenv
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
-for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"), str(_ROOT / "ai")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Import confidence scorer for audit logging
+try:
+    from confidence_scorer import get_confidence as _get_confidence
+    _has_confidence_scorer = True
+except ImportError:
+    _has_confidence_scorer = False
+
+
+def _calc_conf(action):
+    """Calculate confidence for audit logging."""
+    if not _has_confidence_scorer:
+        return 75
+    try:
+        conf, _ = _get_confidence(
+            str(action.get("miner_id", "")),
+            action.get("ip", ""),
+            action.get("action_type", "RESTART")
+        )
+        return conf
+    except:
+        return 75
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO,
@@ -241,7 +263,7 @@ def execute_auto_action(action: dict) -> dict:
                   action["miner_id"], action["ip"], action.get("model"),
                   action.get("problem"), action["action_type"],
                   "AUTO_OVERNIGHT", "Mining Guardian (Overnight Auto)", "AUTO_OVERNIGHT",
-                  "Auto-executed during overnight window"))
+                  f"Auto-executed during overnight window | Conf:{_calc_conf(action)}%"))
             conn.execute(
                 "UPDATE pending_approvals SET status='APPROVED', responded_at=? WHERE id=?",
                 (now.isoformat(), action["id"])

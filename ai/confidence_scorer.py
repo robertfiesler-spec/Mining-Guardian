@@ -273,9 +273,14 @@ def _calc_rate(rows) -> Tuple[float, int]:
 
 
 def _action_to_restart_type(action_type: str) -> Optional[str]:
-    """Map action type strings to restart_type patterns in the DB."""
+    """Map action type strings to restart_type patterns in the DB.
+    
+    Returns None for RESTART to count ALL restart types (manual + auto),
+    since a restart's success rate should include all historical restarts.
+    """
     mapping = {
-        "RESTART":             "MANUAL_APPROVED",
+        # RESTART returns None = count ALL restart types for accurate history
+        "RESTART":             None,
         "AUTO_OVERNIGHT":      "AUTO_OVERNIGHT",
         "RESTART_CHECK_BOARDS":"Dead board",
         "PDU_CYCLE":           "PDU",

@@ -248,7 +248,18 @@ def render_ai_dashboard_html():
     if not qr:
         qr = f'<tr><td colspan="8" style="text-align:center;color:{G};padding:20px">✓ No pending actions — system is running autonomously</td></tr>'
 
-    # Auto-action rows
+    # Auto-action rows — calculate confidence dynamically
+    # Import confidence scorer for on-the-fly calculation
+    try:
+        import sys
+        _ai_path = str(Path(__file__).parent.parent / "ai")
+        if _ai_path not in sys.path:
+            sys.path.insert(0, _ai_path)
+        from confidence_scorer import get_confidence
+        _has_scorer = True
+    except:
+        _has_scorer = False
+    
     ar = ""
     for a in autos:
         oc = a.get("outcome") or "—"
@@ -257,22 +268,18 @@ def render_ai_dashboard_html():
         }.get(oc, TD)
         badge = f'<span style="background:{bc};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{_e(oc)}</span>'
         ts = str(a.get("timestamp", ""))[:16]
-        # Get confidence from notes if available
-        notes = str(a.get("notes", "") or "")
-        auto_conf = 75
-        if "Conf:" in notes:
+        
+        # Calculate confidence dynamically using confidence_scorer
+        auto_conf = 75  # fallback
+        if _has_scorer:
             try:
-                auto_conf = int(notes.split("Conf:")[1].split("%")[0].strip())
+                miner_id = str(a.get("miner_id", ""))
+                ip = a.get("ip", "")
+                action_type = a.get("action_taken", "RESTART")
+                auto_conf, _ = get_confidence(miner_id, ip, action_type)
             except:
                 pass
-        elif "confidence" in notes.lower():
-            try:
-                # re already imported at top
-                m = re.search(r'(\d+)%', notes)
-                if m:
-                    auto_conf = int(m.group(1))
-            except:
-                pass
+        
         auto_conf_color = G if auto_conf >= 80 else O if auto_conf >= 50 else R
         ar += (
             f'<tr><td style="color:{TD};font-size:12px">{_e(ts)}</td>'
