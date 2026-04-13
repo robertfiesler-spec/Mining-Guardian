@@ -108,3 +108,48 @@ Simple rule: S19JPro -> s19jpro system. Everything else -> warehouse.
 ### Services Restarted
 - mining-guardian.service - Active
 - dashboard-api.service - Active
+
+
+---
+
+## Session 3 — S19J Pro HVAC in Scans (06:00 CDT)
+
+### Changes Made
+Daemon now includes BOTH HVAC systems in every scan context sent to Qwen.
+
+**What Changed:**
+1. Import: Added poll_all_systems from hvac_client
+2. Polling: Calls poll_all_systems() to get both warehouse and s19jpro
+3. Context: hvac_data dict now contains both systems:
+   - warehouse: supply_f, return_f, delta_t
+   - s19jpro: supply_f, return_f, delta_t, container_f, outside_air_f
+4. System prompt: Explains "TWO HVAC systems"
+5. Output label: "HVAC (both systems)"
+
+**Commit:** 086c6bf
+
+### Verified Working
+- Mac HVAC collector pushing both systems every 5 min
+- VPS receiving POST /api/hvac/ingest for both
+- Database has readings for warehouse and s19jpro
+- Scan #1473 completed at 06:04 with 49 miners
+
+### Current HVAC Readings (06:04)
+| System | Supply | Return | Delta-T |
+|--------|--------|--------|---------|
+| Warehouse | 75F | 86F | 11F |
+| S19J Pro | 89F | 104F | 15F |
+
+### All Commits Today (9 total)
+1. 43ac433 — feat: add S19J Pro HVAC system integration
+2. 0b3aab9 — fix: wire all AI scripts to correct HVAC per miner
+3. 9d4ece4 — docs: add S19J Pro CT fan note
+4. df699ca — docs: comprehensive HVAC systems documentation
+5. e3e18d5 — docs: add S19J Pro HVAC fix to REPAIR_LOG
+6. 7e7c6d8 — feat: add operator rule #6 - S19J Pro aging hardware
+7. e886720 — fix: AI analysis improvements
+8. d565a27 — docs: add session 2 fixes to log
+9. 086c6bf — feat: include S19J Pro HVAC data in scans
+
+### Services Status
+All services running and healthy.
