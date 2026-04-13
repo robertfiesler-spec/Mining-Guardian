@@ -1,108 +1,147 @@
 """
-hvac_client.py — Warehouse Mechanical / BAS Integration
-Distech Controls Eclypse @ 192.168.188.235
+hvac_client.py — Multi-System HVAC/BAS Integration
+Supports multiple Distech Controls Eclypse controllers:
+  - Warehouse: 192.168.188.235 (Hydros, S21 Immersion)
+  - S19J Pro:  192.168.189.235 (S19J Pro container)
 
 NOTE: This is a one-off integration for the BiXBiT USA Fort Worth warehouse facility.
       It is NOT part of the standard Mining Guardian deployment template.
       Future deployments will pull equivalent data from the AMS container tab.
 
-Architecture rule: This runs alongside AMS — not instead of it.
+Updated: April 13, 2026 — Added S19J Pro system support
 """
 
-import ssl
 import json
 import os
 import logging
 import requests
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-ECLYPSE_URL  = "https://192.168.188.235"
+# Credentials from .env
 ECLYPSE_USER = os.getenv("ECLYPSE_USER")
 ECLYPSE_PASS = os.getenv("ECLYPSE_PASS")
 if not ECLYPSE_USER or not ECLYPSE_PASS:
-    import logging as _log
-    _log.getLogger(__name__).warning(
-        "ECLYPSE_USER / ECLYPSE_PASS not set — HVAC client will fail to authenticate"
-    )
-BASE         = f"{ECLYPSE_URL}/api/rest/v1/protocols/bacnet/local/objects"
+    logger.warning("ECLYPSE_USER / ECLYPSE_PASS not set — HVAC client will fail to authenticate")
 
 
 @dataclass
 class HVACSnapshot:
+    """Common snapshot for any HVAC system."""
+    system_id: str = ""
+    system_name: str = ""
+    
     # Water temps
-    supply_temp_f:   Optional[float] = None   # AI-101 CWS_T
-    return_temp_f:   Optional[float] = None   # AI-102 CWR_T
-    delta_t_f:       Optional[float] = None   # calculated: return - supply
-    diff_pressure_psi: Optional[float] = None # AI-103 CW_DP
+    supply_temp_f:   Optional[float] = None
+    return_temp_f:   Optional[float] = None
+    delta_t_f:       Optional[float] = None
+    diff_pressure_psi: Optional[float] = None
+    
+    # S19J Pro specific
+    outside_air_f:   Optional[float] = None
+    container_temp_f: Optional[float] = None
 
-    # Equipment status
-    spray_pump_on:   Optional[bool]  = None   # BI-208 SprayPump_Status
-    ct_fan1_on:      Optional[bool]  = None   # BI-201 CT1_Status
-    ct_fan2_on:      Optional[bool]  = None   # BI-202 CT2_Status
-    fans_active:     int = 0                   # count of active fans
+    # Equipment status (binary)
+    spray_pump_on:   Optional[bool]  = None
+    ct_fan1_on:      Optional[bool]  = None
+    ct_fan2_on:      Optional[bool]  = None
+    fans_active:     int = 0
 
-    # Fan speed % (analog values — NaN when PID not running)
-    ct_fan_pct:      Optional[float] = None   # AV-10013 CWDP_PID Output or AV-10023
-    pump_pct:        Optional[float] = None   # AV-10013 CWDP_PID Output
-
-    # VFD actual speeds (analog outputs — real signal to equipment)
-    cwp1_vfd_pct:    Optional[float] = None   # AO-101 CWP1_VFD
-    cwp2_vfd_pct:    Optional[float] = None   # AO-102 CWP2_VFD (lead pump)
-    ct1_vfd_pct:     Optional[float] = None   # AO-103 CT1_VFD
-    ct2_vfd_pct:     Optional[float] = None   # AO-104 CT2_VFD
+    # VFD actual speeds (analog outputs) - %
+    cwp1_vfd_pct:    Optional[float] = None
+    cwp2_vfd_pct:    Optional[float] = None
+    ct1_vfd_pct:     Optional[float] = None
+    ct2_vfd_pct:     Optional[float] = None
 
     # Alarms
-    system_enabled:  Optional[bool]  = None   # BV-1 SystemEnable
-    leak_alarm:      Optional[bool]  = None   # BV-22 LeakDetection_Alarm (True = alarm)
-    tower_vibration: Optional[bool]  = None   # BI-303 TowerVibrationSwitch
-    basin_level_ok:  Optional[bool]  = None   # BI-302 BasinLevel (True = Normal)
-    ct1_fault:       Optional[bool]  = None   # BI-203 CT1_Fault
-    ct2_fault:       Optional[bool]  = None   # BI-204 CT2_Fault
-    pump_fault:      Optional[bool]  = None   # BV-10 SprayPumpFail_Alm
+    system_enabled:  Optional[bool]  = None
+    leak_alarm:      Optional[bool]  = None
+    tower_vibration: Optional[bool]  = None
+    basin_level_ok:  Optional[bool]  = None
+    ct1_fault:       Optional[bool]  = None
+    ct2_fault:       Optional[bool]  = None
+    pump_fault:      Optional[bool]  = None
+    cwp1_trip:       Optional[bool]  = None
+    cwp2_trip:       Optional[bool]  = None
+    ct_trip:         Optional[bool]  = None
 
     error: Optional[str] = None
 
 
+# Point definitions for each system
+WAREHOUSE_POINTS = {
+    "supply_temp":    ("analog-input",  "101", "present-value"),
+    "return_temp":    ("analog-input",  "102", "present-value"),
+    "diff_pressure":  ("analog-input",  "103", "present-value"),
+    "spray_pump":     ("binary-input",  "208", "present-value"),
+    "ct1_status":     ("binary-input",  "201", "present-value"),
+    "ct2_status":     ("binary-input",  "202", "present-value"),
+    "ct1_fault":      ("binary-input",  "203", "present-value"),
+    "ct2_fault":      ("binary-input",  "204", "present-value"),
+    "tower_vibration":("binary-input",  "303", "present-value"),
+    "basin_level":    ("binary-input",  "302", "present-value"),
+    "pump_fault":     ("binary-value",  "10",  "present-value"),
+    "system_enable":  ("binary-value",  "1",   "present-value"),
+    "leak_alarm":     ("binary-value",  "22",  "present-value"),
+    "cwp1_vfd":       ("analog-output", "101", "present-value"),
+    "cwp2_vfd":       ("analog-output", "102", "present-value"),
+    "ct1_vfd":        ("analog-output", "103", "present-value"),
+    "ct2_vfd":        ("analog-output", "104", "present-value"),
+}
+
+S19JPRO_POINTS = {
+    "supply_temp":    ("analog-input",  "105", "present-value"),  # CDWST
+    "return_temp":    ("analog-input",  "106", "present-value"),  # CDWRT
+    "outside_air":    ("analog-input",  "107", "present-value"),  # OAT
+    "container_temp": ("analog-input",  "108", "present-value"),  # ContainerSpaceTemp
+    "cwp1_fdbk":      ("analog-input",  "102", "present-value"),  # CWP1_Fdbk
+    "cwp2_fdbk":      ("analog-input",  "103", "present-value"),  # CWP2_Fdbk
+    "ct1_vfd":        ("analog-output", "101", "present-value"),  # CT1_VFD
+    "ct2_vfd":        ("analog-output", "102", "present-value"),  # CT2_VFD
+    "leak_alarm":     ("binary-input",  "301", "present-value"),  # LeakDetectionAlarm
+    "basin_level":    ("binary-input",  "302", "present-value"),  # BasinLevelSwitch
+    "cwp1_trip":      ("binary-input",  "201", "present-value"),  # CWP1_Trip
+    "cwp2_trip":      ("binary-input",  "202", "present-value"),  # CWP2_Trip
+    "ct_trip":        ("binary-input",  "205", "present-value"),  # CT_Trip
+    "spray_pump":     ("binary-input",  "303", "present-value"),  # SprayPumpStatus
+}
+
+SYSTEMS = {
+    "warehouse": {
+        "ip": "192.168.188.235",
+        "name": "Warehouse HVAC",
+        "points": WAREHOUSE_POINTS,
+        "miners": ["S21", "S21e", "S21 EXP", "S21 Imm"],  # model prefixes
+    },
+    "s19jpro": {
+        "ip": "192.168.189.235",
+        "name": "S19J Pro Container",
+        "points": S19JPRO_POINTS,
+        "miners": ["S19JPro"],
+    }
+}
+
+
 class HVACClient:
     """
-    Polls the Eclypse BAS controller for warehouse mechanical data.
-    Uses subprocess curl for auth — basic auth with redirect following.
+    Polls Eclypse BAS controllers for environmental data.
+    Supports multiple systems (warehouse, s19jpro).
     """
-
-    POINTS = {
-        # (object_type, instance, property, target_field, transform)
-        "supply_temp":    ("analog-input",  "101", "present-value"),
-        "return_temp":    ("analog-input",  "102", "present-value"),
-        "diff_pressure":  ("analog-input",  "103", "present-value"),
-        "spray_pump":     ("binary-input",  "208", "present-value"),
-        "ct1_status":     ("binary-input",  "201", "present-value"),
-        "ct2_status":     ("binary-input",  "202", "present-value"),
-        "ct1_fault":      ("binary-input",  "203", "present-value"),
-        "ct2_fault":      ("binary-input",  "204", "present-value"),
-        "tower_vibration":("binary-input",  "303", "present-value"),
-        "basin_level":    ("binary-input",  "302", "present-value"),
-        "pump_fault":     ("binary-value",  "10",  "present-value"),
-        "system_enable":  ("binary-value",  "1",   "present-value"),
-        "leak_alarm":     ("binary-value",  "22",  "present-value"),
-        # VFD outputs — actual speed % going to equipment
-        "cwp1_vfd":       ("analog-output", "101", "present-value"),
-        "cwp2_vfd":       ("analog-output", "102", "present-value"),
-        "ct1_vfd":        ("analog-output", "103", "present-value"),
-        "ct2_vfd":        ("analog-output", "104", "present-value"),
-    }
+    
+    def __init__(self, system_id: str = "warehouse"):
+        if system_id not in SYSTEMS:
+            raise ValueError(f"Unknown HVAC system: {system_id}. Valid: {list(SYSTEMS.keys())}")
+        self.system_id = system_id
+        self.system = SYSTEMS[system_id]
+        self.base_url = f"https://{self.system['ip']}/api/rest/v1/protocols/bacnet/local/objects"
 
     def _curl(self, url: str) -> Optional[dict]:
-        """Fetch a BACnet property from the Eclypse controller.
-        Uses requests instead of subprocess curl — proper error handling,
-        HTTP status codes, no shell injection risk.
-        TLS verification disabled because Eclypse uses a self-signed cert.
-        """
+        """Fetch a BACnet property from the Eclypse controller."""
         try:
             r = requests.get(
                 url,
@@ -120,7 +159,7 @@ class HVACClient:
             return None
 
     def _get_prop(self, obj_type: str, oid: str, prop: str) -> Optional[str]:
-        d = self._curl(f"{BASE}/{obj_type}/{oid}/properties/{prop}")
+        d = self._curl(f"{self.base_url}/{obj_type}/{oid}/properties/{prop}")
         if d and "value" in d:
             return d["value"]
         return None
@@ -138,15 +177,18 @@ class HVACClient:
         return str(v).strip().lower() == "active"
 
     def poll(self) -> HVACSnapshot:
-        snap = HVACSnapshot()
+        snap = HVACSnapshot(system_id=self.system_id, system_name=self.system["name"])
         try:
             vals = {}
-            for key, (obj_type, oid, prop) in self.POINTS.items():
+            for key, (obj_type, oid, prop) in self.system["points"].items():
                 vals[key] = self._get_prop(obj_type, oid, prop)
 
             snap.supply_temp_f    = self._to_float(vals.get("supply_temp"))
             snap.return_temp_f    = self._to_float(vals.get("return_temp"))
             snap.diff_pressure_psi= self._to_float(vals.get("diff_pressure"))
+            snap.outside_air_f    = self._to_float(vals.get("outside_air"))
+            snap.container_temp_f = self._to_float(vals.get("container_temp"))
+            
             snap.spray_pump_on    = self._is_active(vals.get("spray_pump"))
             snap.ct_fan1_on       = self._is_active(vals.get("ct1_status"))
             snap.ct_fan2_on       = self._is_active(vals.get("ct2_status"))
@@ -157,16 +199,18 @@ class HVACClient:
             snap.ct1_fault        = self._is_active(vals.get("ct1_fault"))
             snap.ct2_fault        = self._is_active(vals.get("ct2_fault"))
             snap.pump_fault       = self._is_active(vals.get("pump_fault"))
+            snap.cwp1_trip        = self._is_active(vals.get("cwp1_trip"))
+            snap.cwp2_trip        = self._is_active(vals.get("cwp2_trip"))
+            snap.ct_trip          = self._is_active(vals.get("ct_trip"))
 
-            # Fan % — try DP PID output first, fall back to PID4
-            fan_pct = self._to_float(vals.get("dp_pid_out"))
-            if fan_pct is None:
-                fan_pct = self._to_float(vals.get("pid4_out"))
-            snap.ct_fan_pct = fan_pct
-
-            # VFD actual speeds
-            snap.cwp1_vfd_pct = self._to_float(vals.get("cwp1_vfd"))
-            snap.cwp2_vfd_pct = self._to_float(vals.get("cwp2_vfd"))
+            # VFD actual speeds - different field names per system
+            if self.system_id == "warehouse":
+                snap.cwp1_vfd_pct = self._to_float(vals.get("cwp1_vfd"))
+                snap.cwp2_vfd_pct = self._to_float(vals.get("cwp2_vfd"))
+            else:  # s19jpro uses feedback readings
+                snap.cwp1_vfd_pct = self._to_float(vals.get("cwp1_fdbk"))
+                snap.cwp2_vfd_pct = self._to_float(vals.get("cwp2_fdbk"))
+            
             snap.ct1_vfd_pct  = self._to_float(vals.get("ct1_vfd"))
             snap.ct2_vfd_pct  = self._to_float(vals.get("ct2_vfd"))
 
@@ -181,36 +225,65 @@ class HVACClient:
 
         except Exception as e:
             snap.error = str(e)
-            logger.warning("HVACClient poll error: %s", e)
+            logger.warning("HVACClient poll error [%s]: %s", self.system_id, e)
 
         return snap
 
 
+def get_hvac_system_for_miner(model: str) -> Optional[str]:
+    """Return the HVAC system_id that corresponds to a miner model."""
+    for sys_id, sys_cfg in SYSTEMS.items():
+        for prefix in sys_cfg["miners"]:
+            if model.startswith(prefix):
+                return sys_id
+    return None
+
+
+def poll_all_systems() -> Dict[str, HVACSnapshot]:
+    """Poll all configured HVAC systems and return snapshots."""
+    results = {}
+    for sys_id in SYSTEMS:
+        try:
+            client = HVACClient(sys_id)
+            results[sys_id] = client.poll()
+        except Exception as e:
+            logger.error("Failed to poll HVAC system %s: %s", sys_id, e)
+            snap = HVACSnapshot(system_id=sys_id, system_name=SYSTEMS[sys_id]["name"])
+            snap.error = str(e)
+            results[sys_id] = snap
+    return results
+
+
 def format_hvac_report(snap: HVACSnapshot) -> str:
-    """Format the HVAC snapshot for the scan report — sits between weather and miner sections."""
+    """Format an HVAC snapshot for the scan report."""
     if snap.error and snap.supply_temp_f is None:
-        return f"⚠️  Warehouse Mechanical — unavailable ({snap.error})"
+        return f"⚠️  {snap.system_name} — unavailable ({snap.error})"
 
     lines = ["━" * 60,
-             "🏭  WAREHOUSE MECHANICAL  (Eclypse BAS @ .235)",
+             f"🏭  {snap.system_name.upper()}  ({snap.system_id})",
              "━" * 60]
 
     # Water temps
     sup = f"{snap.supply_temp_f:.1f}°F" if snap.supply_temp_f is not None else "N/A"
     ret = f"{snap.return_temp_f:.1f}°F" if snap.return_temp_f is not None else "N/A"
     dlt = f"{snap.delta_t_f:+.1f}°F"   if snap.delta_t_f     is not None else "N/A"
-    dp  = f"{snap.diff_pressure_psi:.1f} PSI" if snap.diff_pressure_psi is not None else "N/A"
 
     lines.append(f"  Supply Water Temp :  {sup}")
     lines.append(f"  Return Water Temp :  {ret}   (ΔT {dlt})")
-    lines.append(f"  Differential Press:  {dp}")
+
+    # S19J Pro specific: outside air and container temp
+    if snap.outside_air_f is not None:
+        lines.append(f"  Outside Air Temp  :  {snap.outside_air_f:.1f}°F")
+    if snap.container_temp_f is not None:
+        lines.append(f"  Container Temp    :  {snap.container_temp_f:.1f}°F")
+    
+    # Diff pressure (warehouse only)
+    if snap.diff_pressure_psi is not None:
+        lines.append(f"  Differential Press:  {snap.diff_pressure_psi:.1f} PSI")
+    
     lines.append("")
 
-    # Equipment
-    pump_str = "🟢 ON" if snap.spray_pump_on else ("🔴 OFF" if snap.spray_pump_on is False else "?")
-    lines.append(f"  Spray Pump        :  {pump_str}")
-
-    # Chilled water pumps with VFD %
+    # Equipment - pumps
     cwp1_pct = f"{snap.cwp1_vfd_pct:.0f}%" if snap.cwp1_vfd_pct is not None else "?"
     cwp2_pct = f"{snap.cwp2_vfd_pct:.0f}%" if snap.cwp2_vfd_pct is not None else "?"
     cwp1_icon = "🟢" if snap.cwp1_vfd_pct and snap.cwp1_vfd_pct > 0 else "⚫"
@@ -218,7 +291,7 @@ def format_hvac_report(snap: HVACSnapshot) -> str:
     lines.append(f"  CW Pump 1         :  {cwp1_icon} {cwp1_pct}")
     lines.append(f"  CW Pump 2         :  {cwp2_icon} {cwp2_pct}")
 
-    # Cooling tower fans with VFD %
+    # Cooling tower fans
     ct1_pct = f"{snap.ct1_vfd_pct:.0f}%" if snap.ct1_vfd_pct is not None else "?"
     ct2_pct = f"{snap.ct2_vfd_pct:.0f}%" if snap.ct2_vfd_pct is not None else "?"
     ct1_icon = "🟢" if snap.ct1_vfd_pct and snap.ct1_vfd_pct > 0 else "⚫"
@@ -226,13 +299,21 @@ def format_hvac_report(snap: HVACSnapshot) -> str:
     lines.append(f"  CT Fan 1          :  {ct1_icon} {ct1_pct}")
     lines.append(f"  CT Fan 2          :  {ct2_icon} {ct2_pct}")
 
-    # Alarms section — only show if something is wrong
+    # Spray pump if available
+    if snap.spray_pump_on is not None:
+        pump_str = "🟢 ON" if snap.spray_pump_on else "🔴 OFF"
+        lines.append(f"  Spray Pump        :  {pump_str}")
+
+    # Alarms section
     alarms = []
     if snap.leak_alarm:       alarms.append("🔴 LEAK DETECTED")
     if snap.tower_vibration:  alarms.append("🔴 TOWER VIBRATION ALARM")
     if snap.ct1_fault:        alarms.append("🔴 CT Fan 1 FAULT")
     if snap.ct2_fault:        alarms.append("🔴 CT Fan 2 FAULT")
     if snap.pump_fault:       alarms.append("🔴 Spray Pump FAULT")
+    if snap.cwp1_trip:        alarms.append("🔴 CW Pump 1 TRIP")
+    if snap.cwp2_trip:        alarms.append("🔴 CW Pump 2 TRIP")
+    if snap.ct_trip:          alarms.append("🔴 CT TRIP")
 
     lines.append("")
     if alarms:
@@ -243,3 +324,13 @@ def format_hvac_report(snap: HVACSnapshot) -> str:
         lines.append("  ✅  All alarms clear — system normal")
 
     return "\n".join(lines)
+
+
+def format_all_hvac_reports() -> str:
+    """Poll all systems and return combined report."""
+    snaps = poll_all_systems()
+    reports = []
+    for sys_id in ["warehouse", "s19jpro"]:  # fixed order
+        if sys_id in snaps:
+            reports.append(format_hvac_report(snaps[sys_id]))
+    return "\n\n".join(reports)

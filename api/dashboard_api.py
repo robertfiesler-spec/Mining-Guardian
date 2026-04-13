@@ -28,7 +28,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -2455,6 +2455,89 @@ def ai_recent_analyses(hours: int = 6):
         "analyses": analyses,
         "generated_at": datetime.now().isoformat()
     }
+
+# ============================================================
+# HVAC Data Ingestion Endpoint (receives data from Mac collector)
+# Added: April 13, 2026
+# ============================================================
+
+@app.post("/api/hvac/ingest")
+async def ingest_hvac_data(request: Request):
+    """
+    Receive HVAC readings from Mac collector and store in DB.
+    Expected payload:
+    {
+        "system_id": "warehouse" | "s19jpro",
+        "readings": {
+            "supply_temp_f": float,
+            "return_temp_f": float,
+            "delta_t_f": float,
+            ...
+        },
+        "timestamp": "ISO8601"
+    }
+    """
+    try:
+        data = await request.json()
+        system_id = data.get("system_id")
+        readings = data.get("readings", {})
+        timestamp = data.get("timestamp")
+        
+        if not system_id or not readings:
+            return {"error": "Missing system_id or readings"}
+        
+        # Store in hvac_readings table with system_id
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("""
+            INSERT INTO hvac_readings (
+                recorded_at, system_id,
+                supply_temp_f, return_temp_f, delta_t_f, diff_pressure,
+                outside_air_f, container_temp_f,
+                cwp1_vfd_pct, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
+                leak_alarm
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            timestamp or datetime.utcnow().isoformat(),
+            system_id,
+            readings.get("supply_temp_f"),
+            readings.get("return_temp_f"),
+            readings.get("delta_t_f"),
+            readings.get("diff_pressure_psi"),
+            readings.get("outside_air_f"),
+            readings.get("container_temp_f"),
+            readings.get("cwp1_vfd_pct"),
+            readings.get("cwp2_vfd_pct"),
+            readings.get("ct1_vfd_pct"),
+            readings.get("ct2_vfd_pct"),
+            1 if readings.get("leak_alarm") else 0,
+        ))
+        conn.commit()
+        conn.close()
+        
+        return {"status": "ok", "system_id": system_id}
+    except Exception as e:
+        logger.error(f"HVAC ingest error: {e}")
+        return {"error": str(e)}
+
+
+@app.get("/api/hvac/latest")
+async def get_latest_hvac():
+    """Get latest HVAC readings for all systems."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    
+    results = {}
+    for system_id in ["warehouse", "s19jpro"]:
+        row = conn.execute("""
+            SELECT * FROM hvac_readings
+            WHERE system_id = ?
+            ORDER BY recorded_at DESC LIMIT 1
+        """, (system_id,)).fetchone()
+        if row:
+            results[system_id] = dict(row)
+    
+    conn.close()
+    return results
 
 
 if __name__ == "__main__":

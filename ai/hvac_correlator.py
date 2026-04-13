@@ -50,26 +50,54 @@ CWP_BOTH_LOW_PCT     = 30.0   # both pumps below this = reduced cooling
 # Minimum miners flagging simultaneously to count as facility event
 FLEET_FLAG_THRESHOLD = 3
 
+# ── HVAC System Mapping ────────────────────────────────────────────────────────
+# Maps miner model prefixes to their HVAC system
+HVAC_SYSTEM_MAP = {
+    's19jpro': ['S19JPro'],
+    'warehouse': ['S21', 'S21e', 'S21 EXP', 'S21 Imm', 'AH3880'],
+}
+
+def get_hvac_system_for_model(model: str) -> str:
+    """Return the HVAC system_id for a miner model. Default to warehouse."""
+    for sys_id, prefixes in HVAC_SYSTEM_MAP.items():
+        for prefix in prefixes:
+            if model and model.startswith(prefix):
+                return sys_id
+    return 'warehouse'  # default
+
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def get_facility_stress_level() -> tuple:
+def get_facility_stress_level(system_id: str = None, miner_model: str = None) -> tuple:
     """
     Calculate current facility stress level (0-100) from latest HVAC reading.
     Returns (stress_level, reasons_list).
+
+    Args:
+        system_id: Explicit HVAC system ('warehouse' or 's19jpro')
+        miner_model: If provided, automatically selects the right HVAC system
 
     0-25  = Normal — no facility issues
     26-50 = Watch  — conditions degrading, monitor closely
     51-75 = Warning — facility stress, expect miner impacts
     76-100 = Critical — facility problem, treat fleet flags as facility-caused
     """
+    # Determine which HVAC system to use
+    if system_id is None:
+        if miner_model:
+            system_id = get_hvac_system_for_model(miner_model)
+        else:
+            system_id = 'warehouse'  # default
+
     conn = get_db()
     hvac = conn.execute("""
-        SELECT * FROM hvac_readings ORDER BY id DESC LIMIT 1
-    """).fetchone()
+        SELECT * FROM hvac_readings 
+        WHERE system_id = ?
+        ORDER BY recorded_at DESC LIMIT 1
+    """, (system_id,)).fetchone()
     conn.close()
 
     if not hvac:
