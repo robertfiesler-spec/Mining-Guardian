@@ -1,0 +1,28 @@
+{
+  "test_name": "S21_Imm_Firmware_Benchmark",
+  "start_time": "2026-04-13T08:43:00",
+  "current_phase": 1,
+  "current_hour": 0,
+  "phases": {
+    "1": {
+      "name": "Stock",
+      "duration_hours": 24,
+      "start_hour": 0
+    },
+    "2": {
+      "name": "+10% OC",
+      "duration_hours": 12,
+      "start_hour": 24
+    },
+    "3": {
+      "name": "+25% OC",
+      "duration_hours": 12,
+      "start_hour": 36
+    },
+    "4": {
+      "name": "Max OC",
+      "duration_hours": 12,
+      "start_hour": 48
+    }
+  }
+}

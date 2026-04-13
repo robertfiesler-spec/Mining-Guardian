@@ -334,3 +334,80 @@ def format_all_hvac_reports() -> str:
         if sys_id in snaps:
             reports.append(format_hvac_report(snaps[sys_id]))
     return "\n\n".join(reports)
+
+
+def get_latest_hvac_from_db(system_id: str) -> Optional[HVACSnapshot]:
+    """Get the latest HVAC reading from the database (populated by Mac collector)."""
+    import sqlite3
+    from pathlib import Path
+    
+    db_path = Path(__file__).resolve().parent.parent / "guardian.db"
+    if not db_path.exists():
+        return None
+    
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("""
+            SELECT * FROM hvac_readings 
+            WHERE system_id = ? 
+            ORDER BY recorded_at DESC 
+            LIMIT 1
+        """, (system_id,))
+        row = cur.fetchone()
+        conn.close()
+        
+        if not row:
+            return None
+        
+        # Check if data is recent (within 10 minutes)
+        from datetime import datetime, timedelta
+        recorded_at = datetime.fromisoformat(row["recorded_at"].replace("Z", "+00:00") if row["recorded_at"].endswith("Z") else row["recorded_at"])
+        if datetime.utcnow() - recorded_at.replace(tzinfo=None) > timedelta(minutes=30):
+            logger.warning("HVAC data for %s is stale (recorded at %s)", system_id, row["recorded_at"])
+            return None
+        
+        system_name = SYSTEMS.get(system_id, {}).get("name", system_id)
+        snap = HVACSnapshot(system_id=system_id, system_name=system_name)
+        snap.supply_temp_f = row["supply_temp_f"]
+        snap.return_temp_f = row["return_temp_f"]
+        snap.delta_t_f = row["delta_t_f"]
+        snap.diff_pressure_psi = row["diff_pressure"]
+        snap.outside_air_f = row["outside_air_f"]
+        snap.container_temp_f = row["container_temp_f"]
+        snap.cwp1_vfd_pct = row["cwp1_vfd_pct"]
+        snap.cwp2_vfd_pct = row["cwp2_vfd_pct"]
+        snap.ct1_vfd_pct = row["ct1_vfd_pct"]
+        snap.ct2_vfd_pct = row["ct2_vfd_pct"]
+        snap.leak_alarm = bool(row["leak_alarm"]) if row["leak_alarm"] is not None else False
+        
+        return snap
+    except Exception as e:
+        logger.error("Failed to read HVAC from DB for %s: %s", system_id, e)
+        return None
+
+
+def poll_all_systems_with_db_fallback() -> Dict[str, HVACSnapshot]:
+    """
+    Poll all HVAC systems with database fallback.
+    First tries direct polling, then falls back to DB (populated by Mac collector).
+    """
+    results = {}
+    for sys_id in SYSTEMS:
+        # First try DB (faster and more reliable from VPS)
+        snap = get_latest_hvac_from_db(sys_id)
+        if snap and snap.supply_temp_f is not None:
+            logger.info("HVAC %s: using DB cache (supply=%.1f°F)", sys_id, snap.supply_temp_f)
+            results[sys_id] = snap
+            continue
+        
+        # Fallback to direct poll (works if on local network)
+        try:
+            client = HVACClient(sys_id)
+            results[sys_id] = client.poll()
+        except Exception as e:
+            logger.error("Failed to poll HVAC system %s: %s", sys_id, e)
+            snap = HVACSnapshot(system_id=sys_id, system_name=SYSTEMS[sys_id]["name"])
+            snap.error = str(e)
+            results[sys_id] = snap
+    return results

@@ -27,7 +27,7 @@ from hashrate_evaluation import (
 )
 from miner_verify import verify_miner_online
 from facility_monitor import FacilityMonitor
-from hvac_client import HVACClient, format_hvac_report, poll_all_systems
+from hvac_client import HVACClient, format_hvac_report, poll_all_systems, poll_all_systems_with_db_fallback
 
 
 def _setup_logging() -> logging.Logger:
@@ -3053,6 +3053,7 @@ class SlackNotifier:
             cwp2 = f"{hvac_s19jpro.cwp2_vfd_pct:.0f}%" if getattr(hvac_s19jpro, 'cwp2_vfd_pct', None) is not None else "?"
             
             s19_lines.append(f"  Spray Pump: {pump} | CW Pump 1: {cwp1} | CW Pump 2: {cwp2}")
+            s19_lines.append("  CT Fan 1: 100% | CT Fan 2: 100% (manual)")
             
             # Check alarms
             alarms = []
@@ -5431,7 +5432,7 @@ class MiningGuardian:
             self.db.save_weather(wx)
 
         # Poll BOTH HVAC systems (warehouse + s19jpro container)
-        hvac_snapshots = poll_all_systems()
+        hvac_snapshots = poll_all_systems_with_db_fallback()
         hvac_snapshot = hvac_snapshots.get('warehouse')  # Primary for Hydros/S21/AH3880
         hvac_s19jpro = hvac_snapshots.get('s19jpro')     # For S19J Pros only
         for sys_id, snap in hvac_snapshots.items():
