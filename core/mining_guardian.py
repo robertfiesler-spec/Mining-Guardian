@@ -27,7 +27,7 @@ from hashrate_evaluation import (
 )
 from miner_verify import verify_miner_online
 from facility_monitor import FacilityMonitor
-from hvac_client import HVACClient, format_hvac_report
+from hvac_client import HVACClient, format_hvac_report, poll_all_systems
 
 
 def _setup_logging() -> logging.Logger:
@@ -5398,9 +5398,13 @@ class MiningGuardian:
         if wx:
             self.db.save_weather(wx)
 
-        hvac_snapshot = self.hvac.poll()
-        if hvac_snapshot:
-            self.db.save_hvac(hvac_snapshot)
+        # Poll BOTH HVAC systems (warehouse + s19jpro container)
+        hvac_snapshots = poll_all_systems()
+        hvac_snapshot = hvac_snapshots.get('warehouse')  # Primary for Hydros/S21/AH3880
+        hvac_s19jpro = hvac_snapshots.get('s19jpro')     # For S19J Pros only
+        for sys_id, snap in hvac_snapshots.items():
+            if snap:
+                self.db.save_hvac(snap)
 
         ams_notifs = self.ams.get_notifications("miner")
         if ams_notifs:
@@ -5524,19 +5528,30 @@ class MiningGuardian:
                 from datetime import datetime as _dt
                 from pathlib import Path as _P
                 wx_data = {"temp_f": wx.get("temp_f"), "humidity_pct": wx.get("humidity_pct")} if wx else None
-                hvac_data = None
-                if hvac_snapshot:
-                    hvac_data = {"supply_temp_f": hvac_snapshot.supply_temp_f,
-                                 "return_temp_f": hvac_snapshot.return_temp_f,
-                                 "delta_t_f": hvac_snapshot.delta_t_f}
+                # Include BOTH HVAC systems in context
+                hvac_data = {}
+                if hvac_snapshot:  # Warehouse (Hydros, S21 Imm, AH3880)
+                    hvac_data["warehouse"] = {
+                        "supply_f": hvac_snapshot.supply_temp_f,
+                        "return_f": hvac_snapshot.return_temp_f,
+                        "delta_t": hvac_snapshot.delta_t_f
+                    }
+                if hvac_s19jpro:  # S19J Pro container
+                    hvac_data["s19jpro"] = {
+                        "supply_f": hvac_s19jpro.supply_temp_f,
+                        "return_f": hvac_s19jpro.return_temp_f,
+                        "delta_t": hvac_s19jpro.delta_t_f,
+                        "container_f": getattr(hvac_s19jpro, 'container_temp_f', None),
+                        "outside_air_f": getattr(hvac_s19jpro, 'outside_air_f', None)
+                    }
                 qwen_prompt = (
-                    "You are the local LLM for a 58-miner liquid-cooled Bitcoin mining facility. "
+                    "You are the local LLM for a 58-miner liquid-cooled Bitcoin mining facility with TWO HVAC systems: warehouse (Hydros/S21/AH3880) and s19jpro container (S19J Pros only). "
                     "Operator rules: do NOT flag chip temps below 84C (normal in liquid cooling), "
                     "do NOT recommend HVAC investigation (HVAC is confirmed correct), "
                     "2+ failed restarts in 7 days auto-escalates to board check.\n\n"
                     f"Scan #{scan_id} — {len(actionable_issues)} miners flagged:\n" +
                     "\n".join(f"- Miner {i['id']} ({i['model']}) @ {i['ip']}: {i.get('action','?')} — {' | '.join(i.get('issues',[]))[:150]}" for i in actionable_issues[:10]) +
-                    f"\nWeather: {wx_data}\nHVAC: {hvac_data}\n\n"
+                    f"\nWeather: {wx_data}\nHVAC (both systems): {hvac_data}\n\n"
                     "Provide: DIAGNOSIS (1 sentence), ACTION (bullet list with miner IPs), PATTERN (1 sentence or 'none')."
                 )
                 payload = {
