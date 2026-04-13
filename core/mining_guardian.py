@@ -5831,7 +5831,7 @@ class MiningGuardian:
                                         thread, latest_scan["id"], issue_entry
                                     )
                             except Exception as ex:
-                                logger.debug("Action diversity Slack post failed: %s", ex)
+                                logger.warning("Action diversity Slack post failed: %s", ex)
                             
                 except Exception:
                     logger.debug("Action diversity skipped (non-fatal)")
