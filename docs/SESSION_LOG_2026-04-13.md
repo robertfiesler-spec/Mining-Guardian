@@ -75,3 +75,36 @@ Simple rule: S19JPro -> s19jpro system. Everything else -> warehouse.
 ---
 *Session started: ~3:30 AM CDT*
 *Session ended: ~5:15 AM CDT*
+
+
+---
+
+## Session 2 — Morning Fixes (05:35 CDT)
+
+### Issues Fixed
+
+1. **Log Failure Reports to mg-logs**
+   - Problem: Log failure reports from daemon were going to mining-guardian
+   - Fix: Changed post_to_channel to post_to_logs on line 5103
+   - Commit: e886720
+
+2. **Grafana Recent AI Analyses Panel**
+   - Problem: Panel showed DOCTYPE is not valid JSON error
+   - Cause: Relative URL did not work via grafana.fieslerfamily.com
+   - Fix: Updated panel to use absolute URL for dashboard API
+
+3. **AI Analysis Confidence Scores**
+   - Problem: Reports did not show confidence percentages
+   - Fix: Updated LLM prompt in local_llm_analyzer.py to request per-miner confidence
+   - Format: - **[IP]** XX confidence: [issue and reason]
+
+### Operator Rule 6 Added
+- S19J Pro Overheating Boards - Aging Hardware
+- Try ONE restart with log capture before/after
+- If restart does not help, mark as aging and let run
+- New table: s19jpro_overheat_tracking
+- Commit: 7e7c6d8
+
+### Services Restarted
+- mining-guardian.service - Active
+- dashboard-api.service - Active
