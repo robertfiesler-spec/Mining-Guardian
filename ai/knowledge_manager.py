@@ -215,6 +215,31 @@ class KnowledgeManager:
             for i in insights:
                 parts.append(f"  [{i['date']}] {i['insight'][:200]}")
 
+
+        # DG-3 FIX: Critical missing sections
+        op_rules = self.knowledge.get("operator_rules", [])
+        if op_rules and len(op_rules) > 0:
+            parts.append("\n=== OPERATOR RULES ===")
+            for idx, rule in enumerate(op_rules, 1):
+                if isinstance(rule, dict):
+                    parts.append(f"{idx}. {rule.get("rule", "")}")
+                else:
+                    parts.append(f"{idx}. {rule}")
+
+        refined = self.knowledge.get("refined_insights", {})
+        if refined:
+            parts.append("\n=== REFINED INSIGHTS ===")
+            for cat, insights in refined.items():
+                if insights:
+                    for ins in insights[-5:]: parts.append(f"  {cat}: {ins}")
+
+        preds = self.knowledge.get("predictions", [])
+        if preds:
+            parts.append(f"\n=== PREDICTIONS ({len(preds)} total, recent 20)")
+            for p in preds[-20:]:
+                if isinstance(p, dict):
+                    parts.append(f"  {p.get("ip", "?")}: {len(p.get("triggered_signals", []))} signals")
+
         return "\n".join(parts)
 
     def store_operator_rule(self, category: str, rule_text: str, source: str = "operator_denial", confidence: int = 100):
