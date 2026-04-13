@@ -7,7 +7,7 @@ Write-Host "=== Mining Intelligence Catalog - Deployment ===" -ForegroundColor C
 Write-Host ""
 
 # Step 1: Start PostgreSQL
-Write-Host "[1/5] Starting PostgreSQL 16 in Docker..." -ForegroundColor Yellow
+Write-Host "[1/6] Starting PostgreSQL 16 in Docker..." -ForegroundColor Yellow
 docker-compose up -d
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: docker-compose failed. Is Docker Desktop running?" -ForegroundColor Red
@@ -15,7 +15,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Step 2: Wait for PostgreSQL to be ready
-Write-Host "[2/5] Waiting for PostgreSQL to be ready..." -ForegroundColor Yellow
+Write-Host "[2/6] Waiting for PostgreSQL to be ready..." -ForegroundColor Yellow
 $attempts = 0
 $maxAttempts = 30
 do {
@@ -34,31 +34,38 @@ if ($attempts -ge $maxAttempts) {
 Write-Host "  PostgreSQL is ready." -ForegroundColor Green
 
 # Step 3: Copy SQL files into container
-Write-Host "[3/5] Copying SQL files into container..." -ForegroundColor Yellow
+Write-Host "[3/6] Copying SQL files into container..." -ForegroundColor Yellow
 docker cp seed-data/intelligence_catalog_schema.sql mining-guardian-db:/docker-entrypoint-initdb.d/
 docker cp seed-data/intelligence_catalog_schema_v2_additions.sql mining-guardian-db:/docker-entrypoint-initdb.d/
 docker cp seed-data/intelligence_catalog_schema_v3_additions.sql mining-guardian-db:/docker-entrypoint-initdb.d/
-docker cp seed-data/deploy_schema.sql mining-guardian-db:/docker-entrypoint-initdb.d/
+docker cp seed-data/fix_and_seed.sql mining-guardian-db:/docker-entrypoint-initdb.d/
 docker cp seed-data/seed_miner_models.sql mining-guardian-db:/docker-entrypoint-initdb.d/
 Write-Host "  SQL files copied." -ForegroundColor Green
 
-# Step 4: Deploy schema
-Write-Host "[4/5] Deploying schema - all tables across 10 schemas..." -ForegroundColor Yellow
-docker exec -i mining-guardian-db psql -U guardian_admin -d mining_guardian -f /docker-entrypoint-initdb.d/deploy_schema.sql
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Schema deployment failed. Check output above." -ForegroundColor Red
-    exit 1
-}
-Write-Host "  Schema deployed." -ForegroundColor Green
+# Step 4: Deploy base schema
+Write-Host "[4/6] Deploying base schema..." -ForegroundColor Yellow
+docker exec mining-guardian-db psql -U guardian_admin -d mining_guardian -f /docker-entrypoint-initdb.d/intelligence_catalog_schema.sql
+Write-Host "  Base schema done." -ForegroundColor Green
 
-# Step 5: Seed miner data
-Write-Host "[5/5] Seeding 313 Bitcoin SHA-256 ASIC miners..." -ForegroundColor Yellow
-docker exec -i mining-guardian-db psql -U guardian_admin -d mining_guardian -f /docker-entrypoint-initdb.d/seed_miner_models.sql
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Seed data failed. Check output above." -ForegroundColor Red
-    exit 1
-}
-Write-Host "  313 miners seeded." -ForegroundColor Green
+# Step 4b: Deploy V2 additions
+Write-Host "  Deploying V2 additions..." -ForegroundColor Yellow
+docker exec mining-guardian-db psql -U guardian_admin -d mining_guardian -f /docker-entrypoint-initdb.d/intelligence_catalog_schema_v2_additions.sql
+Write-Host "  V2 done." -ForegroundColor Green
+
+# Step 4c: Deploy V3 additions
+Write-Host "  Deploying V3 additions..." -ForegroundColor Yellow
+docker exec mining-guardian-db psql -U guardian_admin -d mining_guardian -f /docker-entrypoint-initdb.d/intelligence_catalog_schema_v3_additions.sql
+Write-Host "  V3 done." -ForegroundColor Green
+
+# Step 5: Fix constraints, add enums, seed manufacturers and sources
+Write-Host "[5/6] Fixing constraints and seeding manufacturers..." -ForegroundColor Yellow
+docker exec mining-guardian-db psql -U guardian_admin -d mining_guardian -f /docker-entrypoint-initdb.d/fix_and_seed.sql
+Write-Host "  Manufacturers and sources seeded." -ForegroundColor Green
+
+# Step 6: Seed miner data
+Write-Host "[6/6] Seeding 313 Bitcoin SHA-256 ASIC miners..." -ForegroundColor Yellow
+docker exec mining-guardian-db psql -U guardian_admin -d mining_guardian -f /docker-entrypoint-initdb.d/seed_miner_models.sql
+Write-Host "  Miners seeded." -ForegroundColor Green
 
 # Verification
 Write-Host ""
