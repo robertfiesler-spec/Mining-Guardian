@@ -1,0 +1,20 @@
+# Auradine Miner .27 (192.168.188.27) - Full Alarm History
+# Source: RTF log export - Dec 2025 through Apr 2026
+# 828 alarm events total
+
+# CRITICAL EVENT: April 7, 2026 17:32-18:15 - Cascading PSU Failures
+# - 8+ PSU shutdowns in 45 minutes
+# - Power spikes up to 11.5 kW (above 10.8 kW safe limit)
+# - PSU IOUT Status = 0x02 (overcurrent fault)
+
+# PSU Shutdown Count by Month:
+# Dec 2025: 3 shutdowns
+# Jan 2026: 7 shutdowns (bad day Jan 22)
+# Apr 2026: 20+ shutdowns (Apr 7 cascade event)
+
+# Voltage Rail Issues:
+# - Frequent Vmax clips at 47.000V (hitting ceiling)
+# - Frequent Vmin clips at 31.000V (hitting floor)
+# - Indicates PSU struggling to maintain stable voltage under load
+
+# Recommendation: Lower power target by 500W to prevent OCP trips

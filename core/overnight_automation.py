@@ -213,7 +213,8 @@ def execute_auto_action(action: dict) -> dict:
         cfg_path = _ROOT / "config" / "config.json"
         if not cfg_path.exists():
             cfg_path = _ROOT / "config.json"
-        cfg = json.load(open(cfg_path))
+        with open(cfg_path) as f:
+            cfg = json.load(f)
         g = mining_guardian.MiningGuardian(
             mining_guardian.GuardianConfig(**{
                 k: v for k, v in cfg.items()

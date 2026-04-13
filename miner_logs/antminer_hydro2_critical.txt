@@ -1,0 +1,22 @@
+# S21e XP Hydro - Miner 2 - Apr 12-13, 2026
+# Source: Antminer_S21e_XP_Hyd_2026-04-12_2026-04-13__1__tar.gz
+
+## CRITICAL EVENT - OVERHEAT SHUTDOWN
+Timestamp: 2026-04-13 11:50:22
+- Chain 3, ASIC 1 hit 91°C (limit: 90°C)
+- Miner auto-shutdown and restarted
+- Error cleared by 11:53:17 after cooldown
+
+## Event Details:
+- ExitData: Overheat, temp_max 91, voltage 21.60, freq_avg 535
+- Hashrate at shutdown: 510.4 TH/s (ideal: 523.9 TH/s)
+
+## Recommendation: 
+- Monitor Chain 3 closely
+- Check coolant flow to this hashboard
+- Consider reducing OC profile if recurs
+
+# Board Serial Numbers:
+# - Chain 0: H6HB70602 / ONETYSJBEJCJD012F (chip bin 4)
+# - Chain 1: H6HB70602 / ONETYSJBEJCJD012N (chip bin 4)
+# - Chain 2: H6HB70602 / ONETYSJBEJCJD012P (chip bin 4)

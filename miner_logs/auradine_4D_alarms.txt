@@ -1,0 +1,9 @@
+# Auradine Miner 4D (SE08CB250804002T) - Alarm Extract
+# Source: Tech Support Bundle - gcminer logs Mar 28 - Apr 2, 2026
+
+2026-03-28T21:14:02Z - DVFS ALARM: power is 10801.0; reducing hash rate
+2026-03-28T21:15:24Z - Error when read shared data from file /auradine/run/dvfs_shared_data.json (repeated)
+2026-03-28T21:23:24Z - Multiple chip blip attempts on Board 1 (rows 9-111, ~90 chips) - Auto-tuning
+
+# Summary: 1 power throttle event, file I/O errors (transient), normal auto-tuning activity
+# Status: Healthy - no PSU shutdowns or voltage alarms in this period

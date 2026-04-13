@@ -1,0 +1,17 @@
+# S21 Immersion Miners (.22 and .23) - Apr 12-13, 2026
+# Source: Both Antminer_S21Imm bz2 archives
+
+STATUS: BOTH CLEAN - Normal benchmark operation
+
+## Miner 1 (.22):
+- Consistent ~335-365 TH/s hashrate
+- Error shares: 82-83 (normal rate)
+- No thermal events, no restarts
+- Running Phase 1 stock profile (208 TH/s target)
+
+## Miner 2 (.23):
+- Consistent hashrate
+- No thermal events, no restarts  
+- Running Phase 1 stock profile (217 TH/s target)
+
+# S21 Imm benchmark in progress - data looks good for baseline

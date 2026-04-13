@@ -48,7 +48,8 @@ def get_guardian():
             cfg_path = _ROOT / "config" / "config.json"
             if not cfg_path.exists():
                 cfg_path = _ROOT / "config.json"
-            cfg = json.load(open(cfg_path))
+            with open(cfg_path) as f:
+                cfg = json.load(f)
             _guardian = mg.MiningGuardian(
                 mg.GuardianConfig(**{
                     k: v for k, v in cfg.items()

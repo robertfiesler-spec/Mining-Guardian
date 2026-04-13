@@ -5685,7 +5685,8 @@ class MiningGuardian:
                     if stress >= 26:
                         logger.info("Facility stress %d%%: %s", stress, reasons)
                     # check_fleet_correlation uses the latest scan id
-                    latest_scan = self.db._connect().execute(
+                    with self.db._connect() as conn:
+                        latest_scan = conn.execute(
                         "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
                     ).fetchone()
                     if latest_scan:
@@ -5697,7 +5698,8 @@ class MiningGuardian:
                 # Detect miners showing pre-failure signals before they break
                 try:
                     from predictor import run_predictions, format_prediction_alert
-                    latest_scan = self.db._connect().execute(
+                    with self.db._connect() as conn:
+                        latest_scan = conn.execute(
                         "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
                     ).fetchone()
                     if latest_scan:
@@ -5770,7 +5772,8 @@ class MiningGuardian:
                 # Evaluate power tuning, eco mode, pool failover
                 try:
                     from action_diversity import evaluate_all_actions
-                    latest_scan = self.db._connect().execute(
+                    with self.db._connect() as conn:
+                        latest_scan = conn.execute(
                         "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
                     ).fetchone()
                     if latest_scan:
@@ -5828,7 +5831,8 @@ class MiningGuardian:
                     import threading
                     from llm_scan_hook import run_post_scan_llm
                     # scan_id is local to run_once() — fetch latest from DB instead
-                    _latest = self.db._connect().execute(
+                    with self.db._connect() as conn:
+                        _latest = conn.execute(
                         "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
                     ).fetchone()
                     if _latest:

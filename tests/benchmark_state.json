@@ -2,7 +2,7 @@
   "test_name": "S21_Imm_Firmware_Benchmark",
   "start_time": "2026-04-13T08:43:00",
   "current_phase": 1,
-  "current_hour": 0,
+  "current_hour": 1,
   "phases": {
     "1": {
       "name": "Stock",

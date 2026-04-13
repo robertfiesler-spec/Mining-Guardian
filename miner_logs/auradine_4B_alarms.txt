@@ -1,0 +1,8 @@
+# Auradine Miner 4B (SE08CB250804002R) - Alarm Extract  
+# Source: Tech Support Bundle - gcminer logs Apr 1 - Apr 5, 2026
+
+# No critical alarms found in this log period
+# Normal DVFS operation observed
+
+# Summary: Clean operation - no PSU shutdowns, no voltage alarms, no power throttles
+# Status: Healthy
