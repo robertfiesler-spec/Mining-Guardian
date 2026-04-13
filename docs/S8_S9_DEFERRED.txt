@@ -1,0 +1,8 @@
+S-8/S-9: Dashboard API Authentication - DEFERRED
+
+Complexity: 42 routes with mixed parameter signatures.
+Issue: Auth function must be defined before @app decorators are evaluated.
+Requires: Careful placement of verify_api_key() before first route decorator.
+
+Workaround: S-12 (localhost binding) already blocks external access.
+Priority: Can be completed when refactoring dashboard_api.py structure.
