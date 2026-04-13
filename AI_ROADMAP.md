@@ -233,8 +233,8 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 5. ~~**Add VPS cron entries for daily collection + daily deep dive**~~ — **ALREADY OPERATIONAL ✅** (April 13, 2026)
    Standalone trigger `scripts/daily_collect_logs.py` exists (43 lines). `ai/daily_deep_dive.py` is fully standalone with `__main__` + argparse. REPAIR_LOG confirms "All 6 cron jobs confirmed operational" and "Log collection cron ran at 1pm as scheduled." Full schedule documented in `docs/CRON_SCHEDULE.md` (7 cron entries total). Only verification remaining: `crontab -l` on VPS to visually confirm entries are present.
 
-6. **Physically inspect miner 53482 (192.168.188.46)**
-   BiXBiT S19JPro, running 83.5% of target, error codes 412 + 101, firmware `BiXBiT 0.9.9.3-stage29.2799`, AMS log export hung. Discovered during April 9 afternoon sprint. The hourly reactive scan has been silently ignoring it because 83.5% is above the hashrate flag and 70°C is below the temperature flag. Needs operator eyeballs or an AMS ticket.
+6. ~~**Physically inspect miner 53482 (192.168.188.46)**~~ — **CHECKED BY OPERATOR ✅** (April 13, 2026)
+   BiXBiT S19JPro, running 83.5% of target, error codes 412 + 101, firmware `BiXBiT 0.9.9.3-stage29.2799`, AMS log export hung. Bobby physically inspected on-site.
 
 ### P1 — Before Mac Mini arrival (May 5–9)
 
