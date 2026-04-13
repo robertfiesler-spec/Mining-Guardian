@@ -1798,15 +1798,27 @@ class GuardianDB:
                     logger.debug("Updated existing pending approval for miner %s", i["id"])
                 else:
                     # New pending approval
+                    # DG-1 FIX
+                    try:
+                        from ai.confidence_scorer import get_confidence, get_gate
+                        conf_score, _ = get_confidence(str(i["id"]), i["ip"], i["action"], hashrate_pct=i.get("hashrate_pct"))
+                        conf_gate = get_gate(conf_score)
+                        if conf_gate == "HOLD":
+                            logger.warning("HOLD conf %d%% for %s - suppressed", conf_score, i["ip"])
+                            continue
+                    except Exception:
+                        conf_score, conf_gate = 50, "ASK"
+
                     conn.execute("""
                         INSERT INTO pending_approvals
                         (created_at, scan_id, thread_ts, miner_id, ip, model,
-                         action_type, problem, pdu_id, outlet)
-                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                         action_type, problem, pdu_id, outlet, confidence_score, confidence_gate)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (now, scan_id, thread_ts,
                           i["id"], i["ip"], i["model"],
                           i["action"], problem,
-                          i.get("pdu_id"), i.get("outlet")))
+                          i.get("pdu_id"), i.get("outlet"),
+                          conf_score, conf_gate))
                     logger.info("New pending approval for miner %s (%s) → %s",
                                 i["id"], i["ip"], i["action"])
 
