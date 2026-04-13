@@ -2180,7 +2180,7 @@ def ask_query(q: str):
         for r in rows:
             issue = (r["issue"] or "").replace("<", "&lt;")[:60]
             html += (
-                f"<tr><td>{r['ip']}</td>"
+                f"<tr><td>{html.escape(str(r['ip']))}</td>"
                 f"<td>{r['status']}</td>"
                 f"<td>{_fmt_pct(r['hashrate_pct'])}</td>"
                 f"<td>{_fmt_temp(r['temp_chip'])}</td>"
@@ -2216,7 +2216,7 @@ def ask_query(q: str):
         for r in rows:
             issue = (r["issue"] or "").replace("<", "&lt;")[:50]
             html += (
-                f"<tr><td>{r['ip']}</td>"
+                f"<tr><td>{html.escape(str(r['ip']))}</td>"
                 f"<td>{(r['model'] or '')[:18]}</td>"
                 f"<td>{_fmt_pct(r['hashrate_pct'])}</td>"
                 f"<td>{_fmt_temp(r['temp_chip'])}</td>"
@@ -2250,7 +2250,7 @@ def ask_query(q: str):
         html += "<table><tr><th>IP</th><th>Model</th><th>%</th><th>Chip</th></tr>"
         for r in rows:
             html += (
-                f"<tr><td>{r['ip']}</td>"
+                f"<tr><td>{html.escape(str(r['ip']))}</td>"
                 f"<td>{(r['model'] or '')[:18]}</td>"
                 f"<td>{_fmt_pct(r['hashrate_pct'])}</td>"
                 f"<td>{_fmt_temp(r['temp_chip'])}</td></tr>"
@@ -2284,7 +2284,7 @@ def ask_query(q: str):
             dec_class = "good" if dec == "APPROVED" else ("bad" if dec == "DENIED" else "warn")
             html += (
                 f"<tr><td>{(r['timestamp'] or '')[:19]}</td>"
-                f"<td>{r['ip']}</td>"
+                f"<td>{html.escape(str(r['ip']))}</td>"
                 f"<td>{(r['action_taken'] or '')[:18]}</td>"
                 f"<td class='{dec_class}'>{dec}</td>"
                 f"<td>{(r['approved_by'] or '')[:20]}</td></tr>"
@@ -2305,7 +2305,7 @@ def ask_query(q: str):
         html += "<table><tr><th>IP</th><th>Model</th><th>Boards</th><th>First seen</th><th>Ticket</th></tr>"
         for r in rows:
             html += (
-                f"<tr><td>{r['ip']}</td>"
+                f"<tr><td>{html.escape(str(r['ip']))}</td>"
                 f"<td>{(r['model'] or '')[:18]}</td>"
                 f"<td>{r['board_indices']}</td>"
                 f"<td>{(r['first_seen'] or '')[:19]}</td>"
