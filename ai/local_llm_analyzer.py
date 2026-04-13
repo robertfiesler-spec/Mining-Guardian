@@ -433,10 +433,19 @@ class LocalLLMAnalyzer:
 === YOUR TASK ===
 Based on this scan data, provide:
 
-1. SUMMARY (2-3 sentences): What CHANGED since the last scan?
-2. CONCERNS (bullet list): Which miners need immediate attention and why?
-3. LOG ANALYSIS (only if restart logs present): What changed pre vs post restart?
-4. RECOMMENDATION (1-2 sentences): Specific next action for the operator.
+### SUMMARY
+(2-3 sentences): What CHANGED since the last scan?
+
+### CONCERNS
+(bullet list with confidence): Which miners need immediate attention?
+Format each as: - **[IP]** (XX% confidence): [issue and reason]
+Confidence based on: data quality, pattern match strength, historical accuracy.
+
+### LOG ANALYSIS
+(only if restart logs present): What changed pre vs post restart?
+
+### RECOMMENDATION
+(1-2 sentences): Specific next action for the operator.
 
 === ABSOLUTE RULES - VIOLATIONS WILL BE FLAGGED ===
 - NEVER mention HVAC, cooling systems, or environmental controls. The cooling is FINE.
