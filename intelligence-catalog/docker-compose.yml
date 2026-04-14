@@ -57,6 +57,20 @@ services:
       timeout: 5s
       retries: 5
 
+  catalog-api:
+    build: ./catalog-api
+    container_name: catalog-api
+    restart: unless-stopped
+    ports:
+      - "8420:8420"
+    env_file:
+      - ./catalog-api/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - default
+
 volumes:
   pgdata:
     name: mining-guardian-pgdata
