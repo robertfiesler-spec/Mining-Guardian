@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional, Dict, List
 
 from ai.knowledge_manager import KnowledgeManager
+from ai.catalog_context import get_catalog_context
 _ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = _ROOT / "knowledge.json"
@@ -201,6 +202,36 @@ class LocalLLMAnalyzer:
         all_predictions = knowledge.get("predictions", [])
         relevant_predictions = [p for p in all_predictions if p.get("ip") in flagged_ips][:10]
         
+        # Intelligence Catalog context for flagged miner models
+        catalog_context = ""
+        try:
+            models = list({r["model"] for r in flagged if r.get("model")})
+            issues = list({str(r.get("issue", "")) for r in flagged if r.get("issue")})
+            if models:
+                catalog_context = get_catalog_context(models, issues)
+        except Exception as e:
+            logger.debug("Catalog context skipped: %s", e)
+
+        # Miner baselines for flagged miners
+        baselines = {}
+        try:
+            conn2 = sqlite3.connect(DB_PATH, timeout=10)
+            conn2.row_factory = sqlite3.Row
+            for r in flagged:
+                ip = r.get("ip", "")
+                if not ip:
+                    continue
+                bl = conn2.execute(
+                    "SELECT baseline_hashrate_ths, model FROM miner_baselines WHERE ip=? AND learning_complete=1 LIMIT 1",
+                    (ip,)
+                ).fetchone()
+                if bl and bl["baseline_hashrate_ths"]:
+                    baselines[ip] = {"baseline_hashrate_ths": bl["baseline_hashrate_ths"],
+                                     "model": bl["model"]}
+            conn2.close()
+        except Exception as e:
+            logger.debug("Baselines query skipped: %s", e)
+
         return {
             "scan": dict(scan) if scan else {},
             "flagged": [dict(r) for r in flagged],
@@ -222,6 +253,8 @@ class LocalLLMAnalyzer:
             "fingerprints": flagged_fingerprints,
             "cross_miner_analysis": knowledge.get("cross_miner_analysis", [])[:3],
             "hvac_correlation": knowledge.get("hvac_correlation", {}),
+            "catalog_context": catalog_context,
+            "baselines": baselines,
         }
 
     def _build_scan_prompt(self, ctx: Dict) -> str:
@@ -430,6 +463,31 @@ class LocalLLMAnalyzer:
                 insight_text = ins.get("insight", "")[:120]
                 confidence = ins.get("confidence", "?")
                 lines.append(f"  [{confidence}] {topic}: {insight_text}")
+
+        # Intelligence Catalog context (manufacturer specs, known issues)
+        cat_ctx = ctx.get("catalog_context", "")
+        if cat_ctx:
+            lines.append(f"\n--- INTELLIGENCE CATALOG ---")
+            lines.append(cat_ctx)
+
+        # Miner baselines (stored expected performance)
+        bl = ctx.get("baselines", {})
+        if bl:
+            lines.append(f"\n--- MINER BASELINES ---")
+            for ip, vals in bl.items():
+                bhr_ths = vals.get("baseline_hashrate_ths")
+                # Find current HR% for this IP from flagged miners
+                cur_hr = None
+                for m in ctx.get("flagged", []):
+                    if m.get("ip") == ip:
+                        cur_hr = m.get("hashrate_pct")
+                        break
+                parts = [f"  {ip}:"]
+                if bhr_ths is not None:
+                    parts.append(f"Baseline: {bhr_ths:.1f} TH/s")
+                    if cur_hr is not None:
+                        parts.append(f"Current HR: {cur_hr}%")
+                lines.append(" ".join(parts))
 
         # Instructions
         lines.append("""

@@ -79,6 +79,12 @@ from train_comprehensive import (
     get_cross_miner_correlations,
 )
 
+try:
+    from ai.catalog_context import get_miner_catalog_context
+except ImportError:
+    def get_miner_catalog_context(model_name):
+        return ""
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -317,7 +323,8 @@ def _filter_local_llm_for_ips(all_analyses: List[Dict], ips: List[str],
 
 
 def build_cohort_prompt(summary: Dict, env_context: str,
-                         local_llm_analyses: List[Dict]) -> str:
+                         local_llm_analyses: List[Dict],
+                         catalog_context: str = "") -> str:
     """Build the Claude prompt for a single cohort. Designed to stay <8K tokens."""
     key = summary['cohort_key']
     agg = summary.get('aggregates') or {}
@@ -365,6 +372,11 @@ def build_cohort_prompt(summary: Dict, env_context: str,
             text = (a.get('analysis') or '')[:400]
             lines.append(f"  [{ts}] {text}")
             lines.append('')
+
+    if catalog_context:
+        lines.append('')
+        lines.append('=== INTELLIGENCE CATALOG (manufacturer specs for this cohort model) ===')
+        lines.append(catalog_context)
 
     lines.extend([
         '',
@@ -860,7 +872,16 @@ def run_cohort_training():
             summary.get('all_member_ips', []),
             MAX_LOCAL_LLM_ANALYSES_PER_COHORT,
         )
-        prompt = build_cohort_prompt(summary, env_context, cohort_local_llm)
+        # Look up catalog context for this cohort's model
+        cohort_catalog = ""
+        try:
+            # First element of cohort_key is the normalized model name
+            model_name = str(key[0]) if key else ""
+            if model_name and model_name != "unknown":
+                cohort_catalog = get_miner_catalog_context(model_name)
+        except Exception as e:
+            logger.debug("Catalog lookup for cohort %s skipped: %s", key, e)
+        prompt = build_cohort_prompt(summary, env_context, cohort_local_llm, cohort_catalog)
         logger.info('  Prompt size: %d chars', len(prompt))
 
         response = ''

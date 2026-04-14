@@ -56,6 +56,7 @@ Safety/resume:
 import argparse
 import json
 import logging
+import os
 import sqlite3
 import sys
 import time
@@ -78,6 +79,15 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
 )
 logger = logging.getLogger("daily_deep_dive")
+
+# Late import to avoid circular deps — catalog_context is optional
+try:
+    from ai.catalog_context import get_miner_catalog_context, get_catalog_context
+except ImportError:
+    def get_miner_catalog_context(model_name):
+        return ""
+    def get_catalog_context(miner_models, active_issues=None):
+        return ""
 
 # ── Qwen/Ollama settings — NO CAPS ───────────────────────────────────────
 # Read llm_url from config.json, fall back to ROBS-PC tailscale
@@ -402,6 +412,7 @@ def build_per_miner_prompt(
     fingerprint: Optional[Dict],
     operator_rules: List[str],
     facility: Optional[Dict] = None,
+    catalog_context: str = "",
 ) -> str:
     """Build the Qwen prompt for a single miner's deep dive analysis."""
     lines = [
@@ -423,6 +434,12 @@ def build_per_miner_prompt(
             v = hardware.get(k)
             if v:
                 lines.append(f"  {k}: {v}")
+        lines.append("")
+
+    # Intelligence Catalog (manufacturer specs, known issues for this model)
+    if catalog_context:
+        lines.append("--- INTELLIGENCE CATALOG ---")
+        lines.append(catalog_context)
         lines.append("")
 
     # Fingerprint from knowledge
@@ -580,6 +597,7 @@ def build_fleet_synthesis_prompt(
     yesterday_deep_dive: Optional[Dict],
     miners_online: int,
     miners_analyzed: int,
+    catalog_context: str = "",
 ) -> str:
     """Build the final fleet-wide synthesis prompt."""
     lines = [
@@ -599,6 +617,12 @@ def build_fleet_synthesis_prompt(
         prev_date = yesterday_deep_dive.get("date", "?")
         lines.append(f"--- PREVIOUS DAILY SYNTHESIS ({prev_date}) — for continuity ---")
         lines.append(prev_synth)
+        lines.append("")
+
+    # Intelligence Catalog fleet context (model specs for all fleet models)
+    if catalog_context:
+        lines.append("--- INTELLIGENCE CATALOG (fleet model specs) ---")
+        lines.append(catalog_context)
         lines.append("")
 
     # Facility context - fleet synthesis always uses warehouse HVAC
@@ -789,6 +813,25 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
     # Get facility context once (used by fleet synthesis only)
     facility = get_facility_24h(conn)
 
+    # Pre-fetch catalog context per unique model (cache handles dedup)
+    model_catalog_cache = {}
+    try:
+        unique_models = list({m.get("model", "") for m in online_miners if m.get("model")})
+        for mdl in unique_models:
+            model_catalog_cache[mdl] = get_miner_catalog_context(mdl)
+        logger.info("Catalog context fetched for %d unique models", len(unique_models))
+    except Exception as e:
+        logger.warning("Catalog pre-fetch failed (continuing without): %s", e)
+
+    # Fleet-wide catalog context for synthesis pass
+    fleet_catalog_context = ""
+    try:
+        all_models = list({m.get("model", "") for m in online_miners if m.get("model")})
+        if all_models:
+            fleet_catalog_context = get_catalog_context(all_models)
+    except Exception as e:
+        logger.warning("Fleet catalog context failed (continuing without): %s", e)
+
     # Per-miner pass
     per_miner_analyses = {}
     per_miner_failures = []
@@ -818,6 +861,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
         hardware = get_miner_hardware(conn, mid)
         fingerprint = get_miner_fingerprint(knowledge, mid)
 
+        miner_cat_ctx = model_catalog_cache.get(miner.get("model", ""), "")
         prompt = build_per_miner_prompt(
             miner=miner,
             daily_log=daily_log,
@@ -827,6 +871,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
             fingerprint=fingerprint,
             operator_rules=operator_rules,
             facility=facility,
+            catalog_context=miner_cat_ctx,
         )
 
         analysis = query_qwen(prompt, label=f"miner {mid} ({idx}/{len(online_miners)})")
@@ -865,6 +910,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
         yesterday_deep_dive=yesterday_dd,
         miners_online=len(online_miners),
         miners_analyzed=len(per_miner_analyses),
+        catalog_context=fleet_catalog_context,
     )
 
     fleet_synthesis = query_qwen(fleet_prompt, label="fleet synthesis")

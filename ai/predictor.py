@@ -1,8 +1,8 @@
 """
-predictor.py — v2
+predictor.py — v3
 Mining Guardian — Feature 6: Pre-Failure Prediction (Full Data)
 
-11 signals using every available data point:
+14 signals using every available data point:
   1.  Hashrate trend decline       (miner_readings.hashrate_pct)
   2.  Volatility spike             (miner_readings.hashrate_pct)
   3.  Board rate imbalance         (chain_readings.rate_mhs)
@@ -14,6 +14,9 @@ Mining Guardian — Feature 6: Pre-Failure Prediction (Full Data)
   9.  AMS alert spike              (ams_notifications)
   10. Uptime reset / reboot        (miner_readings.uptime)
   11. Max temp trending high       (miner_state_readings.max_temp_board/chip)
+  12. Board attach/detach cycling  (log_metrics chain_event)
+  13. Chip degradation             (log_metrics chip_hashrate)
+  14. ASIC OK ratio decline        (miner_ams_extended)
 """
 
 import sys
@@ -287,6 +290,14 @@ def _predict_miner(miner_id: str, ip: str, model: str,
     s, sig = _check_chain_events(miner_id, ip)
     if sig: signals.append(sig); scores.append(s)
 
+    # ── Signal 13: Chip degradation (chip_hashrate in log_metrics) ───────────
+    s, sig = _check_chip_degradation(miner_id, ip)
+    if sig: signals.append(sig); scores.append(s)
+
+    # ── Signal 14: ASIC OK ratio decline (miner_ams_extended) ────────────────
+    s, sig = _check_asic_ok_ratio(miner_id, ip)
+    if sig: signals.append(sig); scores.append(s)
+
     if not signals:
         return None
 
@@ -502,6 +513,147 @@ def _check_chain_events(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
     return 0.0, None
 
 
+def _check_chip_degradation(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
+    """Signal 13: Detect individual chip degradation from log_metrics.
+
+    chip_readings table is empty per audit — actual data is in log_metrics
+    where metric_type='chip_hashrate'. If any chip deviates >15% from
+    its board average, flag as degradation.
+    """
+    conn = get_db()
+    try:
+        # Get most recent chip_hashrate readings per board from log_metrics
+        rows = conn.execute("""
+            SELECT board_index, numeric_value
+            FROM log_metrics
+            WHERE ip=? AND metric_type='chip_hashrate'
+              AND recorded_at >= datetime('now', '-6 hours')
+              AND numeric_value IS NOT NULL AND numeric_value > 0
+            ORDER BY recorded_at DESC
+            LIMIT 500
+        """, (ip,)).fetchall()
+    except Exception:
+        conn.close()
+        return 0.0, None
+    conn.close()
+
+    if len(rows) < 4:
+        return 0.0, None
+
+    # Group by board_index and compute per-board average
+    by_board: dict = {}
+    for r in rows:
+        bi = r["board_index"] if r["board_index"] is not None else 0
+        by_board.setdefault(bi, []).append(float(r["numeric_value"]))
+
+    worst_dev = 0.0
+    worst_board = 0
+    for bi, vals in by_board.items():
+        if len(vals) < 2:
+            continue
+        avg = sum(vals) / len(vals)
+        if avg <= 0:
+            continue
+        for v in vals:
+            dev_pct = abs(v - avg) / avg * 100
+            if dev_pct > worst_dev:
+                worst_dev = dev_pct
+                worst_board = bi
+
+    if worst_dev > 15.0:
+        score = min(75.0, 40.0 + (worst_dev - 15.0) * 1.5)
+        return score, (f"chip degradation: board {worst_board} has chip "
+                      f"{worst_dev:.0f}% off board average (>15% threshold)")
+    return 0.0, None
+
+
+def _check_asic_ok_ratio(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
+    """Signal 14: ASIC OK ratio from miner_ams_extended.
+
+    If asic_ok_count/asic_count ratio < 0.95 (>5% ASICs failed), fire signal.
+    If ratio is declining over last 3 readings, fire with higher weight.
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT board_index, asic_count, asic_ok_count, recorded_at
+            FROM miner_ams_extended
+            WHERE ip=? AND asic_count IS NOT NULL AND asic_count > 0
+            ORDER BY recorded_at DESC
+            LIMIT 30
+        """, (ip,)).fetchall()
+    except Exception:
+        conn.close()
+        return 0.0, None
+    conn.close()
+
+    if not rows:
+        return 0.0, None
+
+    # Compute ratio for latest reading per board
+    latest_by_board: dict = {}
+    all_ratios: list = []
+    for r in rows:
+        bi = r["board_index"] if r["board_index"] is not None else 0
+        total = int(r["asic_count"])
+        ok = int(r["asic_ok_count"]) if r["asic_ok_count"] is not None else total
+        if total <= 0:
+            continue
+        ratio = ok / total
+        all_ratios.append((r["recorded_at"], ratio))
+        if bi not in latest_by_board:
+            latest_by_board[bi] = (total, ok, ratio)
+
+    if not latest_by_board:
+        return 0.0, None
+
+    # Check if any board has ratio < 0.95
+    worst_board = None
+    worst_ratio = 1.0
+    for bi, (total, ok, ratio) in latest_by_board.items():
+        if ratio < worst_ratio:
+            worst_ratio = ratio
+            worst_board = bi
+
+    signals_parts = []
+    score = 0.0
+
+    if worst_ratio < 0.95:
+        failed_pct = (1.0 - worst_ratio) * 100
+        score = min(80.0, 50.0 + failed_pct * 3.0)
+        total, ok, _ = latest_by_board[worst_board]
+        signals_parts.append(
+            f"board {worst_board}: {ok}/{total} ASICs OK ({worst_ratio:.1%})"
+        )
+
+    # Check if ratio is declining over last 3 unique timestamps
+    if len(all_ratios) >= 6:
+        # Group by timestamp, compute average ratio per timestamp
+        by_ts: dict = {}
+        for ts, ratio in all_ratios:
+            by_ts.setdefault(ts, []).append(ratio)
+        ts_avgs = sorted(
+            [(ts, sum(rs) / len(rs)) for ts, rs in by_ts.items()],
+            key=lambda x: x[0], reverse=True
+        )
+        if len(ts_avgs) >= 3:
+            recent_3 = [avg for _, avg in ts_avgs[:3]]
+            if recent_3[0] < recent_3[1] < recent_3[2]:
+                # Consistently declining
+                decline = recent_3[2] - recent_3[0]
+                decline_score = min(70.0, 40.0 + decline * 200.0)
+                if decline_score > score:
+                    score = decline_score
+                signals_parts.append(
+                    f"ASIC OK ratio declining: "
+                    f"{recent_3[2]:.1%} → {recent_3[1]:.1%} → {recent_3[0]:.1%}"
+                )
+
+    if score > 0 and signals_parts:
+        return score, f"ASIC health: {'; '.join(signals_parts)}"
+    return 0.0, None
+
+
 def _trend_similarity(a: List[float], b: List[float]) -> float:
     n = min(len(a), len(b))
     if n < 2: return 0.0
@@ -562,7 +714,7 @@ if __name__ == "__main__":
     scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
     conn.close()
     if scan:
-        logger.info("Running predictions on scan %d (all 11 signals)...", scan["id"])
+        logger.info("Running predictions on scan %d (all 14 signals)...", scan["id"])
         preds = run_predictions(scan["id"])
         if preds:
             print(f"\n{len(preds)} prediction(s):\n")
