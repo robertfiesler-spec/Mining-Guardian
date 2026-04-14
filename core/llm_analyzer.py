@@ -221,6 +221,14 @@ class LLMAnalyzer:
         if not issues:
             return ""
 
+        # Intelligence Catalog context for flagged models
+        try:
+            from ai.catalog_context import get_catalog_context
+            models = list({i.get("model", "") for i in issues if i.get("model")})
+            catalog_ctx = get_catalog_context(models) if models else ""
+        except Exception:
+            catalog_ctx = ""
+
         prompt_parts = [f"Scan #{scan_id} — {len(issues)} miners flagged:\n"]
 
         # Cap at 10 miners per LLM call to keep prompt manageable for CPU inference
@@ -242,6 +250,9 @@ class LLMAnalyzer:
             prompt_parts.append(f"HVAC: Supply {hvac.get('supply_temp_f', '?')}°F, "
                                f"Return {hvac.get('return_temp_f', '?')}°F, "
                                f"ΔT {hvac.get('delta_t_f', '?')}°F")
+
+        if catalog_ctx:
+            prompt_parts.append(f"\n--- INTELLIGENCE CATALOG ---\n{catalog_ctx}")
 
         prompt_parts.append("\nAnalyze these issues. Identify patterns, root causes, "
                            "and prioritize which miners need attention first.")
@@ -291,6 +302,16 @@ class LLMAnalyzer:
                 else:
                     sectioned = content
                 prompt += f"\n--- {filename} ---\n{sectioned}\n"
+        # Intelligence Catalog context for this model
+        try:
+            from ai.catalog_context import get_miner_catalog_context
+            catalog_ctx = get_miner_catalog_context(model) if model else ""
+        except Exception:
+            catalog_ctx = ""
+
+        if catalog_ctx:
+            prompt += f"\n--- INTELLIGENCE CATALOG ---\n{catalog_ctx}\n"
+
         prompt += "\nProvide detailed diagnosis with root cause and recommended fix."
 
         response, duration = self._query_llm(prompt)

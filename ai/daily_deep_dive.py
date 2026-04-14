@@ -413,6 +413,7 @@ def build_per_miner_prompt(
     operator_rules: List[str],
     facility: Optional[Dict] = None,
     catalog_context: str = "",
+    past_analyses: Optional[List[Dict]] = None,
 ) -> str:
     """Build the Qwen prompt for a single miner's deep dive analysis."""
     lines = [
@@ -501,6 +502,17 @@ def build_per_miner_prompt(
         if total_accepted + total_rejected > 0:
             reject_pct = 100.0 * total_rejected / (total_accepted + total_rejected)
             lines.append(f"  Reject rate: {reject_pct:.2f}%")
+        lines.append("")
+
+    # Past LLM analyses for this miner (last 7 days)
+    if past_analyses:
+        lines.append("\n--- PAST AI ANALYSES (last 7 days) ---")
+        lines.append("What AI previously said about this miner (do NOT repeat, focus on what changed):")
+        for pa in past_analyses:
+            ts = pa["analyzed_at"][:16] if pa["analyzed_at"] else "?"
+            model = pa["model_used"] or "?"
+            text = (pa["response"] or "")[:300]
+            lines.append(f"  [{ts}] ({model}): {text}...")
         lines.append("")
 
     # Operator rules — compact
@@ -598,6 +610,7 @@ def build_fleet_synthesis_prompt(
     miners_online: int,
     miners_analyzed: int,
     catalog_context: str = "",
+    fleet_analyses: Optional[List[Dict]] = None,
 ) -> str:
     """Build the final fleet-wide synthesis prompt."""
     lines = [
@@ -673,6 +686,13 @@ def build_fleet_synthesis_prompt(
         lines.append("--- 24-HOUR FLEET-LEVEL STATS ---")
         lines.append(f"  Scans: {len(scans)} | avg online: {avg_online:.1f} | avg offline: {avg_offline:.1f}")
         lines.append(f"  Total issues flagged across day: {total_issues}")
+        lines.append("")
+
+    # Fleet-wide LLM analysis summary (last 7 days)
+    if fleet_analyses:
+        lines.append("\n--- AI ANALYSIS ACTIVITY (last 7 days) ---")
+        for fa in fleet_analyses:
+            lines.append(f"  {fa['day']}: {fa['cnt']} analyses across {fa['miners_analyzed']} miners")
         lines.append("")
 
     # Operator rules
@@ -861,6 +881,21 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
         hardware = get_miner_hardware(conn, mid)
         fingerprint = get_miner_fingerprint(knowledge, mid)
 
+        # Past LLM analyses for this miner (last 7 days)
+        miner_ip = miner.get("ip", "")
+        try:
+            past_analyses = conn.execute("""
+                SELECT analyzed_at, response, model_used
+                FROM llm_analysis
+                WHERE (miner_id=? OR ip=?)
+                  AND analyzed_at >= datetime('now', '-7 days')
+                  AND response IS NOT NULL AND response != ''
+                ORDER BY analyzed_at DESC LIMIT 3
+            """, (mid, miner_ip)).fetchall()
+            past_analyses = [dict(r) for r in past_analyses]
+        except Exception:
+            past_analyses = []
+
         miner_cat_ctx = model_catalog_cache.get(miner.get("model", ""), "")
         prompt = build_per_miner_prompt(
             miner=miner,
@@ -872,6 +907,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
             operator_rules=operator_rules,
             facility=facility,
             catalog_context=miner_cat_ctx,
+            past_analyses=past_analyses,
         )
 
         analysis = query_qwen(prompt, label=f"miner {mid} ({idx}/{len(online_miners)})")
@@ -903,6 +939,22 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
 
     # Fleet synthesis pass
     logger.info("Starting FLEET SYNTHESIS pass...")
+
+    # Fleet-wide LLM analysis summary (last 7 days)
+    try:
+        fleet_analyses = conn.execute("""
+            SELECT DATE(analyzed_at) as day, COUNT(*) as cnt,
+                   COUNT(DISTINCT miner_id) as miners_analyzed
+            FROM llm_analysis
+            WHERE analyzed_at >= datetime('now', '-7 days')
+              AND response IS NOT NULL AND response != ''
+            GROUP BY DATE(analyzed_at)
+            ORDER BY day DESC
+        """).fetchall()
+        fleet_analyses = [dict(r) for r in fleet_analyses]
+    except Exception:
+        fleet_analyses = []
+
     fleet_prompt = build_fleet_synthesis_prompt(
         per_miner_analyses=per_miner_analyses,
         facility=facility,
@@ -911,6 +963,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
         miners_online=len(online_miners),
         miners_analyzed=len(per_miner_analyses),
         catalog_context=fleet_catalog_context,
+        fleet_analyses=fleet_analyses,
     )
 
     fleet_synthesis = query_qwen(fleet_prompt, label="fleet synthesis")

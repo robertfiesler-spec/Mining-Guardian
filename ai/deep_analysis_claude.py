@@ -126,6 +126,15 @@ def gather_fleet_data():
     ''').fetchall()
 
     conn.close()
+
+    # Intelligence Catalog context for fleet models
+    try:
+        from ai.catalog_context import get_catalog_context
+        all_models = list({m["model"] for m in [dict(x) for x in miners] if m.get("model")})
+        catalog_context = get_catalog_context(all_models) if all_models else ""
+    except Exception:
+        catalog_context = ""
+
     return {
         "miners": [dict(m) for m in miners],
         "notifications": [dict(n) for n in notifs],
@@ -133,6 +142,7 @@ def gather_fleet_data():
         "logs": [dict(l) for l in logs],
         "dead_boards": [dict(d) for d in dead],
         "weather": [dict(w) for w in weather],
+        "catalog_context": catalog_context,
     }
 
 def _safe_fmt(value, fmt=".0f", fallback="?") -> str:
@@ -186,6 +196,11 @@ def build_prompts(data, max_chars: int = 80000):
         context_lines.append(
             f"  Miner {d['miner_id']} @ {d['ip']} — boards: {d['board_indices']}"
         )
+
+    catalog_ctx = data.get("catalog_context", "")
+    if catalog_ctx:
+        context_lines.append("\n--- INTELLIGENCE CATALOG (manufacturer specs, known issues) ---")
+        context_lines.append(catalog_ctx)
 
     context_block = "\n".join(context_lines)
 

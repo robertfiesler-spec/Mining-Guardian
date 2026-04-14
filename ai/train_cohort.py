@@ -324,7 +324,8 @@ def _filter_local_llm_for_ips(all_analyses: List[Dict], ips: List[str],
 
 def build_cohort_prompt(summary: Dict, env_context: str,
                          local_llm_analyses: List[Dict],
-                         catalog_context: str = "") -> str:
+                         catalog_context: str = "",
+                         past_analyses: Optional[List[Dict]] = None) -> str:
     """Build the Claude prompt for a single cohort. Designed to stay <8K tokens."""
     key = summary['cohort_key']
     agg = summary.get('aggregates') or {}
@@ -377,6 +378,17 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         lines.append('')
         lines.append('=== INTELLIGENCE CATALOG (manufacturer specs for this cohort model) ===')
         lines.append(catalog_context)
+
+    if past_analyses:
+        lines.append('')
+        lines.append(f'=== PAST AI ANALYSES FOR COHORT MINERS (last 7 days, {len(past_analyses)}) ===')
+        lines.append('What AI previously said about these miners (do NOT repeat, focus on what changed):')
+        for pa in past_analyses:
+            ts = (pa.get("analyzed_at") or "?")[:16]
+            model = pa.get("model_used") or "?"
+            ip = pa.get("ip") or "?"
+            text = (pa.get("response") or "")[:300]
+            lines.append(f'  [{ts}] {ip} ({model}): {text}...')
 
     lines.extend([
         '',
@@ -881,7 +893,25 @@ def run_cohort_training():
                 cohort_catalog = get_miner_catalog_context(model_name)
         except Exception as e:
             logger.debug("Catalog lookup for cohort %s skipped: %s", key, e)
-        prompt = build_cohort_prompt(summary, env_context, cohort_local_llm, cohort_catalog)
+
+        # Past LLM analyses for cohort miners (last 7 days)
+        cohort_past_analyses = []
+        try:
+            cohort_ips = summary.get("all_member_ips", [])
+            if cohort_ips:
+                placeholders = ",".join("?" * len(cohort_ips))
+                cohort_past_analyses = [dict(r) for r in conn.execute(f"""
+                    SELECT ip, analyzed_at, response, model_used
+                    FROM llm_analysis
+                    WHERE ip IN ({placeholders})
+                      AND analyzed_at >= datetime('now', '-7 days')
+                      AND response IS NOT NULL AND response != ''
+                    ORDER BY analyzed_at DESC LIMIT 10
+                """, cohort_ips).fetchall()]
+        except Exception as e:
+            logger.debug("Past analyses lookup for cohort %s skipped: %s", key, e)
+
+        prompt = build_cohort_prompt(summary, env_context, cohort_local_llm, cohort_catalog, cohort_past_analyses)
         logger.info('  Prompt size: %d chars', len(prompt))
 
         response = ''

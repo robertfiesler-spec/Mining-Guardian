@@ -193,6 +193,23 @@ class KnowledgeManager:
                     ticket = f"ticket #{d['ticket_created']}" if d['ticket_created'] else "no ticket yet"
                     parts.append(f"  - {d['ip']} boards {d['board_indices']} — {ticket}")
 
+            # Recent structured log metrics — board events and chip health
+            log_events = conn.execute("""
+                SELECT ip, metric_type, COUNT(*) as cnt,
+                       AVG(CASE WHEN numeric_value IS NOT NULL THEN numeric_value END) as avg_val
+                FROM log_metrics
+                WHERE recorded_at >= datetime('now', '-24 hours')
+                  AND metric_type IN ('chain_event', 'chip_hashrate', 'voltage_domain', 'fan_speed', 'psu_status')
+                GROUP BY ip, metric_type
+                HAVING cnt >= 3
+                ORDER BY cnt DESC LIMIT 15
+            """).fetchall()
+            if log_events:
+                parts.append("\nStructured log metrics (last 24h, frequent events):")
+                for le in log_events:
+                    avg_str = f" avg={le['avg_val']:.1f}" if le['avg_val'] is not None else ""
+                    parts.append(f"  - {le['ip']} {le['metric_type']}: {le['cnt']}x{avg_str}")
+
             conn.close()
         except Exception as e:
             parts.append(f"(Live DB context unavailable: {e})")
