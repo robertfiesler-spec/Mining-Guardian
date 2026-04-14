@@ -47,7 +47,7 @@ DB_PATH = str(_ROOT / "guardian.db")
 OLLAMA_URL = "http://localhost:11434/api/generate"
 POLL_INTERVAL = 5
 # Authorized Slack users who can execute commands
-AUTHORIZED_SLACK_USER_IDS = set(os.getenv("AUTHORIZED_SLACK_USER_IDS", "U07AGTT8CLD").split(","))
+AUTHORIZED_SLACK_USER_IDS = {uid.strip() for uid in os.getenv("AUTHORIZED_SLACK_USER_IDS", "U07AGTT8CLD").split(",") if uid.strip()}
 
 BOT_USER_ID = None
 
@@ -559,6 +559,11 @@ class CommandHandler:
         channel = msg.get("channel", CHANNEL_ID)
         thread_ts = msg.get("thread_ts", msg.get("ts"))
         user = msg.get("user", "")
+
+        # Check authorization — only configured users can execute commands
+        if AUTHORIZED_SLACK_USER_IDS and user not in AUTHORIZED_SLACK_USER_IDS:
+            logger.warning("Unauthorized command attempt from user %s", user)
+            return
 
         # Ignore bot's own messages
         if user == BOT_USER_ID:

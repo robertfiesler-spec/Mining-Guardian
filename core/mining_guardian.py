@@ -2755,9 +2755,11 @@ class SlackNotifier:
 
     def __init__(self, webhook_url: Optional[str], channel_id: Optional[str] = None,
                  bot_token: Optional[str] = None,
-                 alerts_channel_id: Optional[str] = None):
+                 alerts_channel_id: Optional[str] = None,
+                 db=None):
         self.webhook_url   = webhook_url
         self.bot_token     = bot_token
+        self.db            = db
 
         # Each channel can be overridden via env var for ops flexibility.
         # Falls back to hardcoded constants if env var is not set.
@@ -3381,13 +3383,14 @@ class MiningGuardian:
         self.config   = config
         self.ams      = AMSClient(config)
         self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
+        self.db       = GuardianDB()
         self.slack    = SlackNotifier(
             webhook_url=GuardianConfig._resolve(config.slack_webhook_url) if config.slack_webhook_url else None,
             bot_token=GuardianConfig._resolve(config.slack_bot_token) if hasattr(config, "slack_bot_token") and config.slack_bot_token else None,
             channel_id=getattr(config, "slack_channel_id", None),
             alerts_channel_id=getattr(config, "slack_alerts_channel_id", None),
+            db=self.db,
         )
-        self.db       = GuardianDB()
         self._last_slack_post = 0  # timestamp of last Slack post
         self._reported_notif_ids = set()  # AMS notification IDs already reported to Slack
         self.weather  = WeatherCollector()

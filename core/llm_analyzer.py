@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger("llm_analyzer")
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate")
+MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
 _ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = str(_ROOT / "guardian.db")
 
