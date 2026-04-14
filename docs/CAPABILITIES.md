@@ -7,7 +7,7 @@ BiXBiT USA | Fort Worth, TX | April 2026
 ## What It Does Today
 
 ### 🔍 Fleet Monitoring
-- Scans all 58 miners every 5 minutes via AMS WebSocket API
+- Scans all 58 miners every hourutes via AMS WebSocket API
 - Three-tier hashrate evaluation:
   - Tier 1: Parses live BiXBiT firmware profile strings (exact rated TH/s)
   - Tier 2: Known model specs from miner_specs.json
@@ -85,7 +85,7 @@ Ask anything in #mining-guardian and get a fleet-aware answer:
 - CT fans manually at 100% (no VFD feedback — intentional)
 - CT trip detection, CWP trip detection, leak/basin alarms
 
-**Architecture:** Mac polls both systems every 5 min, pushes to VPS API.
+**Architecture:** Mac polls both systems every hour, pushes to VPS API.
 All AI analysis uses correct HVAC system per miner type.
 
 ### 🧪 Persistent Learning (Knowledge System)
@@ -98,7 +98,7 @@ All AI analysis uses correct HVAC system per miner type.
 - Weekly deep training synthesizes all accumulated data via Claude API
 
 ### 💾 Backup & Reliability
-- guardian.db backed up to Big-Bobby-T9 every 5 min (when Mac is connected)
+- guardian.db backed up to Big-Bobby-T9 every hour (when Mac is connected)
 - Rolling 12 copies + daily snapshots (30 days retention)
 - VPS has its own live copy growing continuously
 - knowledge_backup.json pushed to GitHub daily

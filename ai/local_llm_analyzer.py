@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
 
+from ai.knowledge_manager import KnowledgeManager
 _ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = _ROOT / "knowledge.json"
@@ -33,16 +34,18 @@ logger = logging.getLogger("mining_guardian")
 
 # LLM endpoint — Ollama on Windows PC (Tailscale) or local Mac Mini
 # Configurable via config.json "local_llm_url"
-DEFAULT_LLM_URL = "http://100.110.87.1:11434"
+DEFAULT_LLM_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434")
 DEFAULT_MODEL = "qwen2.5:32b-instruct-q4_K_M"
 
 
 class LocalLLMAnalyzer:
     """Real-time fleet analysis via local LLM after every scan."""
 
-    def __init__(self, llm_url: str = None, model: str = None):
+    def __init__(self, llm_url: str = None, model: str = None, db_path: str = None):
         self.llm_url = llm_url or DEFAULT_LLM_URL
         self.model = model or DEFAULT_MODEL
+        self.db_path = db_path or "/root/Mining-Gaurdian/guardian.db"
+        self.km = KnowledgeManager(self.db_path)
         self.api_url = f"{self.llm_url}/api/generate"
         self._last_full_analysis = 0  # timestamp of last full analysis
         self.FULL_ANALYSIS_INTERVAL = 1800  # full analysis every 30 min
@@ -494,6 +497,10 @@ Keep response under 10 lines. Be specific — cite board numbers, voltages, erro
             ctx = self._get_scan_context(scan_id)
             prompt = self._build_scan_prompt(ctx)
             self._last_full_analysis = now
+
+        # DG-3: Inject accumulated knowledge context
+        knowledge_ctx = self.km.build_context_prompt()
+        prompt = knowledge_ctx + "\n\n" + prompt
 
         logger.info("LLM: Sending scan #%s for analysis (%d chars)", scan_id, len(prompt))
         analysis = self._query_llm(prompt, max_tokens=1024, timeout=90)

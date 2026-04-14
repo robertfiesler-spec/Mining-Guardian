@@ -3,6 +3,7 @@ Description=Mining Guardian Overnight Automation
 After=network.target mining-guardian.service
 
 [Service]
+EnvironmentFile=/root/Mining-Gaurdian/.env
 Type=simple
 User=root
 WorkingDirectory=/root/Mining-Gaurdian

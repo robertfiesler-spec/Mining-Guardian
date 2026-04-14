@@ -82,7 +82,7 @@ def _load_knowledge() -> Dict:
     """Load knowledge.json for fingerprints and predictions."""
     try:
         return json.loads(Path(KNOWLEDGE_PATH).read_text())
-    except:
+    except Exception:
         return {}
 
 

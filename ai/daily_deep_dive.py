@@ -85,7 +85,7 @@ try:
     _cfg = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else {}
 except Exception:
     _cfg = {}
-LLM_URL = _cfg.get("local_llm_url") or _cfg.get("ollama_url") or "http://100.110.87.1:11434"
+LLM_URL = _cfg.get("local_llm_url") or _cfg.get("ollama_url") or os.getenv("OLLAMA_URL", "http://100.110.87.1:11434")
 # ollama_url in config points at /api/generate; strip it
 if LLM_URL.endswith("/api/generate"):
     LLM_URL = LLM_URL[: -len("/api/generate")]
@@ -401,6 +401,7 @@ def build_per_miner_prompt(
     hardware: Optional[Dict],
     fingerprint: Optional[Dict],
     operator_rules: List[str],
+    facility: Optional[Dict] = None,
 ) -> str:
     """Build the Qwen prompt for a single miner's deep dive analysis."""
     lines = [
@@ -600,12 +601,9 @@ def build_fleet_synthesis_prompt(
         lines.append(prev_synth)
         lines.append("")
 
-    # Facility context - select HVAC system based on miner model
-    miner_model = miner.get("model", "") or ""
-    hvac_system = "s19jpro" if miner_model.startswith("S19JPro") else "warehouse"
-    hvac_key = f"hvac_{hvac_system}"
-    hvac = facility.get(hvac_key, facility.get("hvac", []))
-    system_label = "S19J Pro Container" if hvac_system == "s19jpro" else "Warehouse"
+    # Facility context - fleet synthesis always uses warehouse HVAC
+    hvac = facility.get("hvac_warehouse", facility.get("hvac", []))
+    system_label = "Warehouse"
     if hvac:
         supply = [h.get("supply_temp_f", 0) or 0 for h in hvac]
         retur = [h.get("return_temp_f", 0) or 0 for h in hvac]

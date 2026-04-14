@@ -3,6 +3,7 @@ Description=Mining Guardian Fleet Monitor
 After=network.target tailscaled.service
 
 [Service]
+EnvironmentFile=/root/Mining-Gaurdian/.env
 Type=simple
 User=root
 WorkingDirectory=/root/Mining-Gaurdian

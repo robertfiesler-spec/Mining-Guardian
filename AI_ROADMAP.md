@@ -15,7 +15,7 @@
 **FULL-DAY AUTONOMOUS** — Active 24/7
 Overnight automation runs 8pm–6am. LOW-risk actions execute without approval. Max auto-restarts: 2 per window. Miners with 3+ FAILURE outcomes are permanently blocked from overnight auto-restart until human review. All VPS services active.
 
-**Scan cadence:** 1 scan per hour (`scan_interval_seconds: 3600`, `slack_interval_seconds: 3600`). Matches Slack post throttle — one 🧠 AI analysis post to `#mg-ai-reports` per scan. Confirmed April 9 2026 after diagnostic sweep. Faster cadence (5-min) was the early dev value and is not used in production.
+**Scan cadence:** 1 scan per hour (`scan_interval_seconds: 3600`, `slack_interval_seconds: 3600`). Matches Slack post throttle — one 🧠 AI analysis post to `#mg-ai-reports` per scan. Confirmed April 9 2026 after diagnostic sweep. Faster cadence (hourly) was the early dev value and is not used in production.
 
 ---
 
@@ -82,7 +82,7 @@ Bobby corrected the diagnosis in 5 seconds with one operator insight: "I just up
 - [ ] DB leaks (bare `_connect().execute()`) — 3 locations still need context managers
 - [ ] NameErrors in predictor loop (line 4619) and `_escalate_board_issue` (line 4040)
 - [ ] File handle leak in `overnight_automation.py`
-- [ ] **Log file rotation bug** (found April 9 2026 diagnostic) — `_setup_logging()` in `core/mining_guardian.py` lines 33-48 computes the log filename once at module import from `datetime.now()` and never rolls over at midnight. Result: today's log entries append to yesterday's filename until the process restarts. Fix: replace `FileHandler` with `TimedRotatingFileHandler(when='midnight', backupCount=14)`. Doesn't affect operation — `journalctl -u mining-guardian` has complete records — but file-based log inspection is misleading until fixed. 5-minute fix.
+- [ ] **Log file rotation bug** (found April 9 2026 diagnostic) — `_setup_logging()` in `core/mining_guardian.py` lines 33-48 computes the log filename once at module import from `datetime.now()` and never rolls over at midnight. Result: today's log entries append to yesterday's filename until the process restarts. Fix: replace `FileHandler` with `TimedRotatingFileHandler(when='midnight', backupCount=14)`. Doesn't affect operation — `journalctl -u mining-guardian` has complete records — but file-based log inspection is misleading until fixed. hourlyute fix.
 
 ---
 
@@ -247,7 +247,7 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 8. **CORS audit** — lock all CORS rules to localhost + service-name DNS
 9. **Docker-compose stack definition** — Mining Guardian, OpenClaw, Prometheus, Grafana, Ollama as services
 10. **Shared volumes** — `guardian.db`, `knowledge.json`, `logs/` between containers
-11. **Log rotation fix** — 5-min fix in `core/mining_guardian.py` `_setup_logging()`, see Code Quality section above
+11. **Log rotation fix** — hourly fix in `core/mining_guardian.py` `_setup_logging()`, see Code Quality section above
 
 ### P2 — Customer installer work (starts May 3)
 

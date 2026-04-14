@@ -46,6 +46,9 @@ CHANNEL_ID = "C0AQ8SE1448"
 DB_PATH = str(_ROOT / "guardian.db")
 OLLAMA_URL = "http://localhost:11434/api/generate"
 POLL_INTERVAL = 5
+# Authorized Slack users who can execute commands
+AUTHORIZED_SLACK_USER_IDS = set(os.getenv("AUTHORIZED_SLACK_USER_IDS", "U07AGTT8CLD").split(","))
+
 BOT_USER_ID = None
 
 

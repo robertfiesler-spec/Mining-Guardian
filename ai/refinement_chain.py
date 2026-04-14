@@ -149,7 +149,7 @@ def preflight_checks(config, resume_from, smoke_test):
 
     # Check 5: Qwen endpoint reachable (skip if resuming past Pass 3)
     if resume_from < 4:
-        url = config.get("ollama_url", "http://100.110.87.1:11434/api/generate")
+        url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate"))
         tags_url = url.replace("/api/generate", "/api/tags")
         try:
             with urllib.request.urlopen(tags_url, timeout=10) as r:
@@ -260,7 +260,7 @@ def fire_pass_3_qwen_reflection(pass_1, pass_2, config, smoke_test=False):
         "stream": False,
         "options": {"temperature": 0.4, "num_ctx": 32768, "num_predict": -1},
     }
-    url = config.get("ollama_url", "http://100.110.87.1:11434/api/generate")
+    url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate"))
     logger.info("Pass 3: firing Qwen (prompt %d chars, unconstrained output)", len(prompt))
     t0 = time.time()
     req = urllib.request.Request(

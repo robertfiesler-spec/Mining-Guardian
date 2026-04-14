@@ -1390,7 +1390,7 @@ def llm_history(limit: int = 10):
     # Fallback: proxy from VPS
     try:
         import requests as _req
-        resp = _req.get(f"http://100.106.123.83:8585/llm/history?limit={limit}", timeout=5)
+        resp = _req.get(f"{os.getenv("DASHBOARD_URL", "http://127.0.0.1:8585")}/llm/history?limit={limit}", timeout=5)
         return resp.json()
     except Exception:
         return []
@@ -2418,7 +2418,7 @@ def ai_recent_analyses(hours: int = 6):
                         if "(" in line and "%" in line:
                             try:
                                 conf = int(line.split("(")[-1].split("%")[0])
-                            except:
+                            except Exception:
                                 pass
                         analyses.append({
                             "type": "ANALYSIS",
@@ -2487,32 +2487,30 @@ async def ingest_hvac_data(request: Request):
             return {"error": "Missing system_id or readings"}
         
         # Store in hvac_readings table with system_id
-        conn = sqlite3.connect(DB_PATH)
-        conn.execute("""
-            INSERT INTO hvac_readings (
-                recorded_at, system_id,
-                supply_temp_f, return_temp_f, delta_t_f, diff_pressure,
-                outside_air_f, container_temp_f,
-                cwp1_vfd_pct, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
-                leak_alarm
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            timestamp or datetime.utcnow().isoformat(),
-            system_id,
-            readings.get("supply_temp_f"),
-            readings.get("return_temp_f"),
-            readings.get("delta_t_f"),
-            readings.get("diff_pressure_psi"),
-            readings.get("outside_air_f"),
-            readings.get("container_temp_f"),
-            readings.get("cwp1_vfd_pct"),
-            readings.get("cwp2_vfd_pct"),
-            readings.get("ct1_vfd_pct"),
-            readings.get("ct2_vfd_pct"),
-            1 if readings.get("leak_alarm") else 0,
-        ))
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("""
+                INSERT INTO hvac_readings (
+                    recorded_at, system_id,
+                    supply_temp_f, return_temp_f, delta_t_f, diff_pressure,
+                    outside_air_f, container_temp_f,
+                    cwp1_vfd_pct, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
+                    leak_alarm
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                timestamp or datetime.utcnow().isoformat(),
+                system_id,
+                readings.get("supply_temp_f"),
+                readings.get("return_temp_f"),
+                readings.get("delta_t_f"),
+                readings.get("diff_pressure_psi"),
+                readings.get("outside_air_f"),
+                readings.get("container_temp_f"),
+                readings.get("cwp1_vfd_pct"),
+                readings.get("cwp2_vfd_pct"),
+                readings.get("ct1_vfd_pct"),
+                readings.get("ct2_vfd_pct"),
+                1 if readings.get("leak_alarm") else 0,
+            ))
         
         return {"status": "ok", "system_id": system_id}
     except Exception as e:

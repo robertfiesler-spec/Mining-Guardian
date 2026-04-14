@@ -33,7 +33,7 @@ logger = logging.getLogger("mining_guardian")
 
 # LLM endpoint — Ollama on Windows PC (Tailscale) or local Mac Mini
 # Configurable via config.json "local_llm_url"
-DEFAULT_LLM_URL = "http://100.110.87.1:11434"
+DEFAULT_LLM_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434")
 DEFAULT_MODEL = "qwen2.5:32b-instruct-q4_K_M"
 
 

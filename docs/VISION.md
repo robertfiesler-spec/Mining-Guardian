@@ -24,7 +24,7 @@ If any of the above conflict with this doc, this doc is wrong — update it.
 
 Mining Guardian is an AI-powered autonomous fleet monitoring and remediation
 system for Bitcoin mining facilities. It ships as a single Mac mini running a
-docker-compose stack at each customer site, scans the fleet every 5 minutes via
+docker-compose stack at each customer site, scans the fleet every hourutes via
 the BiXBiT AMS API, diagnoses problems with a two-tier LLM (local Qwen 2.5 32B
 for per-scan analysis + Claude Sonnet for weekly deep training), manages the
 full action lifecycle (detection → operator approval → execution → outcome
@@ -127,7 +127,7 @@ makes every other customer's fleet smarter.
 
 This is the single most important mental model for this project.
 
-### 4a. Per-scan loop (every 5 minutes)
+### 4a. Per-scan loop (every hourutes)
 
 1. **Scan** — Mining Guardian polls AMS via WebSocket, gets all miner state
 2. **Verify** — false-offline detection via direct TCP (port 4028)

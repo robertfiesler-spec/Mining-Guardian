@@ -170,7 +170,7 @@ is it a candidate for a new doc. Update this table when you add one.
 ## Stack Context
 
 - **Language:** Python 3.12
-- **Primary daemon:** `core/mining_guardian.py` — scans every 5 min, runs all 8 AI features in `loop()` after each scan
+- **Primary daemon:** `core/mining_guardian.py` — scans every hour, runs all 8 AI features in `loop()` after each scan
 - **Dashboard API:** `api/dashboard_api.py` — FastAPI on port 8585, serves Prometheus metrics, Retool endpoints, Grafana iframes, and the `/query/*` endpoints that OpenClaw's guardian-db skill will consume
 - **Approval API:** `api/approval_api.py` — FastAPI on port 8686, localhost-bound, handles APPROVE/DENY/approve_selected + Slack interactive block_actions (the latter will be re-routed through OpenClaw Socket Mode when Cloudflare comes off)
 - **Database:** SQLite at `guardian.db` — 16 tables. Never delete, never truncate, never overwrite.
@@ -472,7 +472,7 @@ Two separate cooling systems exist:
 - **Warehouse HVAC (192.168.188.235):** Serves Hydros, S21 Immersion, AH3880
 - **S19J Pro Container (192.168.189.235):** Serves S19J Pros ONLY
 Simple routing rule: if model starts with "S19JPro" → use s19jpro HVAC,
-otherwise → use warehouse HVAC. Mac polls both systems every 5 minutes.
+otherwise → use warehouse HVAC. Mac polls both systems every hourutes.
 All AI analysis must use the CORRECT HVAC system per miner type.
 
 **OPERATOR RULE — S19J Pro CT Fans (added April 13 2026):**

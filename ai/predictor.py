@@ -31,7 +31,7 @@ def _load_knowledge() -> Dict:
     """Load knowledge.json for fingerprints."""
     try:
         return json.loads(Path(KNOWLEDGE_PATH).read_text())
-    except:
+    except Exception:
         return {}
 
 def _get_fingerprint_risk_modifier(miner_id: str, ip: str) -> float:

@@ -77,7 +77,7 @@ pip install prometheus-client
 ```
 - Read latest scan from guardian.db
 - Expose all metrics in Prometheus text format
-- Auto-updated every scan cycle (every 5 min)
+- Auto-updated every scan cycle (every hour)
 - Prometheus scrapes it every 30s
 
 ### Step 2 — Install Prometheus on VPS

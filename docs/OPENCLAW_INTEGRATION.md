@@ -27,7 +27,7 @@
 ```
 Mining Guardian (Python daemon)
     │
-    ├── Scans fleet via AMS WebSocket (every 5 min)
+    ├── Scans fleet via AMS WebSocket (every hour)
     ├── Stores all data in guardian.db
     ├── Runs predictors, action diversity, outcome checker
     │

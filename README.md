@@ -2,7 +2,7 @@
 
 Autonomous AI-powered Bitcoin mining fleet monitoring system for BiXBiT USA in Fort Worth, TX. Monitors 58 miners across liquid-cooled hydro racks and an immersion tank, diagnoses problems with a two-tier AI system, and manages the full action lifecycle — from detection through approval, execution, ticket creation, and suppression — all running 24/7 with no Mac required.
 
-The system learns continuously. Every 5-minute scan updates the knowledge base. Weekly deep training via Claude API synthesizes everything into fleet-wide patterns. Knowledge Score, insight count, and autonomy rate are all visible live in Grafana.
+The system learns continuously. Every hourlyute scan updates the knowledge base. Weekly deep training via Claude API synthesizes everything into fleet-wide patterns. Knowledge Score, insight count, and autonomy rate are all visible live in Grafana.
 
 > 📘 **Read this first if you're a new Claude session:** `CLAUDE.md` (binding rules), then `docs/VISION.md` (canonical plan), then the rest of this README. The Session Kickoff Protocol in `CLAUDE.md` is mandatory.
 
@@ -18,7 +18,7 @@ The system learns continuously. Every 5-minute scan updates the knowledge base. 
 
 ```
 Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83)   ← TEMPORARY
-  ├── mining-guardian (systemd)         — scans fleet every 5 min
+  ├── mining-guardian (systemd)         — scans fleet every hour
   ├── dashboard-api (systemd :8585)     — Retool + Grafana data + Prometheus /metrics + /query/* endpoints
   ├── approval-api (systemd :8686)      — APPROVE/DENY/approve_selected execution
   ├── slack-listener (systemd)          — polls Slack threads for text approvals
@@ -78,7 +78,7 @@ Anthropic Claude API                    — weekly training, knowledge merges, d
 
 - **Temperature:** No yellow tier. 84°C is the only threshold. Below 84°C is normal regardless of cohort average. The previous "76°C yellow / 86°C red" rule is wrong and has been removed. This applies to all prompts, all flagging logic, and the local LLM system prompt.
 - **HVAC delta-T:** Both HVAC systems are performing correctly. Low delta-T is intentional and will rise as outside temps climb. Do NOT recommend HVAC investigation based on delta-T.
-- **Dual HVAC (April 2026):** Two separate cooling systems — warehouse (192.168.188.235) for Hydros/S21/AH3880, s19jpro container (192.168.189.235) for S19J Pros only. Mac polls both every 5 min, pushes to VPS. AI uses correct HVAC per miner.
+- **Dual HVAC (April 2026):** Two separate cooling systems — warehouse (192.168.188.235) for Hydros/S21/AH3880, s19jpro container (192.168.189.235) for S19J Pros only. Mac polls both every hour, pushes to VPS. AI uses correct HVAC per miner.
 - **Firmware regression:** When N+ miners of the same model show identical fault patterns within hours of a firmware update, prefer "firmware regression" diagnosis over individual hardware failure.
 - **20-minute post-restart grace period:** After any restart (manual or overnight auto), suppress the miner from action recommendations for 20 minutes.
 - **Dead S19JPro boards:** Suppressed after ticket creation. Do not re-raise.
@@ -89,7 +89,7 @@ Anthropic Claude API                    — weekly training, knowledge merges, d
 
 | Service | Port | Description |
 |---------|------|-------------|
-| mining-guardian | — | Scans fleet every 5 min, evaluates all miners, runs 8 AI features in loop |
+| mining-guardian | — | Scans fleet every hour, evaluates all miners, runs 8 AI features in loop |
 | dashboard-api | 8585 | REST API + Prometheus /metrics + `/query/*` endpoints (OpenClaw guardian-db skill) |
 | approval-api | 8686 | Handles APPROVE/DENY/approve_selected calls (localhost-bound) |
 | slack-listener | — | Polls Slack threads for text approvals |
@@ -170,7 +170,7 @@ Six dashboards, all fed by Prometheus scraping `dashboard-api:8585/metrics`. Sea
 
 Mining Guardian is a learning loop — every scan feeds it, every operator decision refines it, every week it synthesizes, every month it federates across customer sites. See `docs/VISION.md` section 4 for the full breakdown. Short version:
 
-**Per-scan (every 5 min):** scan → verify → evaluate → save → feed local LLM → run 8 AI features → Slack post (throttled to 1/hr) → overnight auto-execute low-risk actions 8pm-6am.
+**Per-scan (every hour):** scan → verify → evaluate → save → feed local LLM → run 8 AI features → Slack post (throttled to 1/hr) → overnight auto-execute low-risk actions 8pm-6am.
 
 **Per-action:** APPROVE → execute → outcome checker labels SUCCESS/FAILURE/PARTIAL over next 2-3 scans → update per-miner fingerprint → update confidence scorer. DENY → "Why?" → reason captured → local LLM processes into rule candidate → Sunday Claude training validates.
 
@@ -410,7 +410,7 @@ AI answers include: current fleet state, 14-day miner history, audit trail, dead
 
 ## Backup System
 
-**Big-Bobby-T9 drive** (Mac cron every 5 min when Mac is on):
+**Big-Bobby-T9 drive** (Mac cron every hour when Mac is on):
 - `guardian.db` — rolling 12 copies + daily snapshots (30 days)
 - `knowledge.json` — rolling 12 copies
 - `config.json` + `.env` — latest only

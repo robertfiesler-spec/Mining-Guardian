@@ -119,7 +119,8 @@ async def approve_actions(request: Request):
     if not thread_ts:
         return {"error": "thread_ts required"}
 
-    conn = get_db()
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.row_factory = sqlite3.Row
     pending = conn.execute(
         "SELECT * FROM pending_approvals WHERE thread_ts = ? AND status = 'PENDING'",
         (thread_ts,)
@@ -197,7 +198,8 @@ async def deny_actions(request: Request):
     if not thread_ts:
         return {"error": "thread_ts required"}
 
-    conn = get_db()
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.row_factory = sqlite3.Row
     now = datetime.now().isoformat()
 
     pending = conn.execute(
@@ -265,7 +267,8 @@ async def approve_selected_actions(request: Request):
     if not thread_ts:
         return {"error": "thread_ts required"}
 
-    conn = get_db()
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.row_factory = sqlite3.Row
     all_pending = conn.execute(
         "SELECT * FROM pending_approvals WHERE thread_ts = ? AND status = 'PENDING'",
         (thread_ts,)
@@ -364,7 +367,8 @@ async def urgent_action(request: Request):
     if action not in ALLOWED:
         return {"status": "error", "reason": f"action must be one of {ALLOWED}"}
 
-    conn = get_db()
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.row_factory = sqlite3.Row
     try:
         existing = conn.execute(
             "SELECT id FROM pending_approvals WHERE miner_id=? AND status='pending'",
@@ -461,7 +465,8 @@ async def list_pending(request: Request):
     """List all pending approvals."""
     if not verify_internal(request):
         return Response(status_code=403, content="Forbidden")
-    conn = get_db()
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT * FROM pending_approvals WHERE status = 'PENDING' ORDER BY created_at DESC"
     ).fetchall()

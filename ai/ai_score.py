@@ -74,7 +74,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
             cnt = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] or 0
             data_counts[table] = cnt
             data_score += int(cnt * weight)
-        except:
+        except Exception:
             data_counts[table] = 0
 
     # ═══════════════════════════════════════════════════════════
@@ -96,7 +96,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
     total_analyses = 0
     try:
         total_analyses = conn.execute("SELECT COUNT(*) FROM llm_analysis").fetchone()[0] or 0
-    except:
+    except Exception:
         pass
 
     knowledge_score = (
@@ -142,7 +142,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
             cnt = conn.execute(query).fetchone()[0] or 0
             action_counts[key] = cnt
             actions_score += cnt * weight
-        except:
+        except Exception:
             action_counts[key] = 0
 
     # ═══════════════════════════════════════════════════════════
@@ -176,7 +176,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
         ).fetchone()[0] or 0
         outcome_detail["denial_reasons"] = dr
         outcomes_score += dr * 300  # each explained denial = 300 pts
-    except:
+    except Exception:
         pass
 
     # ═══════════════════════════════════════════════════════════
@@ -209,9 +209,9 @@ def calculate_score(conn=None, knowledge=None) -> dict:
             """).fetchone()[0] or 0
             autonomy_detail["signals_detected"] = signals
             autonomy_score += signals * 200
-        except:
+        except Exception:
             pass
-    except:
+    except Exception:
         pass
 
     # ═══════════════════════════════════════════════════════════

@@ -231,7 +231,7 @@ def render_ai_dashboard_html():
         # Calculate confidence for this pending action
         try:
             conf_score, _ = get_confidence(str(q.get("miner_id","")), q.get("ip",""), q.get("action_type",""), hashrate_pct=hr)
-        except:
+        except Exception:
             conf_score = 75
         conf_color = G if conf_score >= 80 else O if conf_score >= 50 else R
         qr += (
@@ -257,7 +257,7 @@ def render_ai_dashboard_html():
             sys.path.insert(0, _ai_path)
         from confidence_scorer import get_confidence
         _has_scorer = True
-    except:
+    except Exception:
         _has_scorer = False
     
     ar = ""
@@ -277,7 +277,7 @@ def render_ai_dashboard_html():
                 ip = a.get("ip", "")
                 action_type = a.get("action_taken", "RESTART")
                 auto_conf, _ = get_confidence(miner_id, ip, action_type)
-            except:
+            except Exception:
                 pass
         
         auto_conf_color = G if auto_conf >= 80 else O if auto_conf >= 50 else R
@@ -302,7 +302,7 @@ def render_ai_dashboard_html():
         if not isinstance(pred_conf, (int, float)):
             try:
                 pred_conf = int(pred_conf)
-            except:
+            except Exception:
                 pred_conf = 75
         pred_conf = int(pred_conf)
         pred_conf_color = G if pred_conf >= 80 else O if pred_conf >= 50 else R

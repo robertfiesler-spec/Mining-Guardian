@@ -93,8 +93,8 @@ class AuradineClient:
     """Direct API client for Auradine Teraflux miners (AH3880, AT2880, etc.)."""
 
     DEFAULT_PORT_HTTPS = 8443
-    DEFAULT_USER       = "admin"
-    DEFAULT_PASS       = "admin"
+    DEFAULT_USER       = os.getenv("AURADINE_USER", "admin")
+    DEFAULT_PASS       = os.getenv("AURADINE_PASS", "admin")
     TOKEN_LIFETIME_SEC = 3600  # JWT is valid for 1 hour
 
     # Daemons available via the /log endpoint
