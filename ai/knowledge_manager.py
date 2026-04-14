@@ -17,6 +17,8 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+from core.file_lock import locked_knowledge_update
+
 logger = logging.getLogger("knowledge_manager")
 
 from pathlib import Path
@@ -56,12 +58,11 @@ class KnowledgeManager:
                 seen.append(p)
                 unique.append(p)
         self.knowledge["patterns"] = unique
-        # Atomic write — write to temp file then replace so a crash mid-write
-        # never corrupts knowledge.json (which would silently reset to empty on next load)
-        tmp_path = self.knowledge_path + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(self.knowledge, f, indent=2)
-        os.replace(tmp_path, self.knowledge_path)
+        # Locked atomic write — acquires file lock, writes to temp file,
+        # then os.replace so concurrent writers don't clobber each other
+        # and a crash mid-write never corrupts knowledge.json
+        with locked_knowledge_update(self.knowledge_path) as on_disk:
+            on_disk.update(self.knowledge)
         logger.info("Knowledge saved — %d known issues, %d patterns",
                      len(self.knowledge["known_issues"]),
                      len(self.knowledge["patterns"]))

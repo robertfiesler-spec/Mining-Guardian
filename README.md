@@ -191,7 +191,7 @@ Mining Guardian is a learning loop — every scan feeds it, every operator decis
 | 3 | Denial reason capture | `api/slack_approval_listener.py` + `ai/llm_scan_hook.py` | ✅ LIVE |
 | 4 | Miner fingerprinting v2 | `ai/fingerprint_builder.py` | ✅ LIVE (58 profiles) |
 | 5 | HVAC / environment correlation | `ai/hvac_correlator.py` | ✅ LIVE |
-| 6 | Pre-failure prediction v2 (12 signals) | `ai/predictor.py` | ✅ LIVE |
+| 6 | Pre-failure prediction v3 (14 signals) | `ai/predictor.py` | ✅ LIVE (Phase 1 fixed NameError that silently killed prediction loop) |
 | 7 | Repair shop data ingestion | TBD | ⏳ Blocked on dataset from James/ACS |
 | 8 | Action diversity (POWER_PROFILE, ECO_MODE, POOL_FAILOVER) | `ai/action_diversity.py` | ✅ LIVE |
 
@@ -353,26 +353,29 @@ Still single-miner, still uncapped. Pre-restart log pulled BEFORE the restart fi
 
 ## Knowledge System
 
-- `knowledge.json` (gitignored) — updates every scan, atomic write (no corrupt-on-crash)
+- `knowledge.json` (gitignored) — updates every scan, atomic write + file locking via `core/file_lock.py` (6 concurrent writers all use `fcntl.flock` to prevent data loss)
 - `knowledge_backup.json` (tracked) — pushed to GitHub daily at 4am
 - Weekly deep training via Claude API every Sunday at 3am via `train_cohort.py`
 - Deduplication on every save — no duplicate patterns
 - `ai/combine_knowledge.py` — federated multi-site knowledge merger
-- **Knowledge metrics flow into Prometheus/Grafana** — score, insights, patterns all live in AI & Learning dashboard
+- **Knowledge metrics flow into Prometheus/Grafana** — score, insights, patterns all live in AI & Learning dashboard (cached 25s to reduce SQLite load)
 - **Federated sync is USB-friendly** — no internet required for monthly cross-site knowledge merge
 
 ---
 
 ## Security
 
-All credentials in `.env` on VPS — never in source code. Key security measures:
+All credentials in `.env` on VPS — never in source code. See `.env.example` for all 30+ required variables.
 
-- **`approval_api.py`** — localhost bind, CORS restricted to known consumers, shared secret (`INTERNAL_API_SECRET`) required on all internal endpoints (fails closed if unset), Slack signature required + replay protection on `/slack/actions`, `/pending` endpoint requires auth
+Key security measures:
+
+- **`approval_api.py`** — localhost bind, CORS restricted to known consumers, shared secret (`INTERNAL_API_SECRET`) required on all internal endpoints (fails closed if unset), Slack signature required + replay protection on `/slack/actions`, `/pending` endpoint requires auth, proper transaction safety on approve/deny flow (Phase 2 fix)
 - **`dashboard_api.py`** — CORS locked to `dashboard.fieslerfamily.com`, `grafana.fieslerfamily.com`, localhost; XSS escaping on all DB values; param bounds clamped
-- **`slack_approval_listener.py`** — authorized user allowlist via `AUTHORIZED_SLACK_USER_IDS` in `.env`
-- **`slack_command_handler.py`** — question sanitization (500 char cap, strip control chars)
+- **`slack_approval_listener.py`** — authorized user allowlist via `AUTHORIZED_SLACK_USER_IDS` in `.env`, enforced on every command and approval (Phase 2 fix)
+- **`slack_command_handler.py`** — authorized user check enforced, question sanitization (500 char cap, strip control chars)
 - **`hvac_client.py` and `pdu_client.py`** — no credential defaults; fail loudly if env vars unset
-- **`.env` is gitignored** — 17 keys required, none duplicated
+- **`av2_plant_client.py`** — credentials moved from hardcoded defaults to `AV2_PLANT_USER`/`AV2_PLANT_PASSWORD` env vars (Phase 3 fix)
+- **`.env` is gitignored** — 30+ keys documented in `.env.example`
 
 ---
 
@@ -496,4 +499,16 @@ Slash commands for Claude Code (VS Code extension):
 
 ---
 
-*Last updated: April 9 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines.*
+## Code Review Status (April 14, 2026)
+
+Full code review completed: 53 findings across 35K lines of code. All CRITICAL and HIGH items resolved in three phases:
+
+- **Phase 1** (88b5b08): 6 CRITICAL fixes — silently broken predictions, board escalation crash, catalog auth, fleet synthesis, SQL syntax, missing import
+- **Phase 2** (dda6bd0): 4 fixes — approval API transactions, Slack auth enforcement, LLM defaults, repo cleanup
+- **Phase 3** (this commit): 7 fixes — knowledge.json file locking, predictor DB leaks, token lock, metrics caching, AV2 credentials, Slack memory leak, atomic writes
+
+Remaining items are MEDIUM/LOW priority tracked in `AI_ROADMAP.md`. See `REPAIR_LOG.md` for detailed documentation of every fix.
+
+---
+
+*Last updated: April 14 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines. See `.env.example` for all 30+ environment variables.*

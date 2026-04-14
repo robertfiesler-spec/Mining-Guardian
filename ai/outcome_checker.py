@@ -202,56 +202,47 @@ def _update_knowledge(
 ) -> None:
     """Update the miner's profile in knowledge.json with this outcome."""
     try:
-        if not Path(KNOWLEDGE_PATH).exists():
-            return
-        with open(KNOWLEDGE_PATH) as f:
-            knowledge = json.load(f)
+        from core.file_lock import locked_knowledge_update
+        with locked_knowledge_update(str(KNOWLEDGE_PATH)) as knowledge:
+            profiles = knowledge.setdefault("miner_profiles", {})
+            profile  = profiles.setdefault(miner_id, {
+                "ip": ip, "model": model,
+                "restart_outcomes": [],
+                "success_count": 0,
+                "failure_count": 0,
+                "partial_count": 0,
+                "last_updated": None
+            })
 
-        profiles = knowledge.setdefault("miner_profiles", {})
-        profile  = profiles.setdefault(miner_id, {
-            "ip": ip, "model": model,
-            "restart_outcomes": [],
-            "success_count": 0,
-            "failure_count": 0,
-            "partial_count": 0,
-            "last_updated": None
-        })
+            # Ensure restart_outcomes key exists on old profiles
+            if "restart_outcomes" not in profile:
+                profile["restart_outcomes"] = []
 
-        # Ensure restart_outcomes key exists on old profiles
-        if "restart_outcomes" not in profile:
-            profile["restart_outcomes"] = []
+            # Append this outcome
+            profile["restart_outcomes"].append({
+                "outcome": outcome,
+                "recovery_time_scans": recovery_time_scans,
+                "recorded_at": datetime.now().isoformat()
+            })
+            # Keep only last 50 outcomes per miner to avoid unbounded growth
+            profile["restart_outcomes"] = profile["restart_outcomes"][-50:]
 
-        # Append this outcome
-        profile["restart_outcomes"].append({
-            "outcome": outcome,
-            "recovery_time_scans": recovery_time_scans,
-            "recorded_at": datetime.now().isoformat()
-        })
-        # Keep only last 50 outcomes per miner to avoid unbounded growth
-        profile["restart_outcomes"] = profile["restart_outcomes"][-50:]
+            # Update counters
+            if outcome == "SUCCESS":
+                profile["success_count"] = profile.get("success_count", 0) + 1
+            elif outcome == "FAILURE":
+                profile["failure_count"] = profile.get("failure_count", 0) + 1
+            elif outcome == "PARTIAL":
+                profile["partial_count"] = profile.get("partial_count", 0) + 1
 
-        # Update counters
-        if outcome == "SUCCESS":
-            profile["success_count"] = profile.get("success_count", 0) + 1
-        elif outcome == "FAILURE":
-            profile["failure_count"] = profile.get("failure_count", 0) + 1
-        elif outcome == "PARTIAL":
-            profile["partial_count"] = profile.get("partial_count", 0) + 1
+            # Compute success rate
+            total = (profile.get("success_count", 0) +
+                     profile.get("failure_count", 0) +
+                     profile.get("partial_count", 0))
+            profile["restart_success_rate"] = round(
+                profile.get("success_count", 0) / total, 3) if total > 0 else None
 
-        # Compute success rate
-        total = (profile.get("success_count", 0) +
-                 profile.get("failure_count", 0) +
-                 profile.get("partial_count", 0))
-        profile["restart_success_rate"] = round(
-            profile.get("success_count", 0) / total, 3) if total > 0 else None
-
-        profile["last_updated"] = datetime.now().isoformat()
-
-        # Atomic write — crash-safe
-        _tmp = str(KNOWLEDGE_PATH) + ".tmp"
-        with open(_tmp, "w") as f:
-            json.dump(knowledge, f, indent=2)
-        os.replace(_tmp, str(KNOWLEDGE_PATH))
+            profile["last_updated"] = datetime.now().isoformat()
 
     except Exception as e:
         logger.warning("Could not update knowledge.json with outcome: %s", e)
@@ -269,64 +260,54 @@ def _validate_prediction(miner_id: str, ip: str, outcome: str) -> None:
     - If we did not predict and miner recovered = TRUE NEGATIVE
     """
     try:
-        knowledge = {}
-        if Path(KNOWLEDGE_PATH).exists():
-            knowledge = json.loads(Path(KNOWLEDGE_PATH).read_text())
-        
-        predictions = knowledge.get("predictions", [])
-        
-        # Find prediction for this miner (within last 48 hours)
-        cutoff = (datetime.now() - timedelta(hours=48)).isoformat()
-        relevant_pred = None
-        for p in predictions:
-            if (p.get("ip") == ip or p.get("miner_id") == str(miner_id)):
-                pred_time = p.get("predicted_at", "")
-                if pred_time >= cutoff:
-                    relevant_pred = p
-                    break  # Use most recent
-        
-        # Initialize prediction_accuracy if not present
-        accuracy = knowledge.setdefault("prediction_accuracy", {
-            "true_positives": 0,
-            "false_positives": 0,
-            "false_negatives": 0,
-            "true_negatives": 0,
-            "total_validations": 0
-        })
-        
-        predicted_failure = (relevant_pred is not None and 
-                            relevant_pred.get("action") == "PREEMPTIVE_RESTART")
-        actual_failure = outcome == "FAILURE"
-        
-        accuracy["total_validations"] += 1
-        
-        if predicted_failure and actual_failure:
-            accuracy["true_positives"] += 1
-            logger.info("PREDICTION VALIDATED: TRUE POSITIVE for %s - predicted failure and it failed", ip)
-        elif predicted_failure and not actual_failure:
-            accuracy["false_positives"] += 1
-            logger.info("PREDICTION VALIDATED: FALSE POSITIVE for %s - predicted failure but recovered", ip)
-        elif not predicted_failure and actual_failure:
-            accuracy["false_negatives"] += 1
-            logger.info("PREDICTION VALIDATED: FALSE NEGATIVE for %s - missed the failure", ip)
-        else:
-            accuracy["true_negatives"] += 1
-            # Do not log true negatives (too noisy)
-        
-        # Calculate accuracy rate
-        tp = accuracy["true_positives"]
-        tn = accuracy["true_negatives"]
-        total = accuracy["total_validations"]
-        if total > 0:
-            accuracy["accuracy_rate"] = round((tp + tn) / total * 100, 1)
-        
-        # Atomic write
-        tmp = str(KNOWLEDGE_PATH) + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(knowledge, f, indent=2)
-        import os
-        os.replace(tmp, str(KNOWLEDGE_PATH))
-        
+        from core.file_lock import locked_knowledge_update
+        with locked_knowledge_update(str(KNOWLEDGE_PATH)) as knowledge:
+            predictions = knowledge.get("predictions", [])
+
+            # Find prediction for this miner (within last 48 hours)
+            cutoff = (datetime.now() - timedelta(hours=48)).isoformat()
+            relevant_pred = None
+            for p in predictions:
+                if (p.get("ip") == ip or p.get("miner_id") == str(miner_id)):
+                    pred_time = p.get("predicted_at", "")
+                    if pred_time >= cutoff:
+                        relevant_pred = p
+                        break  # Use most recent
+
+            # Initialize prediction_accuracy if not present
+            accuracy = knowledge.setdefault("prediction_accuracy", {
+                "true_positives": 0,
+                "false_positives": 0,
+                "false_negatives": 0,
+                "true_negatives": 0,
+                "total_validations": 0
+            })
+
+            predicted_failure = (relevant_pred is not None and
+                                relevant_pred.get("action") == "PREEMPTIVE_RESTART")
+            actual_failure = outcome == "FAILURE"
+
+            accuracy["total_validations"] += 1
+
+            if predicted_failure and actual_failure:
+                accuracy["true_positives"] += 1
+                logger.info("PREDICTION VALIDATED: TRUE POSITIVE for %s - predicted failure and it failed", ip)
+            elif predicted_failure and not actual_failure:
+                accuracy["false_positives"] += 1
+                logger.info("PREDICTION VALIDATED: FALSE POSITIVE for %s - predicted failure but recovered", ip)
+            elif not predicted_failure and actual_failure:
+                accuracy["false_negatives"] += 1
+                logger.info("PREDICTION VALIDATED: FALSE NEGATIVE for %s - missed the failure", ip)
+            else:
+                accuracy["true_negatives"] += 1
+
+            # Calculate accuracy rate
+            tp = accuracy["true_positives"]
+            tn = accuracy["true_negatives"]
+            total = accuracy["total_validations"]
+            if total > 0:
+                accuracy["accuracy_rate"] = round((tp + tn) / total * 100, 1)
+
     except Exception as e:
         logger.warning("Could not validate prediction: %s", e)
 

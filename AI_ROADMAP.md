@@ -4,7 +4,7 @@
 
 **Branch:** `main`
 **Status:** Post 48-hr test — approaching Mac mini migration (May 5–9 2026)
-**Current phase:** Hardening + OpenClaw conversational wiring + installer prep
+**Current phase:** Post-code-review hardening complete (all CRITICAL + HIGH resolved) — OpenClaw conversational wiring + installer prep
 **Rule:** Before building anything, examine every available data point. No unused signals. No proposing alternatives to plans already in the docs.
 
 > 📘 This document is the forward-looking status tracker. For the canonical product vision read `docs/VISION.md` first, then `README.md`. For binding rules read `CLAUDE.md`.
@@ -74,15 +74,24 @@ Bobby corrected the diagnosis in 5 seconds with one operator insight: "I just up
 - [x] Grafana Main rejection chart — replaced per-miner spaghetti with fleet avg + worst miner
 - [x] AI Intelligence Center — complete rebuild with live action queue, approve/deny buttons, AI score
 
-### Code Quality (from code review)
+### Code Quality (from code review — 53 findings across 35K lines)
 - [x] Dead code removed (orphaned method bodies)
 - [x] `api/slack_listener.py` deleted (violated Socket Mode rule)
 - [x] Auth bypass in `approval_api.py` — now fails closed
 - [x] Atomic writes in `outcome_checker.py`
-- [ ] DB leaks (bare `_connect().execute()`) — 3 locations still need context managers
-- [ ] NameErrors in predictor loop (line 4619) and `_escalate_board_issue` (line 4040)
-- [ ] File handle leak in `overnight_automation.py`
-- [ ] **Log file rotation bug** (found April 9 2026 diagnostic) — `_setup_logging()` in `core/mining_guardian.py` lines 33-48 computes the log filename once at module import from `datetime.now()` and never rolls over at midnight. Result: today's log entries append to yesterday's filename until the process restarts. Fix: replace `FileHandler` with `TimedRotatingFileHandler(when='midnight', backupCount=14)`. Doesn't affect operation — `journalctl -u mining-guardian` has complete records — but file-based log inspection is misleading until fixed. hourlyute fix.
+- [x] DB leaks (bare `_connect().execute()`) — context managers added in predictor.py (Phase 3)
+- [x] NameErrors in predictor loop and `_escalate_board_issue` — fixed (Phase 1)
+- [x] knowledge.json file locking — `core/file_lock.py` shared utility, 6 writers updated (Phase 3)
+- [x] AMS token lock wired in `_ensure_token()` — thread safety for parallel workers (Phase 3)
+- [x] `/metrics` endpoint cached — 25s TTL reduces SQLite load (Phase 3)
+- [x] AV2 Plant credentials moved to env vars (Phase 3)
+- [x] Slack handler memory leak — bounded `OrderedDict` capped at 10K entries (Phase 3)
+- [x] Atomic writes in `fingerprint_builder.py` + `hvac_correlator.py` (Phase 3)
+- [x] Approval API transaction safety + case normalization (Phase 2)
+- [x] Slack auth enforcement — `AUTHORIZED_SLACK_USER_IDS` actually checked (Phase 2)
+- [x] LLM analyzer correct host/model defaults (Phase 2)
+- [ ] File handle leak in `overnight_automation.py` (MEDIUM)
+- [ ] **Log file rotation bug** (MEDIUM, found April 9 2026 diagnostic) — `_setup_logging()` in `core/mining_guardian.py` computes the log filename once at module import and never rolls over at midnight. Fix: replace `FileHandler` with `TimedRotatingFileHandler(when='midnight', backupCount=14)`. Doesn't affect operation — `journalctl -u mining-guardian` has complete records — but file-based log inspection is misleading until fixed.
 
 ---
 
@@ -285,6 +294,19 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ---
 
 ## Completed Items (for reference)
+
+### ✅ Completed April 10–14 2026 (Code Review + Hardening)
+
+- [x] Full code review — 53 findings across 35K lines of code (April 14)
+- [x] **Phase 1** (commit 88b5b08): 6 CRITICAL fixes — silently broken predictions (NameError), board escalation crash (undefined `issue`), catalog auth header (Bearer→X-API-Key), fleet synthesis crash (undefined `hvac_system`), SQL syntax error in pool_readings, Auradine missing `import os`
+- [x] **Phase 2** (commit dda6bd0): 4 fixes — approval API transaction safety + case normalization, SlackNotifier.send_scan DB wiring for ticket suppression, AUTHORIZED_SLACK_USER_IDS enforcement, LLM analyzer correct host/model defaults
+- [x] **Phase 3** (this commit): 7 fixes — knowledge.json file locking (6 writers), predictor DB connection leaks (try/finally), AMS token lock wired, /metrics cached (25s TTL), AV2 credentials to env vars, Slack handler bounded sets (10K cap), atomic writes in fingerprint_builder + hvac_correlator
+- [x] REPAIR_LOG.md — 17 new entries covering all Phase 1/2/3 fixes
+- [x] README.md — updated security, knowledge system, AI features status, code review summary
+- [x] .env.example — complete reference for all 30+ env vars (was only 4)
+- [x] Comprehensive AI audit — 12 feedback loops verified closed, orphaned hvac_correlation fixed (April 11)
+- [x] Operator rule consolidation — 3 cooldown rules → 1 unified 20-min rule (April 11)
+- [x] Correct local_llm_analyzer.py deployed to production (April 11)
 
 ### ✅ Completed April 4–9 2026
 

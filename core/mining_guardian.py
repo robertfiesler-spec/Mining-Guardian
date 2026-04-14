@@ -229,6 +229,9 @@ class AMSClient:
         Tokens expire after ~30 minutes (observed from JWT payload).
         We re-auth 60 seconds before expiry to avoid mid-scan failures.
 
+        Thread safety: uses self._token_lock to prevent parallel log workers
+        from racing on token refresh and corrupting session state.
+
         Bug fix (Apr 8 2026): long-running processes (overnight-automation,
         alert-listener) were getting HTTP 400 from select_workspace when the
         token expired. Root cause: stale session cookies were colliding with
@@ -236,41 +239,42 @@ class AMSClient:
         every re-auth, and on failure, reset _ws_token so the next call retries
         from scratch instead of returning the stale cached value.
         """
-        now = datetime.now(timezone.utc)
-        if self._ws_token and self._token_expiry and now < self._token_expiry:
-            return self._ws_token
+        with self._token_lock:
+            now = datetime.now(timezone.utc)
+            if self._ws_token and self._token_expiry and now < self._token_expiry:
+                return self._ws_token
 
-        # CRITICAL: clear the cookie jar before re-auth so stale workspace
-        # tokens from a previous expired session do not interfere with the
-        # new login + select_workspace flow.
-        self.session.cookies.clear()
-
-        try:
-            user_token = self._login()
-            ws_token   = self._select_workspace(user_token)
-        except Exception as e:
-            # Hard-reset cached state so the next call re-attempts fresh
-            self._ws_token = None
-            self._token_expiry = None
+            # CRITICAL: clear the cookie jar before re-auth so stale workspace
+            # tokens from a previous expired session do not interfere with the
+            # new login + select_workspace flow.
             self.session.cookies.clear()
-            logger.error("AMS re-auth failed: %s — cleared cached token", e)
-            raise
 
-        self._ws_token     = ws_token
-        # Parse expiry from JWT payload (middle segment, base64-encoded JSON)
-        try:
-            import base64
-            payload_b64 = ws_token.split(".")[1]
-            payload_b64 += "=" * (4 - len(payload_b64) % 4)
-            payload = json.loads(base64.b64decode(payload_b64))
-            exp = payload.get("exp")
-            if exp:
-                self._token_expiry = datetime.fromtimestamp(exp, tz=timezone.utc) - timedelta(seconds=60)
-        except Exception:
-            # If we can't parse expiry, refresh every 25 minutes to be safe
-            self._token_expiry = now + timedelta(minutes=25)
+            try:
+                user_token = self._login()
+                ws_token   = self._select_workspace(user_token)
+            except Exception as e:
+                # Hard-reset cached state so the next call re-attempts fresh
+                self._ws_token = None
+                self._token_expiry = None
+                self.session.cookies.clear()
+                logger.error("AMS re-auth failed: %s — cleared cached token", e)
+                raise
 
-        return self._ws_token
+            self._ws_token     = ws_token
+            # Parse expiry from JWT payload (middle segment, base64-encoded JSON)
+            try:
+                import base64
+                payload_b64 = ws_token.split(".")[1]
+                payload_b64 += "=" * (4 - len(payload_b64) % 4)
+                payload = json.loads(base64.b64decode(payload_b64))
+                exp = payload.get("exp")
+                if exp:
+                    self._token_expiry = datetime.fromtimestamp(exp, tz=timezone.utc) - timedelta(seconds=60)
+            except Exception:
+                # If we can't parse expiry, refresh every 25 minutes to be safe
+                self._token_expiry = now + timedelta(minutes=25)
+
+            return self._ws_token
 
     # ── Read: WebSocket one-shot fetch ───────────────────────
     # The AMS delivers live data via WebSocket, not REST polling.

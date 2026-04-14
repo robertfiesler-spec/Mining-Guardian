@@ -228,13 +228,11 @@ def check_fleet_correlation(scan_id: int) -> Optional[Dict[str, Any]]:
 def _log_facility_event(event: Dict[str, Any]):
     """Append facility event to knowledge.json."""
     try:
-        path = Path(KNOWLEDGE_PATH)
-        knowledge = json.loads(path.read_text()) if path.exists() else {}
-        events = knowledge.setdefault("facility_events", [])
-        events.append(event)
-        # Keep last 100 facility events
-        knowledge["facility_events"] = events[-100:]
-        path.write_text(json.dumps(knowledge, indent=2))
+        from core.file_lock import locked_knowledge_update
+        with locked_knowledge_update(KNOWLEDGE_PATH) as knowledge:
+            events = knowledge.setdefault("facility_events", [])
+            events.append(event)
+            knowledge["facility_events"] = events[-100:]
     except Exception as e:
         logger.warning("Could not log facility event: %s", e)
 

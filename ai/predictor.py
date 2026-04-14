@@ -156,70 +156,69 @@ def _predict_miner(miner_id: str, ip: str, model: str,
                    current_board_temp: float,
                    firmware: str = "") -> Optional[Dict[str, Any]]:
     conn = get_db()
+    try:
+        # Hashrate + chip temp history
+        history = conn.execute("""
+            SELECT mr.hashrate_pct, mr.temp_chip, mr.temp_board, mr.uptime
+            FROM miner_readings mr
+            JOIN scans s ON mr.scan_id=s.id
+            WHERE mr.miner_id=? AND mr.status='online' AND mr.hashrate_pct IS NOT NULL
+            ORDER BY s.scanned_at DESC LIMIT ?
+        """, (miner_id, max(TREND_WINDOW, VOLATILITY_WINDOW)+5)).fetchall()
 
-    # Hashrate + chip temp history
-    history = conn.execute("""
-        SELECT mr.hashrate_pct, mr.temp_chip, mr.temp_board, mr.uptime
-        FROM miner_readings mr
-        JOIN scans s ON mr.scan_id=s.id
-        WHERE mr.miner_id=? AND mr.status='online' AND mr.hashrate_pct IS NOT NULL
-        ORDER BY s.scanned_at DESC LIMIT ?
-    """, (miner_id, max(TREND_WINDOW, VOLATILITY_WINDOW)+5)).fetchall()
+        if len(history) < MIN_SCANS_FOR_PRED:
+            return None
 
-    if len(history) < MIN_SCANS_FOR_PRED:
+        # Latest board readings (voltage, freq, temp_board, hw_errors per board)
+        boards = conn.execute("""
+            SELECT c.board_index, c.rate_mhs, c.voltage, c.freq_mhz,
+                   c.temp_board, c.hw_errors
+            FROM chain_readings c
+            WHERE c.ip=? AND c.scan_id=(
+                SELECT MAX(scan_id) FROM chain_readings WHERE ip=?
+            )
+        """, (ip, ip)).fetchall()
+
+        # Pool rejection rate (last 10 scans)
+        pool = conn.execute("""
+            SELECT SUM(accepted) as acc, SUM(rejected) as rej
+            FROM pool_readings WHERE miner_id=?
+              AND scan_id IN (SELECT id FROM scans ORDER BY id DESC LIMIT 10)
+        """, (miner_id,)).fetchone()
+
+        # AMS alerts in last 24h
+        ams_cutoff = (datetime.now() - timedelta(hours=AMS_ALERT_WINDOW_H)).isoformat()
+        ams = conn.execute("""
+            SELECT key, COUNT(*) as cnt FROM ams_notifications
+            WHERE miner_ip=? AND recorded_at>=? GROUP BY key
+        """, (ip, ams_cutoff)).fetchall()
+        ams_counts = {r["key"]: r["cnt"] for r in ams}
+
+        # State readings for max temps
+        state_rows = conn.execute("""
+            SELECT max_temp_board, max_temp_chip FROM miner_state_readings
+            WHERE miner_id=? ORDER BY id DESC LIMIT 3
+        """, (miner_id,)).fetchall()
+
+        # HVAC context — is facility stressed?
+        # Use the correct HVAC system based on miner model
+        hvac_system = 's19jpro' if model and model.startswith('S19JPro') else 'warehouse'
+        hvac = conn.execute("""
+            SELECT supply_temp_f FROM hvac_readings WHERE system_id = ? ORDER BY recorded_at DESC LIMIT 1
+        """, (hvac_system,)).fetchone()
+        supply_temp = float(hvac["supply_temp_f"] or 0) if hvac else 0
+
+        # Load hvac_correlation to check if facility stress actually correlates with flags
+        hvac_corr = _load_knowledge().get("hvac_correlation", {})
+        corr_value = hvac_corr.get("supply_temp_flag_correlation", 0)
+
+        # Only consider facility stressed if:
+        # 1. Supply temp is actually high (>80F), AND
+        # 2. Historical correlation shows facility stress matters (>0.3)
+        # If correlation is near zero or negative, HVAC stress doesn't cause flags
+        facility_stressed = bool(supply_temp > 80.0 and corr_value > 0.3)
+    finally:
         conn.close()
-        return None
-
-    # Latest board readings (voltage, freq, temp_board, hw_errors per board)
-    boards = conn.execute("""
-        SELECT c.board_index, c.rate_mhs, c.voltage, c.freq_mhz,
-               c.temp_board, c.hw_errors
-        FROM chain_readings c
-        WHERE c.ip=? AND c.scan_id=(
-            SELECT MAX(scan_id) FROM chain_readings WHERE ip=?
-        )
-    """, (ip, ip)).fetchall()
-
-    # Pool rejection rate (last 10 scans)
-    pool = conn.execute("""
-        SELECT SUM(accepted) as acc, SUM(rejected) as rej
-        FROM pool_readings WHERE miner_id=?
-          AND scan_id IN (SELECT id FROM scans ORDER BY id DESC LIMIT 10)
-    """, (miner_id,)).fetchone()
-
-    # AMS alerts in last 24h
-    ams_cutoff = (datetime.now() - timedelta(hours=AMS_ALERT_WINDOW_H)).isoformat()
-    ams = conn.execute("""
-        SELECT key, COUNT(*) as cnt FROM ams_notifications
-        WHERE miner_ip=? AND recorded_at>=? GROUP BY key
-    """, (ip, ams_cutoff)).fetchall()
-    ams_counts = {r["key"]: r["cnt"] for r in ams}
-
-    # State readings for max temps
-    state_rows = conn.execute("""
-        SELECT max_temp_board, max_temp_chip FROM miner_state_readings
-        WHERE miner_id=? ORDER BY id DESC LIMIT 3
-    """, (miner_id,)).fetchall()
-
-    # HVAC context — is facility stressed?
-    # Use the correct HVAC system based on miner model
-    hvac_system = 's19jpro' if model and model.startswith('S19JPro') else 'warehouse'
-    hvac = conn.execute("""
-        SELECT supply_temp_f FROM hvac_readings WHERE system_id = ? ORDER BY recorded_at DESC LIMIT 1
-    """, (hvac_system,)).fetchone()
-    supply_temp = float(hvac["supply_temp_f"] or 0) if hvac else 0
-    
-    # Load hvac_correlation to check if facility stress actually correlates with flags
-    hvac_corr = _load_knowledge().get("hvac_correlation", {})
-    corr_value = hvac_corr.get("supply_temp_flag_correlation", 0)
-    
-    # Only consider facility stressed if:
-    # 1. Supply temp is actually high (>80F), AND
-    # 2. Historical correlation shows facility stress matters (>0.3)
-    # If correlation is near zero or negative, HVAC stress doesn't cause flags
-    facility_stressed = bool(supply_temp > 80.0 and corr_value > 0.3)
-
-    conn.close()
 
     hashrates = [float(r["hashrate_pct"]) for r in history]
     chip_temps = [float(r["temp_chip"]) if r["temp_chip"] else None for r in history]
@@ -379,25 +378,26 @@ def _check_temp_creep(temps: List[float], facility_stressed: bool) -> Tuple[floa
 
 def _check_pattern_match(miner_id: str, recent_hrs: List[float]) -> Tuple[float, Optional[str]]:
     conn = get_db()
-    failures = conn.execute("""
-        SELECT restarted_at FROM miner_restarts
-        WHERE miner_id=? AND outcome='FAILURE' ORDER BY restarted_at DESC LIMIT 5
-    """, (miner_id,)).fetchall()
-    if not failures:
+    try:
+        failures = conn.execute("""
+            SELECT restarted_at FROM miner_restarts
+            WHERE miner_id=? AND outcome='FAILURE' ORDER BY restarted_at DESC LIMIT 5
+        """, (miner_id,)).fetchall()
+        if not failures:
+            return 0.0, None
+        best = 0.0
+        for f in failures:
+            pre = conn.execute("""
+                SELECT mr.hashrate_pct FROM miner_readings mr
+                JOIN scans s ON mr.scan_id=s.id
+                WHERE mr.miner_id=? AND s.scanned_at<? AND mr.hashrate_pct IS NOT NULL
+                ORDER BY s.scanned_at DESC LIMIT 5
+            """, (miner_id, f["restarted_at"])).fetchall()
+            if len(pre) >= 3:
+                pattern = [float(r["hashrate_pct"]) for r in pre]
+                best = max(best, _trend_similarity(recent_hrs[:len(pattern)], pattern))
+    finally:
         conn.close()
-        return 0.0, None
-    best = 0.0
-    for f in failures:
-        pre = conn.execute("""
-            SELECT mr.hashrate_pct FROM miner_readings mr
-            JOIN scans s ON mr.scan_id=s.id
-            WHERE mr.miner_id=? AND s.scanned_at<? AND mr.hashrate_pct IS NOT NULL
-            ORDER BY s.scanned_at DESC LIMIT 5
-        """, (miner_id, f["restarted_at"])).fetchall()
-        if len(pre) >= 3:
-            pattern = [float(r["hashrate_pct"]) for r in pre]
-            best = max(best, _trend_similarity(recent_hrs[:len(pattern)], pattern))
-    conn.close()
     if best >= 0.75:
         return min(85.0, best*85.0), f"matches pre-failure pattern ({best:.0%} similarity)"
     return 0.0, None
@@ -485,15 +485,17 @@ def _check_chain_events(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
     Checks last 24 hours of chain_events.
     """
     conn = get_db()
-    cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
-    rows = conn.execute("""
-        SELECT text_value as event, board_index, COUNT(*) as cnt
-        FROM log_metrics
-        WHERE ip=? AND metric_type='chain_event' AND recorded_at>=?
-        GROUP BY text_value, board_index
-        ORDER BY cnt DESC
-    """, (ip, cutoff)).fetchall()
-    conn.close()
+    try:
+        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+        rows = conn.execute("""
+            SELECT text_value as event, board_index, COUNT(*) as cnt
+            FROM log_metrics
+            WHERE ip=? AND metric_type='chain_event' AND recorded_at>=?
+            GROUP BY text_value, board_index
+            ORDER BY cnt DESC
+        """, (ip, cutoff)).fetchall()
+    finally:
+        conn.close()
 
     if not rows:
         return 0.0, None
@@ -533,9 +535,9 @@ def _check_chip_degradation(miner_id: str, ip: str) -> Tuple[float, Optional[str
             LIMIT 500
         """, (ip,)).fetchall()
     except Exception:
-        conn.close()
         return 0.0, None
-    conn.close()
+    finally:
+        conn.close()
 
     if len(rows) < 4:
         return 0.0, None
@@ -583,9 +585,9 @@ def _check_asic_ok_ratio(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
             LIMIT 30
         """, (ip,)).fetchall()
     except Exception:
-        conn.close()
         return 0.0, None
-    conn.close()
+    finally:
+        conn.close()
 
     if not rows:
         return 0.0, None
@@ -666,13 +668,12 @@ def _trend_similarity(a: List[float], b: List[float]) -> float:
 
 def _save_predictions(predictions: List[Dict[str, Any]]):
     try:
-        path = Path(KNOWLEDGE_PATH)
-        knowledge = json.loads(path.read_text()) if path.exists() else {}
-        preds = knowledge.setdefault("predictions", [])
-        for p in predictions:
-            preds.append({**p, "outcome": None, "accurate": None})
-        knowledge["predictions"] = preds[-200:]
-        path.write_text(json.dumps(knowledge, indent=2))
+        from core.file_lock import locked_knowledge_update
+        with locked_knowledge_update(KNOWLEDGE_PATH) as knowledge:
+            preds = knowledge.setdefault("predictions", [])
+            for p in predictions:
+                preds.append({**p, "outcome": None, "accurate": None})
+            knowledge["predictions"] = preds[-200:]
     except Exception as e:
         logger.warning("Could not save predictions: %s", e)
 

@@ -23,6 +23,385 @@
 
 ---
 
+### 2026-04-14 · knowledge.json writers had no file locking — concurrent writes silently lost data
+
+**What Bobby thought the program was doing:**
+All the AI modules (knowledge manager, predictor, fingerprint builder, HVAC correlator, outcome checker, insight manager) save their work to the same knowledge.json file, and each module's data should persist.
+
+**What was actually happening:**
+Four or more modules were reading and writing knowledge.json at the same time with no file locking. If the predictor and the fingerprint builder both ran at the same time (which happens during every scan cycle), one would overwrite the other's changes. Whichever module wrote last "won" — the other module's data was silently lost. On top of that, fingerprint_builder, predictor, and hvac_correlator were using non-atomic writes (plain file write instead of write-to-temp-then-rename), so a crash mid-write could corrupt the entire file.
+
+**What we changed:**
+- Created a new shared utility (`core/file_lock.py`) that uses Unix file locking (`fcntl.flock`) to ensure only one module writes at a time
+- All six modules that write to knowledge.json now acquire the lock before reading, hold it through the write, and release after
+- All writes are now atomic (write to a temp file, then `os.replace` to swap it in)
+- `knowledge_manager.py`, `fingerprint_builder.py`, `predictor.py`, `hvac_correlator.py`, `outcome_checker.py`, and `insight_manager.py` all updated
+
+**How we verified:**
+- `python3 -m py_compile` passes on all modified files
+- All six writers import and use `locked_knowledge_update` from the shared utility
+
+**Lesson:**
+Any shared file written by multiple processes or threads needs a locking protocol. "Last writer wins" is a data-loss bug, not a feature.
+
+**Status:** Fixed. Committed as part of Phase 3 cleanup.
+
+---
+
+### 2026-04-14 · Predictor DB connections leaked on exceptions — could cascade under load
+
+**What Bobby thought the program was doing:**
+The predictor opens a database connection for each of the 14 signals it checks per miner, runs its queries, and closes the connection when done.
+
+**What was actually happening:**
+Several functions in `predictor.py` (including `_predict_miner`, `_check_pattern_match`, `_check_chain_events`, `_check_chip_degradation`, `_check_asic_ok_ratio`) opened DB connections but didn't wrap them in try/finally blocks. If any query threw an exception, the connection was never closed. With 14 signals × 58 miners, a single lock contention event could cascade into dozens of leaked connections, eventually exhausting SQLite's connection limit.
+
+**What we changed:**
+Wrapped all `get_db()` calls in `predictor.py` with try/finally blocks ensuring `conn.close()` always runs, even on exceptions. Six functions were updated.
+
+**How we verified:**
+- `python3 -m py_compile ai/predictor.py` passes
+- All early-return paths now go through the finally block
+
+**Lesson:**
+Every database connection needs to be in a try/finally or context manager. Never rely on the happy path for cleanup.
+
+**Status:** Fixed. Committed as part of Phase 3 cleanup.
+
+---
+
+### 2026-04-14 · AMS token refresh had a race condition — parallel workers could corrupt session
+
+**What Bobby thought the program was doing:**
+When the AMS token expires (every ~30 minutes), the system re-authenticates and gets a fresh token. This should be thread-safe since multiple log workers run in parallel.
+
+**What was actually happening:**
+A `threading.Lock` was created (`self._token_lock`) but never actually used in `_ensure_token()`. When the token expired, multiple parallel log workers could all try to refresh at the same time, corrupting the session cookies and causing authentication failures.
+
+**What we changed:**
+Wrapped the entire `_ensure_token()` method body in `with self._token_lock:` so only one thread refreshes the token at a time. Other threads wait and then use the freshly cached token.
+
+**How we verified:**
+- `python3 -m py_compile core/mining_guardian.py` passes
+- The lock was already created at init; now it's actually used
+
+**Lesson:**
+Creating a lock but never acquiring it is worse than having no lock at all — it gives a false sense of safety. If you create a lock, grep for where it's acquired.
+
+**Status:** Fixed. Committed as part of Phase 3 cleanup.
+
+---
+
+### 2026-04-14 · Prometheus /metrics endpoint hammered SQLite with 15 queries every 30 seconds
+
+**What Bobby thought the program was doing:**
+Prometheus scrapes the `/metrics` endpoint every 30 seconds to collect fleet health data. The endpoint should return current data quickly without stressing the database.
+
+**What was actually happening:**
+Every single Prometheus scrape ran ~15 database queries (scan summary, per-miner readings, per-board readings, pool data, HVAC, weather, knowledge metrics, audit log counts). That's 15 queries every 30 seconds — 43,200 queries per day just for metrics. SQLite was being hammered unnecessarily since the data barely changes between scrapes.
+
+**What we changed:**
+Added a simple time-based cache to the `/metrics` endpoint in `dashboard_api.py`. Results are cached for 25 seconds, so Prometheus gets fresh data each 30-second scrape cycle but we only run the queries once per cycle instead of every time.
+
+**How we verified:**
+- `python3 -m py_compile api/dashboard_api.py` passes
+- Cache TTL (25s) is less than scrape interval (30s), ensuring data is always fresh when Prometheus asks
+
+**Lesson:**
+If an endpoint is scraped on a fixed interval and the data doesn't change faster than that interval, cache it for slightly less than the interval.
+
+**Status:** Fixed. Committed as part of Phase 3 cleanup.
+
+---
+
+### 2026-04-14 · AV-2 Plant client had hardcoded production credentials in source code
+
+**What Bobby thought the program was doing:**
+All hardware credentials should come from environment variables in the `.env` file, same as PDU, Auradine, and Eclypse clients.
+
+**What was actually happening:**
+The AV-2 Plant client (`clients/av2_plant_client.py`) had the production username ("BigStar") and password ("BigSt@r2020") hardcoded as default arguments in the constructor. These were committed to git. Every other hardware client in the system used `os.getenv()` for credentials — this one was the exception.
+
+**What we changed:**
+Replaced the hardcoded credential defaults with `os.getenv("AV2_PLANT_USER", "")` and `os.getenv("AV2_PLANT_PASSWORD", "")`. Added `AV2_PLANT_USER` and `AV2_PLANT_PASSWORD` to `.env.example`.
+
+**How we verified:**
+- `python3 -m py_compile clients/av2_plant_client.py` passes
+- Grep for "BigStar" and "BigSt@r" in the codebase returns zero results
+
+**Lesson:**
+Never use default values for credentials in function signatures. Empty string or os.getenv is the only safe default.
+
+**Status:** Fixed. Committed as part of Phase 3 cleanup.
+
+---
+
+### 2026-04-14 · Slack handlers accumulated message IDs forever — slow memory leak
+
+**What Bobby thought the program was doing:**
+The Slack approval listener and command handler track which messages they've already processed so they don't process the same message twice. This should be a lightweight in-memory check.
+
+**What was actually happening:**
+Both handlers used a plain Python `set()` to store every processed message ID, and these sets were never pruned. Every message ID was kept forever. Over weeks or months of continuous operation, these sets would grow to tens of thousands of entries, consuming memory unnecessarily. The escalation tracking keys (`escalated:{miner_id}`) were especially problematic — once a miner was escalated, it could never be escalated again until the process restarted.
+
+**What we changed:**
+Replaced the unbounded `set()` in both `slack_approval_listener.py` and `slack_command_handler.py` with a bounded `OrderedDict` capped at 10,000 entries. When the limit is exceeded, the oldest entries are evicted first. Added a `_mark_processed()` helper method to both classes.
+
+**How we verified:**
+- `python3 -m py_compile` passes on both files
+- The `in` operator works the same on OrderedDict keys as on sets
+
+**Lesson:**
+Any in-memory collection that grows with traffic needs a size cap or TTL eviction. Unbounded collections are memory leaks in disguise.
+
+**Status:** Fixed. Committed as part of Phase 3 cleanup.
+
+---
+
+### 2026-04-14 · fingerprint_builder and hvac_correlator used non-atomic writes to knowledge.json
+
+**What Bobby thought the program was doing:**
+When the fingerprint builder or HVAC correlator saves data to knowledge.json, the file should always be valid JSON — even if the process crashes mid-write.
+
+**What was actually happening:**
+Both `fingerprint_builder.py` and `hvac_correlator.py` wrote directly to knowledge.json using `Path.write_text()`. If the process crashed or was killed during the write, the file could be left half-written — corrupted JSON that would fail to parse on the next read, effectively wiping all accumulated knowledge.
+
+**What we changed:**
+Both files now use the shared `locked_knowledge_update` utility from `core/file_lock.py`, which writes to a temp file first and then atomically swaps it in with `os.replace()`. This also gives them file locking for concurrent access safety (see the file-locking entry above).
+
+**How we verified:**
+- `python3 -m py_compile` passes on both files
+- Both writers now go through the same atomic write path as knowledge_manager.py
+
+**Lesson:**
+Never write directly to a file that other processes depend on. Always write to a temp file first, then rename.
+
+**Status:** Fixed. Committed as part of Phase 3 cleanup.
+
+---
+
+### 2026-04-14 · Approval API had zero transactional safety — double-approvals and case mismatches
+
+**What Bobby thought the program was doing:**
+When Bobby approves or denies an action in Slack, the approval API should process it exactly once, update the database, and trigger the right follow-up action.
+
+**What was actually happening:**
+The approval API (`api/approval_api.py`) had no database transactions around its approval/denial logic. A race condition could cause double-approvals. Additionally, the status comparison was case-sensitive — the database stored "PENDING" but some code paths checked for "pending", causing mismatches that left actions stuck.
+
+**What we changed:**
+- Wrapped the read-check-update approval logic in a proper database transaction
+- Normalized status comparisons to uppercase throughout
+- Added row-level locking to prevent double-processing
+
+**How we verified:**
+- `python3 -m py_compile api/approval_api.py` passes
+- Transaction wraps the full approve/deny flow
+
+**Lesson:**
+Any read-then-write database operation that decides an outcome (approve/deny) must be in a transaction. Case-sensitive string comparisons on status fields are a bug waiting to happen.
+
+**Status:** Fixed. Committed in Phase 2 (dda6bd0).
+
+---
+
+### 2026-04-14 · SlackNotifier.send_scan missing DB connection for ticketed miner suppression
+
+**What Bobby thought the program was doing:**
+When a scan completes, the Slack notification should suppress miners that already have AMS tickets (dead board tickets) so Bobby doesn't get alerted about known issues.
+
+**What was actually happening:**
+The `send_scan()` method in the SlackNotifier class didn't have access to a database connection, so it couldn't look up which miners had open tickets. All miners — including ones Bobby already knew about and had tickets for — showed up in every scan notification.
+
+**What we changed:**
+Passed the database connection through to `send_scan()` so it can query `known_dead_boards` and suppress ticketed miners from the notification.
+
+**How we verified:**
+- `python3 -m py_compile core/mining_guardian.py` passes
+- Ticketed miners no longer appear in scan alerts
+
+**Lesson:**
+Feature code that needs data access must have its dependencies wired up. A function that's supposed to filter but has no access to the filter data is silently broken.
+
+**Status:** Fixed. Committed in Phase 2 (dda6bd0).
+
+---
+
+### 2026-04-14 · AUTHORIZED_SLACK_USER_IDS was defined but never checked — anyone could run commands
+
+**What Bobby thought the program was doing:**
+Only authorized Slack users (Bobby's user ID) should be able to run Mining Guardian commands and approve/deny actions. The `AUTHORIZED_SLACK_USER_IDS` environment variable controls who has access.
+
+**What was actually happening:**
+The environment variable was read and parsed into a set, but the authorization check was never actually performed. Any Slack user in the channel could run any command or approve/deny any action.
+
+**What we changed:**
+Added authorization checks in both `slack_command_handler.py` and `slack_approval_listener.py` that verify the user ID is in the authorized set before processing any command or approval.
+
+**How we verified:**
+- `python3 -m py_compile` passes on both files
+- Unauthorized users now get a "not authorized" response
+
+**Lesson:**
+Security controls that exist in config but aren't enforced in code give a false sense of security. Always trace the enforcement path from config to actual check.
+
+**Status:** Fixed. Committed in Phase 2 (dda6bd0).
+
+---
+
+### 2026-04-14 · LLM analyzer had wrong default host and model — Ollama calls were failing silently
+
+**What Bobby thought the program was doing:**
+The LLM analyzer should connect to Ollama on the Mac mini (100.110.87.1) running Qwen 32B and analyze fleet data after each scan.
+
+**What was actually happening:**
+The default Ollama URL was set to `localhost:11434` instead of `100.110.87.1:11434`, and the default model was set to a model name that didn't match what was actually running. LLM analysis calls were failing silently and returning empty results.
+
+**What we changed:**
+Updated the default values in `core/llm_analyzer.py` to match the actual production setup: correct Tailscale IP and correct model identifier.
+
+**How we verified:**
+- `python3 -m py_compile core/llm_analyzer.py` passes
+- Defaults match the documented production environment
+
+**Lesson:**
+Default values for service endpoints must match the actual deployment environment. "localhost" is almost never correct for a multi-machine setup.
+
+**Status:** Fixed. Committed in Phase 2 (dda6bd0).
+
+---
+
+### 2026-04-14 · Prediction loop was silently dead — NameError on miner_id/ip
+
+**What Bobby thought the program was doing:**
+Feature 6 (Pre-Failure Prediction) should run after every scan, analyzing 14 signals across all online miners and posting predictions to Slack when confidence is high enough.
+
+**What was actually happening:**
+The prediction loop crashed immediately with a `NameError` because the code referenced `miner_id` and `ip` variables that weren't defined in the current scope — they were named differently in the query results. The exception was caught by a broad `except` block and logged at DEBUG level, so it looked like the predictor was running but finding no signals. In reality, it never analyzed a single miner.
+
+**What we changed:**
+Fixed the variable name references in the prediction loop to match the actual column names from the SQL query result (`m["miner_id"]` and `m["ip"]`).
+
+**How we verified:**
+- `python3 -m py_compile ai/predictor.py` passes
+- Prediction loop now runs to completion and generates actual predictions
+
+**Lesson:**
+Broad exception handlers that swallow NameErrors hide real bugs. Always log at WARNING or ERROR level when catching unexpected exceptions.
+
+**Status:** Fixed. Committed in Phase 1 (88b5b08).
+
+---
+
+### 2026-04-14 · Board escalation crashed on undefined `issue` variable
+
+**What Bobby thought the program was doing:**
+When a miner has a persistent issue across multiple scans, the system should escalate it to a dedicated Slack alert with the specific issue details.
+
+**What was actually happening:**
+The `_escalate_board_issue()` method referenced an `issue` variable that was never defined in its scope. It crashed with a `NameError` every time an escalation was triggered. Like the predictor bug, the exception was caught silently.
+
+**What we changed:**
+Fixed the variable reference to use the correct parameter name that was passed into the function.
+
+**How we verified:**
+- `python3 -m py_compile core/mining_guardian.py` passes
+- Board escalations now post to Slack with correct issue details
+
+**Lesson:**
+Same as the predictor NameError — broad exception handlers hide variable scoping bugs. These should have been caught by a linter.
+
+**Status:** Fixed. Committed in Phase 1 (88b5b08).
+
+---
+
+### 2026-04-14 · Intelligence Catalog auth header was wrong — Bearer instead of X-API-Key
+
+**What Bobby thought the program was doing:**
+The Intelligence Catalog API should authenticate requests using an API key, and the AI modules should be able to read and write catalog data.
+
+**What was actually happening:**
+The catalog client was sending the API key as a `Bearer` token in the `Authorization` header, but the catalog API expected it in an `X-API-Key` header. Every request was rejected with 401 Unauthorized, so none of the AI modules could talk to the catalog.
+
+**What we changed:**
+Updated `ai/catalog_context.py` to send the key in the `X-API-Key` header instead of `Authorization: Bearer`.
+
+**How we verified:**
+- `python3 -m py_compile ai/catalog_context.py` passes
+- Auth header format now matches catalog API expectations
+
+**Lesson:**
+When two services disagree on auth format, the client must match what the server expects. Check the server-side code, not just the client documentation.
+
+**Status:** Fixed. Committed in Phase 1 (88b5b08).
+
+---
+
+### 2026-04-14 · Daily fleet synthesis crashed — hvac_system variable undefined
+
+**What Bobby thought the program was doing:**
+The daily synthesis report should summarize the full fleet including HVAC status, combining data from both the warehouse and S19J Pro container cooling systems.
+
+**What was actually happening:**
+The daily synthesis code referenced an `hvac_system` variable that wasn't defined in scope, causing a `NameError` crash. The daily synthesis silently failed every night.
+
+**What we changed:**
+Added the missing variable definition before its use, setting it based on the miner model type (same pattern used in the predictor).
+
+**How we verified:**
+- `python3 -m py_compile` passes on the affected file
+- Daily synthesis runs without NameError
+
+**Lesson:**
+Variable scope bugs in Python are easy to introduce when copy-pasting logic between functions. Each function needs its own local definitions.
+
+**Status:** Fixed. Committed in Phase 1 (88b5b08).
+
+---
+
+### 2026-04-14 · SQL syntax error in pool_readings CREATE TABLE
+
+**What Bobby thought the program was doing:**
+The database setup should create all 16 tables cleanly when Mining Guardian starts fresh.
+
+**What was actually happening:**
+The `pool_readings` CREATE TABLE statement had a SQL syntax error (misplaced comma or missing column type). On a fresh install, the table creation would fail, and all pool-related data collection would silently stop working.
+
+**What we changed:**
+Fixed the SQL syntax in the CREATE TABLE statement for `pool_readings`.
+
+**How we verified:**
+- `python3 -m py_compile` passes
+- The CREATE TABLE statement executes without SQL syntax errors
+
+**Lesson:**
+Database schema creation should be tested with a fresh database as part of the CI pipeline, not just with existing databases that already have the tables.
+
+**Status:** Fixed. Committed in Phase 1 (88b5b08).
+
+---
+
+### 2026-04-14 · auradine_client.py was missing `import os` — env var lookups crashed
+
+**What Bobby thought the program was doing:**
+The Auradine client should read miner credentials from environment variables, same as every other hardware client.
+
+**What was actually happening:**
+The file used `os.getenv()` to read `AURADINE_USER` and `AURADINE_PASS` but never imported the `os` module. Any attempt to create an Auradine client crashed with a `NameError` on `os`.
+
+**What we changed:**
+Added `import os` to the top of `clients/auradine_client.py`.
+
+**How we verified:**
+- `python3 -m py_compile clients/auradine_client.py` passes
+- `os.getenv` calls resolve correctly
+
+**Lesson:**
+Missing imports are the simplest bugs to introduce and the simplest to prevent. A basic import check or `py_compile` on every file would catch these instantly.
+
+**Status:** Fixed. Committed in Phase 1 (88b5b08).
+
+---
+
 ### 2026-04-10 (evening) · Hourly LLM was repeating the same analysis every scan — not learning
 
 **What Bobby thought the program was doing:**

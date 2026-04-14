@@ -27,6 +27,8 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from core.file_lock import locked_knowledge_update
+
 logger = logging.getLogger("fingerprint_builder")
 
 DB_PATH        = str(_ROOT / "guardian.db")
@@ -388,7 +390,8 @@ def _load_knowledge() -> dict:
 
 
 def _save_knowledge(knowledge: dict):
-    Path(KNOWLEDGE_PATH).write_text(json.dumps(knowledge, indent=2))
+    with locked_knowledge_update(KNOWLEDGE_PATH) as on_disk:
+        on_disk.update(knowledge)
 
 
 if __name__ == "__main__":

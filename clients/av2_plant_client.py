@@ -2,6 +2,7 @@
 Big Star BlockChain AV-2 Plant client for S19J Pro Container HVAC.
 Simple stub that returns placeholder data until WebSocket scraping is implemented.
 """
+import os
 from typing import Optional, Dict
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
@@ -14,8 +15,11 @@ class AV2PlantClient:
     Returns None for all values - HVAC client will fall back to database.
     TODO: Implement WebSocket polling for live data.
     """
-    
-    def __init__(self, ip: str = "192.168.189.235", username: str = "BigStar", password: str = "BigSt@r2020"):
+
+    def __init__(self, ip: str = "192.168.189.235",
+                 username: str = "", password: str = ""):
+        username = username or os.getenv("AV2_PLANT_USER", "")
+        password = password or os.getenv("AV2_PLANT_PASSWORD", "")
         self.ip = ip
         self.base_url = f"https://{ip}"
         self.auth = (username, password)

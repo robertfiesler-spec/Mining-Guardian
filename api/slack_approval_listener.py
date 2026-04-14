@@ -17,6 +17,7 @@ import logging
 import sqlite3
 import requests
 import threading
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from pathlib import Path
 from slack_sdk import WebClient
@@ -116,10 +117,12 @@ def cleanup_stale_pending():
         logger.warning("cleanup failed: %s", e)
 
 
+_PROCESSED_MAX = 10000  # Cap to prevent unbounded memory growth
+
 class ApprovalListener:
     def __init__(self):
         self.client = WebClient(token=SLACK_BOT_TOKEN)
-        self.processed = set()
+        self.processed = OrderedDict()  # bounded set — keys only, values unused
         self._load_processed()
         cleanup_stale_pending()
 
@@ -129,10 +132,16 @@ class ApprovalListener:
             rows = conn.execute(
                 "SELECT DISTINCT thread_ts FROM pending_approvals WHERE status != 'PENDING'"
             ).fetchall()
-            self.processed = {r[0] for r in rows}
+            self.processed = OrderedDict.fromkeys(r[0] for r in rows)
             conn.close()
         except Exception:
             pass
+
+    def _mark_processed(self, key: str):
+        """Add key to bounded processed set, evicting oldest if over limit."""
+        self.processed[key] = None
+        while len(self.processed) > _PROCESSED_MAX:
+            self.processed.popitem(last=False)
 
     def _get_pending_threads(self):
         conn = get_db()
@@ -163,20 +172,20 @@ class ApprovalListener:
 
                 # Full approve/deny
                 if upper in ("APPROVE", "APPROVED", "YES", "Y"):
-                    self.processed.add(msg_key)
+                    self._mark_processed(msg_key)
                     return "APPROVE", None, get_user_name(self.client, user_id), user_id
 
                 # Match DENY in any form: "deny", "deny.", "deny, reason", "denied!", etc
                 first_word = upper.split()[0].rstrip(".,!:;") if upper.split() else ""
                 if first_word in ("DENY", "DENIED", "NO", "N"):
-                    self.processed.add(msg_key)
+                    self._mark_processed(msg_key)
                     return "DENY", None, get_user_name(self.client, user_id), user_id
 
                 # Selective: "approve 1,2,3" or "approve .36,.46"
                 import re
                 m = re.match(r'^approve\s+(.+)$', text, re.IGNORECASE)
                 if m:
-                    self.processed.add(msg_key)
+                    self._mark_processed(msg_key)
                     return "APPROVE_SELECTED", m.group(1).strip(), get_user_name(self.client, user_id), user_id
 
         except Exception as e:
@@ -408,7 +417,7 @@ class ApprovalListener:
                     f"Flagged 3 consecutive scans | avg HR: {m['avg_hr'] or 0:.0f}% "
                     f"| avg temp: {m['avg_temp'] or 0:.0f}°C | actions: {m['actions']}"
                 ))
-                self.processed.add(key)
+                self._mark_processed(key)
                 logger.info("Escalation: %s", m["ip"])
         except Exception as e:
             logger.warning("Escalation check failed: %s", e)

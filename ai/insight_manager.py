@@ -57,12 +57,11 @@ def load_knowledge() -> Dict:
 
 
 def save_knowledge(knowledge: Dict) -> bool:
-    """Atomically save knowledge.json."""
+    """Atomically save knowledge.json with file locking."""
     try:
-        tmp_path = str(KNOWLEDGE_PATH) + '.tmp'
-        with open(tmp_path, 'w') as f:
-            json.dump(knowledge, f, indent=2)
-        os.replace(tmp_path, str(KNOWLEDGE_PATH))
+        from core.file_lock import locked_knowledge_update
+        with locked_knowledge_update(str(KNOWLEDGE_PATH)) as on_disk:
+            on_disk.update(knowledge)
         return True
     except Exception as e:
         logger.error('Failed to save knowledge.json: %s', e)

@@ -384,9 +384,19 @@ def db_conn():
 
 # ── Prometheus /metrics endpoint ─────────────────────────────
 
+import time as _time
+_metrics_cache = {"data": None, "timestamp": 0.0}
+_METRICS_CACHE_TTL = 25  # seconds — Prometheus scrapes every 30s
+
 @app.get("/metrics")
 def metrics():
-    """Prometheus metrics endpoint — scraped every 30s by Prometheus."""
+    """Prometheus metrics endpoint — scraped every 30s by Prometheus.
+    Cached for 25 seconds to avoid hammering SQLite with ~15 queries per scrape.
+    """
+    now = _time.monotonic()
+    if _metrics_cache["data"] is not None and (now - _metrics_cache["timestamp"]) < _METRICS_CACHE_TTL:
+        return PlainTextResponse(_metrics_cache["data"], media_type=CONTENT_TYPE_LATEST)
+
     conn = get_db()
 
     # Latest scan summary
@@ -653,7 +663,10 @@ def metrics():
         logger.warning("Action metrics read failed: %s", e)
 
     conn.close()
-    return PlainTextResponse(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
+    result = generate_latest(REGISTRY)
+    _metrics_cache["data"] = result
+    _metrics_cache["timestamp"] = _time.monotonic()
+    return PlainTextResponse(result, media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/fleet/board_stats", response_class=HTMLResponse)

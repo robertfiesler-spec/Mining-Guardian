@@ -25,6 +25,7 @@ import json
 import logging
 import sqlite3
 import requests
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from slack_sdk import WebClient
@@ -52,12 +53,20 @@ AUTHORIZED_SLACK_USER_IDS = {uid.strip() for uid in os.getenv("AUTHORIZED_SLACK_
 BOT_USER_ID = None
 
 
+_PROCESSED_MAX = 10000  # Cap to prevent unbounded memory growth
+
 class CommandHandler:
     def __init__(self):
         self.client = WebClient(token=SLACK_BOT_TOKEN)
         self.last_ts = str(time.time())
-        self.processed = set()
+        self.processed = OrderedDict()  # bounded set — keys only, values unused
         self._get_bot_id()
+
+    def _mark_processed(self, key: str):
+        """Add key to bounded processed set, evicting oldest if over limit."""
+        self.processed[key] = None
+        while len(self.processed) > _PROCESSED_MAX:
+            self.processed.popitem(last=False)
 
     def _get_bot_id(self):
         global BOT_USER_ID
@@ -635,7 +644,7 @@ class CommandHandler:
                     ts = msg.get("ts", "")
                     if ts in self.processed or ts == self.last_ts:
                         continue
-                    self.processed.add(ts)
+                    self._mark_processed(ts)
                     self.last_ts = ts
 
                     # Skip bot messages
