@@ -3250,7 +3250,10 @@ class SlackNotifier:
 
                 # Post per-miner interactive Block Kit selection message in thread
                 actionable = [i for i in issues if i["action"] in ("PDU_CYCLE","RESTART","RESTART_CHECK_BOARDS")]
-                if actionable:
+                # Skip approval notifications when 24/7 auto-approve is active
+                auto_approve = os.getenv("OVERNIGHT_AUTO_APPROVE", "false").lower() == "true"
+                auto_low_risk = os.getenv("AUTO_APPROVE_LOW_RISK", "false").lower() == "true"
+                if actionable and not (auto_approve and auto_low_risk):
                     self._post_miner_selection(client, thread_ts, actionable)
             else:
                 resp = requests.post(self.webhook_url, json=payload, timeout=10)
