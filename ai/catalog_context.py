@@ -121,10 +121,62 @@ def get_catalog_context(miner_models: List[str],
     return ""
 
 
-def get_miner_catalog_context(model_name: str) -> str:
-    """Call GET /api/v1/context/miner-context for a single model.
+def _format_miner_knowledge(data: dict, model_name: str) -> str:
+    """Format the /knowledge/miner response into a prompt-ready string."""
+    parts = [f"=== Catalog: {model_name} ==="]
 
-    Returns prompt_text string or empty string on any failure.
+    model_info = data.get("model", {})
+    if model_info:
+        specs = []
+        for key in ("manufacturer", "hashrate_th", "power_watts", "efficiency_jth",
+                    "asic_chip", "chip_count", "cooling_mode", "release_year"):
+            val = model_info.get(key)
+            if val is not None:
+                specs.append(f"{key}: {val}")
+        if specs:
+            parts.append("Specs: " + ", ".join(specs))
+
+    chip = data.get("chip_specs")
+    if chip:
+        for c in chip[:2]:
+            parts.append(f"Chip: {c.get('chip_name', '?')} — "
+                         f"process: {c.get('process_node', '?')}, "
+                         f"nom freq: {c.get('nominal_freq_mhz', '?')} MHz")
+
+    firmware = data.get("firmware")
+    if firmware:
+        for fw in firmware[:3]:
+            parts.append(f"FW: {fw.get('version', '?')} "
+                         f"({fw.get('manufacturer', '?')}) — "
+                         f"{fw.get('notes', '')[:80]}")
+
+    failures = data.get("failures")
+    if failures:
+        parts.append("Known failure patterns:")
+        for f in failures[:5]:
+            parts.append(f"  - {f.get('pattern_name', f.get('description', '?'))[:100]}")
+
+    repair = data.get("repair")
+    if repair:
+        parts.append("Repair notes:")
+        for r in repair[:3]:
+            parts.append(f"  - {str(r.get('note', r))[:100]}")
+
+    thresholds = data.get("thresholds")
+    if thresholds:
+        parts.append("Thresholds:")
+        for t in thresholds[:5]:
+            parts.append(f"  - {t.get('metric', '?')}: "
+                         f"warn={t.get('warn_value', '?')}, "
+                         f"crit={t.get('critical_value', '?')}")
+
+    return "\n".join(parts)
+
+
+def get_miner_catalog_context(model_name: str) -> str:
+    """Call GET /api/v1/knowledge/miner/{model_slug} for a single model.
+
+    Returns formatted prompt string or empty string on any failure.
     """
     if not model_name:
         return ""
@@ -137,27 +189,34 @@ def get_miner_catalog_context(model_name: str) -> str:
     if _is_circuit_open():
         return ""
 
+    # Convert model name to URL slug: "S19J Pro" -> "s19j-pro"
+    slug = model_name.strip().lower().replace(" ", "-")
+
     try:
         start = time.time()
         resp = requests.get(
-            f"{CATALOG_API_URL}/api/v1/context/miner-context",
-            params={"model": model_name},
+            f"{CATALOG_API_URL}/api/v1/knowledge/miner/{slug}",
             headers=_headers(),
             timeout=10,
         )
         elapsed = time.time() - start
         if resp.status_code == 200:
-            text = resp.json().get("prompt_text", "")
+            text = _format_miner_knowledge(resp.json(), model_name)
             _record_success()
             _cache_set(cache_key, text)
-            logger.info("Catalog miner-context OK [%s]: %d chars in %.1fs",
+            logger.info("Catalog miner-knowledge OK [%s]: %d chars in %.1fs",
                         model_name, len(text), elapsed)
             return text
-        logger.warning("Catalog miner-context HTTP %s for %s (%.1fs)",
+        if resp.status_code == 404:
+            # Model not in catalog yet — not an error, cache empty
+            _cache_set(cache_key, "")
+            logger.debug("Catalog: no data for model '%s'", model_name)
+            return ""
+        logger.warning("Catalog miner-knowledge HTTP %s for %s (%.1fs)",
                        resp.status_code, model_name, elapsed)
         _record_failure()
     except Exception as e:
-        logger.warning("Catalog miner-context failed [%s]: %s", model_name, e)
+        logger.warning("Catalog miner-knowledge failed [%s]: %s", model_name, e)
         _record_failure()
     return ""
 

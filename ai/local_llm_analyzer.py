@@ -18,6 +18,7 @@ On Mac Mini deployment, it runs locally via Ollama.
 
 import json
 import logging
+import os
 import sqlite3
 import time
 import requests

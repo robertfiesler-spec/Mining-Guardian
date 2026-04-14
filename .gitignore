@@ -63,6 +63,9 @@ guardian.db-wal
 
 # Backup files (use git history instead)
 *.bak.*
+*.backup
+*.backup_*
+*.backup-*
 
 # Backups directory (local only)
 backups/
