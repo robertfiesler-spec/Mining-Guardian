@@ -6,7 +6,6 @@ import threading
 import sqlite3
 import logging
 from logging.handlers import TimedRotatingFileHandler
-import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1635,7 +1634,8 @@ class GuardianDB:
                     accepted        INTEGER,
                     rejected        INTEGER,
                     accepted_diff   REAL,
-                    rejected_diff   REAL,                    difficulty      TEXT
+                    rejected_diff   REAL,
+                    difficulty      TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_pool_miner
@@ -2157,21 +2157,6 @@ class GuardianDB:
             logger.info("Purged %s log entries older than %s days", deleted, days)
         return deleted
 
-    def last_log_collected(self, miner_id: str):
-        """Return datetime of last log collection for this miner, or None."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT collected_at FROM miner_logs WHERE miner_id=? "
-                "ORDER BY id DESC LIMIT 1",
-                (miner_id,)
-            ).fetchone()
-        if row:
-            try:
-                return datetime.fromisoformat(row[0])
-            except Exception:
-                return None
-        return None
-
     def has_known_dead_boards(self, miner_id: str) -> bool:
         """Check if this miner has unresolved known dead boards (already attempted restart)."""
         with self._connect() as conn:
@@ -2660,21 +2645,6 @@ class GuardianDB:
                     miner_id, len(psu_rows), len(sys_rows),
                     len(event_rows), len(chip_rows))
 
-    def last_log_collected(self, miner_id: str) -> Optional[datetime]:
-        """Return datetime of last log collection for this miner, or None."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT collected_at FROM miner_logs WHERE miner_id=? "
-                "ORDER BY id DESC LIMIT 1",
-                (miner_id,)
-            ).fetchone()
-        if row:
-            try:
-                return datetime.fromisoformat(row[0])
-            except Exception:
-                return None
-        return None
-
     def record_restart(self, miner_id: str, ip: str, model: str,
                        restart_type: str, elevated_hours: int = 3,
                        hashrate_before: float = None) -> None:
@@ -2752,7 +2722,6 @@ class GuardianDB:
             except Exception:
                 return None
         return None
-        return scan_id
 
 
 # ------------------------------------------------------------
@@ -4446,7 +4415,7 @@ class MiningGuardian:
 
         # Enable elevated monitoring so next scans watch it closely
         self.db.record_restart(miner_id, ip, model, reason,
-                               hashrate_before=float(issue.get("hashrate_pct") or 0))
+                               hashrate_before=0)
 
         # Slack alert
         slack_msg = (
@@ -5739,9 +5708,9 @@ class MiningGuardian:
                                        pred.get("ip"), pred.get("action"), pred.get("confidence", 0))
 
                             # Skip ticketed miners — they already have a ticket open
-                            if self.db.has_known_dead_boards(miner_id):
+                            if self.db.has_known_dead_boards(pred["miner_id"]):
                                 logger.debug(
-                                    "Prediction suppressed for %s — dead board ticket open", ip
+                                    "Prediction suppressed for %s — dead board ticket open", pred["ip"]
                                 )
                                 continue
 
@@ -5751,7 +5720,7 @@ class MiningGuardian:
                                 with self.db._connect() as _c:
                                     _fw = _c.execute(
                                         "SELECT firmware_manufacturer FROM miner_readings "
-                                        "WHERE miner_id=? ORDER BY id DESC LIMIT 1", (miner_id,)
+                                        "WHERE miner_id=? ORDER BY id DESC LIMIT 1", (pred["miner_id"],)
                                     ).fetchone()
                                     firmware = (_fw["firmware_manufacturer"] or "").upper() if _fw else ""
                             except Exception:
@@ -5760,7 +5729,7 @@ class MiningGuardian:
                                 filtered = [s for s in pred.get("signals", [])
                                             if "voltage" not in s.lower()]
                                 if not filtered:
-                                    logger.debug("Prediction suppressed for %s — Auradine voltage false positive", ip)
+                                    logger.debug("Prediction suppressed for %s — Auradine voltage false positive", pred["ip"])
                                     continue
                                 pred["signals"] = filtered
 
@@ -5774,10 +5743,10 @@ class MiningGuardian:
                                     # Register as pending approval so listener picks it up
                                     if thread and isinstance(thread, str):
                                         self.db.save_pending_approvals(
-                                            thread, latest_scan["id"],
+                                            thread, latest_scan_id,
                                             [{
-                                                "id":          miner_id,
-                                                "ip":          ip,
+                                                "id":          pred["miner_id"],
+                                                "ip":          pred["ip"],
                                                 "model":       pred.get("model", ""),
                                                 "action":      "RESTART",
                                                 "issues":      pred.get("signals", []),
@@ -5788,7 +5757,7 @@ class MiningGuardian:
                                 except Exception:
                                     pass
                             logger.info("Prediction: %s %s conf=%d%%",
-                                       ip, pred["action"], pred["confidence"])
+                                       pred["ip"], pred["action"], pred["confidence"])
                 except Exception:
                     logger.debug("Predictor skipped (non-fatal)")
 
@@ -5837,7 +5806,7 @@ class MiningGuardian:
                                         "issues": act.get("reasons", []),
                                     }]
                                     self.db.save_pending_approvals(
-                                        thread, latest_scan["id"], issue_entry
+                                        thread, latest_scan_id, issue_entry
                                     )
                             except Exception as ex:
                                 logger.warning("Action diversity Slack post failed: %s", ex)

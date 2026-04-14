@@ -75,7 +75,7 @@ def _cache_set(key: str, value: str):
 
 def _headers() -> dict:
     return {
-        "X-API-Key": CATALOG_API_KEY,
+        "Authorization": f"Bearer {CATALOG_API_KEY}",
         "Content-Type": "application/json",
     }
 
