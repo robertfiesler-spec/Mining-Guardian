@@ -5744,6 +5744,10 @@ class MiningGuardian:
                                 pred["signals"] = filtered
 
                             if pred["action"] == "PREEMPTIVE_RESTART":
+                                # Skip Slack notification if auto-approve is active (noise reduction)
+                                if self.auto_approve_enabled:
+                                    logger.info("Prediction suppressed (auto-approve active): %s", pred["ip"])
+                                    continue
                                 try:
                                     # Post as approval request so you can APPROVE or DENY
                                     msg = format_prediction_alert(pred)
