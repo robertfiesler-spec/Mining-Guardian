@@ -36,6 +36,12 @@ def main():
     logger.info('Starting log collection with retry pass...')
     mg.collect_logs(miners=miners, issues=[])
     
+    # CRITICAL FIX: Wait for background thread to complete
+    if hasattr(mg, '_daily_log_thread') and mg._daily_log_thread:
+        logger.info('Waiting for log collection thread to complete...')
+        mg._daily_log_thread.join()  # Wait for thread to finish
+        logger.info('Log collection thread completed')
+    
     logger.info('=== DAILY LOG COLLECTION COMPLETE ===')
 
 if __name__ == '__main__':
