@@ -5426,7 +5426,7 @@ class MiningGuardian:
             target=_daily_baseline_worker,
             args=(eligible,),
             name="daily-log-baseline",
-            daemon=True,
+            daemon=False,
         )
         t.start()
         self._daily_log_thread = t
