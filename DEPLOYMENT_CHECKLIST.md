@@ -1,4 +1,4 @@
-# Mining Guardian Deployment Checklist - April 14, 2026
+# Mining Guardian Deployment Checklist - April 15, 2026
 
 ## 21 HIGH PRIORITY FIXES READY FOR DEPLOYMENT
 
@@ -99,18 +99,41 @@ done
 systemctl restart mining-guardian approval-api dashboard-api
 ```
 
+### New Service: Intelligence Report API (April 15, 2026)
+
+```bash
+# 1. Pull latest code
+cd /root/Mining-Gaurdian && git pull origin main
+
+# 2. Install FastAPI
+/root/Mining-Gaurdian/venv/bin/pip install fastapi uvicorn
+
+# 3. Copy systemd service
+cp /root/Mining-Gaurdian/deploy/intelligence-report.service /etc/systemd/system/
+
+# 4. Reload, enable, start
+systemctl daemon-reload
+systemctl enable intelligence-report.service
+systemctl start intelligence-report.service
+
+# 5. Verify
+curl http://localhost:8590/health
+# Expected: {"status":"ok","models":235,"version":"1.0.0"}
+```
+
 ### Success Criteria
 
-✅ All 7 services running without errors
+✅ All 8 services running without errors (7 original + intelligence-report)
 ✅ Hourly scans complete successfully  
 ✅ LLM calls show knowledge context (DG-3)
 ✅ No connection leak warnings in logs
 ✅ Slack commands work with authorization
-✅ Warehouse logs ready for 4pm Qwen analysis
+✅ Intelligence Report API returns 235 models on /health
+✅ Grafana Intelligence Report dashboard renders HTML reports
 
 ---
 
-**Total fixes deployed:** 21 HIGH priority items
-**Documentation:** REPAIR_LOG.md (complete history)
-**Session duration:** ~8 hours
-**Files modified:** 22+ production files
+**Total fixes deployed:** 21 HIGH priority items + Intelligence Report feature
+**Documentation:** REPAIR_LOG.md (complete history), INTELLIGENCE_REPORT_API.md (API docs)
+**Last updated:** April 15, 2026
+**Files modified:** 25+ production files

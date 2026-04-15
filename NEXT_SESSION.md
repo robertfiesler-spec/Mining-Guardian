@@ -1,58 +1,75 @@
-# Next Session Priorities - Remaining HIGH Items
+# Next Session Priorities
 
-## Status: 21 HIGH Priority Fixes DEPLOYED ✅
-
-Session complete - exceptional progress. All services running.
-
-## REMAINING HIGH PRIORITY (~9 items)
-
-### CQ-6 to CQ-10: SQLite Context Managers (9 locations)
-**Complexity:** Need careful transaction boundary analysis
-
-**Files:**
-1. api/approval_api.py - 5 uses of get_db() helper (lines 122, 200, 268, 367, 464)
-2. api/ams_alert_listener.py - 5 bare connections (lines 96, 122, 135, 150, 165)
-3. api/slack_command_handler.py - 1 location (line 69)
-4. api/dashboard_api.py - get_db() helper (line 367) + 1 use
-
-**Strategy:**
-- Deprecate get_db() helper, replace all calls with context manager
-- OR add try/finally to each get_db() usage
-- Estimate: 2 hours careful work
-
-### DG-4 to DG-15: Signal Improvements
-**Status:** 12 signals already implemented
-
-**New signals to add:**
-- DG-4: PSU voltage signal (data exists in log_metrics)
-- DG-5: Time-of-day correlation
-- DG-6: Spatial correlation (adjacent miners)
-- DG-7: Board temp delta
-- DG-8: Chip frequency deviation
-- DG-10: Pool stability
-- DG-11: Historical 7-day baseline
-
-**Strategy:** Requires data analysis + ML tuning
-**Estimate:** 3-4 hours with testing
-
-### CQ-14, CQ-15: Threading Lock Application
-**Status:** Lock infrastructure added
-
-**Remaining:** Wrap token access methods
-- self._ws_token reads/writes
-- self._token_expiry reads/writes
-
-**Estimate:** 30 minutes
+**Last Updated:** April 15, 2026
+**Status:** Intelligence Report API built, all dashboards fixed, documentation updated
 
 ---
 
-## TOTAL REMAINING HIGH: ~5-6 hours focused work
+## IMMEDIATE — Deploy Intelligence Report API on VPS
 
-## RECOMMENDATION
-Continue in fresh session with full context for careful SQLite wrapping.
+Bobby has the step-by-step deployment commands (10 steps). Once he runs them:
+1. `git pull origin main` on VPS
+2. `pip install fastapi uvicorn`
+3. Copy systemd service, enable, start
+4. Verify: `curl http://localhost:8590/health` → 235 models
+5. Open Grafana dashboard at `/d/intelligence_report_001/` and search a miner
 
 ---
 
-**Current Status: PRODUCTION READY**
-All services active, 21 fixes deployed, ready for operations.
+## REMAINING HIGH PRIORITY
 
+### From Code Review (~5-6 hours)
+- **CQ-6 to CQ-10:** 9 SQLite connections need context manager wrapping
+  - api/approval_api.py (5 locations)
+  - api/ams_alert_listener.py (5 locations)
+  - api/slack_command_handler.py (1 location)
+  - api/dashboard_api.py (1 location)
+- **CQ-14, CQ-15:** Token access methods need lock wrapping (infrastructure done)
+- **DG-4 to DG-15:** Predictor signal improvements (PSU voltage, time-of-day, spatial, board temp delta, chip freq deviation, pool stability, 7-day baseline)
+
+### From P0 Build Queue
+1. **Wire OpenClaw to guardian.db via guardian-db skill** — 2hr time budget
+2. **Daily Log Capture remaining items:**
+   - `firmware_changes` table + scan-loop change detector
+   - `ai/regression_detector.py` + Slack alert wiring
+   - VPS cron entries for 1pm collection + 4pm deep dive
+3. **Weekly train denial reason ingestion gap** — verify before next Sunday
+4. **Ship daily_deep_analyses permanent merge block** in train_cohort.py
+
+### Intelligence Report Enhancements
+- [ ] Qwen AI analysis paragraphs in reports (requires Qwen reachable from API)
+- [ ] PDF download button in Grafana
+- [ ] Auto-enrichment: catalog searches internet for updates daily
+
+---
+
+## MEDIUM PRIORITY (~80 items from code review)
+- Magic numbers → constants
+- Duplicated code blocks
+- Missing docstrings
+- TODO comments
+
+---
+
+## KEY FILES CHANGED TODAY (April 15, 2026)
+
+### New Files
+- `api/intelligence_report_api.py` — Intelligence Report API (port 8590)
+- `deploy/intelligence-report.service` — systemd service file
+- `docs/INTELLIGENCE_REPORT_API.md` — API documentation
+- `intelligence-catalog/data/unified_miner_index.json` — 235 models merged index
+
+### Updated Files
+- `README.md` — architecture, services, dashboards, key files tables
+- `AI_ROADMAP.md` — milestones, Grafana section, completed items, last updated
+- `docs/INTELLIGENCE_CATALOG_STATUS.md` — full rewrite reflecting live status
+- All 6 Grafana operational dashboards — duplicate panels removed, queries fixed
+
+### Git Commits
+- `8e05461` — feat: Intelligence Report API (searchable miner reports for 235+ models)
+- `fad1096` — docs: update README architecture + AI_ROADMAP with Intelligence Report API status
+- (pending) — docs: comprehensive documentation audit pass
+
+---
+
+**Current Status: PRODUCTION READY + INTELLIGENCE REPORT READY FOR DEPLOYMENT**

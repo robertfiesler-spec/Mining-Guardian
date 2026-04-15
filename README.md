@@ -94,19 +94,20 @@ Anthropic Claude API                    — weekly training, knowledge merges, d
 | mining-guardian | — | Scans fleet every hour, evaluates all miners, runs 8 AI features in loop |
 | dashboard-api | 8585 | REST API + Prometheus /metrics + `/query/*` endpoints (OpenClaw guardian-db skill) |
 | approval-api | 8686 | Handles APPROVE/DENY/approve_selected calls (localhost-bound) |
+| intelligence-report | 8590 | Miner Intelligence Report API — 235+ models searchable, HTML reports for Grafana |
 | slack-listener | — | Polls Slack threads for text approvals |
 | slack-commands | — | Conversational fleet intelligence bot (migrating into OpenClaw) |
 | overnight-automation | — | Auto-executes low-risk actions 8pm–6am |
 | cloudflared | — | **TEMPORARY**: dashboard.fieslerfamily.com → :8585, slack.fieslerfamily.com → :8686 — all off by May 5–9 |
 | prometheus | 9090 | Metrics scraper, 30s interval |
-| grafana | 3000 | All dashboards |
+| grafana | 3000 | 7 dashboards |
 | OpenClaw (Docker) | 18789 | Slack Socket Mode + conversational LLM gateway |
 
 ---
 
 ## Grafana Dashboards
 
-Six dashboards, all fed by Prometheus scraping `dashboard-api:8585/metrics`. Search box enabled on all per-miner dropdowns — type any IP suffix to filter instantly.
+Seven dashboards. Six operational dashboards fed by Prometheus scraping `dashboard-api:8585/metrics`. One intelligence dashboard fed by the Intelligence Report API on port 8590. Search box enabled on all per-miner dropdowns — type any IP suffix to filter instantly.
 
 | Dashboard | UID | Contents |
 |-----------|-----|----------|
@@ -116,6 +117,7 @@ Six dashboards, all fed by Prometheus scraping `dashboard-api:8585/metrics`. Sea
 | Board Health | afi3p5mhapn9ce | Per-board voltage/freq/HW errors/power |
 | Pool Stats | afi3q9w5ishz4f | Fleet totals + rejection rate + top 5 worst offenders |
 | AI & Learning | llm_learning_001 | Knowledge score, insights growth, autonomy rate, AI impact on fleet health |
+| Intelligence Report | intelligence_report_001 | Searchable miner lookup across 235+ models, full HTML reports with specs/variants/fleet data |
 
 ### Prometheus Metrics (complete list)
 
@@ -464,6 +466,7 @@ AI answers include: current fleet state, 14-day miner history, audit trail, dead
 | `miner_specs.json` | Per-model specs: board count, rated TH/s, profile maps |
 | `guardian.db` | SQLite database — never delete, never overwrite with template |
 | `installer/DEPLOYMENT.md` | Mac mini installer spec (on `installer-build` branch) — 313 lines |
+| `api/intelligence_report_api.py` | Miner Intelligence Report API — searchable reports for 235+ models (port 8590) |
 | `intelligence/README.md` | Mining Intelligence Catalog architecture (Postgres research DB) |
 
 ---
@@ -513,4 +516,4 @@ Remaining items are MEDIUM/LOW priority tracked in `AI_ROADMAP.md`. See `REPAIR_
 
 ---
 
-*Last updated: April 14 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines. See `.env.example` for all 30+ environment variables.*
+*Last updated: April 15 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines. See `.env.example` for all 30+ environment variables.*

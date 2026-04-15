@@ -80,9 +80,10 @@ Dual-database report generator synthesizing operational fleet data (guardian.db 
 - **WITHOUT operational data:** "Here's what 322 deployments show, pre-purchase warnings, avoid this $50k mistake"
 
 **Grafana Integration:**
-- Dashboard: https://grafana.fieslerfamily.com/d/cfj6drj3pbk74b
+- Intelligence Report Dashboard: https://grafana.fieslerfamily.com/d/intelligence_report_001/ (searchable miner lookup, HTML reports)
+- Intelligence Catalog Dashboard: https://grafana.fieslerfamily.com/d/cfj6drj3pbk74b (PostgreSQL schema overview)
 - PostgreSQL datasource connected (ROBS-PC:5432)
-- 5 panels: DB overview, schema distribution, 165 tables list, firmware tables, documentation
+- Intelligence Report API on port 8590 serves 235+ model reports to Grafana Business Text panel
 
 **Business Impact:**
 - Pre-purchase intelligence prevents $50k+ deployment mistakes
@@ -369,6 +370,17 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 
 ## Completed Items (for reference)
 
+### ✅ Completed April 15 2026 (Intelligence Report + Dashboard Fixes)
+
+- [x] Intelligence Report API built (`api/intelligence_report_api.py`, port 8590) — 235+ Bitcoin SHA-256 models searchable, HTML report rendering
+- [x] Intelligence Report Grafana dashboard (`intelligence_report_001`) — text search + dropdown, Business Text panel for HTML reports, fleet time-series
+- [x] All 6 operational Grafana dashboards fixed — removed duplicate panels from AI & Learning, Main, Fleet, Per Miner, Board Health, Pool Stats
+- [x] Unified miner index built — merged all data sources into `unified_miner_index.json` (235 models)
+- [x] systemd service file for Intelligence Report API (`deploy/intelligence-report.service`)
+- [x] API documentation (`docs/INTELLIGENCE_REPORT_API.md`)
+- [x] README.md updated — architecture diagram, services table, dashboards table, key files
+- [x] AI_ROADMAP.md updated — milestones marked complete, API details documented
+
 ### ✅ Completed April 10–14 2026 (Code Review + Hardening)
 
 - [x] Full code review — 53 findings across 35K lines of code (April 14)
@@ -385,7 +397,7 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ### ✅ Completed April 4–9 2026
 
 - [x] Full VPS deployment — all services running on systemd
-- [x] Prometheus + Grafana — 6 dashboards with live data
+- [x] Prometheus + Grafana — 7 dashboards with live data
 - [x] AI & Learning dashboard — knowledge score, insights growth, autonomy rate (all real Prometheus data)
 - [x] Pool Stats simplified — fleet totals + top 5 worst offenders
 - [x] Per-miner search — type-to-filter on all per-miner dropdowns
@@ -437,4 +449,4 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 
 ---
 
-*Last updated: April 9, 2026 — post-48hr-test, diagnostic sweep, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, and `README.md` for current architecture reference.*
+*Last updated: April 15, 2026 — Intelligence Report API built + Grafana dashboard live, all 6 operational dashboards fixed (duplicate panels removed), code review hardening complete, approaching Mac mini migration. See `CLAUDE.md` for binding rules, `docs/VISION.md` for the canonical plan, and `README.md` for current architecture reference.*

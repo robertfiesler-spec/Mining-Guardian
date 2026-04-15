@@ -1,194 +1,94 @@
-# Mining Guardian Audit Marathon - April 14, 2026
-## Session Complete: 21 HIGH Priority Fixes DEPLOYED
+# Mining Guardian Session Log — April 15, 2026
+## Intelligence Report API + Grafana Dashboard Fixes + Full Documentation Pass
 
-### 🎉 FINAL RESULTS
+### FINAL RESULTS
 
-**Duration:** ~9 hours continuous work
-**Fixes Completed:** 21 HIGH priority items from 209-item audit
-**Files Modified:** 22+ production files
-**Warehouse Logs:** 42 log files processed for AI pipeline
-**Token Usage:** 178K
-**Status:** DEPLOYED AND RUNNING ✅
-
----
-
-## COMPLETED FIXES (21 Items)
-
-### FIX TODAY (4)
-1. **DG-3:** Knowledge context wiring - LLM now sees full 19-section knowledge
-2. **CQ-1 to CQ-4:** DB connection leaks - 3 fixes in mining_guardian.py
-3. **CQ-5:** False 75% confidence bug in overnight automation
-4. **S-10:** Slack auth bypass - already deleted in prior commit
-
-### FIX THIS WEEK (7) 
-5. **D-1:** Scan cadence documentation - 13 fixes across 6 files
-6. **CQ-19:** Log rotation - TimedRotatingFileHandler with 14-day retention
-7. **S-15:** EnvironmentFile in systemd - 5 services updated
-8-11. **Yesterday:** S-12, S-17, S-18, CQ-12, CQ-35, A-2
-
-### ADDITIONAL HIGH (10 today)
-12. **CQ-20 to CQ-22:** Hardcoded Tailscale IPs → environment variables (7 files)
-13. **CQ-11:** Bare except clauses → except Exception (13 production files)
-14. **S-16:** Hardcoded miner credentials → environment variables
-15. **CQ-13:** Fragile issues[-1] pattern → variable-based approach
-16. **CQ-6 (partial):** 2 of 11 SQLite connections wrapped with context managers
-17. **S-11:** Slack command user allowlist added
-18-19. **CQ-14, CQ-15:** Threading Lock infrastructure added to AMSClient
-20. **Warehouse logs:** 42 log files organized for AI pipeline
+**Duration:** Full day session
+**New Features:** Intelligence Report API (235+ miner models searchable)
+**Dashboard Fixes:** All 6 operational Grafana dashboards cleaned up
+**New Dashboard:** Intelligence Report dashboard (7th dashboard)
+**Documentation:** 5 docs updated, 3 new docs created
+**Git Commits:** 3 (feature + docs + docs audit)
+**Status:** BUILT, TESTED, PUSHED — awaiting VPS deployment
 
 ---
 
-## FILES MODIFIED
+## WHAT WAS BUILT
 
-**Core/AI (10 files):**
-- core/mining_guardian.py
-- core/overnight_automation.py  
-- ai/local_llm_analyzer.py
-- ai/daily_deep_dive.py
-- ai/combine_knowledge.py
-- ai/refinement_chain.py
-- ai/action_diversity.py
-- ai/predictor.py
-- ai/ai_score.py
-- scripts/local_llm_analyzer.py
+### 1. Intelligence Report API (port 8590)
+- **File:** `api/intelligence_report_api.py`
+- **Service:** `deploy/intelligence-report.service`
+- **Models:** 235+ Bitcoin SHA-256 miners searchable
+- **Data sources:** unified_miner_index.json + miner_enrichment_master.csv + miner_specs.json + guardian.db
+- **Endpoints:**
+  - `GET /health` — status + model count
+  - `GET /api/report/models` — full model list with labels
+  - `GET /api/report/search?q=s19j` — fuzzy search
+  - `GET /api/report/{slug}` — full JSON report
+  - `GET /api/report/{slug}/html` — HTML for Grafana Business Text panel
+- **Report content:** Hardware specs, variants, firmware info, known issues, fleet data (for deployed models), source citations
 
-**API (3 files):**
-- api/dashboard_api.py
-- api/ai_dashboard_api.py
-- api/slack_command_handler.py
+### 2. Intelligence Report Grafana Dashboard
+- **UID:** `intelligence_report_001`
+- **URL:** `/d/intelligence_report_001/`
+- **Features:** Text search variable, popular model quick-pick buttons, HTML report panel, fleet time-series panels
+- **Note:** Requires API on port 8590 to render content
 
-**Clients (1 file):**
-- clients/auradine_client.py
-
-**Deployment (5 services):**
-- mining-guardian.service
-- approval-api.service
-- dashboard-api.service
-- slack-listener.service
-- overnight-automation.service
-
-**Documentation (6 files):**
-- CLAUDE.md, README.md
-- docs/CAPABILITIES.md
-- docs/OPENCLAW_INTEGRATION.md
-- docs/GRAFANA_PROMETHEUS_PLAN.md
-- docs/VISION.md
+### 3. Grafana Dashboard Fixes (All 6 Operational Dashboards)
+- **AI & Learning** (`llm_learning_001`) — removed duplicate panels, added trend charts, fixed gauge
+- **Main** (`bfi3t0krwak1sd`) — fixed Pool Rejection Rate query, removed duplicates
+- **Fleet Overview** (`efi3msabjg2kge`) — removed duplicate panels, fixed layout
+- **Per Miner** (`cfi3mt5a450xse`) — fixed hashrate query, added new panels
+- **Board Health** (`afi3p5mhapn9ce`) — added HW errors + temp panels
+- **Pool Stats** (`afi3q9w5ishz4f`) — minor polish
 
 ---
 
-## DEPLOYMENT STATUS
+## DOCUMENTATION UPDATED
 
-**All Services Running:** ✅
+| Document | Changes |
+|----------|---------|
+| README.md | Architecture diagram (port 8590, 7 dashboards, ROBS-PC catalog), services table, dashboards table, key files |
+| AI_ROADMAP.md | Interactive catalog + searchable lookup marked DONE, API details, Grafana links, completed items section, last updated |
+| NEXT_SESSION.md | Full rewrite — current priorities, deployment steps, remaining work |
+| INTELLIGENCE_CATALOG_STATUS.md | Full rewrite — reflects live PostgreSQL, API, dashboard |
+| INTELLIGENCE_REPORT_API.md | New — complete endpoint documentation |
+| SESSION_COMPLETE.md | This file |
+| DEPLOYMENT_CHECKLIST.md | Unchanged (still accurate for prior fixes) |
+| REPAIR_LOG.md | Already had April 15 entry for Grafana/SQLite/dead boards fixes |
+
+---
+
+## GIT HISTORY (Today)
+
 ```
-mining-guardian          active
-approval-api             active
-dashboard-api            active
-slack-listener           active
-slack-commands           active
-overnight-automation     active
-mining-guardian-alerts   active
+fad1096 docs: update README architecture + AI_ROADMAP with Intelligence Report API status
+8e05461 feat: Intelligence Report API — searchable miner reports for 235+ models
+(pending) docs: comprehensive documentation audit — NEXT_SESSION, INTELLIGENCE_CATALOG_STATUS, SESSION_COMPLETE
 ```
 
-**Environment Variables Added:**
-- DASHBOARD_URL=http://127.0.0.1:8585
-- AURADINE_USER=admin
-- AURADINE_PASS=admin
-- AUTHORIZED_SLACK_USER_IDS=U07AGTT8CLD
+---
 
-**Systemd:** daemon-reload complete, all services restarted
+## DEPLOYMENT NEEDED
+
+Bobby has step-by-step commands to deploy the Intelligence Report API on the VPS:
+1. SSH to VPS → git pull
+2. Install FastAPI → pip install fastapi uvicorn
+3. Copy systemd service → enable → start
+4. Verify → curl localhost:8590/health
+5. Open Grafana → search a miner → see full report
 
 ---
 
-## VERIFICATION CHECKLIST
+## REMAINING WORK (next session priorities)
 
-✅ All 7 services running without errors
-✅ Environment variables loaded
-✅ Systemd configuration updated
-⏳ Knowledge context in LLM calls (verify at next hourly scan)
-⏳ Log rotation (verify at midnight)
-⏳ Slack authorization (test with command)
-⏳ Warehouse logs ready for 4pm Qwen analysis
-
----
-
-## REMAINING WORK
-
-### HIGH Priority (~10 items remaining)
-- **CQ-6 to CQ-10:** 9 SQLite connections need manual context manager wrapping
-- **CQ-14, CQ-15:** Token access methods need lock wrapping (infrastructure done)
-- **DG-4 to DG-15:** Signal improvements (PSU voltage, time-of-day, spatial correlation)
-
-### MEDIUM Priority (~80 items)
-- Magic numbers → constants
-- Duplicated code blocks
-- Missing docstrings
-- TODO comments
-- Code structure improvements
-
-### LOW Priority (~90 items)
-- Style improvements
-- Minor optimizations
-- Nice-to-have features
-
-**Estimated remaining HIGH:** 3-4 hours careful work
+1. Deploy Intelligence Report API on VPS (Bobby runs commands)
+2. Wire OpenClaw to guardian.db (P0)
+3. Daily log capture remaining items (P0)
+4. SQLite context managers (HIGH from code review)
+5. Qwen AI analysis in reports (enhancement)
+6. PDF download button in Grafana (enhancement)
 
 ---
 
-## DOCUMENTATION
-
-**REPAIR_LOG.md** - Complete fix history with:
-- What Bobby thought vs what was happening
-- Why it mattered
-- What changed (before/after code)
-- How verified
-- Backup file locations
-
-**DEPLOYMENT_CHECKLIST.md** - Production deployment guide
-
-**SESSION_COMPLETE.md** - This file
-
----
-
-## KEY ACCOMPLISHMENTS
-
-1. **Knowledge Wiring:** LLM now sees full operator rules, fingerprints, predictions
-2. **Resource Leaks:** Eliminated 57,600 potential DB connection leaks over 600 days
-3. **Portability:** Removed all hardcoded IPs for Mac mini deployments
-4. **Safety:** Bare except fixed - Ctrl+C now works, critical errors propagate
-5. **Security:** Slack command authorization, miner credentials from env vars
-6. **Reliability:** Log rotation, proper error handling, threading infrastructure
-7. **Documentation:** Scan cadence corrected across all docs
-
----
-
-## NEXT STEPS
-
-**Option 1: Continue HIGH Priority**
-- Manually wrap remaining 9 SQLite connections
-- Complete threading lock wrapping
-- Implement DG signal improvements
-
-**Option 2: High-Volume MEDIUM Priority** 
-- Tackle 20-30 MEDIUM items for maximum throughput
-- Build momentum with quick wins
-- Return to complex HIGH items with fresh eyes
-
-**Option 3: Test & Validate**
-- Monitor services for 24 hours
-- Verify fixes in production
-- Collect metrics before continuing
-
-**Recommendation:** Continue with high-volume MEDIUM items for momentum, return to remaining HIGH items in next focused session.
-
----
-
-## SESSION METRICS
-
-- **Fixes per hour:** 2.3 HIGH priority items
-- **Files modified per hour:** 2.4 files
-- **Zero deployment errors**
-- **100% service uptime maintained**
-- **All changes backed up and syntax verified**
-
-🎉 **EXCEPTIONAL PROGRESS - READY FOR CONTINUED OPERATIONS**
-
+*Previous session: April 14, 2026 — Code review marathon, 21 HIGH priority fixes deployed*
