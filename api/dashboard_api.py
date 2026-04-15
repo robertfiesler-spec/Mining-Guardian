@@ -2551,6 +2551,33 @@ async def get_latest_hvac():
     return results
 
 
+# ── Intelligence Report API Proxy ─────────────────────────────────────────────
+# Proxies requests to the Intelligence Report API (port 8590) so the Grafana
+# Business Text panel can fetch over HTTPS via the Cloudflare tunnel.
+# Without this, browsers block mixed content (HTTPS page → HTTP fetch).
+import urllib.request
+import urllib.error
+
+_REPORT_API = "http://127.0.0.1:8590"
+
+@app.get("/api/report/{path:path}")
+def proxy_intelligence_report(path: str, request: Request):
+    """Proxy to Intelligence Report API on port 8590."""
+    qs = str(request.query_params)
+    url = f"{_REPORT_API}/api/report/{path}"
+    if qs:
+        url += f"?{qs}"
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return data
+    except urllib.error.URLError as e:
+        return {"error": f"Intelligence Report API unreachable: {str(e)}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
