@@ -1,0 +1,17 @@
+[Unit]
+Description=Mining Guardian Intelligence Report API
+After=network.target dashboard-api.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Mining-Gaurdian
+ExecStart=/root/Mining-Gaurdian/venv/bin/python /root/Mining-Gaurdian/api/intelligence_report_api.py
+Environment=GUARDIAN_DB=/root/Mining-Gaurdian/guardian.db
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
