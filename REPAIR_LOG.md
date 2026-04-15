@@ -1,5 +1,80 @@
 ---
 
+### 2026-04-15 (evening) · Intelligence Report dashboard "Failed to fetch" — three bugs found during deployment
+
+**What Bobby thought the program was doing:**
+1. Searching a miner model in the new Intelligence Report Grafana dashboard should render a full HTML report
+2. The API was confirmed working on the VPS (`curl localhost:8590/health` returned 235 models)
+3. Typing "antminer-s19j-pro" in the search box should show the report inline in Grafana
+
+**What was actually happening:**
+1. **API returned 0 models on first deploy** — the `REPO_DIR` variable pointed to `api/` (the script's own folder) instead of the repo root. Data files at `intelligence-catalog/data/` were unreachable because it was looking inside `api/intelligence-catalog/data/` which doesn't exist.
+2. **"Failed to load report: Failed to fetch" in browser** — Grafana is served over HTTPS via Cloudflare tunnel at `grafana.fieslerfamily.com`. The panel's JavaScript was trying to `fetch('http://localhost:8590/...')` — two problems: (a) `localhost` in the browser means Bobby's Mac, not the VPS, and (b) browsers block mixed content (HTTPS page fetching from HTTP endpoint).
+3. **Business Text plugin not installed** — the Grafana text panel (`type: text`) strips all `<script>` tags for security. Even after installing the Business Text plugin (`marcusolsson-dynamictext-panel` v6.2.0), it requires Grafana 11+ but VPS runs Grafana 10.4.1. The `afterRender` JavaScript executed but showed only a warning triangle.
+
+**Why it mattered:**
+- The entire Intelligence Report feature was built and working on the backend but invisible to the user
+- Bobby could not see any miner reports in Grafana despite the API returning correct data
+- This was the demo-ready feature Bobby requested — searchable miner intelligence across 235+ models
+
+**What we changed:**
+
+**FIX 1: Corrected REPO_DIR path in intelligence_report_api.py**
+```python
+# Before (WRONG — pointed to api/ folder):
+BASE_DIR = Path(__file__).resolve().parent
+REPO_DIR = BASE_DIR  # On VPS this would be the repo root
+
+# After (CORRECT — goes up one level to repo root):
+BASE_DIR = Path(__file__).resolve().parent
+REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
+```
+- **File:** `api/intelligence_report_api.py` line 30
+- **Commit:** `2bb7305`
+- **Result:** `/health` now returns `{"models": 235}` instead of `{"models": 0}`
+
+**FIX 2: Added HTTPS proxy route in dashboard_api.py**
+- Added `/api/report/{path}` proxy endpoint in `dashboard_api.py` (port 8585)
+- This forwards requests to the Intelligence Report API on `localhost:8590`
+- Since `dashboard_api` is already behind the Cloudflare tunnel at `dashboard.fieslerfamily.com` (HTTPS), the browser can fetch without mixed content errors
+- **File:** `api/dashboard_api.py` — new proxy endpoint at line 2563
+- **Commit:** `af82ce2`
+
+**FIX 3: Added /html/render endpoint for iframe-based display**
+- Grafana's built-in text panel strips `<script>` tags (security feature)
+- Business Text plugin v6 requires Grafana 11+ (VPS runs 10.4.1)
+- Solution: use an `<iframe>` pointing to a full HTML page endpoint
+- Added `/api/report/{slug}/html/render` in `dashboard_api.py` — returns a complete HTML page with dark background matching Grafana's theme
+- Updated Grafana dashboard panel from `type: marcusolsson-dynamictext-panel` back to `type: text` with an iframe
+- **File:** `api/dashboard_api.py` — new render endpoint at line 2563
+- **Commit:** `e3acf26`
+
+**FIX 4: Installed Business Text plugin (for future use)**
+- Installed `marcusolsson-dynamictext-panel` v6.2.0 on VPS Grafana
+- Not currently used (requires Grafana 11+) but available for Mac mini deployment
+- Command: `grafana-cli plugins install marcusolsson-dynamictext-panel`
+
+**How we verified:**
+1. ✅ `curl http://localhost:8590/health` returns `{"status":"ok","models":235}` (Fix 1)
+2. ✅ `curl http://localhost:8590/api/report/search?q=s19j` returns 6 S19J variants (Fix 1)
+3. ✅ `curl http://localhost:8585/api/report/antminer-s19jpro/html` returns full HTML report through proxy (Fix 2)
+4. ⏳ Grafana iframe rendering awaiting VPS pull + dashboard-api restart (Fix 3) — Bobby needs to run `git pull origin main && systemctl restart dashboard-api`
+
+**Files modified:**
+- `api/intelligence_report_api.py` — line 30: `REPO_DIR = BASE_DIR.parent` (was `BASE_DIR`)
+- `api/dashboard_api.py` — added `/api/report/{slug}/html/render` (iframe endpoint) + `/api/report/{path}` (JSON proxy)
+- Grafana dashboard `intelligence_report_001` — report panel changed from Business Text to iframe
+- Grafana plugins: installed `marcusolsson-dynamictext-panel` v6.2.0
+
+**VPS commands Bobby still needs to run:**
+```bash
+cd /root/Mining-Gaurdian && git pull origin main
+systemctl restart dashboard-api
+```
+Then refresh the Grafana Intelligence Report dashboard.
+
+---
+
 ### 2026-04-15 (afternoon) · Grafana dashboard "No data" + SQLite 5.8GB memory issue + known_dead_boards permanent suppression
 
 **What Bobby thought the program was doing:**
