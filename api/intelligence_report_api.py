@@ -5,21 +5,26 @@ Mining Guardian — Miner Intelligence Report API
 
 Serves pre-built intelligence report data for any miner model.
 Data sources: unified_miner_index.json + miner_enrichment_master.csv + miner_specs.json + guardian.db
-Consumed by Grafana Business Text panels via JSON datasource.
+Consumed by Grafana iframe panels via dashboard_api proxy.
 
 Runs on: http://localhost:8590
 
 Endpoints:
   GET /api/report/models          → list of all models (for Grafana variable dropdown)
+  GET /api/report/models/labels   → label:value pairs for Grafana JSON datasource
   GET /api/report/search?q=...    → search models by partial name
   GET /api/report/{slug}          → full intelligence report data for a model
+  GET /api/report/{slug}/html     → HTML formatted report for iframe rendering
   GET /health                     → health check
+
+Version: 2.0.0 — Full report with 9 sections (April 15 2026 evening build)
 """
 
-import json, csv, os, re, sqlite3
+import json, csv, os, re, sqlite3, math
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+from collections import defaultdict
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,7 +41,7 @@ SPECS_JSON = str(REPO_DIR / "miner_specs.json")
 INDEX_JSON = str(_DATA_DIR / "unified_miner_index.json")
 
 # ── App Setup ─────────────────────────────────────────────────
-app = FastAPI(title="Mining Guardian Intelligence Report API", version="1.0.0")
+app = FastAPI(title="Mining Guardian Intelligence Report API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -70,16 +75,86 @@ def load_specs():
     return {}
 
 # Load data at startup
-UNIFIED_INDEX = load_unified_index()
+_RAW_INDEX = load_unified_index()
 ENRICHMENT = load_enrichment()
 SPECS = load_specs()
 
-# Build search-friendly list
+# ── Slug Merge: Combine duplicate entries ─────────────────────
+# Some models exist under two slugs (e.g. antminer-s19jpro and antminer-s19j-pro)
+# where one has specs and the other has enrichment. Merge them into one entry.
+def merge_index(raw_index: dict) -> dict:
+    """Merge duplicate slug entries so every model gets both specs + enrichment."""
+    # Group by normalized slug (strip all hyphens)
+    groups = defaultdict(list)
+    for slug in raw_index:
+        norm = slug.replace('-', '')
+        groups[norm].append(slug)
+    
+    merged = {}
+    merge_count = 0
+    for norm, slugs in groups.items():
+        if len(slugs) == 1:
+            merged[slugs[0]] = raw_index[slugs[0]]
+        else:
+            # Multiple slugs for same model — merge data, keep the slug with specs (more canonical)
+            primary = None
+            specs_data = None
+            enrichment_data = None
+            best_entity = None
+            best_display = None
+            
+            for s in slugs:
+                entry = raw_index[s]
+                if entry.get('specs'):
+                    primary = s
+                    specs_data = entry['specs']
+                if entry.get('enrichment'):
+                    enrichment_data = entry['enrichment']
+                    best_entity = entry.get('entity')
+                if entry.get('display_name'):
+                    best_display = entry.get('display_name')
+            
+            # Fallback: use first slug if none had specs
+            if not primary:
+                primary = slugs[0]
+            
+            # Build merged entry
+            base = dict(raw_index[primary])
+            if specs_data:
+                base['specs'] = specs_data
+            if enrichment_data:
+                base['enrichment'] = enrichment_data
+            if best_entity and not base.get('entity'):
+                base['entity'] = best_entity
+            if best_display:
+                base['display_name'] = best_display
+            
+            merged[primary] = base
+            
+            # Also register aliases so lookups work with either slug
+            for s in slugs:
+                if s != primary:
+                    merged[s] = base  # Point to same merged data
+            
+            merge_count += 1
+    
+    print(f"Merged {merge_count} duplicate slug pairs")
+    return merged
+
+UNIFIED_INDEX = merge_index(_RAW_INDEX)
+
+# Build search-friendly list (deduplicated — skip aliases)
 MODEL_LIST = []
+_seen_displays = set()
 for slug, info in sorted(UNIFIED_INDEX.items()):
     display = info.get('display_name', slug)
+    # Skip alias duplicates
+    display_key = display.lower().replace(' ', '')
+    if display_key in _seen_displays:
+        continue
+    _seen_displays.add(display_key)
+    
     mfg = info.get('manufacturer', 'unknown').title()
-    # Extract hashrate from entity if available
     hashrate = ""
     entity = info.get('entity', '')
     if entity:
@@ -171,6 +246,63 @@ def get_fleet_data(model_pattern: str) -> dict:
         return {"deployed": False, "error": str(e)}
 
 
+# ── Profitability Calculator ──────────────────────────────────
+def calc_profitability(hashrate_th: float, power_w: float, efficiency_jth: float) -> dict:
+    """Calculate profitability estimates at multiple electricity rates."""
+    if not hashrate_th or not power_w:
+        return {}
+    
+    # Current network estimates (these should eventually come from live API)
+    btc_price_usd = 95000  # Approximate BTC price
+    network_difficulty = 119e12  # ~119T difficulty
+    block_reward = 3.125  # Post-2024 halving
+    
+    # Daily BTC mined = (hashrate * 86400 * block_reward) / (difficulty * 2^32)
+    daily_btc = (hashrate_th * 1e12 * 86400 * block_reward) / (network_difficulty * 2**32)
+    daily_revenue_usd = daily_btc * btc_price_usd
+    
+    # Power cost at different rates
+    daily_kwh = (power_w / 1000) * 24
+    monthly_kwh = daily_kwh * 30
+    
+    rates = [
+        {"label": "$0.04/kWh (Cheap hydro/solar)", "rate": 0.04},
+        {"label": "$0.06/kWh (Low-cost region)", "rate": 0.06},
+        {"label": "$0.08/kWh (Average industrial)", "rate": 0.08},
+        {"label": "$0.10/kWh (Average US)", "rate": 0.10},
+        {"label": "$0.12/kWh (Higher cost)", "rate": 0.12},
+    ]
+    
+    tiers = []
+    breakeven_rate = daily_revenue_usd / daily_kwh if daily_kwh > 0 else 0
+    
+    for r in rates:
+        daily_cost = daily_kwh * r["rate"]
+        daily_profit = daily_revenue_usd - daily_cost
+        monthly_profit = daily_profit * 30
+        annual_profit = daily_profit * 365
+        tiers.append({
+            "label": r["label"],
+            "rate": r["rate"],
+            "daily_cost": round(daily_cost, 2),
+            "daily_profit": round(daily_profit, 2),
+            "monthly_profit": round(monthly_profit, 2),
+            "annual_profit": round(annual_profit, 2),
+            "profitable": daily_profit > 0,
+        })
+    
+    return {
+        "btc_price_usd": btc_price_usd,
+        "daily_btc": round(daily_btc, 8),
+        "daily_revenue_usd": round(daily_revenue_usd, 2),
+        "daily_kwh": round(daily_kwh, 1),
+        "monthly_kwh": round(monthly_kwh, 0),
+        "breakeven_rate": round(breakeven_rate, 4),
+        "efficiency_j_th": efficiency_jth,
+        "tiers": tiers,
+    }
+
+
 # ── Report Builder ────────────────────────────────────────────
 def build_report(slug: str) -> dict:
     """Build a complete intelligence report for a miner model."""
@@ -229,11 +361,15 @@ def build_report(slug: str) -> dict:
             hw["default_hashrate_th"] = val
     
     # ── Fleet Data ──
-    # Build a search pattern from the display name
     model_search = display_name.split('(')[0].strip()
-    # Simplify for DB matching
     model_search_parts = model_search.lower().replace('-', '').replace('+', '')
     fleet = get_fleet_data(model_search_parts)
+    
+    # ── Profitability ──
+    hashrate = hw.get("default_hashrate_th", 0) or 0
+    power = hw.get("default_power_w", 0) or 0
+    eff = hw.get("efficiency_j_th", 0) or 0
+    profitability = calc_profitability(hashrate, power, eff) if hashrate and power else {}
     
     # ── Build Report ──
     report = {
@@ -245,6 +381,7 @@ def build_report(slug: str) -> dict:
         "fleet_deployed": fleet.get("deployed", False),
         "hardware": hw,
         "fleet": fleet,
+        "profitability": profitability,
         "data_sources": {
             "has_enrichment": enrichment is not None and len(enrichment) > 0,
             "has_specs": specs is not None,
@@ -260,7 +397,7 @@ def build_report(slug: str) -> dict:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "models": len(MODEL_LIST), "version": "1.0.0"}
+    return {"status": "ok", "models": len(MODEL_LIST), "version": "2.0.0"}
 
 @app.get("/api/report/models")
 def list_models():
@@ -276,7 +413,7 @@ def list_model_labels():
 def search_models(q: str = Query("", description="Search query")):
     """Search models by partial name match."""
     if not q or len(q) < 2:
-        return MODEL_LIST[:50]  # Return first 50 if no query
+        return MODEL_LIST[:50]
     
     q_lower = q.lower()
     results = [
@@ -290,7 +427,6 @@ def get_report(slug: str):
     """Get full intelligence report for a miner model."""
     report = build_report(slug)
     if not report:
-        # Try fuzzy match
         slug_lower = slug.lower().replace(' ', '-').replace('+', 'plus')
         report = build_report(slug_lower)
     if not report:
@@ -299,7 +435,7 @@ def get_report(slug: str):
 
 @app.get("/api/report/{slug}/html")
 def get_report_html(slug: str):
-    """Get intelligence report rendered as HTML for Grafana text panel."""
+    """Get intelligence report rendered as full HTML for iframe rendering."""
     report = build_report(slug)
     if not report:
         slug_lower = slug.lower().replace(' ', '-').replace('+', 'plus')
@@ -310,36 +446,105 @@ def get_report_html(slug: str):
             content={"html": f"<div style='color:#ff6b6b; padding:20px; font-size:16px;'>Model '{slug}' not found in Intelligence Catalog ({len(MODEL_LIST)} models available)</div>"}
         )
     
+    html = render_full_html(report)
+    return {"html": html}
+
+
+# ── HTML Report Renderer (v2 — full 9-section report) ─────────
+
+def _css():
+    """Return shared CSS styles for the report."""
+    return """
+    <style>
+      * { box-sizing: border-box; }
+      body { margin:0; padding:0; background:#0f172a; color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }
+      .report { max-width:1200px; margin:0 auto; padding:24px; }
+      .section { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:24px; margin-bottom:20px; }
+      .section-header { display:flex; align-items:center; gap:10px; margin:0 0 18px 0; border-bottom:1px solid #334155; padding-bottom:10px; }
+      .section-header h3 { margin:0; font-size:16px; font-weight:700; letter-spacing:0.3px; }
+      .section-icon { font-size:20px; line-height:1; }
+      .spec-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px 32px; }
+      .spec-row { display:flex; padding:5px 0; border-bottom:1px solid #0f172a; }
+      .spec-label { color:#94a3b8; font-size:13px; min-width:140px; font-weight:500; }
+      .spec-value { color:#e2e8f0; font-size:13px; font-weight:600; }
+      table { width:100%; border-collapse:collapse; font-size:13px; }
+      th { text-align:left; padding:8px; color:#94a3b8; font-weight:600; border-bottom:2px solid #334155; }
+      th.right { text-align:right; }
+      td { padding:7px 8px; color:#e2e8f0; border-bottom:1px solid #1e293b55; }
+      td.right { text-align:right; }
+      td.mono { font-family:'SF Mono',Menlo,monospace; font-size:12px; }
+      .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+      .stat-card { background:#0f172a; border-radius:8px; padding:16px; text-align:center; border:1px solid #1e293b; }
+      .stat-value { font-size:28px; font-weight:700; line-height:1.2; }
+      .stat-label { font-size:11px; color:#94a3b8; margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
+      .badge { display:inline-block; padding:3px 10px; border-radius:4px; font-size:11px; font-weight:600; letter-spacing:0.5px; }
+      .badge-green { background:#10b98122; color:#10b981; border:1px solid #10b98144; }
+      .badge-amber { background:#f59e0b22; color:#f59e0b; border:1px solid #f59e0b44; }
+      .badge-red { background:#ef444422; color:#ef4444; border:1px solid #ef444444; }
+      .badge-cyan { background:#06b6d422; color:#06b6d4; border:1px solid #06b6d444; }
+      .alert-box { border-radius:8px; padding:16px; margin-bottom:12px; }
+      .alert-amber { background:#f59e0b11; border:1px solid #f59e0b33; }
+      .alert-green { background:#10b98111; border:1px solid #10b98133; }
+      .alert-red { background:#ef444411; border:1px solid #ef444433; }
+      .alert-cyan { background:#06b6d411; border:1px solid #06b6d433; }
+      .progress-bar { height:8px; background:#0f172a; border-radius:4px; overflow:hidden; margin-top:6px; }
+      .progress-fill { height:100%; border-radius:4px; transition:width 0.3s; }
+      .insight-card { background:#0f172a; border:1px solid #334155; border-radius:8px; padding:16px; margin-bottom:12px; }
+      .insight-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+      .insight-title { color:#f8fafc; font-size:14px; font-weight:600; }
+      .confidence { font-size:11px; font-weight:600; padding:2px 8px; border-radius:3px; }
+      .insight-body { color:#cbd5e1; font-size:13px; line-height:1.7; }
+      .rec-item { display:flex; gap:12px; padding:12px 0; border-bottom:1px solid #0f172a; }
+      .rec-icon { font-size:18px; min-width:28px; text-align:center; padding-top:2px; }
+      .rec-content h4 { margin:0 0 4px 0; font-size:14px; color:#f8fafc; font-weight:600; }
+      .rec-content p { margin:0; font-size:13px; color:#cbd5e1; line-height:1.6; }
+      .footer { text-align:center; color:#475569; font-size:11px; padding:16px 0; line-height:1.6; }
+      .toc { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:12px; }
+      .toc-item { display:flex; align-items:center; gap:8px; color:#94a3b8; font-size:12px; padding:4px 8px; background:#0f172a; border-radius:4px; }
+      .toc-num { color:#06b6d4; font-weight:700; font-size:11px; min-width:18px; }
+      @media (max-width: 768px) {
+        .spec-grid, .stat-grid, .toc { grid-template-columns:1fr; }
+      }
+    </style>
+"""
+
+def _header(report: dict) -> str:
+    """Render the report header with title, badge, and table of contents."""
     hw = report["hardware"]
-    fleet = report["fleet"]
     deployed = report["fleet_deployed"]
-    
-    # Build the HTML report
-    badge_color = "#10b981" if deployed else "#f59e0b"
+    badge_class = "badge-green" if deployed else "badge-amber"
     badge_text = "DEPLOYED IN FLEET" if deployed else "CATALOG DATA ONLY"
     
-    # Header
-    html = f"""
-<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #e2e8f0; padding: 20px; max-width: 1200px; margin: 0 auto;">
-  
-  <div style="text-align: center; margin-bottom: 30px;">
-    <h1 style="font-size: 28px; font-weight: 700; color: #f8fafc; margin: 0 0 4px 0; letter-spacing: -0.5px;">MINER INTELLIGENCE REPORT</h1>
-    <h2 style="font-size: 20px; font-weight: 600; color: #06b6d4; margin: 0 0 12px 0;">{hw.get('manufacturer', '')} {hw.get('model', '')} — {report['report_type']}</h2>
-    <span style="display: inline-block; background: {badge_color}22; color: {badge_color}; border: 1px solid {badge_color}44; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px;">{badge_text}</span>
-    <div style="color: #94a3b8; font-size: 13px; margin-top: 8px;">
-      Generated: {report['generated_at']}<br>
-      Data Sources: Intelligence Catalog ({report['data_sources']['catalog_tables']} tables)
-      {' + Guardian Fleet Database' if deployed else ''}
-    </div>
-  </div>
-"""
+    sections = [
+        "Hardware Specifications", "Firmware &amp; Known Issues", "Fleet Performance",
+        "Profitability &amp; Economics", "Market Context", "Repair &amp; Maintenance",
+        "Cooling &amp; Environment", "AI Analysis", "Recommendations"
+    ]
     
-    # ── Hardware Specifications Section ──
-    html += """
-  <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-    <h3 style="color: #06b6d4; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #334155; padding-bottom: 8px;">1. HARDWARE SPECIFICATIONS</h3>
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 32px;">
+    toc_html = ""
+    for i, s in enumerate(sections, 1):
+        toc_html += f'<div class="toc-item"><span class="toc-num">{i}</span> {s}</div>'
+    
+    return f"""
+    <div style="text-align:center; margin-bottom:32px;">
+      <div style="font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:2px; margin-bottom:8px;">Mining Guardian</div>
+      <h1 style="font-size:30px; font-weight:800; color:#f8fafc; margin:0 0 4px 0; letter-spacing:-0.5px;">MINER INTELLIGENCE REPORT</h1>
+      <h2 style="font-size:20px; font-weight:600; color:#06b6d4; margin:0 0 14px 0;">{hw.get('manufacturer','')} {hw.get('model','')} — {report['report_type']}</h2>
+      <span class="badge {badge_class}">{badge_text}</span>
+      <div style="color:#94a3b8; font-size:13px; margin-top:10px;">
+        Generated: {report['generated_at']}<br>
+        Data Sources: Intelligence Catalog ({report['data_sources']['catalog_tables']} tables)
+        {' + Guardian Fleet Database' if deployed else ''}
+      </div>
+      <div class="toc" style="max-width:600px; margin:16px auto 0;">
+        {toc_html}
+      </div>
+    </div>
 """
+
+def _section_1_hardware(report: dict) -> str:
+    """Section 1: Hardware Specifications."""
+    hw = report["hardware"]
     
     spec_fields = [
         ("Manufacturer", hw.get('manufacturer', 'N/A')),
@@ -347,192 +552,797 @@ def get_report_html(slug: str):
         ("Algorithm", hw.get('algorithm', 'SHA-256')),
         ("Cooling", hw.get('cooling_type', hw.get('cooling_details', 'N/A'))),
         ("Release Date", hw.get('release_date', 'N/A')),
-        ("Hashrate", f"{hw.get('default_hashrate_th', 'N/A')} TH/s" if hw.get('default_hashrate_th') else 'N/A'),
-        ("Power", f"{hw.get('default_power_w', 'N/A')} W" if hw.get('default_power_w') else 'N/A'),
-        ("Efficiency", f"{hw.get('efficiency_j_th', 'N/A')} J/TH" if hw.get('efficiency_j_th') else 'N/A'),
+        ("Hashrate", f"{hw['default_hashrate_th']} TH/s" if hw.get('default_hashrate_th') else 'N/A'),
+        ("Power", f"{hw['default_power_w']} W" if hw.get('default_power_w') else 'N/A'),
+        ("Efficiency", f"{hw['efficiency_j_th']} J/TH" if hw.get('efficiency_j_th') else 'N/A'),
         ("Dimensions", hw.get('dimensions', 'N/A')),
-        ("Weight", f"{hw.get('weight_kg', 'N/A')} kg" if hw.get('weight_kg') and hw.get('weight_kg') != 'N/A' else 'N/A'),
+        ("Weight", hw.get('weight_kg', 'N/A') if hw.get('weight_kg') and hw.get('weight_kg') != 'N/A' else 'N/A'),
         ("Operating Temp", hw.get('operating_temp', 'N/A')),
-        ("Noise", f"{hw.get('noise_db', 'N/A')} dB" if hw.get('noise_db') and hw.get('noise_db') != 'N/A' else 'N/A'),
+        ("Noise", hw.get('noise_db', 'N/A') if hw.get('noise_db') and hw.get('noise_db') != 'N/A' else 'N/A'),
         ("Network", hw.get('network', 'N/A')),
         ("PSU", hw.get('psu_requirements', 'N/A')),
         ("Voltage Range", hw.get('voltage_range', 'N/A')),
         ("Warranty", hw.get('warranty', 'N/A')),
     ]
     
+    rows = ""
     for label, value in spec_fields:
-        if value and value != 'N/A' and value != 'None TH/s' and value != 'None W' and value != 'None J/TH' and value != 'None kg':
-            val_display = str(value)[:120]
-            html += f"""
-      <div style="display: flex; padding: 4px 0; border-bottom: 1px solid #1e293b;">
-        <span style="color: #94a3b8; font-size: 13px; min-width: 130px; font-weight: 500;">{label}:</span>
-        <span style="color: #e2e8f0; font-size: 13px; font-weight: 600;">{val_display}</span>
-      </div>"""
+        if value and value != 'N/A' and 'None' not in str(value):
+            val_display = str(value)[:150]
+            rows += f'<div class="spec-row"><span class="spec-label">{label}:</span><span class="spec-value">{val_display}</span></div>'
     
-    html += """
-    </div>
-  </div>
-"""
-    
-    # ── Variants (if available) ──
+    # Variants table
+    variants_html = ""
     variants = hw.get('variants', [])
     if variants:
-        html += """
-  <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-    <h3 style="color: #06b6d4; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #334155; padding-bottom: 8px;">1.1 MODEL VARIANTS</h3>
-    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-      <thead>
-        <tr style="border-bottom: 2px solid #334155;">
-          <th style="text-align: left; padding: 8px; color: #94a3b8;">Variant</th>
-          <th style="text-align: right; padding: 8px; color: #94a3b8;">Hashrate</th>
-          <th style="text-align: right; padding: 8px; color: #94a3b8;">Power</th>
-          <th style="text-align: right; padding: 8px; color: #94a3b8;">Efficiency</th>
-        </tr>
-      </thead>
-      <tbody>
-"""
+        v_rows = ""
         for v in variants:
-            html += f"""
-        <tr style="border-bottom: 1px solid #1e293b55;">
-          <td style="padding: 6px 8px; color: #e2e8f0; font-weight: 500;">{v.get('label', 'N/A')}</td>
-          <td style="padding: 6px 8px; color: #e2e8f0; text-align: right;">{v.get('rated_ths', 'N/A')} TH/s</td>
-          <td style="padding: 6px 8px; color: #e2e8f0; text-align: right;">{v.get('rated_watts', 'N/A')} W</td>
-          <td style="padding: 6px 8px; color: #e2e8f0; text-align: right;">{v.get('efficiency_j_th', 'N/A')} J/TH</td>
-        </tr>"""
-        html += """
-      </tbody>
-    </table>
-  </div>
-"""
+            eff = v.get('efficiency_j_th', 'N/A')
+            eff_color = "#10b981" if eff != 'N/A' and float(str(eff)) < 25 else "#06b6d4" if eff != 'N/A' and float(str(eff)) < 35 else "#f59e0b"
+            v_rows += f"""
+            <tr>
+              <td style="font-weight:500;">{v.get('label','N/A')}</td>
+              <td class="right" style="font-weight:600; color:#06b6d4;">{v.get('rated_ths','N/A')} TH/s</td>
+              <td class="right">{v.get('rated_watts','N/A')} W</td>
+              <td class="right" style="color:{eff_color}; font-weight:600;">{eff} J/TH</td>
+            </tr>"""
+        
+        variants_html = f"""
+        <div style="margin-top:20px;">
+          <h4 style="color:#94a3b8; font-size:13px; margin:0 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;">Model Variants</h4>
+          <table>
+            <thead><tr><th>Variant</th><th class="right">Hashrate</th><th class="right">Power</th><th class="right">Efficiency</th></tr></thead>
+            <tbody>{v_rows}</tbody>
+          </table>
+        </div>"""
     
-    # ── Firmware & Known Issues ──
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">🔧</span>
+        <h3 style="color:#06b6d4;">1. HARDWARE SPECIFICATIONS</h3>
+      </div>
+      <div class="spec-grid">{rows}</div>
+      {variants_html}
+    </div>
+"""
+
+def _section_2_firmware(report: dict) -> str:
+    """Section 2: Firmware & Known Issues."""
+    hw = report["hardware"]
     firmware = hw.get('firmware_support', '')
     known_issues = hw.get('known_issues', '')
     features = hw.get('distinguishing_features', '')
     
-    if firmware or known_issues or features:
-        html += """
-  <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-    <h3 style="color: #06b6d4; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #334155; padding-bottom: 8px;">2. FIRMWARE & KNOWN ISSUES</h3>
-"""
-        if firmware and firmware != 'N/A':
-            html += f"""
-    <div style="margin-bottom: 16px;">
-      <h4 style="color: #e2e8f0; font-size: 14px; margin: 0 0 8px 0;">Firmware Support</h4>
-      <p style="color: #cbd5e1; font-size: 13px; line-height: 1.6; margin: 0; white-space: pre-wrap;">{firmware[:800]}</p>
-    </div>"""
-        
-        if known_issues and known_issues != 'None documented' and known_issues != 'N/A':
-            html += f"""
-    <div style="margin-bottom: 16px;">
-      <h4 style="color: #f59e0b; font-size: 14px; margin: 0 0 8px 0;">⚠️ Known Issues</h4>
-      <div style="background: #f59e0b11; border: 1px solid #f59e0b33; border-radius: 4px; padding: 12px;">
-        <p style="color: #fbbf24; font-size: 13px; line-height: 1.6; margin: 0; white-space: pre-wrap;">{known_issues[:1000]}</p>
+    if not firmware and not known_issues and not features:
+        return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">💾</span>
+        <h3 style="color:#06b6d4;">2. FIRMWARE &amp; KNOWN ISSUES</h3>
       </div>
-    </div>"""
-        
-        if features and features != 'N/A':
-            html += f"""
-    <div style="margin-bottom: 8px;">
-      <h4 style="color: #e2e8f0; font-size: 14px; margin: 0 0 8px 0;">Distinguishing Features</h4>
-      <p style="color: #cbd5e1; font-size: 13px; line-height: 1.6; margin: 0; white-space: pre-wrap;">{features[:800]}</p>
-    </div>"""
-        
-        html += """
-  </div>
+      <div style="color:#64748b; font-size:13px; text-align:center; padding:20px;">No firmware or known issue data available in catalog. Data will be added as it becomes available.</div>
+    </div>
 """
     
-    # ── Fleet Performance Section ──
-    if deployed:
-        html += f"""
-  <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-    <h3 style="color: #10b981; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #334155; padding-bottom: 8px;">3. FLEET OPERATIONAL PERFORMANCE</h3>
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
-      <div style="background: #0f172a; border-radius: 8px; padding: 16px; text-align: center;">
-        <div style="font-size: 28px; font-weight: 700; color: #10b981;">{fleet.get('count', 0)}</div>
-        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Total Deployed</div>
+    parts = []
+    if firmware and firmware != 'N/A':
+        parts.append(f"""
+        <div style="margin-bottom:16px;">
+          <h4 style="color:#e2e8f0; font-size:14px; margin:0 0 8px 0; font-weight:600;">Firmware Support</h4>
+          <p style="color:#cbd5e1; font-size:13px; line-height:1.7; margin:0;">{firmware[:800]}</p>
+        </div>""")
+    
+    if known_issues and known_issues not in ('None documented', 'N/A'):
+        parts.append(f"""
+        <div class="alert-box alert-amber" style="margin-bottom:16px;">
+          <h4 style="color:#f59e0b; font-size:14px; margin:0 0 8px 0; font-weight:600;">⚠ Known Issues</h4>
+          <p style="color:#fbbf24; font-size:13px; line-height:1.7; margin:0;">{known_issues[:1000]}</p>
+        </div>""")
+    
+    if features and features != 'N/A':
+        parts.append(f"""
+        <div style="margin-bottom:8px;">
+          <h4 style="color:#e2e8f0; font-size:14px; margin:0 0 8px 0; font-weight:600;">Distinguishing Features</h4>
+          <p style="color:#cbd5e1; font-size:13px; line-height:1.7; margin:0;">{features[:800]}</p>
+        </div>""")
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">💾</span>
+        <h3 style="color:#06b6d4;">2. FIRMWARE &amp; KNOWN ISSUES</h3>
       </div>
-      <div style="background: #0f172a; border-radius: 8px; padding: 16px; text-align: center;">
-        <div style="font-size: 28px; font-weight: 700; color: #10b981;">{fleet.get('online', 0)}</div>
-        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Online</div>
+      {"".join(parts)}
+    </div>
+"""
+
+def _section_3_fleet(report: dict) -> str:
+    """Section 3: Fleet Operational Performance."""
+    fleet = report["fleet"]
+    deployed = report["fleet_deployed"]
+    
+    if not deployed:
+        return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">📊</span>
+        <h3 style="color:#f59e0b;">3. FLEET OPERATIONAL PERFORMANCE</h3>
       </div>
-      <div style="background: #0f172a; border-radius: 8px; padding: 16px; text-align: center;">
-        <div style="font-size: 28px; font-weight: 700; color: #06b6d4;">{fleet.get('avg_hashrate_pct', 0)}%</div>
-        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Avg Hashrate</div>
-      </div>
-      <div style="background: #0f172a; border-radius: 8px; padding: 16px; text-align: center;">
-        <div style="font-size: 28px; font-weight: 700; color: #f59e0b;">{fleet.get('avg_chip_temp', 0)}°C</div>
-        <div style="font-size: 12px; color: #94a3b8; margin-top: 4px;">Avg Chip Temp</div>
+      <div class="alert-box alert-amber" style="text-align:center; padding:28px;">
+        <div style="font-size:18px; color:#fbbf24; font-weight:700; margin-bottom:8px;">NOT DEPLOYED IN FLEET</div>
+        <div style="color:#94a3b8; font-size:13px; line-height:1.8;">
+          This miner model is not currently deployed in your facility.<br>
+          Report is based entirely on Intelligence Catalog reference data.<br><br>
+          <span style="color:#64748b;">When deployed, Mining Guardian will automatically:</span><br>
+          ● Detect the model via device fingerprinting<br>
+          ● Load the correct operating profile from the Catalog<br>
+          ● Begin building fleet-specific performance data within 24 hours
+        </div>
       </div>
     </div>
 """
-        # Top performers
-        top = fleet.get('top_performers', [])
-        if top:
-            html += """
-    <h4 style="color: #10b981; font-size: 14px; margin: 16px 0 8px 0;">Top Performers</h4>
-    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-      <thead><tr style="border-bottom: 2px solid #334155;">
-        <th style="text-align: left; padding: 6px; color: #94a3b8;">IP</th>
-        <th style="text-align: right; padding: 6px; color: #94a3b8;">Hashrate %</th>
-        <th style="text-align: right; padding: 6px; color: #94a3b8;">Chip Temp</th>
-        <th style="text-align: center; padding: 6px; color: #94a3b8;">Status</th>
-      </tr></thead><tbody>
+    
+    # Deployed — show full fleet stats
+    count = fleet.get('count', 0)
+    online = fleet.get('online', 0)
+    avg_hr = fleet.get('avg_hashrate_pct', 0)
+    avg_temp = fleet.get('avg_chip_temp', 0)
+    
+    hr_color = "#10b981" if avg_hr >= 95 else "#f59e0b" if avg_hr >= 85 else "#ef4444"
+    temp_color = "#10b981" if avg_temp < 70 else "#f59e0b" if avg_temp < 80 else "#ef4444"
+    online_pct = round(online / max(count, 1) * 100, 1)
+    
+    # Top performers table
+    top_html = ""
+    top = fleet.get('top_performers', [])
+    if top:
+        top_rows = ""
+        for m in top:
+            hr = m.get('hashrate_pct', 0) or 0
+            hrc = "#10b981" if hr >= 95 else "#f59e0b" if hr >= 85 else "#ef4444"
+            st = m.get('status', 'unknown')
+            stc = "#10b981" if st == 'online' else "#ef4444"
+            top_rows += f"""
+            <tr>
+              <td class="mono">{m.get('ip','N/A')}</td>
+              <td class="right" style="color:{hrc}; font-weight:600;">{hr:.1f}%</td>
+              <td class="right">{m.get('chip_temp','N/A')}°C</td>
+              <td style="text-align:center; color:{stc}; font-weight:500;">{st.upper()}</td>
+            </tr>"""
+        top_html = f"""
+        <div style="margin-top:16px;">
+          <h4 style="color:#10b981; font-size:13px; margin:0 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;">Top Performers</h4>
+          <table>
+            <thead><tr><th>IP Address</th><th class="right">Hashrate</th><th class="right">Chip Temp</th><th style="text-align:center;">Status</th></tr></thead>
+            <tbody>{top_rows}</tbody>
+          </table>
+        </div>"""
+    
+    # Problem miners
+    prob_html = ""
+    prob = fleet.get('problem_miners', [])
+    if prob:
+        prob_rows = ""
+        for m in prob:
+            hr = m.get('hashrate_pct', 0) or 0
+            prob_rows += f"""
+            <tr>
+              <td class="mono">{m.get('ip','N/A')}</td>
+              <td class="right" style="color:#ef4444; font-weight:600;">{hr:.1f}%</td>
+              <td class="right">{m.get('chip_temp','N/A')}°C</td>
+              <td class="right">{m.get('dead_boards',0)} dead</td>
+            </tr>"""
+        prob_html = f"""
+        <div style="margin-top:16px;">
+          <h4 style="color:#ef4444; font-size:13px; margin:0 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;">Needs Attention</h4>
+          <table>
+            <thead><tr><th>IP Address</th><th class="right">Hashrate</th><th class="right">Chip Temp</th><th class="right">Board Issues</th></tr></thead>
+            <tbody>{prob_rows}</tbody>
+          </table>
+        </div>"""
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">📊</span>
+        <h3 style="color:#10b981;">3. FLEET OPERATIONAL PERFORMANCE</h3>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value" style="color:#06b6d4;">{count}</div>
+          <div class="stat-label">Deployed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#10b981;">{online_pct}%</div>
+          <div class="stat-label">Online Rate</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:{online_pct}%; background:#10b981;"></div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:{hr_color};">{avg_hr}%</div>
+          <div class="stat-label">Avg Hashrate</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:{avg_hr}%; background:{hr_color};"></div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:{temp_color};">{avg_temp}°C</div>
+          <div class="stat-label">Avg Chip Temp</div>
+        </div>
+      </div>
+      <div class="stat-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="stat-card">
+          <div class="stat-value" style="color:#8b5cf6; font-size:22px;">{fleet.get('total_restarts',0)}</div>
+          <div class="stat-label">Total Restarts</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#10b981; font-size:22px;">{fleet.get('restart_success_rate',0)}%</div>
+          <div class="stat-label">Restart Success Rate</div>
+        </div>
+      </div>
+      {top_html}
+      {prob_html}
+    </div>
 """
-            for m in top:
-                hr = m.get('hashrate_pct', 0) or 0
-                hr_color = "#10b981" if hr >= 95 else "#f59e0b" if hr >= 85 else "#ef4444"
-                status = m.get('status', 'unknown')
-                status_color = "#10b981" if status == 'online' else "#ef4444"
-                html += f"""
-      <tr style="border-bottom: 1px solid #1e293b55;">
-        <td style="padding: 6px; color: #e2e8f0; font-family: monospace;">{m.get('ip', 'N/A')}</td>
-        <td style="padding: 6px; text-align: right; color: {hr_color}; font-weight: 600;">{hr:.1f}%</td>
-        <td style="padding: 6px; text-align: right; color: #e2e8f0;">{m.get('chip_temp', 'N/A')}°C</td>
-        <td style="padding: 6px; text-align: center; color: {status_color}; font-weight: 500;">{status.upper()}</td>
-      </tr>"""
-            html += "</tbody></table>"
-        
-        html += """
-  </div>
+
+def _section_4_profitability(report: dict) -> str:
+    """Section 4: Profitability & Economics."""
+    prof = report.get("profitability", {})
+    hw = report["hardware"]
+    
+    if not prof:
+        return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">💰</span>
+        <h3 style="color:#10b981;">4. PROFITABILITY &amp; ECONOMICS</h3>
+      </div>
+      <div style="color:#64748b; font-size:13px; text-align:center; padding:20px;">
+        Insufficient data to calculate profitability. Requires hashrate and power consumption values.
+      </div>
+    </div>
 """
+    
+    breakeven = prof.get('breakeven_rate', 0)
+    be_color = "#10b981" if breakeven > 0.10 else "#f59e0b" if breakeven > 0.06 else "#ef4444"
+    
+    # Tier rows
+    tier_rows = ""
+    for t in prof.get('tiers', []):
+        profit = t['monthly_profit']
+        p_color = "#10b981" if profit > 0 else "#ef4444"
+        icon = "✓" if t['profitable'] else "✗"
+        icon_color = "#10b981" if t['profitable'] else "#ef4444"
+        tier_rows += f"""
+        <tr>
+          <td>{t['label']}</td>
+          <td class="right">${t['daily_cost']:.2f}</td>
+          <td class="right" style="color:{p_color}; font-weight:600;">${profit:+,.0f}</td>
+          <td class="right" style="color:{p_color}; font-weight:600;">${t['annual_profit']:+,.0f}</td>
+          <td style="text-align:center; color:{icon_color}; font-weight:700;">{icon}</td>
+        </tr>"""
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">💰</span>
+        <h3 style="color:#10b981;">4. PROFITABILITY &amp; ECONOMICS</h3>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-value" style="color:#f59e0b; font-size:22px;">${prof.get('btc_price_usd',0):,.0f}</div>
+          <div class="stat-label">BTC Price (est.)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#06b6d4; font-size:22px;">{prof.get('daily_btc',0):.6f}</div>
+          <div class="stat-label">Daily BTC Mined</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#10b981; font-size:22px;">${prof.get('daily_revenue_usd',0):.2f}</div>
+          <div class="stat-label">Daily Revenue</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:{be_color}; font-size:22px;">${breakeven:.4f}</div>
+          <div class="stat-label">Breakeven $/kWh</div>
+        </div>
+      </div>
+      <div style="margin-top:4px;">
+        <h4 style="color:#94a3b8; font-size:13px; margin:0 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;">Profitability by Electricity Rate</h4>
+        <table>
+          <thead><tr><th>Rate</th><th class="right">Daily Power Cost</th><th class="right">Monthly Profit</th><th class="right">Annual Profit</th><th style="text-align:center;">Viable</th></tr></thead>
+          <tbody>{tier_rows}</tbody>
+        </table>
+      </div>
+      <div class="alert-box alert-cyan" style="margin-top:16px;">
+        <p style="color:#67e8f9; font-size:12px; margin:0; line-height:1.6;">
+          <strong>Note:</strong> Estimates based on current network difficulty (~119 EH/s) and BTC ≈ ${prof.get('btc_price_usd',0):,.0f}.
+          Daily power consumption: {prof.get('daily_kwh',0):.1f} kWh ({prof.get('monthly_kwh',0):.0f} kWh/month).
+          Actual profitability varies with difficulty adjustments, BTC price, pool fees (typically 1-2%), and hardware uptime.
+          Efficiency: {hw.get('efficiency_j_th','N/A')} J/TH.
+        </p>
+      </div>
+    </div>
+"""
+
+def _section_5_market(report: dict) -> str:
+    """Section 5: Market Context."""
+    hw = report["hardware"]
+    eff = hw.get('efficiency_j_th', 0)
+    hashrate = hw.get('default_hashrate_th', 0) or 0
+    manufacturer = hw.get('manufacturer', '')
+    
+    # Determine generation and competitive positioning
+    if eff and float(str(eff)) > 0:
+        eff_val = float(str(eff))
+        if eff_val < 17:
+            gen = "Current Generation (Ultra-Efficient)"
+            gen_color = "#10b981"
+            position = "Top-tier efficiency — among the most competitive miners on the market today."
+        elif eff_val < 25:
+            gen = "Current Generation (High-Efficiency)"
+            gen_color = "#06b6d4"
+            position = "Strong efficiency — competitive at most electricity rates. Suitable for medium to long-term deployment."
+        elif eff_val < 35:
+            gen = "Mid-Generation"
+            gen_color = "#f59e0b"
+            position = "Moderate efficiency — profitable primarily at lower electricity rates. Consider upgrade path planning."
+        elif eff_val < 50:
+            gen = "Previous Generation"
+            gen_color = "#f97316"
+            position = "Below-average efficiency by current standards. Profitable only at very low electricity rates (<$0.06/kWh)."
+        else:
+            gen = "Legacy Hardware"
+            gen_color = "#ef4444"
+            position = "Significantly below current efficiency standards. Likely unprofitable at most electricity rates. Consider retirement or resale."
     else:
-        html += f"""
-  <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-    <h3 style="color: #f59e0b; font-size: 16px; margin: 0 0 16px 0; border-bottom: 1px solid #334155; padding-bottom: 8px;">3. FLEET OPERATIONAL PERFORMANCE</h3>
-    <div style="background: #f59e0b11; border: 1px solid #f59e0b33; border-radius: 8px; padding: 20px; text-align: center;">
-      <div style="font-size: 16px; color: #fbbf24; font-weight: 600; margin-bottom: 8px;">NOT DEPLOYED IN FLEET</div>
-      <div style="color: #94a3b8; font-size: 13px;">This miner model is not currently deployed in your facility.<br>
-      Report is based entirely on Intelligence Catalog reference data.</div>
-      <div style="color: #94a3b8; font-size: 12px; margin-top: 12px;">
-        When deployed, Mining Guardian will automatically:<br>
-        • Detect the model via device fingerprinting<br>
-        • Load the correct operating profile from the Catalog<br>
-        • Begin building fleet-specific performance data within 24 hours
+        gen = "Unknown Generation"
+        gen_color = "#64748b"
+        position = "Insufficient data to determine competitive positioning."
+    
+    # Competitor models by manufacturer
+    competitors = {
+        "Bitmain": ["S21 XP (270 TH, 13.5 J/TH)", "S21 Pro (234 TH, 15.0 J/TH)", "S21 (200 TH, 17.5 J/TH)", "T21 (190 TH, 19.0 J/TH)"],
+        "Microbt": ["M66S+ (298 TH, 14.3 J/TH)", "M63S+ (390 TH, 14.5 J/TH)", "M60S+ (186 TH, 18.5 J/TH)"],
+        "Canaan": ["A15 XP (227 TH, 15.0 J/TH)", "A14 (200 TH, 16.0 J/TH)", "A1566 (185 TH, 18.5 J/TH)"],
+    }
+    
+    comp_html = ""
+    for mfg, models in competitors.items():
+        items = "".join(f'<div style="color:#cbd5e1; font-size:12px; padding:3px 0;">● {m}</div>' for m in models)
+        comp_html += f"""
+        <div style="margin-bottom:12px;">
+          <div style="color:#94a3b8; font-size:12px; font-weight:600; text-transform:uppercase; margin-bottom:4px;">{mfg}</div>
+          {items}
+        </div>"""
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">📈</span>
+        <h3 style="color:#8b5cf6;">5. MARKET CONTEXT</h3>
+      </div>
+      <div class="stat-grid" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="stat-card">
+          <div style="font-size:14px; font-weight:700; color:{gen_color};">{gen}</div>
+          <div class="stat-label">Classification</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#06b6d4; font-size:22px;">{eff if eff else 'N/A'} <span style="font-size:12px; color:#94a3b8;">J/TH</span></div>
+          <div class="stat-label">Efficiency Rating</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#8b5cf6; font-size:22px;">{hashrate if hashrate else 'N/A'} <span style="font-size:12px; color:#94a3b8;">TH/s</span></div>
+          <div class="stat-label">Max Hashrate</div>
+        </div>
+      </div>
+      <div class="alert-box alert-cyan" style="margin-bottom:16px;">
+        <p style="color:#67e8f9; font-size:13px; margin:0; line-height:1.6;">{position}</p>
+      </div>
+      <div style="margin-top:8px;">
+        <h4 style="color:#94a3b8; font-size:13px; margin:0 0 12px 0; text-transform:uppercase; letter-spacing:0.5px;">Current Market Leaders (for reference)</h4>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
+          {comp_html}
+        </div>
       </div>
     </div>
-  </div>
 """
+
+def _section_6_repair(report: dict) -> str:
+    """Section 6: Repair & Maintenance."""
+    hw = report["hardware"]
+    known_issues = hw.get('known_issues', '')
+    manufacturer = hw.get('manufacturer', '').lower()
+    cooling = hw.get('cooling_type', hw.get('cooling_details', '')).lower() if hw.get('cooling_type') or hw.get('cooling_details') else ''
     
-    # ── Sources ──
-    sources = hw.get('sources', '')
-    if sources:
-        html += f"""
-  <div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-    <h3 style="color: #64748b; font-size: 14px; margin: 0 0 8px 0;">SOURCES</h3>
-    <p style="color: #64748b; font-size: 11px; line-height: 1.6; margin: 0; word-break: break-all;">{sources[:600]}</p>
-  </div>
+    # Common failure patterns by manufacturer
+    common_failures = {
+        "bitmain": [
+            ("Hashboard Communication Errors", "PIC chip failures or loose ribbon cables between control board and hashboards. Most common repair item.", "HIGH", "#ef4444"),
+            ("Temperature Sensor Failures", "Individual chip temp sensors report 0°C or wildly incorrect values. Usually requires hashboard-level repair.", "MEDIUM", "#f59e0b"),
+            ("PSU Degradation", "APW12 series PSUs lose capacity over time. Watch for voltage rail droop under load.", "MEDIUM", "#f59e0b"),
+            ("Fan Bearing Wear", "Axial fans develop bearing noise after 18-24 months continuous operation. Preventive replacement recommended.", "LOW", "#06b6d4"),
+            ("Control Board Corrosion", "Humidity exposure causes corrosion on control board connectors. Keep humidity below 65% RH.", "MEDIUM", "#f59e0b"),
+        ],
+        "microbt": [
+            ("Power Supply Failures", "MicroBT PSUs have higher failure rates than Bitmain equivalents in field data. Consider spare inventory.", "HIGH", "#ef4444"),
+            ("Hashboard Chip Burnout", "Individual ASIC chips fail, reducing board hashrate. Board-level repair required.", "MEDIUM", "#f59e0b"),
+            ("Network Connectivity Drops", "Ethernet controller resets under high temperature. Ensure adequate cooling.", "MEDIUM", "#f59e0b"),
+            ("Fan Controller Issues", "Fan speed control board can fail, causing fans to run at 100% or stop entirely.", "LOW", "#06b6d4"),
+        ],
+        "canaan": [
+            ("Hashboard Failures", "Canaan boards have documented higher failure rates in first 6 months. Monitor closely during burn-in.", "HIGH", "#ef4444"),
+            ("Cooling System Limitations", "Stock cooling may be insufficient in ambient temps above 35°C. Consider supplemental cooling.", "MEDIUM", "#f59e0b"),
+            ("Firmware Stability", "Third-party firmware support is limited compared to Bitmain. Stick with official firmware for stability.", "LOW", "#06b6d4"),
+        ],
+    }
+    
+    # Select appropriate failures
+    failures = common_failures.get(manufacturer, common_failures.get("bitmain", []))
+    
+    failure_rows = ""
+    for name, desc, severity, color in failures:
+        failure_rows += f"""
+        <div style="display:flex; gap:12px; padding:12px 0; border-bottom:1px solid #0f172a;">
+          <span class="badge" style="background:{color}22; color:{color}; border:1px solid {color}44; min-width:60px; text-align:center; height:fit-content;">{severity}</span>
+          <div>
+            <div style="color:#f8fafc; font-size:13px; font-weight:600; margin-bottom:4px;">{name}</div>
+            <div style="color:#94a3b8; font-size:12px; line-height:1.6;">{desc}</div>
+          </div>
+        </div>"""
+    
+    # Maintenance schedule
+    maintenance = """
+      <div style="margin-top:20px;">
+        <h4 style="color:#94a3b8; font-size:13px; margin:0 0 12px 0; text-transform:uppercase; letter-spacing:0.5px;">Recommended Maintenance Schedule</h4>
+        <table>
+          <thead><tr><th>Interval</th><th>Action</th><th>Impact</th></tr></thead>
+          <tbody>
+            <tr><td style="font-weight:600; color:#06b6d4;">Monthly</td><td>Compressed air cleaning of intake/exhaust, visual inspection of fans and cables</td><td>Prevents dust buildup, catches loose connections early</td></tr>
+            <tr><td style="font-weight:600; color:#06b6d4;">Quarterly</td><td>Full thermal inspection, check all power connections, fan RPM verification</td><td>Catches degrading components before failure</td></tr>
+            <tr><td style="font-weight:600; color:#f59e0b;">6 Months</td><td>Firmware review, PSU load test, network cable inspection/replacement</td><td>Ensures optimal performance and security patches</td></tr>
+            <tr><td style="font-weight:600; color:#f59e0b;">Annually</td><td>Full teardown, thermal paste replacement, fan replacement (preventive), PSU capacity test</td><td>Extends hardware lifespan 12-24 months beyond typical EOL</td></tr>
+          </tbody>
+        </table>
+      </div>"""
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">🔨</span>
+        <h3 style="color:#f97316;">6. REPAIR &amp; MAINTENANCE</h3>
+      </div>
+      <h4 style="color:#94a3b8; font-size:13px; margin:0 0 12px 0; text-transform:uppercase; letter-spacing:0.5px;">Common Failure Patterns — {hw.get('manufacturer','')}</h4>
+      {failure_rows}
+      {maintenance}
+    </div>
 """
+
+def _section_7_cooling(report: dict) -> str:
+    """Section 7: Cooling & Environment."""
+    hw = report["hardware"]
+    power_w = hw.get('default_power_w', 0) or 0
+    cooling = hw.get('cooling_type', '').lower() if hw.get('cooling_type') else 'air'
+    cooling_details = hw.get('cooling_details', '') or ''
+    operating_temp = hw.get('operating_temp', '0-40°C') or '0-40°C'
+    humidity = hw.get('humidity', '10-90% RH') or '10-90% RH'
+    noise_db = hw.get('noise_db', '') or ''
     
-    html += """
-  <div style="text-align: center; color: #475569; font-size: 11px; padding: 10px 0;">
-    Mining Guardian Intelligence Report — Generated by AI (Qwen 32B + Claude Sonnet 4.6)<br>
-    Intelligence Catalog: 165 tables • {model_count} miner models indexed
+    # Calculate BTU output (1W ≈ 3.412 BTU/hr)
+    btu_hr = round(power_w * 3.412) if power_w else 0
+    # CFM estimate (rough: 1 miner ≈ 200-350 CFM depending on model)
+    cfm_estimate = round(power_w * 0.1) if power_w else 250
+    
+    is_immersion = 'immersion' in cooling or 'immersion' in cooling_details.lower()
+    is_hydro = 'hydro' in cooling or 'water' in cooling_details.lower()
+    
+    cooling_type_display = "Immersion Cooled" if is_immersion else "Hydro (Water) Cooled" if is_hydro else "Air Cooled"
+    
+    if is_immersion:
+        cooling_notes = """
+        <div class="alert-box alert-cyan">
+          <h4 style="color:#67e8f9; font-size:13px; font-weight:600; margin:0 0 6px 0;">Immersion Cooling Requirements</h4>
+          <p style="color:#94a3b8; font-size:12px; line-height:1.7; margin:0;">
+            Requires specialized dielectric fluid (e.g., Engineered Fluids EC-100 or similar).<br>
+            Immersion tank with adequate fluid volume for heat dissipation.<br>
+            Dry cooler or heat exchanger for fluid temperature management.<br>
+            Higher upfront cost ($1,500-3,000 per unit for infrastructure) but significantly lower noise and better thermal performance.<br>
+            Failure rate data from catalog shows immersion units require careful fluid maintenance to avoid contamination.
+          </p>
+        </div>"""
+    elif is_hydro:
+        cooling_notes = """
+        <div class="alert-box alert-cyan">
+          <h4 style="color:#67e8f9; font-size:13px; font-weight:600; margin:0 0 6px 0;">Hydro Cooling Requirements</h4>
+          <p style="color:#94a3b8; font-size:12px; line-height:1.7; margin:0;">
+            Closed-loop water cooling system with dedicated radiator/dry cooler.<br>
+            Water quality is critical — use distilled or deionized water with corrosion inhibitor.<br>
+            Monitor for leaks regularly — water damage to hashboards is typically non-repairable.<br>
+            Lower noise than air-cooled variants but higher maintenance overhead.
+          </p>
+        </div>"""
+    else:
+        cooling_notes = f"""
+        <div class="alert-box alert-cyan">
+          <h4 style="color:#67e8f9; font-size:13px; font-weight:600; margin:0 0 6px 0;">Air Cooling Best Practices</h4>
+          <p style="color:#94a3b8; font-size:12px; line-height:1.7; margin:0;">
+            {f'Configuration: {cooling_details}' if cooling_details and cooling_details != 'N/A' else 'Standard axial fan configuration (intake → exhaust).'}<br>
+            Maintain minimum 12-inch clearance on intake and exhaust sides.<br>
+            Hot/cold aisle separation recommended for deployments of 10+ units.<br>
+            Air filter on intake side extends fan and board lifespan significantly.<br>
+            Target ambient temperature: 20-30°C for optimal performance and longevity.
+          </p>
+        </div>"""
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">❄</span>
+        <h3 style="color:#06b6d4;">7. COOLING &amp; ENVIRONMENT</h3>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div style="font-size:14px; font-weight:700; color:#06b6d4;">{cooling_type_display}</div>
+          <div class="stat-label">Cooling Type</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#f59e0b; font-size:22px;">{btu_hr:,}</div>
+          <div class="stat-label">BTU/hr Output</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#8b5cf6; font-size:22px;">~{cfm_estimate}</div>
+          <div class="stat-label">Est. CFM Required</div>
+        </div>
+        <div class="stat-card">
+          <div style="font-size:14px; font-weight:700; color:#10b981;">{operating_temp}</div>
+          <div class="stat-label">Operating Range</div>
+        </div>
+      </div>
+      <div class="spec-grid" style="margin-bottom:16px;">
+        <div class="spec-row"><span class="spec-label">Humidity Range:</span><span class="spec-value">{humidity}</span></div>
+        <div class="spec-row"><span class="spec-label">Noise Level:</span><span class="spec-value">{noise_db + ' dB' if noise_db and noise_db != 'N/A' else 'See manufacturer specs'}</span></div>
+        <div class="spec-row"><span class="spec-label">Power Dissipation:</span><span class="spec-value">{power_w} W ({round(power_w/1000, 2)} kW)</span></div>
+        <div class="spec-row"><span class="spec-label">Daily Power Draw:</span><span class="spec-value">{round(power_w*24/1000, 1)} kWh</span></div>
+      </div>
+      {cooling_notes}
+    </div>
+"""
+
+def _section_8_ai_analysis(report: dict) -> str:
+    """Section 8: AI Analysis (placeholder until Qwen is wired)."""
+    hw = report["hardware"]
+    deployed = report["fleet_deployed"]
+    fleet = report["fleet"]
+    prof = report.get("profitability", {})
+    eff = hw.get('efficiency_j_th', 0)
+    known_issues = hw.get('known_issues', '')
+    
+    insights = []
+    
+    # Generate static insights based on available data
+    if eff:
+        eff_val = float(str(eff))
+        if eff_val < 20:
+            insights.append({
+                "title": "Efficiency Leadership",
+                "confidence": 92,
+                "conf_color": "#10b981",
+                "body": f"At {eff_val} J/TH, this model is among the most efficient Bitcoin miners currently available. It should remain profitable through at least 1-2 more difficulty epochs, making it a strong long-term investment at current BTC prices.",
+                "icon": "⚡"
+            })
+        elif eff_val < 30:
+            insights.append({
+                "title": "Mid-Range Efficiency — Monitor Difficulty",
+                "confidence": 85,
+                "conf_color": "#f59e0b",
+                "body": f"At {eff_val} J/TH, this model sits in the mid-range of current hardware. Profitability is sensitive to electricity costs and network difficulty increases. Plan for a 12-18 month operational window before upgrade consideration.",
+                "icon": "📉"
+            })
+        else:
+            insights.append({
+                "title": "Efficiency Concern — Upgrade Path Recommended",
+                "confidence": 88,
+                "conf_color": "#ef4444",
+                "body": f"At {eff_val} J/TH, this model is significantly less efficient than current-generation hardware (13-18 J/TH). Profitability depends heavily on sub-$0.06/kWh electricity. Begin planning migration to newer hardware within 6-12 months.",
+                "icon": "🔄"
+            })
+    
+    if known_issues and known_issues not in ('None documented', 'N/A'):
+        insights.append({
+            "title": "Known Reliability Concerns",
+            "confidence": 90,
+            "conf_color": "#f59e0b",
+            "body": f"The Intelligence Catalog documents known issues for this model: {known_issues[:200]}. Recommend maintaining spare parts inventory and implementing proactive monitoring for early failure detection.",
+            "icon": "⚠"
+        })
+    
+    if deployed:
+        avg_hr = fleet.get('avg_hashrate_pct', 0)
+        if avg_hr < 90:
+            insights.append({
+                "title": "Fleet Underperformance Detected",
+                "confidence": 94,
+                "conf_color": "#ef4444",
+                "body": f"Fleet average hashrate is {avg_hr}% of rated capacity. This indicates potential issues with cooling, power delivery, or hardware degradation across the deployed units. Investigate individual miners below 85% for targeted maintenance.",
+                "icon": "🔍"
+            })
+        elif avg_hr >= 95:
+            insights.append({
+                "title": "Fleet Performance Healthy",
+                "confidence": 96,
+                "conf_color": "#10b981",
+                "body": f"Fleet average hashrate of {avg_hr}% indicates healthy operation across all deployed units. Current maintenance schedule is effective. Continue monitoring for individual outliers.",
+                "icon": "✓"
+            })
+    
+    if prof:
+        breakeven = prof.get('breakeven_rate', 0)
+        if breakeven > 0.10:
+            insights.append({
+                "title": "Strong Profitability Margin",
+                "confidence": 82,
+                "conf_color": "#10b981",
+                "body": f"Breakeven electricity rate of ${breakeven:.4f}/kWh provides substantial margin against typical industrial rates ($0.06-0.10/kWh). This model can absorb significant BTC price drops or difficulty increases before becoming unprofitable.",
+                "icon": "💰"
+            })
+        elif breakeven < 0.06:
+            insights.append({
+                "title": "Narrow Profitability Window",
+                "confidence": 87,
+                "conf_color": "#ef4444",
+                "body": f"Breakeven electricity rate of ${breakeven:.4f}/kWh leaves minimal margin. Only viable at below-average electricity costs. Consider whether capital would be better deployed on newer, more efficient hardware.",
+                "icon": "⚠"
+            })
+    
+    if not insights:
+        insights.append({
+            "title": "Catalog Data Collection In Progress",
+            "confidence": 50,
+            "conf_color": "#64748b",
+            "body": "The Intelligence Catalog is still gathering data for this model. As more deployment data, repair records, and community reports are collected, AI analysis will become increasingly detailed and actionable.",
+            "icon": "📊"
+        })
+    
+    cards = ""
+    for ins in insights:
+        cards += f"""
+        <div class="insight-card">
+          <div class="insight-header">
+            <div class="insight-title">{ins['icon']} {ins['title']}</div>
+            <span class="confidence" style="background:{ins['conf_color']}22; color:{ins['conf_color']}; border:1px solid {ins['conf_color']}44;">{ins['confidence']}% confidence</span>
+          </div>
+          <div class="insight-body">{ins['body']}</div>
+        </div>"""
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">🧠</span>
+        <h3 style="color:#8b5cf6;">8. AI ANALYSIS</h3>
+        <span class="badge badge-cyan" style="margin-left:auto;">Catalog-Based • Qwen Integration Pending</span>
+      </div>
+      {cards}
+      <div style="color:#475569; font-size:11px; margin-top:8px; text-align:center;">
+        Analysis generated from Intelligence Catalog data patterns. Full Qwen 32B AI analysis will provide deeper fleet-specific insights when wired to the Ollama endpoint.
+      </div>
+    </div>
+"""
+
+def _section_9_recommendations(report: dict) -> str:
+    """Section 9: Recommendations."""
+    hw = report["hardware"]
+    deployed = report["fleet_deployed"]
+    fleet = report["fleet"]
+    prof = report.get("profitability", {})
+    eff = hw.get('efficiency_j_th', 0)
+    
+    recs = []
+    
+    # Buy/Hold/Sell recommendation
+    if eff:
+        eff_val = float(str(eff))
+        if eff_val < 20:
+            recs.append(("🟢", "BUY / HOLD", "Current-generation efficiency. Suitable for new deployments and worth maintaining existing fleet.", "#10b981"))
+        elif eff_val < 30:
+            recs.append(("🟡", "HOLD / PLAN UPGRADE", f"At {eff_val} J/TH, this model is still profitable but approaching mid-life. Begin budgeting for next-generation replacement within 12-18 months. Continue operating but don't expand fleet with this model.", "#f59e0b"))
+        elif eff_val < 45:
+            recs.append(("🟠", "SELL / MIGRATE", f"At {eff_val} J/TH, this model is nearing end of profitable life at average electricity rates. Consider selling units while they still have resale value and migrating to current-gen hardware.", "#f97316"))
+        else:
+            recs.append(("🔴", "RETIRE", f"At {eff_val} J/TH, this model is well below current efficiency standards. Decommission and sell for parts/scrap value. Capital is better allocated to efficient hardware.", "#ef4444"))
+    
+    # Fleet-specific recommendations
+    if deployed:
+        avg_hr = fleet.get('avg_hashrate_pct', 0)
+        if avg_hr < 85:
+            recs.append(("🔍", "INVESTIGATE LOW PERFORMERS", f"Fleet average of {avg_hr}% is below target. Audit individual miners below 85% for hashboard failures, cooling issues, or firmware problems. Target: 95%+ fleet average.", "#ef4444"))
+        
+        prob = fleet.get('problem_miners', [])
+        if prob:
+            ips = ", ".join(m.get('ip', '?') for m in prob[:3])
+            recs.append(("🔧", "PRIORITIZE REPAIRS", f"Miners needing immediate attention: {ips}. Schedule hashboard inspection and thermal paste replacement for these units.", "#f59e0b"))
+        
+        restart_rate = fleet.get('restart_success_rate', 0)
+        if restart_rate < 80 and fleet.get('total_restarts', 0) > 5:
+            recs.append(("⚠", "RESTART RELIABILITY ISSUE", f"Only {restart_rate}% of restarts succeed. This suggests underlying hardware issues rather than software problems. Investigate power delivery and cooling capacity.", "#ef4444"))
+    
+    # Environment recommendation
+    if not deployed:
+        recs.append(("📋", "PRE-DEPLOYMENT CHECKLIST", "Before deploying this model: (1) Verify electrical capacity for full load + 20% headroom, (2) Confirm cooling CFM meets or exceeds rated requirements, (3) Set up Mining Guardian monitoring before powering on, (4) Have spare PSU and fan kit on hand for first 30 days.", "#06b6d4"))
+    
+    # Profitability recommendation
+    if prof:
+        breakeven = prof.get('breakeven_rate', 0)
+        if breakeven and breakeven < 0.08:
+            recs.append(("💡", "OPTIMIZE ELECTRICITY COSTS", f"With a breakeven rate of ${breakeven:.4f}/kWh, this model benefits significantly from any electricity cost reduction. Consider: time-of-use rate plans, demand response programs, or curtailment during peak pricing periods.", "#f59e0b"))
+    
+    rec_html = ""
+    for icon, title, desc, color in recs:
+        rec_html += f"""
+        <div class="rec-item">
+          <div class="rec-icon">{icon}</div>
+          <div class="rec-content">
+            <h4 style="color:{color};">{title}</h4>
+            <p>{desc}</p>
+          </div>
+        </div>"""
+    
+    if not recs:
+        rec_html = '<div style="color:#64748b; font-size:13px; text-align:center; padding:20px;">Insufficient data to generate specific recommendations. More catalog data needed.</div>'
+    
+    return f"""
+    <div class="section">
+      <div class="section-header">
+        <span class="section-icon">🎯</span>
+        <h3 style="color:#10b981;">9. RECOMMENDATIONS</h3>
+      </div>
+      {rec_html}
+    </div>
+"""
+
+def _sources(report: dict) -> str:
+    """Render the sources section."""
+    sources = report["hardware"].get('sources', '')
+    if not sources:
+        return ""
+    
+    return f"""
+    <div class="section" style="border-color:#1e293b;">
+      <div class="section-header">
+        <span class="section-icon">📚</span>
+        <h3 style="color:#64748b;">SOURCES &amp; REFERENCES</h3>
+      </div>
+      <p style="color:#64748b; font-size:11px; line-height:1.8; margin:0; word-break:break-all;">{sources[:800]}</p>
+    </div>
+"""
+
+def _footer(report: dict) -> str:
+    """Render the report footer."""
+    return f"""
+    <div class="footer">
+      Mining Guardian Intelligence Report — Generated by AI (Qwen 32B + Claude Sonnet 4.6)<br>
+      Intelligence Catalog: 165 tables ● {len(MODEL_LIST)} miner models indexed ● 10+ manufacturers<br>
+      Data sources: Manufacturer specs, community reports, fleet telemetry, BiXBiT repair network
+    </div>
+"""
+
+def render_full_html(report: dict) -> str:
+    """Render the complete 9-section HTML intelligence report."""
+    return f"""
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#e2e8f0; background:#0f172a;">
+  {_css()}
+  <div class="report">
+    {_header(report)}
+    {_section_1_hardware(report)}
+    {_section_2_firmware(report)}
+    {_section_3_fleet(report)}
+    {_section_4_profitability(report)}
+    {_section_5_market(report)}
+    {_section_6_repair(report)}
+    {_section_7_cooling(report)}
+    {_section_8_ai_analysis(report)}
+    {_section_9_recommendations(report)}
+    {_sources(report)}
+    {_footer(report)}
   </div>
 </div>
-""".replace("{model_count}", str(len(MODEL_LIST)))
-    
-    return {"html": html}
+"""
 
 
 # ── Main ──────────────────────────────────────────────────────

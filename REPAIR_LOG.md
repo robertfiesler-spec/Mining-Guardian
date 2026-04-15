@@ -1,5 +1,64 @@
 ---
 
+### 2026-04-15 (late evening) · Intelligence Report v2.0 — full 9-section report build
+
+**What Bobby reported:**
+The initial Intelligence Report rendering in Grafana was working but thin — only 3 sections (Hardware Specs, Firmware, Fleet Status) compared to the full 40+ page PDF report Bobby had seen earlier. Bobby said "it just seems like we are leaving a lot out."
+
+**What was actually missing:**
+1. **Slug merge bug** — 9 duplicate model entries existed (e.g. `antminer-s19jpro` had specs but no enrichment, while `antminer-s19j-pro` had enrichment but no specs). Same miner, split data, incomplete reports.
+2. **6 missing report sections** — Profitability & Economics, Market Context, Repair & Maintenance, Cooling & Environment, AI Analysis, and Recommendations were not implemented in the HTML renderer.
+3. **Visual design was basic** — no section icons, no stat cards, no progress bars, no color-coded metrics.
+
+**Why it mattered:**
+- The Intelligence Report is a selling point of Mining Guardian — it needs to look professional and comprehensive
+- Customers evaluating a miner purchase need profitability data, competitor comparison, and clear recommendations
+- Bobby's vision: "a living learning thing, always evolving and expanding" — the report should reflect the depth of the Intelligence Catalog
+
+**What we changed:**
+
+**FIX 1: Slug merge in data loading**
+- Added `merge_index()` function that detects duplicate slugs (same model, different hyphenation)
+- 9 duplicate pairs merged automatically at startup
+- Both slug variants now resolve to the same merged data (specs + enrichment combined)
+- Model count went from 235 to 226 (duplicates consolidated)
+
+**FIX 2: Full 9-section HTML report (v2.0)**
+Rewrote `intelligence_report_api.py` from 542 lines to 1,352 lines:
+- Section 1: Hardware Specifications (existing, enhanced with grid layout)
+- Section 2: Firmware & Known Issues (existing, enhanced with alert boxes)
+- Section 3: Fleet Operational Performance (existing, enhanced with stat cards + progress bars)
+- Section 4: Profitability & Economics (NEW — BTC mining calculator at 5 electricity rates, breakeven analysis)
+- Section 5: Market Context (NEW — generation classification, efficiency rating, competitor comparison across 3 manufacturers)
+- Section 6: Repair & Maintenance (NEW — common failure patterns by manufacturer with severity badges, maintenance schedule)
+- Section 7: Cooling & Environment (NEW — BTU/hr output, CFM requirements, cooling type best practices, environmental specs)
+- Section 8: AI Analysis (NEW — catalog-based insights with confidence scores, placeholder for Qwen integration)
+- Section 9: Recommendations (NEW — buy/hold/sell, fleet-specific actions, pre-deployment checklist, electricity optimization)
+
+**FIX 3: Visual design overhaul**
+- Full CSS stylesheet with dark theme matching Grafana
+- Table of contents in header
+- Section icons (🔧💾📊💰📈🔨❄🧠🎯)
+- Stat cards with large colored numbers
+- Progress bars for hashrate/uptime percentages
+- Color-coded severity badges (HIGH/MEDIUM/LOW)
+- Insight cards with confidence score badges
+- Responsive grid layouts
+
+**How we verified:**
+1. ✅ Local test: API loads 226 models (9 duplicates merged)
+2. ✅ `antminer-s19jpro` now has both specs AND enrichment data
+3. ✅ HTML report renders all 9 sections (30,720 chars, 12 section headers)
+4. ✅ Visual inspection via Playwright screenshots — all sections render correctly
+5. ⏳ VPS deployment pending — Bobby needs to `git pull + restart`
+
+**Files modified:**
+- `api/intelligence_report_api.py` — complete rewrite: slug merge, profitability calculator, 9-section HTML renderer (542 → 1,352 lines)
+
+**Version:** API v1.0.0 → v2.0.0
+
+---
+
 ### 2026-04-15 (evening) · Intelligence Report dashboard "Failed to fetch" — three bugs found during deployment
 
 **What Bobby thought the program was doing:**

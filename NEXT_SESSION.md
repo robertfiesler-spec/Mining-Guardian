@@ -5,15 +5,38 @@
 
 ---
 
-## ✅ COMPLETED — Intelligence Report Dashboard LIVE (April 15 evening)
+## IMMEDIATE — Deploy Intelligence Report v2.0 on VPS (2 commands)
 
-The Intelligence Report dashboard is fully operational at:
-https://grafana.fieslerfamily.com/d/intelligence_report_001/
+The Intelligence Report API has been upgraded from v1.0 (3 sections) to v2.0 (full 9-section report).
 
-- 235 miner models searchable via text input or quick-select buttons
-- Full HTML reports render inline via iframe (dark theme matches Grafana)
-- Sections: Hardware Specs, Model Variants, Firmware & Known Issues, Fleet Status, Sources
-- Three deployment bugs found and fixed (see REPAIR_LOG.md April 15 evening entry)
+**Bobby needs to run:**
+
+```bash
+cd /root/Mining-Gaurdian && git pull origin main
+```
+
+```bash
+systemctl restart intelligence-report && systemctl restart dashboard-api
+```
+
+Then refresh the Grafana Intelligence Report dashboard and search any miner.
+
+**What's new in v2.0:**
+- Slug merge: 9 duplicate model pairs consolidated (226 unique models, was 235 with dupes)
+- Section 4: Profitability & Economics (BTC mining calculator, 5 electricity rate tiers, breakeven)
+- Section 5: Market Context (generation classification, competitor comparison)
+- Section 6: Repair & Maintenance (failure patterns by manufacturer, maintenance schedule)
+- Section 7: Cooling & Environment (BTU output, CFM requirements, best practices)
+- Section 8: AI Analysis (catalog-based insights with confidence scores)
+- Section 9: Recommendations (buy/hold/sell, fleet actions, pre-deployment checklist)
+- Full visual redesign: stat cards, progress bars, severity badges, table of contents
+
+---
+
+## ✅ COMPLETED — Intelligence Report v1.0 Dashboard LIVE (April 15 evening)
+
+- Three deployment bugs found and fixed (REPO_DIR, mixed content, script stripping)
+- Iframe approach working on Grafana 10.4.1
 - All 4 verification items confirmed ✅
 
 ---
