@@ -5142,7 +5142,7 @@ class MiningGuardian:
             ])
             
             message = "\n".join(lines)
-            self.slack.post_to_logs(message)  # Send to #mg-logs, not #mining-guardian
+            # self.slack.post_to_logs(message)  # Send to #mg-logs, not #mining-guardian
             logger.info("Sent log failure report to #mg-logs: %d miners", len(enriched))
             
         except Exception as e:
