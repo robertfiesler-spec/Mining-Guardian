@@ -109,7 +109,7 @@ Dual-database report generator synthesizing operational fleet data (guardian.db 
 - Grafana dashboard: `intelligence_report_001` at `/d/intelligence_report_001/`
 - Business Text plugin v6.2.0 installed on VPS but requires Grafana 11+ — will be usable after Grafana upgrade or on Mac mini deployments
 
-**Status:** ✅ API RUNNING ON VPS (235 models) — iframe render endpoint pushed, awaiting `git pull + systemctl restart dashboard-api` on VPS to activate Grafana display
+**Status:** ✅ FULLY OPERATIONAL — API running on VPS (235 models), iframe rendering confirmed working in Grafana (verified April 15 6:28 PM CDT)
 
 **Deployment Bugs Fixed (April 15 evening):**
 1. **REPO_DIR path bug** — API pointed to `api/` instead of repo root, returned 0 models. Fixed: `REPO_DIR = BASE_DIR.parent` (commit `2bb7305`)

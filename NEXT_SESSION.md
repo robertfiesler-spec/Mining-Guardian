@@ -1,39 +1,20 @@
 # Next Session Priorities
 
 **Last Updated:** April 15, 2026 (evening)
-**Status:** Intelligence Report API RUNNING on VPS (235 models), iframe render endpoint pushed, dashboard-api restart needed
+**Status:** Intelligence Report Dashboard LIVE, all operational dashboards working, documentation current
 
 ---
 
-## IMMEDIATE — Activate iframe rendering on VPS (2 commands)
+## ✅ COMPLETED — Intelligence Report Dashboard LIVE (April 15 evening)
 
-The Intelligence Report API is live on the VPS (port 8590, 235 models confirmed). Three bugs were found and fixed during deployment (see REPAIR_LOG.md April 15 evening entry). The final fix — iframe-based rendering for Grafana — has been pushed to GitHub but the VPS dashboard-api service needs a restart to pick it up.
-
-**Bobby needs to run these 2 commands on the VPS:**
-
-```bash
-cd /root/Mining-Gaurdian && git pull origin main
-```
-
-```bash
-systemctl restart dashboard-api
-```
-
-Then refresh the Grafana Intelligence Report dashboard at:
+The Intelligence Report dashboard is fully operational at:
 https://grafana.fieslerfamily.com/d/intelligence_report_001/
 
-Type a miner model (e.g. `antminer-s19jpro`) in the search variable and the report should render inside an iframe.
-
-**Why iframe instead of Business Text plugin:**
-- Grafana's built-in text panel strips `<script>` tags (security)
-- Business Text plugin v6.2.0 was installed but requires Grafana 11+ (VPS runs 10.4.1)
-- The iframe approach works on any Grafana version — `dashboard_api.py` serves full HTML pages at `/api/report/{slug}/html/render` through the Cloudflare tunnel
-
-**Verification after restart:**
-```bash
-curl http://localhost:8585/api/report/antminer-s19jpro/html/render
-```
-Should return a full HTML page with dark theme containing the S19J Pro intelligence report.
+- 235 miner models searchable via text input or quick-select buttons
+- Full HTML reports render inline via iframe (dark theme matches Grafana)
+- Sections: Hardware Specs, Model Variants, Firmware & Known Issues, Fleet Status, Sources
+- Three deployment bugs found and fixed (see REPAIR_LOG.md April 15 evening entry)
+- All 4 verification items confirmed ✅
 
 ---
 

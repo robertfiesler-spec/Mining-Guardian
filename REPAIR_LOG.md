@@ -58,7 +58,7 @@ REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
 1. ✅ `curl http://localhost:8590/health` returns `{"status":"ok","models":235}` (Fix 1)
 2. ✅ `curl http://localhost:8590/api/report/search?q=s19j` returns 6 S19J variants (Fix 1)
 3. ✅ `curl http://localhost:8585/api/report/antminer-s19jpro/html` returns full HTML report through proxy (Fix 2)
-4. ⏳ Grafana iframe rendering awaiting VPS pull + dashboard-api restart (Fix 3) — Bobby needs to run `git pull origin main && systemctl restart dashboard-api`
+4. ✅ Grafana iframe rendering confirmed working — full report renders inline with dark theme, all sections visible (Hardware Specs, Model Variants, Firmware & Known Issues, Fleet Status, Sources). Verified April 15 6:28 PM CDT.
 
 **Files modified:**
 - `api/intelligence_report_api.py` — line 30: `REPO_DIR = BASE_DIR.parent` (was `BASE_DIR`)
@@ -66,12 +66,12 @@ REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
 - Grafana dashboard `intelligence_report_001` — report panel changed from Business Text to iframe
 - Grafana plugins: installed `marcusolsson-dynamictext-panel` v6.2.0
 
-**VPS commands Bobby still needs to run:**
-```bash
-cd /root/Mining-Gaurdian && git pull origin main
-systemctl restart dashboard-api
-```
-Then refresh the Grafana Intelligence Report dashboard.
+**VPS commands completed by Bobby:**
+- `git pull origin main` — already up to date (pulled earlier)
+- `systemctl restart dashboard-api` — done April 15 6:00 PM CDT
+- Grafana dashboard refreshed and verified working April 15 6:28 PM CDT
+
+**Resolution:** ALL FOUR FIXES VERIFIED ✅ — Intelligence Report dashboard fully operational.
 
 ---
 
