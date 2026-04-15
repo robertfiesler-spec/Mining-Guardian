@@ -2560,6 +2560,27 @@ import urllib.error
 
 _REPORT_API = "http://127.0.0.1:8590"
 
+@app.get("/api/report/{slug}/html/render", response_class=HTMLResponse)
+def render_intelligence_report(slug: str):
+    """Render full HTML page for Intelligence Report (used by iframe in Grafana)."""
+    try:
+        url = f"{_REPORT_API}/api/report/{slug}/html"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            if "html" in data:
+                # Wrap in a full HTML page with dark background matching Grafana
+                return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body {{ margin:0; padding:0; background:#181b1f; color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }}
+</style></head><body>{data['html']}</body></html>"""
+            elif "error" in data:
+                return f'<html><body style="background:#181b1f;color:#ef4444;text-align:center;padding:40px;">{data["error"]}</body></html>'
+            return '<html><body style="background:#181b1f;color:#94a3b8;text-align:center;padding:40px;">No report data</body></html>'
+    except Exception as e:
+        return f'<html><body style="background:#181b1f;color:#ef4444;text-align:center;padding:40px;">Error: {str(e)}</body></html>'
+
+
 @app.get("/api/report/{path:path}")
 def proxy_intelligence_report(path: str, request: Request):
     """Proxy to Intelligence Report API on port 8590."""
