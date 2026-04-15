@@ -27,7 +27,7 @@ from fastapi.responses import JSONResponse
 
 # ── Configuration ─────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
-REPO_DIR = BASE_DIR  # On VPS this would be the repo root
+REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
 GUARDIAN_DB = os.environ.get("GUARDIAN_DB", str(REPO_DIR / "guardian.db"))
 # On VPS: API runs from repo root, data lives in intelligence-catalog/data/
 _DATA_DIR = REPO_DIR / "intelligence-catalog" / "data"
