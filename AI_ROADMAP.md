@@ -91,19 +91,23 @@ Dual-database report generator synthesizing operational fleet data (guardian.db 
 - Repair shop data integration: BiXBiT techs feed repair records back, creating competitive moat
 
 **What's Next (Vision Complete, Implementation Pending):**
-- [ ] Automated CLI report generator (type model name → get comprehensive PDF)
+- [x] Interactive catalog query interface → **DONE 2026-04-15** — Intelligence Report API (port 8590) + Grafana dashboard
+- [x] Searchable miner lookup across 235+ models → **DONE 2026-04-15** — text search + dropdown in Grafana
 - [ ] Full 40-page PDF rendering (markdown complete, PDF converter compresses output)
-- [ ] Additional miner model reports (S21 Immersion, AH3880, S19 XP, etc.)
-- [ ] Interactive catalog query interface
+- [ ] Qwen AI analysis paragraphs injected into report (requires Qwen reachable from API)
+- [ ] PDF download button within Grafana dashboard
+- [ ] Additional enrichment: auto-import new data points as catalog grows
 
-**Demo Strategy (Thursday Meeting):**
-- Left monitor: Mining Guardian operations dashboard
-- Right monitor: Intelligence Catalog (165 tables live queries)
-- Show S19J Pro report: "This is what YOUR 18 miners are telling us"
-- Show M63S+ report: "This is what 322 industry deployments say about a miner you DON'T have"
-- Close: "No other mining company has this depth — this is BiXBiT's moat"
+**Intelligence Report API (Built 2026-04-15):**
+- File: `api/intelligence_report_api.py`
+- Port: 8590 (systemd: `intelligence-report.service`)
+- 235+ Bitcoin SHA-256 miner models searchable
+- Data sources: `unified_miner_index.json` + `miner_enrichment_master.csv` + `miner_specs.json` + `guardian.db`
+- Endpoints: `/api/report/models`, `/api/report/search?q=`, `/api/report/{slug}`, `/api/report/{slug}/html`
+- HTML rendering for Grafana Business Text panel with full hardware specs, variants, firmware, known issues, fleet data
+- Grafana dashboard: `intelligence_report_001` at `/d/intelligence_report_001/`
 
-**Status:** ✅ DEMO READY — two complete example reports, Grafana dashboard live, architecture proven
+**Status:** ✅ API BUILT + DASHBOARD LIVE — awaiting VPS deployment of API service
 
 ---
 

@@ -26,12 +26,14 @@ Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83)   ← TEMPORARY
   ├── overnight-automation (systemd)    — autonomous low-risk actions 8pm–6am
   ├── cloudflared (systemd)             — TEMPORARY: dashboard/slack/grafana.fieslerfamily.com tunnels
   ├── Prometheus (systemd :9090)        — metrics scraper (30s interval)
-  ├── Grafana (systemd :3000)           — 6 dashboards
+  ├── intelligence-report (systemd :8590) — Miner Intelligence Report API (235+ models)
+  ├── Grafana (systemd :3000)           — 7 dashboards
   └── OpenClaw (Docker)                 — Slack Socket Mode, conversational LLM gateway
 
 ROBS-PC (Windows, facility R&D center, Tailscale 100.110.87.1)
   ├── Subnet gateway                    — routes 192.168.188.0/24 to VPS
-  └── Ollama + Qwen2.5 32B Q4 on RTX 4090 (port 11434)  — local LLM for every-scan analysis
+  ├── Ollama + Qwen2.5 32B Q4 on RTX 4090 (port 11434)  — local LLM for every-scan analysis
+  └── PostgreSQL 16 + Intelligence Catalog (MASTER golden copy)  — 165 tables, 235+ miner models
 
 Anthropic Claude API                    — weekly training, knowledge merges, deep analysis
 ```
