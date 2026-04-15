@@ -1,0 +1,59 @@
+<style>
+.conf-table{width:100%;border-collapse:collapse;font-size:13px}
+.conf-table th{text-align:left;padding:8px;border-bottom:2px solid #334155;color:#94a3b8}
+.conf-table td{padding:6px 8px;border-bottom:1px solid #1e293b}
+.conf-badge{padding:4px 10px;border-radius:4px;font-weight:bold;font-size:14px;display:inline-block;min-width:45px;text-align:center}
+.conf-high{background:#166534;color:#4ade80;border:1px solid #22c55e}
+.conf-med{background:#854d0e;color:#fde047;border:1px solid #eab308}
+.conf-low{background:#991b1b;color:#fca5a5;border:1px solid #ef4444}
+.type-tag{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:bold}
+.type-PREDICTION{background:#3b82f6;color:white}
+.type-INSIGHT{background:#8b5cf6;color:white}
+.type-ANALYSIS{background:#06b6d4;color:white}
+.summary-box{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.summary-item{background:#1e293b;padding:12px 20px;border-radius:8px;text-align:center;border:1px solid #334155}
+.summary-value{font-size:28px;font-weight:bold}
+.summary-label{font-size:11px;color:#94a3b8;margin-top:4px}
+.high{color:#4ade80}.med{color:#fde047}.low{color:#f87171}
+#status{color:#64748b;font-size:11px;margin-top:8px}
+</style>
+<div id="summary" class="summary-box"></div>
+<table class="conf-table">
+<thead><tr><th>Time</th><th>Type</th><th>IP</th><th>Model</th><th>Statement</th><th style="text-align:center">Confidence</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+<div id="status">Loading...</div>
+<script>
+async function loadAnalyses(){
+  try{
+    const r=await fetch('http://localhost:8585/ai/recent_analyses?hours=6');
+    const d=await r.json();
+    if(d.error){document.getElementById('status').textContent='Error: '+d.error;return}
+    const s=d.summary;
+    const avgClass=s.avg_confidence_pct>=80?'high':s.avg_confidence_pct>=50?'med':'low';
+    document.getElementById('summary').innerHTML=
+      '<div class="summary-item"><div class="summary-value '+avgClass+'">'+s.avg_confidence_pct.toFixed(0)+'%</div><div class="summary-label">Avg Confidence</div></div>'+
+      '<div class="summary-item"><div class="summary-value">'+s.total_analyses+'</div><div class="summary-label">Total Analyses</div></div>'+
+      '<div class="summary-item"><div class="summary-value high">'+s.high_confidence+'</div><div class="summary-label">High (80%+)</div></div>'+
+      '<div class="summary-item"><div class="summary-value med">'+s.medium_confidence+'</div><div class="summary-label">Medium</div></div>'+
+      '<div class="summary-item"><div class="summary-value low">'+(s.low_confidence||0)+'</div><div class="summary-label">Low (&lt;50%)</div></div>';
+    const tbody=document.getElementById('tbody');
+    tbody.innerHTML='';
+    d.analyses.slice(0,25).forEach(a=>{
+      const ts=new Date(a.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      const confClass=a.confidence_pct>=80?'conf-high':a.confidence_pct>=50?'conf-med':'conf-low';
+      const stmt=(a.statement||'').substring(0,80)+(a.statement&&a.statement.length>80?'...':'');
+      tbody.innerHTML+=
+        '<tr><td style="white-space:nowrap;color:#94a3b8">'+ts+'</td>'+
+        '<td><span class="type-tag type-'+a.type+'">'+a.type+'</span></td>'+
+        '<td style="font-family:monospace;font-size:12px;color:#60a5fa">'+a.miner_ip+'</td>'+
+        '<td style="color:#94a3b8">'+(a.model||'')+'</td>'+
+        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0">'+stmt+'</td>'+
+        '<td style="text-align:center"><span class="conf-badge '+confClass+'">'+a.confidence_pct+'%</span></td></tr>';
+    });
+    document.getElementById('status').textContent='Updated: '+new Date().toLocaleTimeString()+' | '+d.analyses.length+' analyses';
+  }catch(e){document.getElementById('status').textContent='Error: '+e.message}
+}
+loadAnalyses();
+setInterval(loadAnalyses,60000);
+</script>
