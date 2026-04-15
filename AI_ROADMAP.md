@@ -83,7 +83,7 @@ Dual-database report generator synthesizing operational fleet data (guardian.db 
 - Intelligence Report Dashboard: https://grafana.fieslerfamily.com/d/intelligence_report_001/ (searchable miner lookup, HTML reports)
 - Intelligence Catalog Dashboard: https://grafana.fieslerfamily.com/d/cfj6drj3pbk74b (PostgreSQL schema overview)
 - PostgreSQL datasource connected (ROBS-PC:5432)
-- Intelligence Report API on port 8590 serves 235+ model reports to Grafana Business Text panel
+- Intelligence Report API on port 8590 serves 235+ model reports via iframe rendering (Business Text plugin incompatible with Grafana 10.4.1)
 
 **Business Impact:**
 - Pre-purchase intelligence prevents $50k+ deployment mistakes
@@ -104,11 +104,17 @@ Dual-database report generator synthesizing operational fleet data (guardian.db 
 - Port: 8590 (systemd: `intelligence-report.service`)
 - 235+ Bitcoin SHA-256 miner models searchable
 - Data sources: `unified_miner_index.json` + `miner_enrichment_master.csv` + `miner_specs.json` + `guardian.db`
-- Endpoints: `/api/report/models`, `/api/report/search?q=`, `/api/report/{slug}`, `/api/report/{slug}/html`
-- HTML rendering for Grafana Business Text panel with full hardware specs, variants, firmware, known issues, fleet data
+- Endpoints: `/api/report/models`, `/api/report/search?q=`, `/api/report/{slug}`, `/api/report/{slug}/html`, `/api/report/{slug}/html/render`
+- HTML rendering via iframe approach — `dashboard_api.py` proxy serves full HTML pages at `/api/report/{slug}/html/render` through Cloudflare tunnel
 - Grafana dashboard: `intelligence_report_001` at `/d/intelligence_report_001/`
+- Business Text plugin v6.2.0 installed on VPS but requires Grafana 11+ — will be usable after Grafana upgrade or on Mac mini deployments
 
-**Status:** ✅ API BUILT + DASHBOARD LIVE — awaiting VPS deployment of API service
+**Status:** ✅ API RUNNING ON VPS (235 models) — iframe render endpoint pushed, awaiting `git pull + systemctl restart dashboard-api` on VPS to activate Grafana display
+
+**Deployment Bugs Fixed (April 15 evening):**
+1. **REPO_DIR path bug** — API pointed to `api/` instead of repo root, returned 0 models. Fixed: `REPO_DIR = BASE_DIR.parent` (commit `2bb7305`)
+2. **Mixed content / localhost bug** — browser couldn't reach VPS localhost. Fixed: HTTPS proxy route in `dashboard_api.py` (commit `af82ce2`)
+3. **Script stripping bug** — Grafana text panel strips `<script>` tags, Business Text needs Grafana 11+. Fixed: iframe approach with `/api/report/{slug}/html/render` endpoint (commit `e3acf26`)
 
 ---
 
