@@ -17,7 +17,7 @@ Endpoints:
   GET /api/report/{slug}/html     → HTML formatted report for iframe rendering
   GET /health                     → health check
 
-Version: 2.1.1 — Fix 500 errors on sparse data + safe float parsing (April 16 2026)
+Version: 2.1.2 — Fix fleet detection + 500 errors + safe float parsing (April 16 2026)
 """
 
 import json, csv, os, re, sqlite3, math, time, threading
@@ -400,8 +400,14 @@ print(f"Loaded {len(MODEL_LIST)} miner models for Intelligence Reports")
 
 
 # ── Guardian DB helpers ───────────────────────────────────────
-def get_fleet_data(model_pattern: str) -> dict:
-    """Query guardian.db for fleet operational data matching a model pattern."""
+def get_fleet_data(model_name: str) -> dict:
+    """Query guardian.db for fleet operational data matching a model name.
+    
+    Tries multiple search strategies:
+    1. Direct LIKE match (e.g. '%Antminer S19J Pro%')
+    2. Normalized match with spaces/hyphens/plus stripped from both sides
+    3. Short model name match (e.g. just 'S19J Pro')
+    """
     if not os.path.exists(GUARDIAN_DB):
         return {"deployed": False, "reason": "guardian.db not found"}
     
@@ -410,15 +416,43 @@ def get_fleet_data(model_pattern: str) -> dict:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         
-        # Find miners matching this model
+        # Strategy 1: Direct case-insensitive LIKE
         cur.execute("""
             SELECT ip, model, status, hashrate_pct, chip_temp, 
                    last_scan_ts, flagged_count, dead_boards
             FROM miners 
             WHERE LOWER(model) LIKE ?
             ORDER BY ip
-        """, (f"%{model_pattern}%",))
+        """, (f"%{model_name.lower()}%",))
         miners = [dict(r) for r in cur.fetchall()]
+        
+        # Strategy 2: Normalized match (strip spaces/hyphens/plus)
+        if not miners:
+            norm = model_name.lower().replace(' ', '').replace('-', '').replace('+', '')
+            cur.execute("""
+                SELECT ip, model, status, hashrate_pct, chip_temp, 
+                       last_scan_ts, flagged_count, dead_boards
+                FROM miners 
+                WHERE REPLACE(REPLACE(REPLACE(LOWER(model), ' ', ''), '-', ''), '+', '') LIKE ?
+                ORDER BY ip
+            """, (f"%{norm}%",))
+            miners = [dict(r) for r in cur.fetchall()]
+        
+        # Strategy 3: Try just the model part without manufacturer prefix
+        # e.g. "Antminer S19J Pro" -> try "S19J Pro"
+        if not miners:
+            parts = model_name.split()
+            if len(parts) > 1:
+                # Drop first word (manufacturer prefix like Antminer, Whatsminer, Avalon)
+                short_name = ' '.join(parts[1:])
+                cur.execute("""
+                    SELECT ip, model, status, hashrate_pct, chip_temp, 
+                           last_scan_ts, flagged_count, dead_boards
+                    FROM miners 
+                    WHERE LOWER(model) LIKE ?
+                    ORDER BY ip
+                """, (f"%{short_name.lower()}%",))
+                miners = [dict(r) for r in cur.fetchall()]
         
         if not miners:
             conn.close()
@@ -590,8 +624,7 @@ def build_report(slug: str) -> dict:
     
     # ── Fleet Data ──
     model_search = display_name.split('(')[0].strip()
-    model_search_parts = model_search.lower().replace('-', '').replace('+', '')
-    fleet = get_fleet_data(model_search_parts)
+    fleet = get_fleet_data(model_search)
     
     # ── Profitability ──
     hashrate = hw.get("default_hashrate_th", 0) or 0
@@ -628,7 +661,7 @@ def health():
     net = get_network_data()
     return {
         "status": "ok",
-        "version": "2.1.1",
+        "version": "2.1.2",
         "models": len(MODEL_LIST),
         "correction_rules": len(CORRECTION_RULES),
         "btc_price": net.get("btc_price_usd", 0),

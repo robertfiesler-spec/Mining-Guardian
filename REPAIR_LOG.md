@@ -1,5 +1,28 @@
 ---
 
+### 2026-04-16 (afternoon #2) · Intelligence Report v2.1.2 — fix fleet detection for deployed miners
+
+**What Bobby reported:**
+S19J Pro shows "NOT DEPLOYED IN FLEET" even though they are deployed in Bobby's facility.
+
+**Root cause:**
+The fleet lookup function was stripping spaces, hyphens, and plus signs from the search term (turning "Antminer S19J Pro" into "antminers19jpro") but then doing a SQL LIKE search against the raw `model` column in guardian.db which still has spaces (e.g. "Antminer S19j Pro"). The normalized search term never matched.
+
+**What we changed:**
+- Rewrote `get_fleet_data()` with 3-strategy search:
+  1. Direct case-insensitive LIKE match ("Antminer S19J Pro" against raw model column)
+  2. Normalized match — strips spaces/hyphens/plus from BOTH the search term AND the DB column using SQLite REPLACE()
+  3. Short name match — drops the manufacturer prefix and searches for just "S19J Pro"
+- Passes the original display name (with spaces) instead of pre-stripping it
+- Any of the 3 strategies matching counts as deployed
+
+**Files changed:**
+- `api/intelligence_report_api.py` — version 2.1.1 → 2.1.2, `get_fleet_data()` rewritten
+
+**Commit:** (pending Bobby's VPS pull + restart)
+
+---
+
 ### 2026-04-16 (afternoon) · Intelligence Report v2.1.1 — fix 500 errors on sparse model data
 
 **What Bobby reported:**
