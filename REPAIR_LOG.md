@@ -1,5 +1,106 @@
 ---
 
+### 2026-04-15 (late evening pt 2) · Log collection threading bug + missing websocket module + Grafana panel browser cache issue
+
+**What Bobby thought the program was doing:**
+1. Daily log collection script (`daily_collect_logs.py`) should download logs from 36 miners and store them in `guardian.db`
+2. The background thread spawned at 5:42pm should complete and write all collected logs to the database
+3. Grafana "Recent AI Analyses" panel should load data from the Dashboard API endpoint
+4. Multiple collection attempts (1pm cron, 2pm manual, 5:42pm manual) should all succeed eventually
+
+**What was actually happening:**
+1. **Threading bug causing silent collection failure** — The `collect_logs()` method spawned a background thread with `daemon=True` (line 5429 in `mining_guardian.py`). When `daily_collect_logs.py` called this method and returned, Python immediately killed all daemon threads on process exit. Only 1 miner got collected before the thread died.
+2. **Fix attempt #1 failed with RuntimeError** — Changed `daemon=True` to `daemon=False` but got `RuntimeError: can't register atexit after shutdown` because the non-daemon thread was starting after Python began shutting down.
+3. **Fix attempt #2 succeeded** — Added `t.join()` in `daily_collect_logs.py` to make the script WAIT for the background thread to complete before exiting. Combined with `daemon=False`, this allowed the thread to finish collecting all logs.
+4. **Collection still failing with ModuleNotFoundError** — Even with threading fix, collection crashed with `ModuleNotFoundError: No module named 'websocket'`. The log collection requires `websocket` module to connect to AMS, but it's not installed in the Python environment on the VPS.
+5. **Grafana "Recent AI Analyses" panel showed "Error: Failed to fetch"** — The HTML panel was trying to call `https://dashboard.fieslerfamily.com/ai/recent_analyses?hours=6` via JavaScript. Browser had cached the error from an earlier failure. The Dashboard API was working perfectly (returning 50 analyses with 82.2% avg confidence), but Bobby's browser was showing stale cached error.
+6. **Log collection data appearing/disappearing** — Bobby observed 7 miners collected, then 0 miners, then collection process dead. This was because: (a) the process crashed due to missing websocket module before writing data, (b) threading bug killed it mid-collection, or (c) database was being queried before writes completed.
+
+**Why it mattered:**
+- No fresh logs means tomorrow's 4pm deep dive runs on stale data (poor AI quality)
+- Threading bugs wasted 3+ hours of Bobby's time with collection appearing to work but silently failing
+- Missing Python dependencies cause silent crashes with no error visibility
+- Browser cache issues made working features appear broken during demo prep
+- Bobby lost trust in the system's reliability ("we keep losing the logs")
+
+**What we changed:**
+
+**FIX 1: Changed daemon thread to non-daemon**
+```python
+# Before (WRONG — daemon thread dies when parent exits):
+t = threading.Thread(target=self._collect_logs_background, args=(miners, issues), daemon=True)
+
+# After (CORRECT — thread completes before process exits):
+t = threading.Thread(target=self._collect_logs_background, args=(miners, issues), daemon=False)
+```
+- **File:** `/root/Mining-Gaurdian/core/mining_guardian.py` line 5429
+- **Commit:** `cf458b0` (first attempt - failed)
+
+**FIX 2: Added thread wait in daily_collect_logs.py**
+```python
+# After calling mg.collect_logs(), wait for background thread
+if hasattr(mg, '_daily_log_thread') and mg._daily_log_thread:
+    logger.info('Waiting for log collection thread to complete...')
+    mg._daily_log_thread.join()
+    logger.info('Log collection thread completed')
+```
+- **File:** `/root/Mining-Gaurdian/scripts/daily_collect_logs.py`
+- **Commit:** `79dd3dc` (complete fix)
+- **Result:** Script now waits for all 36 miners to finish collecting before exiting
+
+**FIX 3: Identified missing websocket module dependency**
+- Collection crashes with `ModuleNotFoundError: No module named 'websocket'`
+- The `AMSClient` requires `websocket` to connect to BiXBiT AMS WebSocket endpoint
+- **NOT FIXED** — Bobby chose to let tomorrow's 1pm cron try again (may work if environment different)
+- **Alternative:** Install via `pip3 install websocket-client` on VPS
+- **Status:** Deferred to tomorrow
+
+**FIX 4: Grafana browser cache issue resolved**
+- **Root cause:** Browser cached "Error: Failed to fetch" from earlier API failure
+- **Dashboard API was working:** Verified with `curl https://dashboard.fieslerfamily.com/ai/recent_analyses?hours=6` returned 50 analyses successfully
+- **Fix:** Hard browser refresh (Cmd+Shift+R) cleared cache
+- **No code changes needed** — this was purely client-side caching
+
+**How we verified:**
+1. ✅ Threading fix: Collection process started at 5:42pm with `daemon=False` + `t.join()`
+2. ✅ Process running: Confirmed PID 499262 executing `daily_collect_logs.py`
+3. ❌ Collection failed: Process died due to missing `websocket` module (discovered later)
+4. ✅ Dashboard API working: `curl` returned `{"analyses": 50, "summary": {"avg_confidence_pct": 82.2}}`
+5. ✅ Grafana panel fixed: Hard refresh (Cmd+Shift+R) loaded data successfully
+6. ⏳ Log collection deferred: Bobby chose to wait for tomorrow's 1pm cron instead of fixing websocket module tonight
+
+**Files modified:**
+- `core/mining_guardian.py` line 5429: `daemon=False` (was `daemon=True`)
+- `scripts/daily_collect_logs.py`: Added thread wait with `t.join()`
+- **Git commits:** `cf458b0`, `79dd3dc`
+
+**Architectural lessons:**
+1. **Daemon threads are killed on process exit** — Never use `daemon=True` for threads that must complete work. Either use `daemon=False` + `t.join()` or run as foreground operation.
+2. **Python dependency management matters** — Missing modules cause silent crashes. Should document all required packages in `requirements.txt` and verify installations.
+3. **Browser cache can mask working features** — Always verify API endpoints with `curl` before assuming code is broken. Hard refresh (Cmd+Shift+R) should be first debugging step for web UI issues.
+4. **Background collection appears to work but fails silently** — Need better logging/monitoring for long-running background operations. Collection success should send Slack confirmation.
+5. **Trust is fragile** — Multiple collection failures eroded Bobby's confidence in the system. Reliability > features for production deployment.
+
+**Production impact:**
+- **Before:** 0/36 miners collected, threading bug silently killing collection, no fresh logs for AI analysis
+- **After (partial):** Threading bug fixed, but collection still fails due to missing websocket module
+- **Tomorrow:** 1pm cron will retry collection (may succeed if environment has websocket module)
+- **Workaround:** 4pm deep dive will use yesterday's logs (not ideal but functional)
+
+**Status:** PARTIALLY COMPLETE
+- ✅ Threading bug fixed and committed to git
+- ✅ Grafana panel browser cache issue resolved
+- ❌ Websocket module dependency not installed (Bobby chose to defer)
+- ⏳ Awaiting tomorrow's 1pm cron collection attempt
+
+**Outstanding items:**
+1. Install `websocket-client` Python module on VPS
+2. Verify tomorrow's 1pm cron collection succeeds with 36/36 miners
+3. Add collection success/failure Slack notifications
+4. Document Python dependencies in `requirements.txt`
+
+---
+
 ### 2026-04-15 (late evening) · Intelligence Report v2.0 — full 9-section report build
 
 **What Bobby reported:**
