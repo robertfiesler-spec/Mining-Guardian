@@ -1,0 +1,38 @@
+[
+  {
+    "id": "microbt-air-x0",
+    "description": "MicroBT/WhatsMiner: M_0 models are air-cooled (M10, M20, M30, M50, M60, M70). Last digit 0 = air cooling.",
+    "match": {
+      "manufacturer": "contains:microbt",
+      "slug": "regex:whatsminer-m\\d0"
+    },
+    "set": {
+      "specs.cooling": "air",
+      "enrichment.Cooling Details": "Air-cooled (MicroBT naming convention: last digit 0 = air)"
+    }
+  },
+  {
+    "id": "microbt-hydro-x3",
+    "description": "MicroBT/WhatsMiner: M_3 models are hydro (water) cooled (M33, M53, M63, M73). Last digit 3 = hydro cooling.",
+    "match": {
+      "manufacturer": "contains:microbt",
+      "slug": "regex:whatsminer-m\\d3"
+    },
+    "set": {
+      "specs.cooling": "hydro",
+      "enrichment.Cooling Details": "Hydro (water) cooled (MicroBT naming convention: last digit 3 = hydro)"
+    }
+  },
+  {
+    "id": "microbt-immersion-x6",
+    "description": "MicroBT/WhatsMiner: M_6 models are immersion-cooled (M36, M56, M66, M76). Last digit 6 = immersion cooling.",
+    "match": {
+      "manufacturer": "contains:microbt",
+      "slug": "regex:whatsminer-m\\d6"
+    },
+    "set": {
+      "specs.cooling": "immersion",
+      "enrichment.Cooling Details": "Immersion cooled (MicroBT naming convention: last digit 6 = immersion)"
+    }
+  }
+]

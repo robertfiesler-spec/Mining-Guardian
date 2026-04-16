@@ -17,14 +17,16 @@ Endpoints:
   GET /api/report/{slug}/html     → HTML formatted report for iframe rendering
   GET /health                     → health check
 
-Version: 2.0.0 — Full report with 9 sections (April 15 2026 evening build)
+Version: 2.1.0 — Live BTC data + correction rules engine (April 16 2026)
 """
 
-import json, csv, os, re, sqlite3, math
+import json, csv, os, re, sqlite3, math, time, threading
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from collections import defaultdict
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,7 +43,187 @@ SPECS_JSON = str(REPO_DIR / "miner_specs.json")
 INDEX_JSON = str(_DATA_DIR / "unified_miner_index.json")
 
 # ── App Setup ─────────────────────────────────────────────────
-app = FastAPI(title="Mining Guardian Intelligence Report API", version="2.0.0")
+app = FastAPI(title="Mining Guardian Intelligence Report API", version="2.1.0")
+
+# ── Correction Rules Engine ───────────────────────────────────
+# Rules file: intelligence-catalog/data/correction_rules.json
+# Each rule: {"match": {field: pattern}, "set": {field: value}, "description": "..."}
+# Patterns support: "endswith:X", "startswith:X", "contains:X", "exact:X", "regex:X"
+
+CORRECTION_RULES_FILE = str(_DATA_DIR / "correction_rules.json")
+
+def load_correction_rules() -> list:
+    """Load correction rules from JSON file."""
+    if os.path.exists(CORRECTION_RULES_FILE):
+        with open(CORRECTION_RULES_FILE) as f:
+            rules = json.load(f)
+            print(f"Loaded {len(rules)} correction rules")
+            return rules
+    return []
+
+def _match_pattern(value: str, pattern: str) -> bool:
+    """Check if a value matches a correction rule pattern."""
+    if not value:
+        return False
+    value_lower = value.lower()
+    if pattern.startswith("endswith:"):
+        return value_lower.endswith(pattern[9:].lower())
+    elif pattern.startswith("startswith:"):
+        return value_lower.startswith(pattern[11:].lower())
+    elif pattern.startswith("contains:"):
+        return pattern[9:].lower() in value_lower
+    elif pattern.startswith("exact:"):
+        return value_lower == pattern[6:].lower()
+    elif pattern.startswith("regex:"):
+        return bool(re.search(pattern[6:], value, re.IGNORECASE))
+    else:
+        # Default: contains match
+        return pattern.lower() in value_lower
+
+def apply_corrections(index: dict, rules: list) -> int:
+    """Apply correction rules to the unified index. Returns count of corrections made."""
+    corrections = 0
+    for slug, info in index.items():
+        for rule in rules:
+            match_criteria = rule.get("match", {})
+            matched = True
+            
+            for field, pattern in match_criteria.items():
+                # Get field value from various locations in the entry
+                val = None
+                if field == "manufacturer":
+                    val = info.get("manufacturer", "")
+                elif field == "slug":
+                    val = slug
+                elif field == "display_name":
+                    val = info.get("display_name", "")
+                elif field == "entity":
+                    val = info.get("entity", "")
+                elif field == "model_number":
+                    # Extract numeric model identifier (e.g. "M60" from "WhatsMiner M60S+")
+                    dn = info.get("display_name", "")
+                    m = re.search(r'[A-Z]?(\d+)', dn)
+                    val = m.group(0) if m else ""
+                elif field.startswith("specs."):
+                    specs = info.get("specs") or {}
+                    val = str(specs.get(field[6:], ""))
+                elif field.startswith("enrichment."):
+                    enrich = info.get("enrichment") or {}
+                    val = str(enrich.get(field[11:], ""))
+                else:
+                    val = str(info.get(field, ""))
+                
+                if not _match_pattern(str(val), pattern):
+                    matched = False
+                    break
+            
+            if matched:
+                # Apply corrections
+                for set_field, set_value in rule.get("set", {}).items():
+                    if set_field.startswith("specs."):
+                        if not info.get("specs"):
+                            info["specs"] = {}
+                        info["specs"][set_field[6:]] = set_value
+                    elif set_field.startswith("enrichment."):
+                        if not info.get("enrichment"):
+                            info["enrichment"] = {}
+                        info["enrichment"][set_field[11:]] = set_value
+                    else:
+                        info[set_field] = set_value
+                corrections += 1
+    
+    return corrections
+
+
+# ── Live Network Data ─────────────────────────────────────────
+# Fetches BTC price from CoinGecko and network difficulty from mempool.space/blockchain.info
+# Cached for 15 minutes to avoid API rate limits
+
+_network_cache = {
+    "btc_price_usd": 0,
+    "network_difficulty": 0,
+    "network_hashrate_eh": 0,
+    "block_height": 0,
+    "last_fetch": 0,
+    "source": "initializing",
+}
+_CACHE_TTL = 900  # 15 minutes
+_fetch_lock = threading.Lock()
+
+def _fetch_json(url: str, timeout: int = 10) -> dict:
+    """Fetch JSON from a URL with timeout."""
+    req = Request(url, headers={"User-Agent": "MiningGuardian/2.1", "Accept": "application/json"})
+    with urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
+def _fetch_text(url: str, timeout: int = 10) -> str:
+    """Fetch plain text from a URL."""
+    req = Request(url, headers={"User-Agent": "MiningGuardian/2.1"})
+    with urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode().strip()
+
+def get_network_data() -> dict:
+    """Get current BTC price and network stats. Cached for 15 minutes."""
+    global _network_cache
+    
+    now = time.time()
+    if now - _network_cache["last_fetch"] < _CACHE_TTL and _network_cache["btc_price_usd"] > 0:
+        return _network_cache
+    
+    with _fetch_lock:
+        # Double-check after acquiring lock
+        if now - _network_cache["last_fetch"] < _CACHE_TTL and _network_cache["btc_price_usd"] > 0:
+            return _network_cache
+        
+        new_data = dict(_network_cache)
+        sources = []
+        
+        # 1. BTC Price from CoinGecko (free, no key needed)
+        try:
+            cg = _fetch_json("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd")
+            new_data["btc_price_usd"] = cg["bitcoin"]["usd"]
+            sources.append("CoinGecko")
+        except Exception as e:
+            print(f"CoinGecko fetch failed: {e}")
+            # Fallback: blockchain.info
+            try:
+                ticker = _fetch_json("https://blockchain.info/ticker")
+                new_data["btc_price_usd"] = ticker["USD"]["last"]
+                sources.append("blockchain.info")
+            except Exception as e2:
+                print(f"blockchain.info price fetch also failed: {e2}")
+        
+        # 2. Network difficulty + hashrate from mempool.space
+        try:
+            ms = _fetch_json("https://mempool.space/api/v1/mining/hashrate/1w")
+            new_data["network_difficulty"] = ms["currentDifficulty"]
+            new_data["network_hashrate_eh"] = round(ms["currentHashrate"] / 1e18, 2)
+            sources.append("mempool.space")
+        except Exception as e:
+            print(f"mempool.space fetch failed: {e}")
+            # Fallback: blockchain.info
+            try:
+                diff_str = _fetch_text("https://blockchain.info/q/getdifficulty")
+                new_data["network_difficulty"] = float(diff_str)
+                sources.append("blockchain.info/difficulty")
+            except Exception as e2:
+                print(f"blockchain.info difficulty fetch also failed: {e2}")
+        
+        # 3. Block height
+        try:
+            height_str = _fetch_text("https://blockchain.info/q/getblockcount")
+            new_data["block_height"] = int(height_str)
+        except Exception:
+            pass
+        
+        if new_data["btc_price_usd"] > 0:
+            new_data["last_fetch"] = now
+            new_data["source"] = " + ".join(sources)
+            new_data["last_fetch_time"] = datetime.now().strftime("%I:%M %p CDT")
+            _network_cache = new_data
+            print(f"Network data refreshed: BTC ${new_data['btc_price_usd']:,.0f}, difficulty {new_data['network_difficulty']/1e12:.2f}T (from {new_data['source']})")
+        
+        return _network_cache
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -142,6 +324,12 @@ def merge_index(raw_index: dict) -> dict:
     return merged
 
 UNIFIED_INDEX = merge_index(_RAW_INDEX)
+
+# Apply correction rules
+CORRECTION_RULES = load_correction_rules()
+if CORRECTION_RULES:
+    corrections_made = apply_corrections(UNIFIED_INDEX, CORRECTION_RULES)
+    print(f"Applied {corrections_made} corrections across {len(UNIFIED_INDEX)} models")
 
 # Build search-friendly list (deduplicated — skip aliases)
 MODEL_LIST = []
@@ -252,9 +440,10 @@ def calc_profitability(hashrate_th: float, power_w: float, efficiency_jth: float
     if not hashrate_th or not power_w:
         return {}
     
-    # Current network estimates (these should eventually come from live API)
-    btc_price_usd = 95000  # Approximate BTC price
-    network_difficulty = 119e12  # ~119T difficulty
+    # Live network data (cached 15 min) with safe fallbacks
+    net = get_network_data()
+    btc_price_usd = net.get("btc_price_usd", 0) or 85000  # Fallback if API down
+    network_difficulty = net.get("network_difficulty", 0) or 139e12  # Fallback
     block_reward = 3.125  # Post-2024 halving
     
     # Daily BTC mined = (hashrate * 86400 * block_reward) / (difficulty * 2^32)
@@ -299,6 +488,11 @@ def calc_profitability(hashrate_th: float, power_w: float, efficiency_jth: float
         "monthly_kwh": round(monthly_kwh, 0),
         "breakeven_rate": round(breakeven_rate, 4),
         "efficiency_j_th": efficiency_jth,
+        "network_difficulty_t": round(network_difficulty / 1e12, 2),
+        "network_hashrate_eh": net.get("network_hashrate_eh", 0),
+        "block_height": net.get("block_height", 0),
+        "data_source": net.get("source", "fallback"),
+        "data_time": net.get("last_fetch_time", ""),
         "tiers": tiers,
     }
 
@@ -397,7 +591,16 @@ def build_report(slug: str) -> dict:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "models": len(MODEL_LIST), "version": "2.0.0"}
+    net = get_network_data()
+    return {
+        "status": "ok",
+        "version": "2.1.0",
+        "models": len(MODEL_LIST),
+        "correction_rules": len(CORRECTION_RULES),
+        "btc_price": net.get("btc_price_usd", 0),
+        "network_difficulty_t": round(net.get("network_difficulty", 0) / 1e12, 2),
+        "data_source": net.get("source", "initializing"),
+    }
 
 @app.get("/api/report/models")
 def list_models():
@@ -853,10 +1056,10 @@ def _section_4_profitability(report: dict) -> str:
       </div>
       <div class="alert-box alert-cyan" style="margin-top:16px;">
         <p style="color:#67e8f9; font-size:12px; margin:0; line-height:1.6;">
-          <strong>Note:</strong> Estimates based on current network difficulty (~119 EH/s) and BTC ≈ ${prof.get('btc_price_usd',0):,.0f}.
-          Daily power consumption: {prof.get('daily_kwh',0):.1f} kWh ({prof.get('monthly_kwh',0):.0f} kWh/month).
-          Actual profitability varies with difficulty adjustments, BTC price, pool fees (typically 1-2%), and hardware uptime.
-          Efficiency: {hw.get('efficiency_j_th','N/A')} J/TH.
+          <strong>🟢 LIVE DATA</strong> — BTC ${prof.get('btc_price_usd',0):,.0f} ● Difficulty {prof.get('network_difficulty_t',0):.2f}T ● Network {prof.get('network_hashrate_eh',0):.1f} EH/s{f" ● Block {prof.get('block_height',0):,}" if prof.get('block_height') else ''}<br>
+          <span style="color:#94a3b8;">Source: {prof.get('data_source','N/A')} ● Updated: {prof.get('data_time','N/A')} ● Refreshes every 15 min</span><br>
+          <span style="color:#94a3b8;">Daily power: {prof.get('daily_kwh',0):.1f} kWh ({prof.get('monthly_kwh',0):.0f} kWh/month) ● Efficiency: {hw.get('efficiency_j_th','N/A')} J/TH ●
+          Does not include pool fees (typically 1-2%) or hardware downtime.</span>
         </p>
       </div>
     </div>
