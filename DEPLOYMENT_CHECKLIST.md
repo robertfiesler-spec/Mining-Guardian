@@ -118,8 +118,25 @@ systemctl start intelligence-report.service
 
 # 5. Verify
 curl http://localhost:8590/health
-# Expected: {"status":"ok","models":235,"version":"1.0.0"}
+# Expected: {"status":"ok","models":226,"version":"2.1.0","btc_price":...,"correction_rules":3}
 ```
+
+### Intelligence Report v2.1 Files (April 16, 2026)
+
+The following files are required for the Intelligence Report API v2.1:
+
+| File | Purpose |
+|------|---------|
+| `api/intelligence_report_api.py` | Main API — 1,352+ lines, 9 report sections, live BTC/network data, correction rules engine |
+| `intelligence-catalog/data/correction_rules.json` | WhatsMiner cooling type corrections (3 rules, 44 model corrections) |
+| `intelligence-catalog/data/unified_miner_index.json` | 226 merged miner models (slug-deduplicated) |
+| `intelligence-catalog/data/miner_enrichment_master.csv` | 277 models with detailed specs |
+| `deploy/intelligence-report.service` | systemd unit file |
+
+Live data sources (fetched at runtime, cached 15 min):
+- CoinGecko API — BTC price in USD
+- mempool.space API — network difficulty + hashrate
+- blockchain.info — fallback for difficulty/hashrate
 
 ### Success Criteria
 
@@ -128,12 +145,13 @@ curl http://localhost:8590/health
 ✅ LLM calls show knowledge context (DG-3)
 ✅ No connection leak warnings in logs
 ✅ Slack commands work with authorization
-✅ Intelligence Report API returns 235 models on /health
-✅ Grafana Intelligence Report dashboard renders HTML reports
+✅ Intelligence Report API returns 226 models + live BTC price on /health
+✅ Grafana Intelligence Report dashboard renders HTML reports with 9 sections
+✅ Correction rules applied — WhatsMiner cooling types corrected at startup
 
 ---
 
-**Total fixes deployed:** 21 HIGH priority items + Intelligence Report feature
+**Total fixes deployed:** 21 HIGH priority items + Intelligence Report feature (v1.0 → v2.0 → v2.1)
 **Documentation:** REPAIR_LOG.md (complete history), INTELLIGENCE_REPORT_API.md (API docs)
-**Last updated:** April 15, 2026
+**Last updated:** April 16, 2026
 **Files modified:** 25+ production files

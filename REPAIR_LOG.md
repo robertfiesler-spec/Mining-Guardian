@@ -39,14 +39,13 @@ Profitability numbers in the Intelligence Report were wrong — they were based 
 3. ✅ S19J Pro profitability now shows realistic numbers (only profitable at <$0.048/kWh at current BTC price)
 4. ✅ WhatsMiner M60=air, M63=hydro, M66=immersion all correct
 5. ✅ Health endpoint shows version 2.1.0, live BTC price, and rule count
-6. ⏳ VPS deployment pending
+6. ✅ VPS deployment confirmed — health check returns v2.1.0 with live BTC $74,719 and 3 correction rules (April 16 8:40 AM CDT)
 
 **Files modified:**
 - `api/intelligence_report_api.py` — live data fetcher, correction rules engine, updated profitability HTML
 - `intelligence-catalog/data/correction_rules.json` — NEW: 3 WhatsMiner cooling rules
 
 **Version:** API v2.0.0 → v2.1.0
->>>>>>> 6d97ca3 (feat: Intelligence Report v2.1 — live BTC data + correction rules engine)
 
 ---
 

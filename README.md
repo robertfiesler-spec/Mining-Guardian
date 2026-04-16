@@ -26,14 +26,14 @@ Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83)   ← TEMPORARY
   ├── overnight-automation (systemd)    — autonomous low-risk actions 8pm–6am
   ├── cloudflared (systemd)             — TEMPORARY: dashboard/slack/grafana.fieslerfamily.com tunnels
   ├── Prometheus (systemd :9090)        — metrics scraper (30s interval)
-  ├── intelligence-report (systemd :8590) — Miner Intelligence Report API (235+ models)
+  ├── intelligence-report (systemd :8590) — Miner Intelligence Report API v2.1 (226 models, live BTC, correction rules)
   ├── Grafana (systemd :3000)           — 7 dashboards
   └── OpenClaw (Docker)                 — Slack Socket Mode, conversational LLM gateway
 
 ROBS-PC (Windows, facility R&D center, Tailscale 100.110.87.1)
   ├── Subnet gateway                    — routes 192.168.188.0/24 to VPS
   ├── Ollama + Qwen2.5 32B Q4 on RTX 4090 (port 11434)  — local LLM for every-scan analysis
-  └── PostgreSQL 16 + Intelligence Catalog (MASTER golden copy)  — 165 tables, 235+ miner models
+  └── PostgreSQL 16 + Intelligence Catalog (MASTER golden copy)  — 165 tables, 226 miner models
 
 Anthropic Claude API                    — weekly training, knowledge merges, deep analysis
 ```
@@ -94,7 +94,7 @@ Anthropic Claude API                    — weekly training, knowledge merges, d
 | mining-guardian | — | Scans fleet every hour, evaluates all miners, runs 8 AI features in loop |
 | dashboard-api | 8585 | REST API + Prometheus /metrics + `/query/*` endpoints (OpenClaw guardian-db skill) |
 | approval-api | 8686 | Handles APPROVE/DENY/approve_selected calls (localhost-bound) |
-| intelligence-report | 8590 | Miner Intelligence Report API — 235+ models searchable, HTML reports for Grafana |
+| intelligence-report | 8590 | Miner Intelligence Report API v2.1 — 226 models, live BTC/difficulty, correction rules engine, HTML reports for Grafana |
 | slack-listener | — | Polls Slack threads for text approvals |
 | slack-commands | — | Conversational fleet intelligence bot (migrating into OpenClaw) |
 | overnight-automation | — | Auto-executes low-risk actions 8pm–6am |
@@ -117,7 +117,7 @@ Seven dashboards. Six operational dashboards fed by Prometheus scraping `dashboa
 | Board Health | afi3p5mhapn9ce | Per-board voltage/freq/HW errors/power |
 | Pool Stats | afi3q9w5ishz4f | Fleet totals + rejection rate + top 5 worst offenders |
 | AI & Learning | llm_learning_001 | Knowledge score, insights growth, autonomy rate, AI impact on fleet health |
-| Intelligence Report | intelligence_report_001 | Searchable miner lookup across 235+ models, full HTML reports with specs/variants/fleet data |
+| Intelligence Report | intelligence_report_001 | Searchable miner lookup across 226 models, full HTML reports with 9 sections, live BTC/network data, correction rules engine |
 
 ### Prometheus Metrics (complete list)
 
@@ -466,7 +466,7 @@ AI answers include: current fleet state, 14-day miner history, audit trail, dead
 | `miner_specs.json` | Per-model specs: board count, rated TH/s, profile maps |
 | `guardian.db` | SQLite database — never delete, never overwrite with template |
 | `installer/DEPLOYMENT.md` | Mac mini installer spec (on `installer-build` branch) — 313 lines |
-| `api/intelligence_report_api.py` | Miner Intelligence Report API — searchable reports for 235+ models (port 8590) |
+| `api/intelligence_report_api.py` | Miner Intelligence Report API v2.1 — 226 models, live BTC/difficulty, correction rules engine (port 8590) |
 | `intelligence/README.md` | Mining Intelligence Catalog architecture (Postgres research DB) |
 
 ---
@@ -516,4 +516,4 @@ Remaining items are MEDIUM/LOW priority tracked in `AI_ROADMAP.md`. See `REPAIR_
 
 ---
 
-*Last updated: April 15 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines. See `.env.example` for all 30+ environment variables.*
+*Last updated: April 16 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines. See `.env.example` for all 30+ environment variables.*

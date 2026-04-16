@@ -83,7 +83,10 @@ Dual-database report generator synthesizing operational fleet data (guardian.db 
 - Intelligence Report Dashboard: https://grafana.fieslerfamily.com/d/intelligence_report_001/ (searchable miner lookup, HTML reports)
 - Intelligence Catalog Dashboard: https://grafana.fieslerfamily.com/d/cfj6drj3pbk74b (PostgreSQL schema overview)
 - PostgreSQL datasource connected (ROBS-PC:5432)
-- Intelligence Report API on port 8590 serves 235+ model reports via iframe rendering (Business Text plugin incompatible with Grafana 10.4.1)
+- Intelligence Report API v2.1 on port 8590 serves 226 model reports via iframe rendering (9 duplicates merged)
+- Live BTC price + network difficulty from CoinGecko + mempool.space (15-min cache)
+- Correction rules engine: `intelligence-catalog/data/correction_rules.json` (3 WhatsMiner cooling rules, 44 auto-corrections)
+- Business Text plugin incompatible with Grafana 10.4.1 — using iframe approach instead
 
 **Business Impact:**
 - Pre-purchase intelligence prevents $50k+ deployment mistakes
@@ -93,23 +96,30 @@ Dual-database report generator synthesizing operational fleet data (guardian.db 
 
 **What's Next (Vision Complete, Implementation Pending):**
 - [x] Interactive catalog query interface → **DONE 2026-04-15** — Intelligence Report API (port 8590) + Grafana dashboard
-- [x] Searchable miner lookup across 235+ models → **DONE 2026-04-15** — text search + dropdown in Grafana
-- [ ] Full 40-page PDF rendering (markdown complete, PDF converter compresses output)
+- [x] Searchable miner lookup across 226 models → **DONE 2026-04-15** — text search + dropdown in Grafana
+- [x] Full 9-section HTML report → **DONE 2026-04-15** — Hardware, Firmware, Fleet, Profitability, Market, Repair, Cooling, AI Analysis, Recommendations
+- [x] Live BTC/network data in profitability → **DONE 2026-04-16** — CoinGecko + mempool.space, 15-min cache
+- [x] Correction rules engine → **DONE 2026-04-16** — JSON-based pattern matching, no code changes needed
+- [x] WhatsMiner cooling auto-classification → **DONE 2026-04-16** — 3 rules, 44 corrections
+- [ ] Full manufacturer review session — weekend (Bobby has flights, will review all manufacturers)
 - [ ] Qwen AI analysis paragraphs injected into report (requires Qwen reachable from API)
 - [ ] PDF download button within Grafana dashboard
 - [ ] Additional enrichment: auto-import new data points as catalog grows
 
-**Intelligence Report API (Built 2026-04-15):**
+**Intelligence Report API (Built 2026-04-15, v2.1 2026-04-16):**
 - File: `api/intelligence_report_api.py`
 - Port: 8590 (systemd: `intelligence-report.service`)
-- 235+ Bitcoin SHA-256 miner models searchable
+- Version: 2.1.0
+- 226 Bitcoin SHA-256 miner models (9 duplicate slug pairs merged automatically)
 - Data sources: `unified_miner_index.json` + `miner_enrichment_master.csv` + `miner_specs.json` + `guardian.db`
+- Live data: BTC price (CoinGecko), network difficulty + hashrate (mempool.space), 15-min cache
+- Correction rules: `intelligence-catalog/data/correction_rules.json` — 3 WhatsMiner cooling rules, 44 auto-corrections at startup
 - Endpoints: `/api/report/models`, `/api/report/search?q=`, `/api/report/{slug}`, `/api/report/{slug}/html`, `/api/report/{slug}/html/render`
-- HTML rendering via iframe approach — `dashboard_api.py` proxy serves full HTML pages at `/api/report/{slug}/html/render` through Cloudflare tunnel
+- 9 report sections: Hardware Specs, Firmware & Known Issues, Fleet Performance, Profitability & Economics (live), Market Context, Repair & Maintenance, Cooling & Environment, AI Analysis (catalog-based, Qwen pending), Recommendations
+- HTML rendering via iframe approach — `dashboard_api.py` proxy serves full HTML pages through Cloudflare tunnel
 - Grafana dashboard: `intelligence_report_001` at `/d/intelligence_report_001/`
-- Business Text plugin v6.2.0 installed on VPS but requires Grafana 11+ — will be usable after Grafana upgrade or on Mac mini deployments
 
-**Status:** ✅ FULLY OPERATIONAL — API running on VPS (235 models), iframe rendering confirmed working in Grafana (verified April 15 6:28 PM CDT)
+**Status:** ✅ FULLY OPERATIONAL v2.1 — 226 models, live BTC data, correction rules, 9-section report (verified April 16 8:40 AM CDT)
 
 **Deployment Bugs Fixed (April 15 evening):**
 1. **REPO_DIR path bug** — API pointed to `api/` instead of repo root, returned 0 models. Fixed: `REPO_DIR = BASE_DIR.parent` (commit `2bb7305`)
