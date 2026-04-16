@@ -17,7 +17,7 @@ Endpoints:
   GET /api/report/{slug}/html     → HTML formatted report for iframe rendering
   GET /health                     → health check
 
-Version: 2.1.0 — Live BTC data + correction rules engine (April 16 2026)
+Version: 2.1.1 — Fix 500 errors on sparse data + safe float parsing (April 16 2026)
 """
 
 import json, csv, os, re, sqlite3, math, time, threading
@@ -31,6 +31,16 @@ from urllib.error import URLError
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+
+def _safe_float(val, default=0.0) -> float:
+    """Safely convert a value to float, returning default on failure."""
+    if val is None or val == '' or val == 'N/A' or val == 'Unknown':
+        return default
+    try:
+        return float(str(val))
+    except (ValueError, TypeError):
+        return default
 
 # ── Configuration ─────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
@@ -272,6 +282,28 @@ def merge_index(raw_index: dict) -> dict:
         norm = slug.replace('-', '')
         groups[norm].append(slug)
     
+    # Second pass: detect manufacturer-prefix duplicates
+    # e.g. "teraflux-ah3880" and "auradine-teraflux-ah3880" should merge
+    all_norms = list(groups.keys())
+    merge_map = {}  # norm_short -> norm_long (which group to merge into)
+    for i, n1 in enumerate(all_norms):
+        if n1 in merge_map:
+            continue
+        for j, n2 in enumerate(all_norms):
+            if i == j or n2 in merge_map:
+                continue
+            # Check if one is a suffix of the other (manufacturer prefix added)
+            if n2.endswith(n1) and len(n2) > len(n1):
+                merge_map[n1] = n2
+            elif n1.endswith(n2) and len(n1) > len(n2):
+                merge_map[n2] = n1
+    
+    # Apply merges: combine groups
+    for short_norm, long_norm in merge_map.items():
+        if short_norm in groups and long_norm in groups:
+            groups[long_norm].extend(groups[short_norm])
+            del groups[short_norm]
+    
     merged = {}
     merge_count = 0
     for norm, slugs in groups.items():
@@ -294,7 +326,9 @@ def merge_index(raw_index: dict) -> dict:
                     enrichment_data = entry['enrichment']
                     best_entity = entry.get('entity')
                 if entry.get('display_name'):
-                    best_display = entry.get('display_name')
+                    # Prefer the longest/most descriptive display name
+                    if not best_display or len(entry['display_name']) > len(best_display):
+                        best_display = entry['display_name']
             
             # Fallback: use first slug if none had specs
             if not primary:
@@ -594,7 +628,7 @@ def health():
     net = get_network_data()
     return {
         "status": "ok",
-        "version": "2.1.0",
+        "version": "2.1.1",
         "models": len(MODEL_LIST),
         "correction_rules": len(CORRECTION_RULES),
         "btc_price": net.get("btc_price_usd", 0),
@@ -628,29 +662,43 @@ def search_models(q: str = Query("", description="Search query")):
 @app.get("/api/report/{slug}")
 def get_report(slug: str):
     """Get full intelligence report for a miner model."""
-    report = build_report(slug)
-    if not report:
-        slug_lower = slug.lower().replace(' ', '-').replace('+', 'plus')
-        report = build_report(slug_lower)
-    if not report:
-        return JSONResponse(status_code=404, content={"error": f"Model '{slug}' not found", "available": len(MODEL_LIST)})
-    return report
+    try:
+        report = build_report(slug)
+        if not report:
+            slug_lower = slug.lower().replace(' ', '-').replace('+', 'plus')
+            report = build_report(slug_lower)
+        if not report:
+            return JSONResponse(status_code=404, content={"error": f"Model '{slug}' not found", "available": len(MODEL_LIST)})
+        return report
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"error": f"Report generation error: {str(e)}", "slug": slug})
 
 @app.get("/api/report/{slug}/html")
 def get_report_html(slug: str):
     """Get intelligence report rendered as full HTML for iframe rendering."""
-    report = build_report(slug)
-    if not report:
-        slug_lower = slug.lower().replace(' ', '-').replace('+', 'plus')
-        report = build_report(slug_lower)
-    if not report:
+    try:
+        report = build_report(slug)
+        if not report:
+            slug_lower = slug.lower().replace(' ', '-').replace('+', 'plus')
+            report = build_report(slug_lower)
+        if not report:
+            return JSONResponse(
+                status_code=404,
+                content={"html": f"<div style='color:#ff6b6b; padding:20px; font-size:16px;'>Model '{slug}' not found in Intelligence Catalog ({len(MODEL_LIST)} models available)</div>"}
+            )
+        
+        html = render_full_html(report)
+        return {"html": html}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
-            status_code=404,
-            content={"html": f"<div style='color:#ff6b6b; padding:20px; font-size:16px;'>Model '{slug}' not found in Intelligence Catalog ({len(MODEL_LIST)} models available)</div>"}
+            status_code=500,
+            content={"html": f"<div style='color:#ef4444; padding:20px; font-size:16px;'>Report generation error for '{slug}': {str(e)}</div>",
+                     "error": str(e)}
         )
-    
-    html = render_full_html(report)
-    return {"html": html}
 
 
 # ── HTML Report Renderer (v2 — full 9-section report) ─────────
@@ -781,7 +829,8 @@ def _section_1_hardware(report: dict) -> str:
         v_rows = ""
         for v in variants:
             eff = v.get('efficiency_j_th', 'N/A')
-            eff_color = "#10b981" if eff != 'N/A' and float(str(eff)) < 25 else "#06b6d4" if eff != 'N/A' and float(str(eff)) < 35 else "#f59e0b"
+            eff_f = _safe_float(eff, -1)
+            eff_color = "#10b981" if eff_f > 0 and eff_f < 25 else "#06b6d4" if eff_f > 0 and eff_f < 35 else "#f59e0b"
             v_rows += f"""
             <tr>
               <td style="font-weight:500;">{v.get('label','N/A')}</td>
@@ -1073,8 +1122,8 @@ def _section_5_market(report: dict) -> str:
     manufacturer = hw.get('manufacturer', '')
     
     # Determine generation and competitive positioning
-    if eff and float(str(eff)) > 0:
-        eff_val = float(str(eff))
+    eff_val = _safe_float(eff, 0)
+    if eff_val > 0:
         if eff_val < 17:
             gen = "Current Generation (Ultra-Efficient)"
             gen_color = "#10b981"
@@ -1320,8 +1369,8 @@ def _section_8_ai_analysis(report: dict) -> str:
     insights = []
     
     # Generate static insights based on available data
-    if eff:
-        eff_val = float(str(eff))
+    eff_val = _safe_float(eff, 0)
+    if eff_val > 0:
         if eff_val < 20:
             insights.append({
                 "title": "Efficiency Leadership",
@@ -1439,8 +1488,8 @@ def _section_9_recommendations(report: dict) -> str:
     recs = []
     
     # Buy/Hold/Sell recommendation
-    if eff:
-        eff_val = float(str(eff))
+    eff_val = _safe_float(eff, 0)
+    if eff_val > 0:
         if eff_val < 20:
             recs.append(("🟢", "BUY / HOLD", "Current-generation efficiency. Suitable for new deployments and worth maintaining existing fleet.", "#10b981"))
         elif eff_val < 30:

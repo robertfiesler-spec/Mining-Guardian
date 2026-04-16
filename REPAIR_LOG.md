@@ -1,5 +1,51 @@
 ---
 
+### 2026-04-16 (afternoon) · Intelligence Report v2.1.1 — fix 500 errors on sparse model data
+
+**What Bobby reported:**
+During a demo, searching for models like "teraflux-ah3880" returned "Error: HTTP Error 500: Internal Server Error" instead of a proper report or friendly error message. Multiple models were crashing.
+
+**Root causes found:**
+
+1. **Unsafe `float()` calls** — Four places in the HTML renderer tried `float(str(eff))` on efficiency values that could be `None`, `'N/A'`, or empty strings. This crashed the entire report generation with a ValueError.
+   - Variants table efficiency color (line ~784)
+   - Market context section (line ~1076)
+   - AI analysis section (line ~1349)
+   - Recommendations section (line ~1468)
+
+2. **Duplicate slug not merging** — `teraflux-ah3880` (had specs, no enrichment) and `auradine-teraflux-ah3880` (had enrichment, no specs) were two separate entries that should have been one. The slug merge logic only matched when normalized slugs were identical, but these had different manufacturer prefixes.
+
+3. **No error boundary** — When `render_full_html()` crashed, FastAPI returned a raw 500 to the dashboard proxy, which showed a generic error. The proxy also couldn't read the error body from HTTP error responses.
+
+**What we changed:**
+
+**FIX 1: Safe float helper**
+- Added `_safe_float(val, default)` utility function that handles None, empty strings, 'N/A', and non-numeric values
+- Replaced all 4 unsafe `float(str(eff))` calls with `_safe_float(eff, 0)`
+- No more ValueErrors on sparse model data
+
+**FIX 2: Improved slug merge — suffix matching**
+- Added second-pass merge that detects when one slug is a suffix of another (e.g. `terafluxah3880` is suffix of `auradineTerafluxah3880`)
+- These are now merged as duplicates, combining specs + enrichment into one entry
+- Also improved display_name preference: picks the longest (most descriptive) name
+- Model count: 226 → 225 (one additional genuine duplicate caught)
+
+**FIX 3: Error boundaries on both APIs**
+- `get_report_html()` now has try/except — returns styled error HTML instead of 500
+- `get_report()` now has try/except — returns JSON error instead of 500
+- `dashboard_api.py` proxy now reads error response body from the intelligence API instead of showing generic "HTTP Error 500"
+- Users see helpful messages like "Report generation error for 'xyz': ..." instead of blank 500s
+
+**Files changed:**
+- `api/intelligence_report_api.py` — version 2.1.0 → 2.1.1, 4 float fixes, merge improvement, error boundaries
+- `api/dashboard_api.py` — proxy error handling reads response body from 4xx/5xx
+
+**Commit:** (pending Bobby's VPS pull + restart)
+
+**Verification:** Local test confirms teraflux-ah3880 renders 25,138 chars of HTML successfully. All 4 test models (AH3880, S21, M60, S19J Pro) render without errors.
+
+---
+
 ### 2026-04-16 (morning) · Intelligence Report v2.1 — live BTC data + correction rules engine
 
 **What Bobby reported:**

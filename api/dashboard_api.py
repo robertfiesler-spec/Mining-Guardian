@@ -2566,17 +2566,24 @@ def render_intelligence_report(slug: str):
     try:
         url = f"{_REPORT_API}/api/report/{slug}/html"
         req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            if "html" in data:
-                # Wrap in a full HTML page with dark background matching Grafana
-                return f"""<!DOCTYPE html>
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as he:
+            # Read the error body — intelligence_report_api returns JSON with html/error keys even on 4xx/5xx
+            try:
+                data = json.loads(he.read().decode())
+            except Exception:
+                data = {"error": f"HTTP {he.code}: {he.reason}"}
+        if "html" in data:
+            # Wrap in a full HTML page with dark background matching Grafana
+            return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
   body {{ margin:0; padding:0; background:#181b1f; color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; }}
 </style></head><body>{data['html']}</body></html>"""
-            elif "error" in data:
-                return f'<html><body style="background:#181b1f;color:#ef4444;text-align:center;padding:40px;">{data["error"]}</body></html>'
-            return '<html><body style="background:#181b1f;color:#94a3b8;text-align:center;padding:40px;">No report data</body></html>'
+        elif "error" in data:
+            return f'<html><body style="background:#181b1f;color:#ef4444;text-align:center;padding:40px;font-size:16px;">{data["error"]}</body></html>'
+        return '<html><body style="background:#181b1f;color:#94a3b8;text-align:center;padding:40px;">No report data</body></html>'
     except Exception as e:
         return f'<html><body style="background:#181b1f;color:#ef4444;text-align:center;padding:40px;">Error: {str(e)}</body></html>'
 
