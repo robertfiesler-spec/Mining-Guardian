@@ -486,14 +486,21 @@ def get_fleet_data(model_name: str) -> dict:
         miners = []
         for mid, hw in miner_map.items():
             state = state_rows.get(mid, {})
+            # hashrate_medium is in GH/s — convert to TH/s
+            hr_ghs = state.get('hashrate_medium', 0) or 0
+            hr_ths = round(hr_ghs / 1000, 1)
+            # miner_status: 0 = online/normal, 3/6 = issue states
+            status_code = state.get('miner_status')
+            status = 'online' if status_code == 0 and state else 'offline'
             miners.append({
                 'ip': hw.get('ip') or state.get('ip', ''),
                 'model': hw.get('model', ''),
                 'miner_id': mid,
-                'hashrate_ths': state.get('hashrate_medium', 0) or 0,
+                'hashrate_ths': hr_ths,
                 'chip_temp': state.get('max_temp_chip', 0) or 0,
                 'power_w': state.get('max_consumption', 0) or 0,
-                'status': 'online' if state.get('miner_status') == 1 else 'offline',
+                'status': status,
+                'status_code': status_code,
                 'last_scan': state.get('scanned_at', ''),
                 'firmware': state.get('worker_version', '')
             })
