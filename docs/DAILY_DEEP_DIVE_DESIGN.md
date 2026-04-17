@@ -293,3 +293,40 @@ The pre/post restart comparison merge in `train_cohort.py` (the `TEMP_MAY_REMOVE
 - If you grep `# TEMP_MAY_REMOVE` in the codebase, you will find the restart comparison merge block in `train_cohort.py`. **That block goes away on May arrival. This daily deep dive does NOT.** Do not conflate them.
 - If you grep `daily_deep_analyses` in the codebase, you should find: (1) this file (`daily_deep_dive.py`) writing to the key, (2) the merge block in `train_cohort.py` reading from the key (pending tomorrow's commit), (3) the design doc you are reading now.
 - If a future session proposes removing the daily deep dive, STOP and read the REPAIR_LOG.md entry for this feature, the May Migration Changes section of CLAUDE.md, and the SESSION_LOG for April 9, 2026. The deep dive was explicitly built to close a silent gap (reactive-only LLM) and is intended to run forever.
+
+---
+
+## Prompt Size Cap (Added 2026-04-16)
+
+### Problem
+Some miners accumulate massive log files (5MB+) that generate prompts of 66K-86K characters. These take 60-90 minutes per miner to analyze, causing the entire deep dive to run for many hours.
+
+### Solution
+Added MAX_PROMPT_CHARS = 45000 (~12K tokens) cap in ai/daily_deep_dive.py.
+
+### Behavior
+- Miners with prompts > 45K chars are automatically SKIPPED
+- Skip marker file written for resume safety:
+  ```json
+  {
+    "miner_id": "53499",
+    "skipped": true,
+    "skip_reason": "prompt too large: 86153 chars"
+  }
+  ```
+- Log message: "SKIPPED — prompt too large (86153 chars > 45000 max)"
+
+### Why 45K?
+- 45K chars ≈ 12K tokens
+- Fits comfortably in Qwen's 32K context window
+- Leaves room for system prompt and output
+- Still provides substantial analysis capability
+- Typical analysis takes 5-15 minutes at this size
+
+### Affected Miners
+Miners with large prompts typically have:
+- Very active restart history
+- Large daily logs (many events)
+- Extended error sequences in logs
+
+These miners may need manual log review or log rotation to reduce size.
