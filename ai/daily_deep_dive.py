@@ -105,6 +105,8 @@ NUM_CTX = 32768        # Qwen 2.5 32B quantized model's full context window
 NUM_PREDICT = -1       # -1 = unlimited output tokens per Ollama
 TEMPERATURE = 0.3      # low for factual analysis
 OLLAMA_TIMEOUT_SEC = 14400  # 4 hours per call
+MAX_PROMPT_CHARS = 45000   # Skip miners with prompts > 45K chars (~12K tokens)
+                           # Prevents multi-hour analysis of miners with huge logs
 
 
 # ── LLM call helper ──────────────────────────────────────────────────────
@@ -909,6 +911,23 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
             catalog_context=miner_cat_ctx,
             past_analyses=past_analyses,
         )
+
+        # Skip miners with prompts too large (would take hours)
+        if len(prompt) > MAX_PROMPT_CHARS:
+            logger.warning("[%d/%d] miner %s: SKIPPED — prompt too large (%d chars > %d max)",
+                          idx, len(online_miners), mid, len(prompt), MAX_PROMPT_CHARS)
+            # Write skip marker for resume
+            wip_file = wip_dir / f"miner_{mid}.json"
+            wip_file.write_text(json.dumps({
+                "miner_id": mid,
+                "ip": miner.get("ip"),
+                "model": miner.get("model"),
+                "timestamp": datetime.now().isoformat(),
+                "prompt_chars": len(prompt),
+                "skipped": True,
+                "skip_reason": f"prompt too large: {len(prompt)} chars",
+            }, indent=2))
+            continue
 
         analysis = query_qwen(prompt, label=f"miner {mid} ({idx}/{len(online_miners)})")
         if not analysis:
