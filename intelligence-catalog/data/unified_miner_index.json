@@ -21,7 +21,9 @@
       "Warranty": "365 days from shipment for new BTC miners (S19 and later; T21 likely included), PSU 365 days; custom firmware voids warranty [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)",
       "Sources": "[Bitmain Support Specs](https://support.bitmain.com/hc/en-us/articles/24967960325785-T21-Specifications), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [ASIC Miner Value](https://www.asicminervalue.com), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3192), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-190-t21), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s21-pro": {
     "manufacturer": "bitmain",
@@ -45,7 +47,9 @@
       "Warranty": "365 days (1 year) from shipment date for new miners",
       "Sources": "[Bitmain Support S21 Pro Spec](https://support.bitmain.com/hc/en-us/articles/31321354157593-S21-Pro-Specification), [S21 Pro Manual v204](https://cdn.webshopapp.com/shops/353164/files/466212163/s21-pro-product-manual-v204.pdf), [S21 Pro Manual 2](https://5.imimg.com/data5/SELLER/Doc/2025/6/515469297/EC/ZJ/MK/245722431/s21-pro-245th-air-cooled-bitcoin-miner.pdf), [Bitmain Warranty Policy](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central Review](https://d-central.tech/antminer-s21-pro-review/), [Bitcoin Magazine Launch](https://bitcoinmagazine.com/business/bitmain-launches-antminer-s21-pro-advanced-bitcoin-mining), [Reddit Issues](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m61": {
     "manufacturer": "microbt",
@@ -69,7 +73,9 @@
       "Warranty": "12 months (6-12 months per some resellers, factory policy varies)",
       "Sources": "[BT-Miners](https://bt-miners.com/products/whatsminer-m61-bitcoin-miner-202th-s-bt-miners/), [Bitmars](https://bitmars.io/product/microbt-whatsminer-m61-202t-btc-miner/), [Zeus Mining PSU](https://www.zeusbtc.com/ASIC-Miner-Repair/Parts-Tools-Details.asp?ID=3861), [Maxi Miners](https://maximiners.com/product/whatsminer-m61/), [Apexto](https://apextomining.com/product/microbt-whatsminer-m61-bitcoin-miner/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s21plus": {
     "manufacturer": "bitmain",
@@ -93,7 +99,9 @@
       "Warranty": "365 days manufacturer warranty",
       "Sources": "[BT-Miners specs](https://bt-miners.com/products/bitmain-antminer-s21-bitcoin-miner-216th-s-bt-miners/), [Newegg 225TH](https://www.newegg.com/p/3GG-0013-000E3), [Bitmain S21 XP specs (similar)](https://support.bitmain.com/hc/en-us/articles/35383015643673-S21-XP-Specifications), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s21+), [Asic Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s21-plus-bitcoin-miner/), [D-Central](https://d-central.tech/miners/compare/antminer-s21-vs-antminer-s21-plus/), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4957-antminer-21-series-firmware-download), [Bitmain PSU](https://support.bitmain.com/hc/en-us/articles/15909673875993-Choose-the-correct-PSU-for-popular-models-of-ANTMINER)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s21e-xp-hyd": {
     "manufacturer": "bitmain",
@@ -117,7 +125,9 @@
       "Warranty": "365 days (reseller claim); Bitmain S21 series typically 12 months",
       "Sources": "[Bitmain Support S21 XP Hyd](https://support.bitmain.com/hc/en-us/articles/34523540504857-S21-XP-Hyd-Specification), [ASIC Miner Value](https://www.asicminervalue.com/miners/bitmain/antminer-s21e-xp-hyd-430th), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21e-xp-hyd-430th-s/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-e-xp-hyd-bitcoin-miner-430th-s-bt-miners/), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s21": {
     "manufacturer": "bitmain",
@@ -181,7 +191,9 @@
       "Warranty": "365 days from Bitmain (new units)",
       "Sources": "[BT-Miners](https://bt-miners.com/products/bitmain-antminer-s23-bitcoin-miner-318th-s-bt-miners/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s23-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/rigs/antminer-s23), [Forbes](https://www.forbes.com/sites/colinharper/2025/05/31/bitmain-reveals-the-antminer-s23-the-most-powerful-bitcoin-miner-ever/), [Mineshop.eu](https://mineshop.eu/blog/mineshop-blog-tutorials/bitmain-antminer-s23-series-review-expected-to-launch-early-2026), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/1qdyjkf/i_would_not_be_suprised_if_the_s23_is_cancelled/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m61s": {
     "manufacturer": "microbt",
@@ -205,7 +217,9 @@
       "Warranty": "6-12 months from manufacturer (retailer-dependent; e.g. 6 months [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/))",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), Reddit/Bitcointalk forums"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s21plus-hyd": {
     "manufacturer": "bitmain",
@@ -229,7 +243,9 @@
       "Warranty": "365 days from shipping date for original Bitmain buyer (new units only); covers replacement shipping",
       "Sources": "[Bitmain Support S21 Hyd Specs](https://support.bitmain.com/hc/en-us/articles/26824251926681-S21-Hyd-Specification), [S21 Hyd User Guide PDF (Feb 2025)](https://file12.bitmain.com/shop-product-s3/firmware/b27218d7-1eec-4907-83c7-28e9f8437890/2025/03/20/16/S21%20Hyd.%20User%20Guide-V4.0.14.pdf), [Bitmain Mobile](https://m.bitmain.com), [LeedMiner Review](https://leedminer.com/blog/bitmain-antminer-s21-plus-hyd-the-detailed-review), [D-Central](https://d-central.tech/miners/compare/antminer-s21-hyd-vs-whatsminer-m50s/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s21-hydro-bitcoin-miner/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21-plus-hydro-319th-s/), [ZeusBTC Repair](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/5744-how-to-repair-the-antminer-s21-hydro-miner-eeprom-read-failure), [Hashrate Farm FW](https://www.hashrate.farm/mining-hub/firmwares), [Reddit Forums](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m63s": {
     "manufacturer": "microbt",
@@ -305,7 +321,9 @@
       "Warranty": "6-12 months from manufacturer (retailer-dependent) [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [Apexto](https://apextomining.com/product/microbt-whatsminer-m60s-plus-btc-miner/)",
       "Sources": "[Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [D-Central](https://d-central.tech/miners/compare/whatsminer-m60s-vs-whatsminer-m60s-plus-plus/), Reddit forums"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m63splusplus": {
     "manufacturer": "microbt",
@@ -329,7 +347,9 @@
       "Warranty": "6-12 months (manufacturer/retailer; unconfirmed official)",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [D-Central](https://d-central.tech), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), Reddit threads"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m61splus": {
     "manufacturer": "microbt",
@@ -353,7 +373,9 @@
       "Warranty": "6-12 months from manufacturer (retailer-dependent; e.g. 6 months [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), 12 months some [Apexto](https://apextomining.com/product/microbt-whatsminer-m60s-plus-btc-miner/))",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [D-Central](https://d-central.tech/miners/compare/whatsminer-m60s-vs-whatsminer-m60s-plus-plus/), Reddit/Bitcointalk forums"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m65splus": {
     "manufacturer": "microbt",
@@ -377,7 +399,9 @@
       "Warranty": "6-12 months (retailer/manufacturer; unconfirmed official)",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [D-Central](https://d-central.tech), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), Reddit threads"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s21-xp": {
     "manufacturer": "bitmain",
@@ -401,7 +425,9 @@
       "Warranty": "365 days (12 months) from dispatch; PSU 365 days; custom FW voids",
       "Sources": "[Bitmain Support Specs](https://support.bitmain.com/hc/en-us/articles/35383015643673-S21-XP-Specifications), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s21-xp), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-xp-bitcoin-miner-270th-s-bt-miners/), [D-Central](https://d-central.tech/antminer-s21-xp-specs/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21-xp-270th-s/), [OneMiners](https://oneminers.com/blogs/news/bitmain-s-antminer-s21-xp-sets-a-new-standard-with-13-5-j-th-efficiency), [Firmware sites](https://www.hashrate.farm/mining-hub/firmwares), [Troubleshooting](https://mineshop.eu/blog/asic-miner/antminer-s21-xp-troubleshooting-fixing-common-errors-step-by-step), [Warranty guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m64splus": {
     "manufacturer": "microbt",
@@ -425,7 +451,9 @@
       "Warranty": "6-12 months (manufacturer/retailer)",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/18tmnz9/how_about_the_whatsminer_m60s_who_has_experience/), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m64": {
     "manufacturer": "microbt",
@@ -449,7 +477,9 @@
       "Warranty": "6\u201312 months (retailer/manufacturer dependent)",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [HashrateIndex](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [D-Central](https://d-central.tech/whatsminer-m60s-review/), forums"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m60s": {
     "manufacturer": "microbt",
@@ -519,7 +549,9 @@
       "Warranty": "6\u201312 months (manufacturer, varies by seller)",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/18tmnz9/how_about_the_whatsminer_m60s_who_has_experience/), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s21-hyd": {
     "manufacturer": "bitmain",
@@ -583,7 +615,9 @@
       "Warranty": "365 days factory warranty from Bitmain",
       "Sources": "[BT-Miners](https://bt-miners.com/products/bitmain-antminer-s23-hyd-bitcoin-miner-580th-bt-miners/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s23-hydro-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/rigs/antminer-s23-hydro), [Mineshop.eu](https://mineshop.eu/blog/mineshop-blog-tutorials/bitmain-antminer-s23-series-review-expected-to-launch-early-2026), [Forbes](https://www.forbes.com/sites/colinharper/2025/05/31/bitmain-reveals-the-antminer-s23-the-most-powerful-bitcoin-miner-ever/), [LeedMiner](https://leedminer.com/blog/bitmain-antminer-s23-hyd-the-detailed-review), [Bitmain Shop](https://shop.bitmain.com/product)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s21-xp-hyd": {
     "manufacturer": "bitmain",
@@ -693,7 +727,9 @@
       "Warranty": "6 months (180 days) from manufacturer for new units",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m60s++)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "antminer-s21-immersion": {
     "manufacturer": "bitmain",
@@ -717,7 +753,9 @@
       "Warranty": "365 days from shipping date (by Bitmain for original purchaser; void if modified or misused)",
       "Sources": "[Bitmain S21 Imm. Specs](https://support.bitmain.com/hc/en-us/articles/35746238371097-S21-Imm-Specifications), [Bitmain S21 Imm. User Guide (Mar 2025)](https://file12.bitmain.com/shop-product-s3/firmware/951038da-b8d4-49ff-909b-c2c47de09198/2025/03/07/19/S21%20Imm.%20User%20Guide-v1.0.0.pdf), [Bitmars](https://bitmars.io/product/bitmain-antminer-s21-imm-215t-btc-miner/), [Asic Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s21-immersion-bitcoin-miner/), [Crypto Miner Bros](https://www.cryptominerbros.com/product/bitmain-antminer-s21-immersion-bitcoin-miner/), [ASIC Miner Value](https://www.asicminervalue.com/), [Reddit BitcoinMining](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/), [D-Central Firmware Guide](https://d-central.tech/antminer-firmware-update-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "whatsminer-m60splusplus": {
     "manufacturer": "microbt",
@@ -741,7 +779,9 @@
       "Warranty": "6 months (manufacturer, for new units)",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [LeedMiner](https://leedminer.com/blog/microbt-whatsminer-m60s-plus-plus-the-detailed-review), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m60s++)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m63splus": {
     "manufacturer": "microbt",
@@ -765,7 +805,9 @@
       "Warranty": "6-12 months from manufacturer (retailer-dependent)",
       "Sources": "[MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m60s-plus-190th-s/), [BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ZeusBTC](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Viperatech](https://viperatech.com/product/microbt-whatsminer-m60s-204th-212th-btc-miner), [LeedMiner](https://leedminer.com/blog/microbt-whatsminer-m60s-plus-plus-the-detailed-review), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m66s": {
     "manufacturer": "microbt",
@@ -841,7 +883,9 @@
       "Warranty": "6 months from manufacturer (new units); some resellers 180 days",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [Whatsminer Official News](https://www.whatsminer.com/src/views/news_detail.html?id=285), mining forums/Reddit discussions"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m76": {
     "manufacturer": "microbt",
@@ -865,7 +909,9 @@
       "Warranty": "6 months (180 days) from manufacturer for new units",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [LeedMiner](https://leedminer.com/blog/microbt-whatsminer-m60s-plus-plus-the-detailed-review), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/18tmnz9/how_about_the_whatsminer_m60s_who_has_experience/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "whatsminer-m72s": {
     "manufacturer": "microbt",
@@ -889,7 +935,9 @@
       "Warranty": "6 months (retailer-reported; manufacturer may vary)",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), [Reddit threads](https://www.reddit.com/r/BitcoinMining/comments/18tmnz9/how_about_the_whatsminer_m60s_who_has_experience/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m7ds": {
     "manufacturer": "microbt",
@@ -913,7 +961,9 @@
       "Warranty": "180 days hashboards / 365 days control board (MicroBT standard)",
       "Sources": "[Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m76s-plus-bitcoin-miner/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3961), [Hashrate Index](https://hashrateindex.com/blog/microbt-reveals-the-whatsminer-m70-series/), [ASIC Miner Value](https://www.asicminervalue.com/miners/microbt/whatsminer-m76s-plus), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m76s-plus-390th-vs-microbt-whatsminer-m76s-362th), [Mineshop RMA Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m70": {
     "manufacturer": "microbt",
@@ -977,7 +1027,9 @@
       "Warranty": "365 days (new units)",
       "Sources": "[AsicMarketplace](https://asicmarketplace.com/product/bitmain-antminer-s21e-xp-hydro-3u-btc-miner/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21e-xp-hyd-3u-bitcoin-miner-860th-s-bt-miners/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21e-xp-hyd-3u-860th-s/), [ASIC Miner Value](https://www.asicminervalue.com/), [Bitmain.com](https://www.bitmain.com), [D-Central](https://d-central.tech/antminer-s21-xp-review/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m73s": {
     "manufacturer": "microbt",
@@ -1001,7 +1053,9 @@
       "Warranty": "6 months from manufacturer (new units); some resellers 180 days",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [Whatsminer Official News](https://www.whatsminer.com/src/views/news_detail.html?id=285&amp;title=Spot+Sale+of+M60S++Series%21)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m66splus": {
     "manufacturer": "microbt",
@@ -1025,7 +1079,9 @@
       "Warranty": "6 months (new miners, per resellers); official may vary up to 1 year",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m60s++), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), [Whatsminer Official News](https://www.whatsminer.com/src/views/news_detail.html?id=285&amp;title=Spot+Sale+of+M60S++Series%21)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "whatsminer-m72": {
     "manufacturer": "microbt",
@@ -1049,7 +1105,9 @@
       "Warranty": "6 months (new miners from resellers); official may vary",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m60s++)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m70splus": {
     "manufacturer": "microbt",
@@ -1073,7 +1131,9 @@
       "Warranty": "6 months (new units from resellers); manufacturer may vary",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m60s++), [LeedMiner](https://leedminer.com/blog/microbt-whatsminer-m60s-plus-plus-the-detailed-review), mining forums/Reddit (no major issues)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m70s": {
     "manufacturer": "microbt",
@@ -1137,7 +1197,9 @@
       "Warranty": "6 months (new miners, manufacturer)",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [LeedMiner](https://leedminer.com/blog/microbt-whatsminer-m60s-plus-plus-the-detailed-review), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m60s++)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "whatsminer-m73": {
     "manufacturer": "microbt",
@@ -1247,7 +1309,9 @@
       "Warranty": "365 days from shipping (original purchaser from Bitmain)",
       "Sources": "[Bitmain Shop](https://shop.bitmain.com/product/detail?pid=00020250415165203914Mlh3dx1h06BB), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21e-hyd-bitcoin-miner-288th-bt-miners/), [LeedMiner Review](https://leedminer.com/blog/bitmain-antminer-s21e-hyd-the-detailed-review), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21e-hyd-288th-s/)\""
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s23-hydro-3u": {
     "manufacturer": "bitmain",
@@ -1271,7 +1335,9 @@
       "Warranty": "365 days (Bitmain factory warranty)",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s23-hydro-3u-bitcoin-miner/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s23-hyd-3u-bitcoin-miner-1-16ph-s-bt-miners/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s23-hyd-3u-1160th-s/), [ASIC Miner Value](https://www.asicminervalue.com), [Bitmain](https://m.bitmain.com), [Mineshop.eu](https://mineshop.eu/blog/mineshop-blog-tutorials/bitmain-antminer-s23-series-review-expected-to-launch-early-2026), [Forbes](https://www.forbes.com/sites/colinharper/2025/05/31/bitmain-reveals-the-antminer-s23-the-most-powerful-bitcoin-miner-ever/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s23-immersion": {
     "manufacturer": "bitmain",
@@ -1295,7 +1361,9 @@
       "Warranty": "365 days",
       "Sources": "[Asic Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s23-immersion-bitcoin-miner/), [D-Central](https://d-central.tech/miners/antminer-s23-immersion-442th/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s23-imm-bitcoin-miner-442th-s-bt-miners/), [Bitmars](https://bitmars.io/product/bitmain-antminer-s23-imm-442t-btc-miner/), [ASIC Miner Value](https://www.asicminervalue.com), [Blockspace](https://blockspace.media/insight/bitmain-releases-antminer-s23-hydro-at-2025-world-digital-mining-summit/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "antminer-s21-xp-immersion": {
     "manufacturer": "bitmain",
@@ -1319,7 +1387,9 @@
       "Warranty": "365 days manufacturer (reseller listings)",
       "Sources": "[Bitmain Support S21 XP](https://support.bitmain.com/hc/en-us/articles/35383015643673-S21-XP-Specifications), [Bitmain Shop](https://m.bitmain.com), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-xp-imm-bitcoin-miner-300th-s-bt-miners/), [AsicMarketplace](https://asicmarketplace.com/product/bitmain-antminer-s21-xp-immersion-bitcoin-miner/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/bitmain--antminer-s21-xp-immersion-300th,bitmain--antminer-s21-hyd-335th), [Bitmars](https://bitmars.io/product/bitmain-antminer-s21-xp-imm-300t-btc-miner/), [D-Central](https://d-central.tech/antminer-s21-xp-specs/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s21-xp-immersion), [Vnish Firmware](https://vnish.farm/en/firmware/antminer_s21xp), [Forum Issues](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "whatsminer-m6dsplus": {
     "manufacturer": "microbt",
@@ -1343,7 +1413,9 @@
       "Warranty": "6 months (180 days) from manufacturer for new units",
       "Sources": "[BT-Miners](https://bt-miners.com/products/microbt-whatsminer-m60s-bitcoin-miner-226th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m60s-plus-plus,bitmain--antminer-s9-13th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m60s-plus-plus/), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m60s-plus-plus-bitcoin-miner/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3661), [Whatsminer Shop](https://shop.whatsminer.com/zh-CN/products/details/74?skuId=169), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m60-and-m60s-profitability-guide/), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/18tmnz9/how_about_the_whatsminer_m60s_who_has_experience/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "antminer-s21-xpplus-hyd": {
     "manufacturer": "bitmain",
@@ -1367,7 +1439,9 @@
       "Warranty": "365 days manufacturer",
       "Sources": "[Bitmain Support S21 XP Hyd](https://support.bitmain.com/hc/en-us/articles/34523540504857-S21-XP-Hyd-Specification), [BT-Miners S21 XP+ Hyd](https://bt-miners.com/products/bitmain-antminer-s21-xp-hyd-bitcoin-miner-500th-s-bt-miners/), [D-Central Review](https://d-central.tech/antminer-s21-xp-review/), [Apexto Mining](https://apextomining.com/product/bitmain-antminer-s21-xp-plus-hyd-bitcoin-miner-hydro-cooling/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21-xp-plus-hyd-500th-s/), [Hashrate Index](https://hashrateindex.com/rigs/s21-xp-hyd-)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "avalon-a15xp": {
     "manufacturer": "canaan",
@@ -1391,7 +1465,9 @@
       "Warranty": "360-day manufacturer warranty from pickup date ([Canaan Official Shop](https://shop.canaan.io/products/avalon-miner-a15xp-206t)); check via SN on [Canaan warranty page](https://www.canaan.io/support/warranty_check)",
       "Sources": "[Canaan Shop](https://shop.canaan.io/products/avalon-miner-a15xp-206t), [PR Newswire](https://www.prnewswire.com/news-releases/canaan-inc-secures-a15xp-order-from-new-united-states-customer-302342760.html), [ASIC Marketplace](https://asicmarketplace.com/product/canaan-avalon-a15xp-bitcoin-miner/), [LeedMiner](https://www.leedminer.com/blog/canaan-avalon-a15xp-206t-the-detailed-review), [Hashrate Index](https://hashrateindex.com/rigs/canaan-a15xp-212th), [D-Central](https://d-central.tech/fr/miners/compare/avalon-a15xp-206t-vs-t21-190th/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m76s": {
     "manufacturer": "microbt",
@@ -1415,7 +1491,9 @@
       "Warranty": "Hashboards: 180 days; Control board/PSU/fans: 365/180 days from manufacture date (MicroBT standard)",
       "Sources": "[Hashrate Index](https://hashrateindex.com/blog/microbt-reveals-the-whatsminer-m70-series/), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m76s-plus-390th-vs-microbt-whatsminer-m76s-362th), [ASIC Miner Value](https://www.asicminervalue.com/maners/compare/microbt--whatsminer-m76s,microbt--whatsminer-m6ds-plus), [MillionMiner](https://www.millionminer.com/index.php/product/asic-miner/microbt-whatsminer-m76s-362th), [Mineshop RMA Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "avalon-a1566": {
     "manufacturer": "canaan",
@@ -1479,7 +1557,9 @@
       "Warranty": "Standard MicroBT: 180 days hashboards/PSU/fans, 365 days control board (from manufacture date)",
       "Sources": "[Hashrate Index](https://hashrateindex.com/rigs/m78), [Minerfixes](https://m.minerfixes.com/shop/view?key=70E181E8B3AB5D90), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m78-440th-vs-microbt-whatsminer-m73s-500th), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m78s-bitcoin-miner/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3962), [Mineshop.eu Warranty Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "avalon-a15-pro": {
     "manufacturer": "canaan",
@@ -1543,7 +1623,9 @@
       "Warranty": "365 days from Bitmain (manufacturer); reports of poor support/repairs [Bitmain User Guide](https://file12.bitmain.com/shop-product-s3/firmware/0d06629d-803e-4f6b-8f9a-c09abe7466e4/2025/01/20/14/S21%20XP%20Hyd.%20User%20Guide-V4.0.12.pdf), [ASIC Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s21j-xp-hydro-bitcoin-miner/)",
       "Sources": "[Bitmain Support](https://support.bitmain.com/hc/en-us/articles/34523540504857-S21-XP-Hyd-Specification), [Bitmain User Guide PDF](https://file12.bitmain.com/shop-product-s3/firmware/0d06629d-803e-4f6b-8f9a-c09abe7466e4/2025/01/20/14/S21%20XP%20Hyd.%20User%20Guide-V4.0.12.pdf), [ASIC Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s21j-xp-hydro-bitcoin-miner/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s21j-xp-hydro-bitcoin-miner/), [D-Central](https://d-central.tech/antminer-s21-xp-review/), [Alibaba](https://www.alibaba.com/product-detail/Bitcoin-Miner-Bitmain-Antminer-S21j-XP_1601667776205.html), [Reddit](https://www.reddit.com/r/BITMAIN/comments/1jdafrv/bitmain_officially_released_2025_q4_batch/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "avalon-q": {
     "manufacturer": "canaan",
@@ -1567,7 +1649,9 @@
       "Warranty": "360 days manufacturer (covers non-human damage; fans vulnerable)",
       "Sources": "[BT-Miners](https://bt-miners.com/products/canaan-avalon-q-bitcoin-miner-90th-s-bt-miners/), [ASIC Marketplace](https://asicmarketplace.com/product/canaan-avalon-q-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/rigs/avalon-q), [Canaan Shop](https://shop.canaan.io/products/avalon-q-1), [Mineshop](https://mineshop.eu/blog/mineshop-blog-tutorials/canaan-avalon-q-miner-delivery-delayed-what-customers-should-know), [YouTube Review](https://www.youtube.com/watch?v=7MYY5MiHhEk), [BitcoinTalk](https://bitcointalk.org/index.php?topic=5556678.0), [Mineshop Firmware](https://mineshop.eu/blog/mineshop-blog-tutorials/how-to-update-firmware-avalon-nano-3s-mini-3-q-2025-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m76splus": {
     "manufacturer": "microbt",
@@ -1591,7 +1675,9 @@
       "Warranty": "MicroBT standard: 365 days control board, 180 days hashboards/PSU/fans from manufacture date [Mineshop](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)",
       "Sources": "[Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m76s-plus-bitcoin-miner/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3961), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m76s-plus-390th-vs-microbt-whatsminer-m76s-362th), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/bitdeer--sealminer-a3-pro-hydro,microbt--whatsminer-m76s-plus), [Hashrate Index](https://hashrateindex.com/blog/microbt-reveals-the-whatsminer-m70-series/), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m76s-vs-whatsminer-m79/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "avalon-a1566i": {
     "manufacturer": "canaan",
@@ -1655,7 +1741,9 @@
       "Warranty": "365 days from shipment (Bitdeer); ASIC Marketplace: 180-365 days",
       "Sources": "[Bitdeer Official](https://www.bitdeer.com/shop/product/P260328000003), [Bitdeer A4 Series](https://www.bitdeer.com/shop/sealminer/a4), [ASIC Marketplace](https://asicmarketplace.com/product/bitdeer-sealminer-a4-ultra-hydro-bitcoin-miner/), [Apexto Mining](https://apextomining.com/product/bitdeer-sealminer-a4-ultra-hydro/), [Hashrate Index](https://hashrateindex.com/blog/bitdeer-announces-the-sealminer-a4-series/), [Bitcoin.com News](https://news.bitcoin.com/sealminer-a4-series-debuts-as-bitdeer-hits-new-bitcoin-mining-efficiency-record/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "sealminer-a4-pro-air": {
     "manufacturer": "bitdeer",
@@ -1679,7 +1767,9 @@
       "Warranty": "Per sales agreement; typically 6-12 months from production (resellers); see after-sales policy for RMA",
       "Sources": "[Bitdeer Official](https://www.bitdeer.com/shop/sealminer/a4), [GlobeNewswire Press Release](https://www.globenewswire.com/news-release/2026/04/07/3269133/0/en/Bitdeer-Launches-SEALMINER-A4-Series-Bitcoin-Mining-Rigs-Achieves-a-Power-Efficiency-of-9-45-J-TH.html), [Apexto Mining](https://apextomining.com/product/bitdeer-sealminer-a4-pro-air/), [Woyouminer](https://www.woyouminer.com/product/bitdeer-sealminer-a4-pro-air-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/blog/bitdeer-announces-the-sealminer-a4-series/), [NiceHash](https://www.nicehash.com/blog/post/bitdeer-sealminer-a4-specs-electricity-costs-and-what-it-earns), [Bitdeer After-Sales](https://www.bitdeer.com/shop/after-sales-policy)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m7d": {
     "manufacturer": "microbt",
@@ -1703,7 +1793,9 @@
       "Warranty": "MicroBT standard: 180 days hashboards/PSU/fans, 365 days control board (from manufacture date)",
       "Sources": "[Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m76s-plus-bitcoin-miner/), [Hashrate Index](https://hashrateindex.com/rigs/m76s-), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/bitdeer--sealminer-a2,microbt--whatsminer-m76s-plus), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m72-246th-vs-microbt-whatsminer-m76s-plus-390th), [D-Central](https://d-central.tech/fr/miners/whatsminer-m76s/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3961), [Mineshop Warranty Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "avalon-a1566ha-2u": {
     "manufacturer": "canaan",
@@ -1727,7 +1819,9 @@
       "Warranty": "365 days from manufacturer (resellers); check Canaan sales page for exact; voids for unauthorized FW/overclocking/DIY repair [BT-Miners](https://bt-miners.com/products/canaan-avalon-a1566ha-2u-480t-bitcoin-hydro-miner-bt-miners/), [CryptoMinerBros](https://www.cryptominerbros.com/product/canaan-avalon-a1566ha-hydro-bitcoin-miner/), [Canaan Warranty](https://help.canaan.io/hc/en-us/articles/6058550579737-After-Sales-Repair-Service-Policy)",
       "Sources": "[Canaan Shop](https://shop.canaan.io/products/avalon-miner-a1566ha-460t), [BT-Miners](https://bt-miners.com/products/canaan-avalon-a1566ha-2u-480t-bitcoin-hydro-miner-bt-miners/), [D-Central](https://d-central.tech/miners/avalon-a1566ha-2u/), [AsicProfit](https://www.asicprofit.com/miners/canaan/avalon-a1566ha), [Hashrate Index](https://hashrateindex.com/rigs/a1566ha), [Canaan Warranty](https://help.canaan.io/hc/en-us/articles/6058550579737-After-Sales-Repair-Service-Policy), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/canaan), [Apexto Mining](https://apextomining.com/product/canaan-avalon-a1566ha-2u-bitcoin-miner/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "sealminer-a3-pro-hydro": {
     "manufacturer": "bitdeer",
@@ -1751,7 +1845,9 @@
       "Warranty": "Model-specific per Bitdeer PSA (resellers: 12 months shipped / 7 years hosted)",
       "Sources": "[Bitdeer A3](https://www.bitdeer.com/shop/sealminer/a3), [GlobeNewswire Sep 2025](https://www.globenewswire.com/news-release/2025/09/16/3150958/0/en/Bitdeer-Launches-SEALMINER-A3-Series-Bitcoin-Mining-Machines-Achieves-a-Power-Efficiency-of-12-5-J-TH.html), [AsicMarketplace](https://asicmarketplace.com/product/bitdeer-sealminer-a3-pro-air-bitcoin-miner/), [Apexto](https://apextomining.com/product/bitdeer-sealminer-a3-pro-air-bitcoin-miner/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitdeer-sealminer-a3-pro-air-bitcoin-miner/), [Bitdeer Policy](https://www.bitdeer.com/shop/after-sales-policy)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m79": {
     "manufacturer": "microbt",
@@ -1775,7 +1871,9 @@
       "Warranty": "12 months manufacturer (alt. standard MicroBT: hashboards 180 days, control board 365 days)",
       "Sources": "[Hashrate Index](https://hashrateindex.com/blog/microbt-reveals-the-whatsminer-m70-series/), [Hashrate Index Rig](https://hashrateindex.com/rigs/m79), [MillionMiner](https://www.millionminer.com/microbt-whatsminer-m79-870th-s-bitcoin-sha256-miner-new.html), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m79-870th-vs-microbt-whatsminer-m72-246th), [Alibaba](https://www.alibaba.com/product-detail/MicroBT-Whatsminer-M79-870TH-s-14000W_1601659884361.html), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m76s-vs-whatsminer-m79/), [Mineshop.eu](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "sealminer-a3-hydro": {
     "manufacturer": "bitdeer",
@@ -1799,7 +1897,9 @@
       "Warranty": "365 days from manufacturer (per resellers/Bitdeer policy)",
       "Sources": "[Bitdeer Launch](https://www.globenewswire.com/news-release/2025/09/16/3150958/0/en/Bitdeer-Launches-SEALMINER-A3-Series-Bitcoin-Mining-Machines-Achieves-a-Power-Efficiency-of-12-5-J-TH.html), [ASIC Marketplace](https://asicmarketplace.com/product/bitdeer-sealminer-a3-pro-air-bitcoin-miner/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitdeer-sealminer-a3-pro-air-bitcoin-miner/), [Bitdeer A3 Page](https://www.bitdeer.com/shop/sealminer/a3), [Bitdeer Policy](https://www.bitdeer.com/shop/after-sales-policy)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "avalon-mini-3": {
     "manufacturer": "canaan",
@@ -1823,7 +1923,9 @@
       "Warranty": "6-12 months from factory (varies by reseller; check SN on Canaan site)",
       "Sources": "[Canaan Shop](https://shop.canaan.io/products/avalon-mini-3), [AsicMarketplace](https://asicmarketplace.com/product/canaan-avalon-mini-3-bitcoin-miner/), [BT-Miners](https://bt-miners.com/products/canaan-avalon-mini-3-bitcoin-miner-37-5th-s-bt-miners/), [Bitmars](https://bitmars.io/product/canaan-avalon-mini-3-btc-miner-37-5t/), [Hashrate Index](https://hashrateindex.com/blog/canaan-avalon-mini-3-your-home-base-for-hash-heating/), [ASIC Miner Value](https://www.asicminervalue.com), [Reddit BitcoinMining](https://www.reddit.com/r/BitcoinMining/comments/1j5v6uu/avalon_mini_3_issues/), [Canaan Support](https://support.canaan.io)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "sealminer-dl1-air": {
     "manufacturer": "bitdeer",
@@ -1847,7 +1949,9 @@
       "Warranty": "Unconfirmed (standard Bitdeer after-sales support)",
       "Sources": "[Bitdeer Official](https://www.bitdeer.com/shop/sealminer/dl1/air), [GlobeNewswire Press Release March 16 2026](https://www.globenewswire.com/news-release/2026/03/16/3256284/0/en/Bitdeer-Launches-SEALMINER-DL1-Air-Achieving-149-J-GH-Power-Efficiency-and-25-GH-s-for-Scrypt-Mining.html), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitdeer-sealminer-dl1-air-dogecoin-miner/), [ASIC Miner Value](https://www.asicminervalue.com/efficiency/scrypt), [WhatToMine](https://whattomine.com/asics/399-bitdeer-sealminer-dl1-air)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "sealminer-a2-pro-air": {
     "manufacturer": "bitdeer",
@@ -2009,7 +2113,9 @@
       "Warranty": "180 days hashboards/PSU/fans, 365 days control board (standard MicroBT; retailer 6-12 months)",
       "Sources": "[Hashrate Index](https://hashrateindex.com/blog/microbt-reveals-the-whatsminer-m70-series/), [Apexto Mining](https://apextomining.com/product/microbt-whatsminer-m78s-bitcoin-miner/), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m78s-bitcoin-miner/), [ASIC Miner Value](https://www.asicminervalue.com/miners/compare/microbt--whatsminer-m78s,strongu--stu-u8-pro), [AsicMarketplace](https://asicmarketplace.com/product/microbt-whatsminer-m78s-bitcoin-miner/), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m78s-472th-vs-microbt-whatsminer-m72s-264th), [Mineshop RMA Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "sealminer-a2-hyd": {
     "manufacturer": "bitdeer",
@@ -2033,7 +2139,9 @@
       "Warranty": "180-365 days manufacturer (varies by reseller; exact per PSA)",
       "Sources": "[Bitdeer Official](https://www.bitdeer.com/announcement/new-release-sealminer-a2-pro--achieves-power-efficiency-ratio-of-149-jth), [Asic Marketplace](https://asicmarketplace.com/product/bitdeer-sealminer-a2-pro-air-bitcoin-miner/), [GlobeNewswire](https://www.globenewswire.com/news-release/2025/03/17/3043664/0/en/Bitdeer-Launches-SEALMINER-A2-Pro-Bitcoin-Mining-Machines.html), [Bitmars](https://bitmars.io/product/bitdeer-sealminer-a2-pro-air-255t-bitcoin-miner/), [Altair Tech](https://altairtech.io/product/bitdeer-sealminer-a2-pro/), [Hashrate Index](https://hashrateindex.com/rigs/a2-pro-air), [BT-Miners](https://bt-miners.com/products/bitdeer-sealminer-a2-pro-hyd-bitcoin-miner-500th-s-bt-miners/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s23e-hyd-2u": {
     "manufacturer": "bitmain",
@@ -2057,7 +2165,9 @@
       "Warranty": "365 days (manufacturer); up to 7 years via hosting providers",
       "Sources": "[Bitmain official](https://www.bitmain.com/news-detail/bitmain-launches-antminer-s23e-u2h-432), [ASIC Miner Value](https://www.asicminervalue.com/miners/bitmain/antminer-s23e-hyd-u2h-865th), [OneMiners](https://oneminers.com/products/bitmain-antminer-s23e-hyd-2u-865-th-s), [AsicMarketplace](https://asicmarketplace.com/product/bitmain-antminer-s23e-hydro-2u-bitcoin-miner/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s23e-hydro-2u-bitcoin-miner/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3976)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "sealminer-a4-ultra-hydro": {
     "manufacturer": "bitdeer",
@@ -2081,7 +2191,9 @@
       "Warranty": "365 days from shipment date (user pays shipping to service center)",
       "Sources": "[Bitdeer Official](https://www.bitdeer.com/shop/product/P260328000003), [Asic Marketplace](https://asicmarketplace.com/product/bitdeer-sealminer-a4-ultra-hydro-bitcoin-miner/), [Apexto Mining](https://apextomining.com/product/bitdeer-sealminer-a4-ultra-hydro/), [Hashrate Index](https://hashrateindex.com/blog/bitdeer-announces-the-sealminer-a4-series/), [Bitcoin.com News](https://news.bitcoin.com/sealminer-a4-series-debuts-as-bitdeer-hits-new-bitcoin-mining-efficiency-record/), [Nasdaq PR](https://www.nasdaq.com/press-release/bitdeer-launches-sealminer-a4-series-bitcoin-mining-rigs-achieves-power-efficiency)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "sealminer-a2-pro-hyd": {
     "manufacturer": "bitdeer",
@@ -2191,7 +2303,9 @@
       "Warranty": "360 days from first registration (per reseller); manufacturer typically 180-365 days, contact avalonsupport@canaan.io",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/canaan-avalon-nano-3s-home-miner-6th-s/), [DCE Miner](https://dceminer.com/products/avalon-nano3s), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/canaan), [Hashrate Index](https://hashrateindex.com/blog/canaan-avalon-nano-3s-humble-heater-gets-a-hashrate-upgrade/), [MiningNow](https://miningnow.com/asic-miner/canaan-avalon-nano-3s-6th-s/), [Bitcointalk](https://bitcointalk.org/index.php?topic=5521037.60), [Canaan Help](https://help.canaan.io/hc/en-us/articles/6058550579737-After-Sales-Repair-Service-Policy)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "auradine-teraflux-ah3880": {
     "manufacturer": "auradine",
@@ -2215,7 +2329,9 @@
       "Warranty": "365 days (reseller); official unspecified",
       "Sources": "[Auradine Datasheet PDF](https://velaura.ai/wp-content/uploads/2025/09/Teraflux\u2122-AT2880-Data-Sheet.pdf), [HashrateIndex](https://hashrateindex.com/rigs/at2880), [EZ Blockchain](https://ezblockchain.net/hardware/auradine-teraflux-at2880/), [Global Sources](https://www.globalsources.com/Blockchain-miner/Auradine-Teraflux-AT2880-1228716918p.htm), [Auradine Announcement](https://www.globenewswire.com/news-release/2023/11/14/2780158/0/en/Auradine-Unveils-Next-Generation-Teraflux-Bitcoin-Miners-Setting-New-Benchmarks-for-Efficient-and-Sustainable-Mining.html), [Firmware](https://update.auradine.com), [D-Central](https://d-central.tech/miners/compare/auradine-teraflux-at2880-vs-ebit-e10/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "auradine-teraflux-at2880": {
     "manufacturer": "auradine",
@@ -2239,7 +2355,9 @@
       "Warranty": "365 days (reseller; official unconfirmed)",
       "Sources": "[Auradine AT2880 Datasheet](https://velaura.ai/wp-content/uploads/2025/09/Teraflux\u2122-AT2880-Data-Sheet.pdf), [Hashrate Index](https://hashrateindex.com/rigs/at2880), [EZ Blockchain](https://ezblockchain.net/hardware/auradine-teraflux-at2880/), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/auradine), [Auradine Announcement July 2024](https://finance.yahoo.com/news/auradine-announces-shipments-world-fastest-130000755.html), [AsicProfit](https://www.asicprofit.com/miners/auradine/teraflux-at2880), [Auradine Firmware](https://update.auradine.com)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m79s": {
     "manufacturer": "microbt",
@@ -2263,7 +2381,9 @@
       "Warranty": "180-365 days manufacturer (resellers); 12 months [OneMiners](https://oneminers.com/products/whatsminer-m79s-1-35-ph-s)",
       "Sources": "[Hashrate Index](https://hashrateindex.com/rigs/m79s), [Lianliwork](https://www.lianliwork.com/products_detail/c-_detailId=1487141283757043712.html), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m79s-bitcoin-miner/), [Asic Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m79s-bitcoin-miner/), [MinerCompare](https://minercompare.com/compare/microbt-whatsminer-m79s-930th-vs-microbt-whatsminer-m79-870th), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m79-vs-whatsminer-m79s/), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), [ASIC Miner Value](https://www.asicminervalue.com)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "avalon-a16": {
     "manufacturer": "canaan",
@@ -2287,7 +2407,9 @@
       "Warranty": "360 days from manufacture date (factory warranty) [Altair Tech](https://altairtech.io/product/canaan-avalon-a16/)",
       "Sources": "[Canaan Shop](https://shop.canaan.io/products/avalon-miner-a16-282t), [PR Newswire](https://www.prnewswire.com/news-releases/canaan-inc-unveils-next-gen-avalon-a16-series-bitcoin-mining-machine-featuring-breakthrough-asic-chip-302596838.html), [Hashrate Index Review](https://hashrateindex.com/blog/hardware-review-canaans-a16-series/), [Altair Tech](https://altairtech.io/product/canaan-avalon-a16/), [CryptoMinerBros](https://www.cryptominerbros.com/product/canaan-avalon-a16-bitcoin-miner/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon-a16xp": {
     "manufacturer": "canaan",
@@ -2311,7 +2433,9 @@
       "Warranty": "180-365 days (manufacturer, per resellers; official unconfirmed)",
       "Sources": "[Canaan PR](https://www.prnewswire.com/news-releases/canaan-inc-unveils-next-gen-avalon-a16-series-bitcoin-mining-machine-featuring-breakthrough-asic-chip-302596838.html), [Hashrate Index Review](https://hashrateindex.com/blog/hardware-review-canaans-a16-series/), [ASIC Marketplace](https://asicmarketplace.com/product/canaan-avalon-a16-xp-bitcoin-miner/), [Canaan Shop](https://shop.canaan.io/products/avalon-miner-a16xp-300t), [MiningNow](https://miningnow.com/asic-miner/canaan-avalon-a16xp-300th-s/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "auradine-teraflux-ai3680": {
     "manufacturer": "auradine",
@@ -2335,7 +2459,9 @@
       "Warranty": "365 days (from reseller; official unconfirmed)",
       "Sources": "[Auradine Products](https://auradine.com/products), [Teraflux AT2880 Datasheet](https://velaura.ai/wp-content/uploads/2025/09/Teraflux\u2122-AT2880-Data-Sheet.pdf), [D-Central](https://d-central.tech/miners/auradine-teraflux-at2880/), [EZ Blockchain](https://ezblockchain.net/hardware/auradine-teraflux-at2880/), [Hashrate Index](https://hashrateindex.com/rigs/at2880), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/auradine), [PR Newswire](https://www.prnewswire.com/news-releases/auradine-advances-teraflux-btc-mining-product-portfolio-delivering-category-leading-energy-efficiency-at-9-8-jth-with-breakthrough-tco-302612073.html), [GlobeNewswire 2023](https://www.globenewswire.com/news-release/2023/11/14/2780158/0/en/Auradine-Unveils-Next-Generation-Teraflux-Bitcoin-Miners-Setting-New-Benchmarks-for-Efficient-and-Sustainable-Mining.html)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "antminer-s19j-xp": {
     "manufacturer": "bitmain",
@@ -2359,7 +2485,9 @@
       "Warranty": "12 months (S19 series standard from Bitmain; some resellers 6 months)",
       "Sources": "[Bitmain Support](https://support.bitmain.com/hc/en-us/articles/20090196798361-S19j-XP-Specifications), [ASIC Miner Value](https://www.asicminervalue.com/miners/bitmain/antminer-s19j-xp-151th), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19j-xp-bitcoin-miner-151th-s-bt-miners/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19j-xp-151th), [D-Central](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s19j-xp-151th-s-bitcoin-miner/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19a": {
     "manufacturer": "bitmain",
@@ -2383,7 +2511,9 @@
       "Warranty": "365 days for BTC miner (S19 and later models)",
       "Sources": "[Bitmain Support S19a Specs](https://support.bitmain.com/hc/en-us/articles/4410287925913-S19a-Specifications), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4682-antminer-s19-series-firmware-download), [D-Central Troubleshooting](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19j-90th), [ASIC Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s19j-90-th-s/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19j": {
     "manufacturer": "bitmain",
@@ -2407,7 +2537,9 @@
       "Warranty": "365 days (12 months) from Bitmain for new units",
       "Sources": "[ASIC Jungle](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [D-Central](https://d-central.tech/antminer-s19j-specifications/), [Asic Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s19j-90-th-s/), [ASIC Miner Value](https://www.asicminervalue.com), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4682-antminer-s19-series-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19": {
     "manufacturer": "bitmain",
@@ -2431,7 +2563,9 @@
       "Warranty": "12 months (extended from 6 months) [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)",
       "Sources": "[Bitmain S19 Specs](https://support.bitmain.com/hc/en-us/articles/900000253583-S19-Specifications), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [D-Central T19](https://d-central.tech/antminer-t19-specifications/), [ASIC Jungle](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19-95th), [summary file](/home/user/workspace/antminer_s19_specs_summary.md)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19j-proplus": {
     "manufacturer": "bitmain",
@@ -2455,7 +2589,9 @@
       "Warranty": "6-12 months from Bitmain for new units (6 months per BT-Miners, 365 days per resellers/D-Central for S19 series)",
       "Sources": "[Altair Tech](https://altairtech.io/product/bitmain-antminer-s19j-pro-plus/), [Bitmars](https://bitmars.io/product/bitmain-antminer-s19j-pro-113-117-120t/), [X-ON Mining](https://xonmining.com/product/antminer-s19j-pro/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19j-pro-bitcoin-miner-117-120th-s-bt-miners/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s19j-pro-bitcoin-miner/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s19j-pro-plus-120th-s/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19jpro+), [D-Central](https://d-central.tech/product/bitmain-antminer-s19j-pro-2/), [WhatToMine](https://whattomine.com/asics/215-bitmain-antminer-s19j-pro-122th), [D-Central Troubleshooting](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/), [Hiveon Forum](https://hiveon.com/forum/t/antminer-s19j-pro-122th-firmware-support/81076), [MillionMiner Warranty](https://www.millionminer.com/news/2026/02/bitmain-warranty-check/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-proplusplus": {
     "manufacturer": "bitmain",
@@ -2479,7 +2615,9 @@
       "Warranty": "365 days for S19 series miners (from Bitmain dispatch; PSU 365 days)",
       "Sources": "[Bitmain Support](https://support.bitmain.com/hc/en-us/articles/36861394055065-S19-Pro-Specifications), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19-pro-bitcoin-miner-125th-s-bt-miners/), [Bitmars](https://bitmars.io/product/bitmain-antminer-s19-pro-125t-btc-miner/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s19-pro-plus-plus-125th-s/), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [D-Central Troubleshooting](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/), [Bitmain Warranty Policy](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/bitmain)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19a-pro": {
     "manufacturer": "bitmain",
@@ -2503,7 +2641,9 @@
       "Warranty": "365 days (12 months) for S19 series from dispatch date (per resellers and guides; confirm with serial on Bitmain support)",
       "Sources": "[Bitmain Support S19j Pro Specs](https://support.bitmain.com/hc/en-us/articles/900006762746-S19j-Pro-Specifications), [Bitmain Support S19a Pro](https://support.bitmain.com/hc/en-us/articles/4410294056601-S19a-Pro-Specifications), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s19j-pro-104th-s/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19j-pro-bitcoin-miner-104th-s-bt-miners/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19j-pro-104th), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4682-antminer-s19-series-firmware-download), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19j-pro": {
     "manufacturer": "bitmain",
@@ -2579,7 +2719,9 @@
       "Warranty": "365 days for S19 series (from Bitmain dispatch date)",
       "Sources": "[Bitmain Support S19 Specs](https://support.bitmain.com/hc/en-us/articles/900000253583-S19-Specifications), [Bitmain Fan Parameters](https://support.bitmain.com/hc/en-us/articles/5280676968217-Fan-parameters), [Hashrate Index S19i](https://hashrateindex.com/rigs/bitmain-s19i-90th), [ASIC Jungle S19 Series](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [D-Central S19i](https://d-central.tech/the-different-19-series-models-and-specs-compared-which-one-is-right-for-you/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4682-antminer-s19-series-firmware-download), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central Troubleshooting](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-xp-hydro": {
     "manufacturer": "bitmain",
@@ -2603,7 +2745,9 @@
       "Warranty": "12 months (extended)",
       "Sources": "[Bitmain S19 Specs](https://support.bitmain.com/hc/en-us/articles/900000253583-S19-Specifications), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [ASIC Jungle](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [ASIC Miner Value](https://www.asicminervalue.com), [D-Central](https://d-central.tech/antminer-t19-specifications/), [Hashrate Index](https://hashrateindex.com/blog/antminers19-profitability-price/), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4878-sd-card-firmware-download-for-antminer-19-series), [Bitcointalk](https://bitcointalk.org/index.php?topic=5528017.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s19k-pro": {
     "manufacturer": "bitmain",
@@ -2627,7 +2771,9 @@
       "Warranty": "365 days (S19 series standard) [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty)",
       "Sources": "[Bitmain Specs](https://support.bitmain.com/hc/en-us/articles/23833956049049-S19K-Pro-Specifications), [S19k Pro Manual](https://www.zeusbtc.com/manuals/user-manuals/Antminer%20S19k%20Pro%20Manual.pdf), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s19k-pro-120th-s/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19kpro), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s19k-pro/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-pro": {
     "manufacturer": "bitmain",
@@ -2743,7 +2889,9 @@
       "Warranty": "12 months (S19 series, from dispatch) [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/900004354623), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)",
       "Sources": "[Bitmain Support S19j Pro](https://support.bitmain.com/hc/en-us/articles/4403035442585), [CryptoCompare](https://www.cryptocompare.com/mining/millionminer/antminer-s19j-proplus-sha256-122ths/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=2722), [X-ON Mining](https://xonmining.com/product/antminer-s19j-pro/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19j-pro-bitcoin-miner-117-120th-s-bt-miners/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19jpro+), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/bitmain), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-pro-hyd": {
     "manufacturer": "bitmain",
@@ -2767,7 +2915,9 @@
       "Warranty": "12 months (extended from 6 months for S19 series)",
       "Sources": "[Bitmain S19 Specs](https://support.bitmain.com/hc/en-us/articles/900000253583-S19-Specifications), [Bitmain S19 Pro Specs](https://support.bitmain.com/hc/en-us/articles/900000261726-S19-Pro-Specifications), [ASIC Miner Value S19 Pro](https://www.asicminervalue.com/es/miners/compare/bitmain--antminer-s19-pro-110th,canaan--avalon-made-a1366), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Bitmain Warranty Extension](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [Hashrate Index](https://hashrateindex.com/blog/antminers19-profitability-price/), [ASIC Jungle](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [Bitcointalk Issues](https://bitcointalk.org/index.php?topic=5528017.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s19al": {
     "manufacturer": "bitmain",
@@ -2791,7 +2941,9 @@
       "Warranty": "12 months (extended for S19 series); 365 days from some vendors",
       "Sources": "[Bitmain Support S19 Specs](https://support.bitmain.com/hc/en-us/articles/900000253583-S19-Specifications), [Bitmain Support S19j Pro Specs](https://support.bitmain.com/hc/en-us/articles/900006762746-S19j-Pro-Specifications), [D-Central S19j Specs](https://d-central.tech/antminer-s19j-specifications/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s19j-90th-s/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19j-90th), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19j-bitcoin-miner-90th-s-bt-miners/), [ASIC Jungle](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [Bitmain Warranty Extension](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [D-Central Troubleshooting](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-proplus": {
     "manufacturer": "bitmain",
@@ -2815,7 +2967,9 @@
       "Warranty": "6-12 months factory (reseller-dependent; e.g., 6 months Bitmain via BT-Miners, 365 days via CryptoMinerBros)",
       "Sources": "[Bitmain Support S19j Pro+](https://support.bitmain.com/hc/en-us/articles/18416393681945-S19j-Pro-Specifications), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19j-pro-bitcoin-miner-117-120th-s-bt-miners/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s19jpro+), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s19j-pro-plus-120th-s/), [Bitmars](https://bitmars.io/product/bitmain-antminer-s19j-pro-113-117-120t/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s19j-pro-bitcoin-miner/), [Reddit BitcoinMining](https://www.reddit.com/r/BitcoinMining), [D-Central](https://d-central.tech)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-pro-a": {
     "manufacturer": "bitmain",
@@ -2839,7 +2993,9 @@
       "Warranty": "6-12 months factory for new (Bitmain S19 series: 365 days); from dispatch, direct purchase only [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19-pro-100th-s-bt-miners/), [Bitmars](https://bitmars.io/product/bitmain-antminer-s19-pro-a-100t-btc-miner/), [Bitmain](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)",
       "Sources": "[Bitmars](https://bitmars.io/product/bitmain-antminer-s19-pro-a-100t-btc-miner/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19-pro-100th-s-bt-miners/), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/36861394055065-S19-Pro-Specifications), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [AsicDip](https://asicdip.com/en/firmware/antminer_s19proa), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4682-antminer-s19-series-firmware-download), [D-Central Troubleshoot](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/), [BiXBiT](https://bixbit.io/en/blog/post/antminer-19-series-profitability-and-price-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-proplus-hyd": {
     "manufacturer": "bitmain",
@@ -2863,7 +3019,9 @@
       "Warranty": "12 months",
       "Sources": "[Bitmain S19 Specs](https://support.bitmain.com/hc/en-us/articles/900000253583-S19-Specifications), [Bitmain S19 Pro Specs](https://support.bitmain.com/hc/en-us/articles/900000261726-S19-Pro-Specifications), [Bitmain Warranty Extension](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [ASIC Jungle](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Hashrate Index](https://hashrateindex.com/blog/antminers19-profitability-price/), [ihodl Release](https://ihodl.com/topnews/2020-03-23/bitmain-announces-price-and-delivery-date-its-antminer-s19/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s19-hydro": {
     "manufacturer": "bitmain",
@@ -2887,7 +3045,9 @@
       "Warranty": "365 days (retailer standard; check manufacturer)",
       "Sources": "[Bitmain Support S19 Hydro](https://support.bitmain.com/hc/en-us/articles/8240690910233-S19-Hydro-Specifications), [Bitmain T19/S19 LC](https://support.bitmain.com/hc/en-us/articles/4418373232153-Specifications-of-T19-S19-Liquid-Cooling-Miner), [ASIC Miner Value](https://www.asicminervalue.com/miners/bitmain/antminer-s19-hydro-158th), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s19-hydro-158th/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s19-hydro-158th-bitcoin-miner/), [D-Central Guide](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4682-antminer-s19-series-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m53s": {
     "manufacturer": "microbt",
@@ -2911,7 +3071,9 @@
       "Warranty": "180 days (standard from resellers); up to 365 days on control board per MicroBT policy; 1 year from some sellers",
       "Sources": "[ASIC Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m50-114th/), [Crypto Miner Bros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [Whatsminer.net](https://whatsminer.net/product/m50-114t-28w-ship-now/), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/microbt), [D-Central](https://d-central.tech/troubleshooting/microbt-whatsminer-m50-troubleshooting-a-complete-step-by-step-support-guide/), [Mineshop.eu](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m50splusplus": {
     "manufacturer": "microbt",
@@ -2935,7 +3097,9 @@
       "Warranty": "180 days (miner resellers); 1 year from MicroBT",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/microbt), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [ASIC Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m50-114th/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m50), [Zeus Mining](https://www.zeusbtc.com/blog/details/4764-whatsminer-m50-series-manual), [BT-Miners](https://bt-miners.com/products/whatsminer-m50-bitcoin-miner-118th-s-bt-miners/), [MicroBT Shop](https://shop.whatsminer.com/products/details/53), [D-Central](https://d-central.tech/asic-repair/whatsminer-m50s-repair/), [Bitcointalk Forum](https://bitcointalk.org/index.php?topic=5534613.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19-xpplus-hyd": {
     "manufacturer": "bitmain",
@@ -2959,7 +3123,9 @@
       "Warranty": "12 months (extended from 6 months)",
       "Sources": "[Bitmain S19 Specs](https://support.bitmain.com/hc/en-us/articles/900000253583-S19-Specifications), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [ASIC Jungle](https://asicjungle.com/hardware/bitmain-antminer-s19-series), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Hashrate Index](https://hashrateindex.com/blog/antminers19-profitability-price/), [AsicMinerValue](https://www.asicminervalue.com), [Bitcointalk Issues](https://bitcointalk.org/index.php?topic=5528017.0), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4878-sd-card-firmware-download-for-antminer-19-series)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m56splusplus": {
     "manufacturer": "microbt",
@@ -2983,7 +3149,9 @@
       "Warranty": "180 days (retailer); up to 1 year manufacturer",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [ASIC Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m50-114th/), [AsicMinerValue](https://www.asicminervalue.com/miners/microbt/whatsminer-m50-114th), [D-Central](https://d-central.tech/miners/whatsminer-m50/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m50), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=1769), [BT-Miners](https://bt-miners.com/products/whatsminer-m50-bitcoin-miner-118th-s-bt-miners/), forums [Bitcointalk](https://bitcointalk.org/index.php?topic=5534613.0), [D-Central Repair](https://d-central.tech/asic-repair/whatsminer-m50s-repair/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "avalon-a1366i": {
     "manufacturer": "canaan",
@@ -3007,7 +3175,9 @@
       "Warranty": "360 days from Canaan official shop (original purchaser)",
       "Sources": "[Canaan Official 119T](https://shop.canaan.io/products/avalon-miner-a1366i-119t-immersion-cooling), [Canaan Official 122T](https://shop.canaan.io/products/avalon-miner-a1366i-122t-immersion-cooling), [CryptoMinerBros](https://www.cryptominerbros.com/product/canaan-avalon-a1366i-bitcoin-miner/), [AsicMarketplace](https://asicmarketplace.com/product/canaan-avalon-a1366i-bitcoin-miner/), [HashrateIndex](https://hashrateindex.com/rigs/a1366i), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/canaan), [Forklog announcement](https://forklog.com/en/canaan-unveils-immersion-cooled-avalon-made-a1366i-bitcoin-miner/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "whatsminer-m56": {
     "manufacturer": "microbt",
@@ -3031,7 +3201,9 @@
       "Warranty": "180 days to 1 year (seller dependent)",
       "Sources": "[whatsminer.net](https://whatsminer.net/product/m50-114t-28w-ship-now/), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [ASIC Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m50-114th/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m50), [2140miner](https://www.2140miner.com/whatsminer-m50-114ths-product/), [ZeusBTC forums](https://www.zeusbtc.com), [Bitcointalk](https://bitcointalk.org/index.php?topic=5534613.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "whatsminer-m50": {
     "manufacturer": "microbt",
@@ -3095,7 +3267,9 @@
       "Warranty": "1 year manufacturer",
       "Sources": "[MicroBT GlobeNewswire](https://www.globenewswire.com/news-release/2022/04/06/2417977/0/en/MicroBT-Released-WhatsMiner-M50-Series-to-Step-Into-2XJ-T-Era-of-Bitcoin-Mining.html), [ASIC Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m50-114th/), [2140miner](https://www.2140miner.com/whatsminer-m50-114ths-product/), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [BT-Miners](https://bt-miners.com/products/whatsminer-m50-bitcoin-miner-118th-s-bt-miners/), [ASIC Miner Value](https://www.asicminervalue.com/miners/microbt), [Zeus Mining](https://www.zeusbtc.com/blog/details/4764-whatsminer-m50-series-manual), [Bitcointalk](https://bitcointalk.org/index.php?topic=5534613.0), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/10p03f7/whats_your_experience_with_whatsminer_m50/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s19-proplus-hydro": {
     "manufacturer": "bitmain",
@@ -3119,7 +3293,9 @@
       "Warranty": "365 days (retailer); Bitmain honors only in ANTSPACE HK3 system",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/bitmain/antminer-s19-pro-hyd-198th), [Asic Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s19-pro-hyd-btc-miner-191th/), [Viperatech](https://viperatech.com/product/bitmain-antminer-s19-pro-hydro-198th-s-5445w), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/9197479488921-How-to-set-up-S19-Pro-Hydro-Server), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4682-antminer-s19-series-firmware-download), [Reddit Announcement](https://www.reddit.com/r/BitcoinMining/comments/sezqh9/bitmain_announces_new_liquid_cooled_198ths/), [Hashrate Index](https://hashrateindex.com/blog/antminer-s19-xp-hydro-vs-the-antminer-s19-hydro-which-n/), [D-Central](https://d-central.tech/the-ultimate-guide-to-troubleshooting-the-antminer-19-series-common-problems/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m56splus": {
     "manufacturer": "microbt",
@@ -3143,7 +3319,9 @@
       "Warranty": "180 days on hash boards/PSU/fans; 365 days on control board (standard MicroBT) [Mineshop](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide); 1 year in some listings",
       "Sources": "[Crypto Miner Bros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [ASIC Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m50-114th/), [MillionMiner](https://www.millionminer.com/product/asic-miner/microbt-whatsminer-m50), [Whatsminer Shop](https://shop.whatsminer.com/products/details/53), [Hashrate Index](https://hashrateindex.com/blog/what-is-microbts-whatsminer-m50-bitcoin-miner-2/), [Yahoo Press](https://finance.yahoo.com/news/microbt-released-whatsminer-m50-series-200000592.html)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "avalon-a1466": {
     "manufacturer": "canaan",
@@ -3213,7 +3391,9 @@
       "Warranty": "1 year manufacturer (official), 180 days hashboards/365 days control board (standard terms)",
       "Sources": "[GlobeNewswire MicroBT](https://www.globenewswire.com/news-release/2022/04/06/2417977/0/en/MicroBT-Released-WhatsMiner-M50-Series-to-Step-Into-2XJ-T-Era-of-Bitcoin-Mining.html), [ASIC Marketplace](https://asicmarketplace.com/product/microbt-whatsminer-m50-114th/), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [2140Miner](https://www.2140miner.com/whatsminer-m50-114ths-product/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m50), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), [Mineshop Warranty](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [BitcoinTalk Forum](https://bitcointalk.org/index.php?topic=5534613.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m56s": {
     "manufacturer": "microbt",
@@ -3237,7 +3417,9 @@
       "Warranty": "1 year manufacturer (retailers 180-365 days)",
       "Sources": "[shop.whatsminer.com](https://shop.whatsminer.com/products/details/53?skuId173), [PDF Catalog](https://5.imimg.com/data5/SELLER/Doc/2025/1/482996731/IE/TO/CV/75210026/microbot-whatsminer-m50-112t.pdf), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m50-114th-s-bitcoin-miner/), [Zeus Manual](https://www.zeusbtc.com/blog/details/4764-whatsminer-m50-series-manual), [Zeus PSU Repair](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/4959-whatsminer-m50-series-repair-and-troubleshooting-power-supply-failed-solution), [D-Central](https://d-central.tech/troubleshooting/microbt-whatsminer-m50s-troubleshooting-a-complete-step-by-step-support-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "avalon-a1466i": {
     "manufacturer": "canaan",
@@ -3261,7 +3443,9 @@
       "Warranty": "6 months (retailer); full manufacturer via Canaan [BT-Miners](https://bt-miners.com/products/canaan-avalonminer-a1466i-bitcion-miner-150-170th-s-bt-miners/), [Coin Mining Central](https://coinminingcentral.com/products/canaan-avalon-a1466i-immersion-cooling-bitcoin-miner-153-th-s)",
       "Sources": "[Canaan Shop](https://shop.canaan.io/products/avalon-miner-a1466-153t), [Hashrate Index](https://hashrateindex.com/blog/canaan-a1466-review-and-testing/), [BT-Miners](https://bt-miners.com/products/canaan-avalonminer-a1466i-bitcion-miner-150-170th-s-bt-miners/), [Coin Mining Central](https://coinminingcentral.com/products/canaan-avalon-a1466i-immersion-cooling-bitcoin-miner-153-th-s), [Asic Marketplace](https://asicmarketplace.com/product/canaan-avalon-a1466-bitcoin-miner/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "avalon-a1366": {
     "manufacturer": "canaan",
@@ -3285,7 +3469,9 @@
       "Warranty": "6-12 months (varies by reseller; official ~180-360 days, excludes overclocking/third-party FW)",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/canaan-avalon-a1366-130th-bitcoin-miner/), [BT-Miners](https://bt-miners.com/products/canaan-avalon-made-a1366-bitcoin-miner-130-th-s-bt-miners/), [D-Central](https://d-central.tech/miners/avalon-a1366/), [Hashrate Index](https://hashrateindex.com/rigs/canaan-avalon-a1366), [AsicMarketplace](https://asicmarketplace.com/product/canaan-avalon-a1366-130th/), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4702-avalonminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m50s": {
     "manufacturer": "microbt",
@@ -3395,7 +3581,9 @@
       "Warranty": "180 days (6 months) from shipment date for new units from Bitmain (legacy S9 series); non-transferable to resellers/secondhand",
       "Sources": "[D-Central](https://d-central.tech/antminer-s9i-specifications/), [Bitmain S9i Manual](https://www.zeusbtc.com/manuals/user-manuals/Antminer-S9i-Manual.pdf), [Bitmain Official Guide](https://file12.bitmain.com/shop-product/firmware/859abc04-6016-42a3-967e-ff7a514a9cf4/2019/11/06/11/S9i%20Server%20Installation%20Guide.pdf), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s9i-14th), [ASIC Miner Value](https://www.asicminervalue.com/), [Bitmain Support Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central Issues](https://d-central.tech/antminer-s9i-specifications/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s9": {
     "manufacturer": "bitmain",
@@ -3419,7 +3607,9 @@
       "Warranty": "180 days (6 months) from dispatch date for new units from Bitmain/authorized sellers",
       "Sources": "[Bitmain Support S9 Specs](https://support.bitmain.com/hc/en-us/articles/360012163774-S9-Specifications), [CryptoSlate Antminer S9](https://cryptoslate.com/products/antminer-s9-14-th-s/), [D-Central S9 Specs](https://d-central.tech/antminer-s9-specs-maximizing-your-bitcoin-mining-efficiency/), [S9 Installation Guide PDF](https://www.antminerdistribution.com/wp-content/uploads/2015/09/AntMiner-S9-Installation-Guide.pdf), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s9-11.5th), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-t9": {
     "manufacturer": "bitmain",
@@ -3443,7 +3633,9 @@
       "Warranty": "180 days from shipment for legacy S9/T9 series (purchased from Bitmain/authorized; non-transferable) [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)",
       "Sources": "[Bitmain T9 Specs](https://support.bitmain.com/hc/en-us/articles/360012258873-T9-Specifications), [Bitmain T9 Page](https://support.bitmain.com/hc/en-us/articles/115000090494-ANTMINER-T9), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-t9-11.5th), [X-ON Mining](https://xonmining.com/product/antminer-t9-for-sale/), [D-Central](https://d-central.tech/miners/compare/antminer-t9-11-5th-vs-antminer-t9-12-5th/), [Minetheasic](https://minetheasic.com/bitmain-antminer-t9-12-5th), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4696-antminer-t9-series-firmware-download), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/111gezo/antminer_t9_issue_help_please_i_know_its_old/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s17": {
     "manufacturer": "bitmain",
@@ -3467,7 +3659,9 @@
       "Warranty": "180-365 days from shipment (miner 180 days typical for S17 series, PSU 365 days); non-transferable, voids on mods/repairs [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)",
       "Sources": "[Bitmain S17 Specs](https://support.bitmain.com/hc/en-us/articles/360020208593-S17-Specifications), [Bitmain S17 Pro Specs](https://support.bitmain.com/hc/en-us/articles/360021167174-S17-Pro-Specifications), [D-Central S17](https://d-central.tech/antminer-s17-specifications/), [Asic Marketplace](https://asicmarketplace.com/product/bitmain-antminer-s17-53-th-s/), [Bitcoin Magazine Release](https://bitcoinmagazine.com/business/bitmain-announces-antminer-s17-can-it-turn-the-companys-fortunes-around), [Bitmain Blog](https://blog.bitmain.com/en/bitmain-announces-selling-date-of-next-gen-antminer-s17-series/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s9j": {
     "manufacturer": "bitmain",
@@ -3491,7 +3685,9 @@
       "Warranty": "180 days (6 months) from shipment date for new units purchased directly from Bitmain; non-transferable; excludes user damage/overclocking [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty)",
       "Sources": "[Bitmain Support S9j Specs](https://support.bitmain.com/hc/en-us/articles/360020079754-S9j-Specifications), [S9j Manual PDF](https://www.zeusbtc.com/manuals/user-manuals/Antminer-S9j-Manual.pdf), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s9j-14-5th-s/), [X-ON Mining](https://xonmining.com/product/antminer-s9j-14-5th/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s9j-14.5th), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/bitmain), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4691-antminer-s9-series-firmware-download), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s17-pro": {
     "manufacturer": "bitmain",
@@ -3515,7 +3711,9 @@
       "Warranty": "180-365 days from shipment (miner/PSU; S17 series typically 180 days, non-transferable)",
       "Sources": "[Bitmain Support](https://support.bitmain.com/hc/en-us/articles/360021167174-S17-Pro-Specifications), [D-Central](https://d-central.tech/antminer-s17-pro-specifications/), [Zeus Mining](https://www.zeusbtc.com/articles/information/1889-antminer-s17-pro-series-profit-comparison), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central Issues](https://d-central.tech/troubleshooting-the-most-common-problems-on-antminer-17-series/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s15": {
     "manufacturer": "bitmain",
@@ -3539,7 +3737,9 @@
       "Warranty": "180 days (6 months) from shipment date for miner (legacy S15 series); PSU 365 days; non-transferable, voids with mods/custom firmware [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty)",
       "Sources": "[Bitmain Support Specs](https://support.bitmain.com/hc/en-us/articles/360020443473-S15-Specifications), [Bitmain Blog Announcement](https://blog.bitmain.com/en/the-7nm-antminer-s15-and-t15-are-now-available-for-purchase/), [ASIC Miner Value](https://www.asicminervalue.com), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-s15-28th), [D-Central](https://d-central.tech/manuals/antminer-s15-maintenance-repair-guide/), [Newegg](https://www.newegg.com/antminer-s15/p/37E-028F-00026), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4692-antminer-s15-firmware-download), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s5plus": {
     "manufacturer": "bitmain",
@@ -3563,7 +3763,9 @@
       "Warranty": "180 days (6 months) from shipment for legacy models like S5 series [D-Central](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty)",
       "Sources": "[Antminer S5+ Manual PDF](https://www.antminerdistribution.com/wp-content/uploads/2015/09/Antminer-S5-user-guide1.pdf), [Bitmain Forum Announcement Aug 2015](https://bitcointalk.org/index.php?topic=1152746.0), [Bitmain Support Env Req](https://support.bitmain.com/hc/en-us/articles/360021472873-Environmental-Requirements-for-ANTMINERs), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central Noise](https://d-central.tech/bitcoin-miner-noise-levels-comparison/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s9-se": {
     "manufacturer": "bitmain",
@@ -3587,7 +3789,9 @@
       "Warranty": "180 days (6 months) for S9 legacy series from shipment date (per resellers); official policy 365 days for new BTC miners (unconfirmed for S9 SE)",
       "Sources": "[Bitmain Support Specs](https://support.bitmain.com/hc/en-us/articles/360025008813-S9-SE-Specifications), [S9 SE Manual PDF](https://www.zeusbtc.com/manuals/user-manuals/AntMiner-S9-SE-Server-Manual.pdf), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s9-se-16th), [CryptoCompare](https://www.cryptocompare.com/mining/bitcoincom/antminer-s9-se-sha256-16ths/), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4691-antminer-s9-series-firmware-download), [Bitmain Warranty Policy](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s3": {
     "manufacturer": "bitmain",
@@ -3611,7 +3815,9 @@
       "Warranty": "180 days (6 months) from shipment for legacy models like S3 (unconfirmed for this specific model)",
       "Sources": "[Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s3-0.48th), [Minetheasic](https://minetheasic.com/bitmain-antminer-s3), [Phani Investors](https://phaniinvestors.wordpress.com/2023/11/12/the-bitmain-antminer-s3-review/), [ASIC Miner Profitability](https://asic-miner-profitability.com/miner/bitmain-antminer-s3?lang=en), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/360021472873-Environmental-Requirements-for-ANTMINERs), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Miners Tools Firmware](https://cdn.miners.tools/en/bitmain/s3/), [BitcoinTalk](https://bitcointalk.org/index.php?topic=699064.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s17plus": {
     "manufacturer": "bitmain",
@@ -3635,7 +3841,9 @@
       "Warranty": "180 days (6 months) from shipment for miner; 365 days for PSU (per resellers; official newer models 365 days)",
       "Sources": "[Bitmain Blog](https://blog.bitmain.com/en/bitmain-announces-specs-and-release-times-for-its-latest-7nm-antminer-17-series-miners/), [AsicMarketplace](https://asicmarketplace.com/product/bitmain-antminer-s17-56-th-s/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s17-56th-bitcoin-miner/), [AsicMinerValue](https://www.asicminervalue.com/), [D-Central](https://d-central.tech/troubleshooting-the-most-common-problems-on-antminer-17-series/), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s9-hydro": {
     "manufacturer": "bitmain",
@@ -3659,7 +3867,9 @@
       "Warranty": "180 days (6 months) from dispatch for S9 series (legacy models); voids if customer disassembles/removes components without permission, overclocks, poor power, water damage, or resold; no warranty for self-assembly damage on Hydro server",
       "Sources": "[Bitmain S9 Hydro Installation Guide PDF (Aug 2018)](https://www.antminerdistribution.com/wp-content/uploads/2018/08/S9-Hydro-Server-Installation-Guide.pdf), [PRNewswire Announcement (Aug 23, 2018)](https://www.prnewswire.com/news-releases/bitmain-launches-antminer-s9-hydro-a-pioneering-water-cooled-miner-300701597.html), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s9-hydro-18th), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4691-antminer-s9-series-firmware-download), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/18237912339097-Troubleshooting-and-solutions-for-ANTMINER-failures), [CryptoCompare](https://www.cryptocompare.com/mining/minerooio/antminer-s9-hydro-plus-psu-sha-256-18ths/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-s9k": {
     "manufacturer": "bitmain",
@@ -3683,7 +3893,9 @@
       "Warranty": "180 days (6 months) from shipment date for original S9 series (Bitmain policy)",
       "Sources": "[Bitmain Blog](https://blog.bitmain.com/en/a-look-at-the-living-legacy-of-the-antminer-s9-se-s9k/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s9k-13-5th-s-bitcoin-miner/), [2140Miner](https://www.2140miner.com/itmain-antminer-s9k-13-5th14th-product/), [HashrateIndex](https://hashrateindex.com/rigs/bitmain-antminer-s9k-13.5th), [D-Central](https://d-central.tech/miners/compare/antminer-s9-13-5th-vs-antminer-s9k-13-5th/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4691-antminer-s9-series-firmware-download), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [CryptoCompare](https://www.cryptocompare.com/mining/bitmain/antminer-s9k-sha256-135ths/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s17e": {
     "manufacturer": "bitmain",
@@ -3707,7 +3919,9 @@
       "Warranty": "180 days (6 months) from shipment for miner; 365 days for PSU (per resellers/Bitmain S17/T17 series; newer models 365 days)",
       "Sources": "[Bitmain Blog](https://blog.bitmain.com/en/bitmain-announces-specs-and-release-times-for-its-latest-7nm-antminer-17-series-miners/), [AsicMarketplace](https://asicmarketplace.com/product/bitmain-antminer-s17-56-th-s/), [ASIC Miner Value](https://www.asicminervalue.com/), [D-Central](https://d-central.tech/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-s17-56th-bitcoin-miner/), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Mining Forums](https://d-central.tech/troubleshooting-the-most-common-problems-on-antminer-17-series/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-t15": {
     "manufacturer": "bitmain",
@@ -3731,7 +3945,9 @@
       "Warranty": "180 days (6 months) from shipment for miner; 365 days for PSU (for direct purchases)",
       "Sources": "[Bitmain Support T15 Specs](https://support.bitmain.com/hc/en-us/articles/360020443433-T15-Specifications), [Bitmain Fan Parameters](https://support.bitmain.com/hc/en-us/articles/5280676968217-Fan-parameters), [Bitmain PSU Guide](https://support.bitmain.com/hc/en-us/articles/360034197034-Choose-the-correct-PSU-model-for-your-ANTMINER), [T15 Installation Guide PDF](https://www.zeusbtc.com/manuals/user-manuals/AntMiner-T15-Server-Installation-Guide.pdf), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-t15-23th), [Zeus Mining T15 Faults](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/3599-antminer-t15-hash-board-common-faults-and-solutions), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Twitter Announcement](https://x.com/bitmaintech/status/1059636075243524098)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s5": {
     "manufacturer": "bitmain",
@@ -3755,7 +3971,9 @@
       "Warranty": "180 days (6 months) typical for legacy Bitmain S9/S5 era models (per D-Central guide); expired for new units",
       "Sources": "[Official Antminer S5 Manual](https://www.antminerdistribution.com/wp-content/uploads/2015/09/Antminer-S5-user-guide.pdf), [D-Central](https://d-central.tech/miners/antminer-s5/), [CryptoCompare](https://www.cryptocompare.com/mining/bitmain/antminer-s5-sha256-1155ths/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s5-1.16th), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s5-1-155th-s/), [CCN Review](https://www.ccn.com/review-bitcoin-asic-miner-bitmain-antminer-s5/), [Bitcointalk](https://bitcointalk.org/index.php?topic=908494.0), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s4": {
     "manufacturer": "bitmain",
@@ -3779,7 +3997,9 @@
       "Warranty": "180-365 days from shipment (per Bitmain general policy for era; unconfirmed specific)",
       "Sources": "[Antminer S4 Manual (2014)](https://www.antminerdistribution.com/wp-content/uploads/2015/09/Antminer-S4-Manual_EN_2014.9.29.pdf), [S4+ Manual](https://www.antminerdistribution.com/wp-content/uploads/2015/09/AntMiner-S4-user-guide.pdf), [YDminer specs](https://www.ydminer.com/products/s4-miner/), [BitcoinTalk forum](https://bitcointalk.org/index.php?topic=1203133.0), [DogieCoin](http://www.dogiecoin.com/bitmain-antminer-s4.html), [Bitmain announcement](https://www.bitcoinminer.com/bitmain-announces-antminer-s4/), [D-Central history](https://d-central.tech/the-history-and-evolution-of-the-antminer-brand/), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [ZeusBTC troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/5015-summary-of-common-problems-and-solutions-for-antminer)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-r4": {
     "manufacturer": "bitmain",
@@ -3803,7 +4023,9 @@
       "Warranty": "180-365 days from shipment (legacy policy)",
       "Sources": "[R4 Manual PDF](https://www.antminerdistribution.com/wp-content/uploads/2015/09/R4-User-Manual-.pdf), [Bitmain Blog](https://blog.bitmain.com/en/antminer-r4-apw5-silent-bitcoin-miner-home-use/), [ASICMinerValue](https://www.asicminervalue.com/miners/compare/bitmain--antminer-r4,microbt--whatsminer-m73s-plus), [D-Central](https://d-central.tech/miners/antminer-r4/), [LeedMiner](https://shop.leedminer.com/miners/antminer-r4-8-7th-s), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/360021472873-Environmental-Requirements-for-ANTMINERs), [Bitcointalk](https://bitcointalk.org/index.php?topic=1757583.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-t9plus": {
     "manufacturer": "bitmain",
@@ -3827,7 +4049,9 @@
       "Warranty": "180 days (6 months) from shipment for legacy T9 series (unconfirmed exact for T9+)",
       "Sources": "[Bitmain Support T9+ Specs](https://support.bitmain.com/hc/en-us/articles/360020017834-T9-Specifications), [X-ON Mining](https://xonmining.com/product/antminer-t9/), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [YouTube Specs](https://www.youtube.com/watch?v=L17PYve-PQw), [ASICBoost Firmware](https://support.bitmain.com/hc/en-us/articles/360011930734-ASICBoost-Firmware-for-ANTMINER-S9-Series-and-T9)\""
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s7": {
     "manufacturer": "bitmain",
@@ -3851,7 +4075,9 @@
       "Warranty": "180 days from manufacture date",
       "Sources": "[Bitmain S7 Manual (ZeusBTC)](https://www.zeusbtc.com/manuals/user-manuals/Antminer-S7-user-guide.pdf), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/bitmain), [Bitcoin Magazine](https://bitcoinmagazine.com/business/bitmain-announces-launch-next-generation-antminer-s7-bitcoin-miner-1440958100), [CryptoCompare](https://www.cryptocompare.com/mining/coinminer/antminer-s7-sha-256-473ths/), [DogieCoin](http://www.dogiecoin.com/bitmain-antminer-s7.html), [D-Central](https://d-central.tech/the-history-and-evolution-of-the-antminer-brand/), [Bitmain Support](https://support.bitmain.com/hc/en-us/articles/18237912339097-Troubleshooting-and-solutions-for-ANTMINER-failures), [Bitcointalk forums](https://bitcointalk.org/index.php?topic=1663075.0), [Mineshop](https://mineshop.eu/blog/asic-miner/how-to-open-bitmain-antminer-warranty-claim-step-by-step-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s7-ln": {
     "manufacturer": "bitmain",
@@ -3875,7 +4101,9 @@
       "Warranty": "180-365 days from shipment (legacy S7 series; non-transferable for resellers/used units)",
       "Sources": "[Minetheasic](https://minetheasic.com/bitmain-antminer-s7-ln), [D-Central](https://d-central.tech/miners/antminer-s7-ln/), [Ropesta](https://ropestamining.github.io/bitmain/antminer-s7-ln-with-27ths-power-supply.html), [ASIC-Miner-Profitability](https://asic-miner-profitability.com/miner/bitmain-antminer-s7-ln), [Bitmain Support Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [BitcoinTalk S7 threads](https://bitcointalk.org/index.php?topic=1663075.0), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m20s": {
     "manufacturer": "microbt",
@@ -3899,7 +4127,9 @@
       "Warranty": "180 days on hash boards/PSU/fans, 365 days on control board (from manufacture date; excludes connection errors, overclocking, physical damage)",
       "Sources": "[Whatsminer M20S Manual](https://www.zeusbtc.com/manuals/user-manuals/WhatsMiner-M20S-Manual.pdf), [Hashrate Index](https://hashrateindex.com/blog/whatsminer-m20s-profitability-m30s-m31s-m32/), [CryptoMinerBros](https://www.cryptominerbros.com/product/microbt-whatsminer-m20s-sha-256-miner/), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/microbt), [ZeusBTC Repair](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/3844-whatsminer-m20s-hash-board-common-fault-repair-method), [Mineshop Warranty](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [CryptoCalc](https://cryptocalc.online/en/miners/microbt-whatsminer-m20s), [Whatsminer.net](https://whatsminer.net/product/m20s-batch2/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-t17": {
     "manufacturer": "bitmain",
@@ -3923,7 +4153,9 @@
       "Warranty": "180 days (6 months) for miner from dispatch date; 365 days for PSU (per secondary sources, as T17 pre-S19)",
       "Sources": "[Bitmain Support T17 Specs](https://support.bitmain.com/hc/en-us/articles/360020445993-T17-Specifications), [D-Central Review](https://d-central.tech/review/antminer-t17-specs/), [Bitmain Blog](https://blog.bitmain.com/en/tag/bitcoin-cash/), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Troubleshooting 17 Series](https://d-central.tech/troubleshooting-the-most-common-problems-on-antminer-17-series/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4690-antminer-t17-series-firmware-download), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-t17-40th)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-t19": {
     "manufacturer": "bitmain",
@@ -3947,7 +4179,9 @@
       "Warranty": "12 months (extended from 6 months for 19 series)",
       "Sources": "[Bitmain T19 Manual](https://www.zeusbtc.com/manuals/user-manuals/AntMiner-T19-manual.pdf), [D-Central T19 Specs](https://d-central.tech/antminer-t19-specifications/), [Bitmain Warranty Extension](https://support.bitmain.com/hc/en-us/articles/900004354623-BITMAIN-extends-the-warranty-for-the-ANTMINER-19-Series), [AsicMarketplace](https://asicmarketplace.com/product/bitmain-antminer-t19-88th-s/), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-t19-bitcoin-miner-84th-s-bt-miners/), [D-Central Warranty Guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [D-Central Repair Guide](https://d-central.tech/manuals/antminer-t19-maintenance-repair-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-t19-hydro": {
     "manufacturer": "bitmain",
@@ -3971,7 +4205,9 @@
       "Warranty": "365 days from shipment for new units ([Bitmain Support](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty))",
       "Sources": "[Bitmain T19 Hydro Specs](https://support.bitmain.com/hc/en-us/articles/8235768027161-T19-Hydro-Specifications), [Bitmain Liquid Cooling Specs](https://support.bitmain.com/hc/en-us/articles/4418373232153-Specifications-of-T19-S19-Liquid-Cooling-Miner), [Forklog Announcement](https://forklog.com/en/bitmain-launches-antminer-t19-hydro-with-145-th-s-hashrate/), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-t19-hydro-bitcoin-miner/), [D-Central](https://d-central.tech/the-different-19-series-models-and-specs-compared-which-one-is-right-for-you/), [MiningStore](https://miningstore.com/Asic-Mining-Hardware/crypto-miners/bitmain-antminer-t19-hydro-158th-bitcoin-miner/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4688-antminer-t19-series-firmware-download), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Reddit Hydro Issues](https://www.reddit.com/r/BitcoinMining/comments/1osrmbo/trouble_starting_my_antminer_s19_xp_hydro_when/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "antminer-t17plus": {
     "manufacturer": "bitmain",
@@ -3995,7 +4231,9 @@
       "Warranty": "180 days (miner), 365 days (PSU) from dispatch date for direct purchases (S17/T17 series)",
       "Sources": "[Bitmain Blog](https://blog.bitmain.com/en/bitmain-announces-specs-and-release-times-for-its-latest-7nm-antminer-17-series-miners/), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-t17+-64th), [Crypto Miner Bros](https://www.cryptominerbros.com/product/bitmain-antminer-t17-64th-s-bitcoin-miner-sha-256-algorithm/), [ASIC Marketplace](https://asicmarketplace.com/product/bitmain-antminer-t17-64-th-s/), [D-Central Repair Guide](https://d-central.tech/manuals/antminer-t17plus-maintenance-repair-guide/), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [Awesome Miner](https://www.awesomeminer.com/firmware/antminer-t17p), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/bitmain), [BT-Miners](https://bt-miners.com/products/antminer-t17-58t-bitcoin-miner/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s11": {
     "manufacturer": "bitmain",
@@ -4019,7 +4257,9 @@
       "Warranty": "365 days from shipment for new miner (per Bitmain policy for BTC miners; confirm via serial)",
       "Sources": "[Bitmain Support](https://support.bitmain.com/hc/en-us/articles/360013897833-ANTMINER-S11), [ASIC Miner Value](https://www.asicminervalue.com/ru/miners/compare/bitmain--antminer-s11-20-5th,bitmain--antminer-s21e-xp-hydro-860th), [D-Central](https://d-central.tech/fr/miners/antminer-s11-20-5th/), [CryptoCompare](https://www.cryptocompare.com/mining/bitmain/antminer-s11-sha256-195ths/), [S11 Manual](https://www.zeusbtc.com/manuals/user-manuals/AntMiner-S11-Server-Manual.pdf), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Zeus Mining PSU](https://www.zeusbtc.com/ASIC-Miner-Repair/Parts-Tools-Details.asp?ID=226)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m3x": {
     "manufacturer": "microbt",
@@ -4043,7 +4283,9 @@
       "Warranty": "Typically 180 days on hashboards/PSU/fans, 365 days on control board (from manufacture date)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/microbt/whatsminer-m3x), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/microbt-whatsminer-m3x-sha-256-125ths/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m3x-12.5th), [Zeus Mining Manual](https://www.zeusbtc.com/manuals/user-manuals/Whatsminer-M3X-Manual.pdf), [Mineshop.eu Warranty Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m3-vs-whatsminer-m3x/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m33s": {
     "manufacturer": "microbt",
@@ -4067,7 +4309,9 @@
       "Warranty": "Not specified in sources; typical ASIC miner warranty 6-12 months (unconfirmed)",
       "Sources": "[Whatsminer M3X Manual](https://www.zeusbtc.com/manuals/user-manuals/Whatsminer-M3X-Manual.pdf), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/microbt-whatsminer-m3x-sha-256-125ths/), [MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m3x-12-5th-s/), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m3-vs-whatsminer-m3x/), [ASIC Miner Value](https://www.asicminervalue.com/miners/microbt), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m3x-12.5th), [Zeus Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m21s": {
     "manufacturer": "microbt",
@@ -4091,7 +4335,9 @@
       "Warranty": "Typically 180 days hash boards, 365 days control board (MicroBT standard per resellers; original likely expired)",
       "Sources": "[Whatsminer M3X Manual](https://www.zeusbtc.com/manuals/user-manuals/Whatsminer-M3X-Manual.pdf), [ASIC Miner Value](https://www.asicminervalue.com/miners/microbt/whatsminer-m3x), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m3x-12.5th), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/microbt-whatsminer-m3x-sha-256-125ths/), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m3-vs-whatsminer-m3x/), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), [Mineshop RMA Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-t19-pro-hyd": {
     "manufacturer": "bitmain",
@@ -4115,7 +4361,9 @@
       "Warranty": "12 months from factory production (per resellers; Bitmain extended 19-series to 12 months in 2020)",
       "Sources": "[Bitmars](https://bitmars.io/product/bitmain-antminer-t19-pro-hyd-235t-btc-miner/), [ASIC Miner Value](https://www.asicminervalue.com/miners/bitmain/antminer-t19-pro-hyd-235th), [Apexto Mining](https://apextomining.com/product/bitmain-antminer-t19-pro-hydro-235th-5170w/), [Manuals.plus](https://manuals.plus/bitmain/antminer-t19-pro-hyd-235t-btc-miner-manual), [Bitmain Support (similar hydro)](https://support.bitmain.com/hc/en-us/articles/4418373232153-Specifications-of-T19-S19-Liquid-Cooling-Miner), [Hashrate.farm firmware](https://www.hashrate.farm/mining-hub/firmwares), [Zeus Mining firmware](https://www.zeusbtc.com/firmware-download/details/4688-antminer-t19-series-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "whatsminer-m21splus": {
     "manufacturer": "microbt",
@@ -4139,7 +4387,9 @@
       "Warranty": "Typically 180 days hashboards/PSU, 365 days control board (varies by reseller)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/microbt/whatsminer-m3x), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m3x-12.5th), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/microbt-whatsminer-m3x-sha-256-125ths/), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m3-vs-whatsminer-m3x/), [MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m3x-12-5th-s/), [Mineshop RMA Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [Zeus Mining Firmware](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download), [Bitcointalk](https://bitcointalk.org/index.php?topic=3322593.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-851": {
     "manufacturer": "canaan",
@@ -4163,7 +4413,9 @@
       "Warranty": "180 days from purchase (standard for Canaan Avalon miners)",
       "Sources": "[CryptoSlate](https://cryptoslate.com/products/canaan-avalon-821/), [Hashrate Index](https://hashrateindex.com/rigs/canaan-avalonminer-821-11.5th), [Bitcointalk Review](https://bitcointalk.org/index.php?topic=2937129), [D-Central](https://d-central.tech/miners/compare/avalonminer-821-vs-bitcoin-space-heater-s19/), [Mineshop Warranty](https://mineshop.eu/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner), [ZeusBTC Repair](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1653-how-to-troubleshoot-and-repair-avalon-721-741-761-821-and-841)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m32": {
     "manufacturer": "microbt",
@@ -4187,7 +4439,9 @@
       "Warranty": "180 days hash boards/PSU/fans, 365 days control board (MicroBT standard)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/microbt), [MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m3x-12-5th-s/), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/microbt-whatsminer-m3x-sha-256-125ths/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m3x-12.5th), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m3-vs-whatsminer-m3x/), [Mineshop RMA Guide](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [Bitcointalk](https://bitcointalk.org/index.php?topic=3322593.0), [Whatsminer Support](https://support.whatsminer.com/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon1-batch-2": {
     "manufacturer": "canaan",
@@ -4211,7 +4465,9 @@
       "Warranty": "Unknown (unconfirmed)",
       "Sources": "[Bitcointalk WTS](https://bitcointalk.org/index.php?topic=263700.0), [Bitcointalk countdown](https://bitcointalk.org/index.php?topic=167726.1620), [Reddit AMA](https://www.reddit.com/r/IAmA/comments/31zrl6/hi_im_ngzhang_founder_of_avalon_project_a_senior/), [AsicMinerValue](https://www.asicminervalue.com), [HashrateIndex](https://hashrateindex.com), [BT-Miners](https://bt-miners.com), [D-Central](https://d-central.tech), [Canaan](https://www.canaan.io), [Bitcointalk review 821](https://bitcointalk.org/index.php?topic=2937129.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-741": {
     "manufacturer": "canaan",
@@ -4235,7 +4491,9 @@
       "Warranty": "180 days manufacturer warranty (for new units; EOL product)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com), [CryptoCompare](https://www.cryptocompare.com/mining/canaan-creative/avalonminer-741-sha256-73ths/), [ZeusBTC Manual](https://www.zeusbtc.com/manuals/user-manuals/Avalonminer-741-Manual.pdf), [MineTheASIC](https://minetheasic.com/canaan-avalonminer-741), [1stMiningRig](https://1stminingrig.com/avalonminer-741-review-installation-guide/), [D-Central](https://d-central.tech/miners/compare/avalonminer-741-vs-t3-57t/), [Mineshop Warranty](https://mineshop.eu/index.php/es/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-841": {
     "manufacturer": "canaan",
@@ -4259,7 +4517,9 @@
       "Warranty": "180 days from purchase (standard for Canaan Avalon miners)",
       "Sources": "[CryptoSlate](https://cryptoslate.com/products/canaan-avalon-821/), [Hashrate Index](https://hashrateindex.com/rigs/canaan-avalonminer-821-11.5th), [Bitcointalk Review](https://bitcointalk.org/index.php?topic=2937129), [D-Central](https://d-central.tech/miners/compare/avalonminer-821-vs-bitcoin-space-heater-s19/), [Mineshop Warranty Guide](https://mineshop.eu/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner), [ZeusBTC Manual](https://www.zeusbtc.com/manuals/user-manuals/Avalonminer-821-Manual.pdf), [Troubleshooting Guide](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1653-how-to-troubleshoot-and-repair-avalon-721-741-761-821-and-841)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m36s": {
     "manufacturer": "microbt",
@@ -4283,7 +4543,9 @@
       "Warranty": "180 days hashboards/PSU/fans, 365 days control board (MicroBT standard, from manufacture date) [Mineshop.eu]",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/microbt), [MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m3x-12-5th-s/), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/microbt-whatsminer-m3x-sha-256-125ths/), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m3-vs-whatsminer-m3x/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m3x-12.5th), [Zeus Mining](https://www.zeusbtc.com/manuals/user-manuals/Whatsminer-M3X-Manual.pdf), [BiXBiT](https://bixbit.io/en/documentation/error-codes-for-whatsminer-asic/list-of-errors-and-solutions-1), [Mineshop.eu](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "immersion"
+    }
   },
   "antminer-t17e": {
     "manufacturer": "bitmain",
@@ -4307,7 +4569,9 @@
       "Warranty": "180 days from dispatch for T17 series (D-Central); PSU 365 days; only direct from Bitmain/authorized, voids with custom FW/mods",
       "Sources": "[Bitmain Support T17e Specs](https://support.bitmain.com/hc/en-us/articles/900000051523-T17e-Specifications), [T17e Manual Oct 2019](https://www.zeusbtc.com/manuals/user-manuals/AntMiner-T17e-manual.pdf), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-t17e-53th), [ASIC Miner Value](https://www.asicminervalue.com/miners/bitmain/antminer-t17e-53th), [CryptoMinerBros](https://www.cryptominerbros.com/product/bitmain-antminer-t17e-53th-s-bitcoin-miner-sha-256-algorithm/), [D-Central Warranty](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/), [D-Central 17 Series Issues](https://d-central.tech/troubleshooting-the-most-common-problems-on-antminer-17-series/), [Zeus Mining Faults](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/3906-common-faults-and-solutions-of-t17e-hash-board)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m33splusplus": {
     "manufacturer": "microbt",
@@ -4331,7 +4595,9 @@
       "Warranty": "180 days hash boards, 365 days control board (MicroBT standard for series; confirm via serial) [Mineshop](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/microbt), [MiningNow](https://miningnow.com/asic-miner/microbt-whatsminer-m3x-12-5th-s/), [Hashrate Index](https://hashrateindex.com/rigs/microbt-whatsminer-m3x-12.5th), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/microbt-whatsminer-m3x-sha-256-125ths/), [D-Central](https://d-central.tech/fr/miners/compare/whatsminer-m3-vs-whatsminer-m3x/), [Bitcointalk](https://bitcointalk.org/index.php?topic=3322593.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "hydro"
+    }
   },
   "avalon1-batch-3": {
     "manufacturer": "canaan",
@@ -4355,7 +4621,9 @@
       "Warranty": "Unknown (early 2013 product, no info found)",
       "Sources": "[Bitcoin Wiki Avalon1](https://en.bitcoin.it/wiki/Avalon1), [Bitcoin Magazine Jan 2013](https://bitcoinmagazine.com/business/avalon-ships-bitcoins-first-consumer-asics-1358905223), [Charlie Shrem X post](https://x.com/CharlieShrem/status/1881026139579404506), [Canaan StockTitan](https://www.stocktitan.net/news/CAN/canaan-inc-awarded-order-from-new-customer-clean-spark-for-avalon-zqj043dg8slg.html)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-1047": {
     "manufacturer": "canaan",
@@ -4379,7 +4647,9 @@
       "Warranty": "Typically 6-12 months from Canaan (unconfirmed for this model; check serial on official site)",
       "Sources": "[BlokForge](https://blokforge.com/product/canaan-avalon-1041-31th-s-bitcoin-miner/), [CryptoCompare/ECOS](https://www.cryptocompare.com/mining/ecos-cloud-mining/avalonminer-1041-sha-256-31ths/), [Apanel](https://www.apanel.com/miners/canaan/avalon-1041/115), [Bitcointalk](https://bitcointalk.org/index.php?topic=5164326.0), [D-Central](https://d-central.tech), [Zeus Mining](https://www.zeusbtc.com)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-1126-pro": {
     "manufacturer": "canaan",
@@ -4403,7 +4673,9 @@
       "Warranty": "Typically 6-12 months from Canaan (unconfirmed for this model); repairs offered post-warranty ~$70 for PSU",
       "Sources": "[BlokForge](https://blokforge.com/product/canaan-avalon-1041-31th-s-bitcoin-miner/), [CryptoCompare/ECOS](https://www.cryptocompare.com/mining/ecos-cloud-mining/avalonminer-1041-sha-256-31ths/), [Bitcointalk Review](https://bitcointalk.org/index.php?topic=5164326.0), [D-Central Troubleshooting](https://d-central.tech/troubleshooting/troubleshooting-guide-for-avalon-miner-power-supply-failures/), [Reddit Warranty](https://www.reddit.com/r/Bitcoin/comments/1dihl6m/avalon_miner_warranty_story/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon4-/-avalon4.1": {
     "manufacturer": "canaan",
@@ -4427,7 +4699,9 @@
       "Warranty": "90 days [CryptoCompare](https://www.cryptocompare.com/mining/avalon/avalon-41-btc-mining-equipment-13-ths/)",
       "Sources": "[Bitcointalk review](https://bitcointalk.org/index.php?topic=951897.0), [CryptoCompare](https://www.cryptocompare.com/mining/avalon/avalon-41-btc-mining-equipment-13-ths/), [Canaan Downloads](https://canaanio-downloads.s3.amazonaws.com/downloads/index-old.html), ASIC Miner Value (no listing), Hashrate Index (no listing), D-Central (historical mention)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-1166-pro": {
     "manufacturer": "canaan",
@@ -4451,7 +4725,9 @@
       "Warranty": "180 days from purchase (standard for Canaan Avalon miners)",
       "Sources": "[Blokforge](https://blokforge.com/product/canaan-avalon-1041-31th-s-bitcoin-miner/), [CryptoCompare](https://www.cryptocompare.com/mining/ecos-cloud-mining/avalonminer-1041-sha-256-31ths/), [Minector 1041F](https://minector.com/hardware/canaan-avalonminer-1041f), [Mineshop.eu](https://mineshop.eu/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner), [Bitcointalk](https://bitcointalk.org/index.php?topic=5164326.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "whatsminer-m10s": {
     "manufacturer": "microbt",
@@ -4475,7 +4751,9 @@
       "Warranty": "180 days on hashboards/PSU/fans, 365 days on control board (MicroBT standard)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/manufacturers/microbt), [MineTheASIC](https://minetheasic.com/microbt-whatsminer-m10s), [ASICMinerCompare](https://asicminercompare.com/miners/microbt/whatsminer-m10s), [Bitcointalk](https://bitcointalk.org/index.php?topic=5033132.0), [Mineshop.eu](https://mineshop.eu/blog/asic-miner/microbt-whatsminer-warranty-rma-guide), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4708-whatsminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-1066-pro": {
     "manufacturer": "canaan",
@@ -4499,7 +4777,9 @@
       "Warranty": "Typically manufacturer standard (not specified); resellers offer limited returns (e.g., 10 days)",
       "Sources": "[BlokForge](https://blokforge.com/product/canaan-avalon-1041-31th-s-bitcoin-miner/), [CryptoCompare ECOS](https://www.cryptocompare.com/mining/ecos-cloud-mining/avalonminer-1041-sha-256-31ths/), [Apanel](https://www.apanel.com/miners/canaan/avalon-1041/115), [Bitcointalk](https://bitcointalk.org/index.php?topic=5164326), mining forums (Zeus Mining, Reddit, D-Central)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-1041": {
     "manufacturer": "canaan",
@@ -4523,7 +4803,9 @@
       "Warranty": "180-360 days from purchase/dispatch (varies by source and era; PSU often 3 days or none)",
       "Sources": "[BlokForge](https://blokforge.com/product/canaan-avalon-1041-31th-s-bitcoin-miner/), [CryptoCompare](https://www.cryptocompare.com/mining/ecos-cloud-mining/avalonminer-1041-sha-256-31ths/), [Mineshop.eu](https://mineshop.eu/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner), [Canaan Help](https://help.canaan.io/hc/en-us/articles/6058550579737-After-Sales-Repair-Service-Policy), [Bitcointalk](https://bitcointalk.org/index.php?topic=5164326.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-721": {
     "manufacturer": "canaan",
@@ -4547,7 +4829,9 @@
       "Warranty": "180 days from ship date (retailer); manufacturer not specified",
       "Sources": "[BitcoinTalk announcement](https://bitcointalk.org/index.php?topic=1673843.0), [EastShore Mining](https://www.eastshoremining.com/shop/bitcoin-miner-avalon-721-6th-asic-miner-16nm-btc-miner/), [Zeus Mining](https://www.zeusbtc.com/Used-ASIC-Miner/Used-Miner-Details.asp?ID=1262), [Zeus troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1653-how-to-troubleshoot-and-repair-avalon-721-741-761-821-and-841)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon-a1246": {
     "manufacturer": "canaan",
@@ -4571,7 +4855,9 @@
       "Warranty": "360 days from Canaan direct purchase (reseller varies, e.g., 6 months or 180 days)",
       "Sources": "[Canaan Official Shop](https://shop.canaan.io/products/canaan-avalon-miner-a1246-87t), [Marketscreener Blokforge Review](https://www.marketscreener.com/quote/stock/CANAAN-INC-76482411/news/Canaan-US-based-ASIC-Mining-Hardware-Retailer-Blokforge-Reviews-Canaan-s-Next-Generation-A1246-A-32363519/), [BT-Miners](https://bt-miners.com/products/canaan-avalonminer-a1246-bitcoin-miner-96th-s-bt-miners/), [CryptoCompare](https://www.cryptocompare.com/mining/wattum/avalon-a1246-sha256-83ths/), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/4360-avalon-1246-common-faults-and-solutions-1246-kernel-log)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-1146-pro": {
     "manufacturer": "canaan",
@@ -4595,7 +4881,9 @@
       "Warranty": "6-12 months (reseller typical; official unconfirmed)",
       "Sources": "[BlokForge](https://blokforge.com/product/canaan-avalon-1041-31th-s-bitcoin-miner/), [CryptoCompare/ECOS](https://www.cryptocompare.com/mining/ecos-cloud-mining/avalonminer-1041-sha-256-31ths/), [Bitcointalk](https://bitcointalk.org/index.php?topic=5164326.0), [D-Central](https://d-central.tech/troubleshooting/troubleshooting-guide-for-avalon-miner-power-supply-failures/), [Hiveon](https://hiveon.com/knowledge-base/hiveon-asic-firmware/general/asic-miner-models/), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/otkr8g/so_whats_high_performance_work_mode_avalonminer/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-1066": {
     "manufacturer": "canaan",
@@ -4619,7 +4907,9 @@
       "Warranty": "180 days from purchase (standard Canaan)",
       "Sources": "[BlokForge](https://blokforge.com/product/canaan-avalon-1041-31th-s-bitcoin-miner/), [CryptoCompare](https://www.cryptocompare.com/mining/ecos-cloud-mining/avalonminer-1041-sha-256-31ths/), [Apanel](https://www.apanel.com/miners/canaan/avalon-1041/115), [Mineshop.eu Warranty](https://mineshop.eu/index.php/es/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner), [Bitcointalk](https://bitcointalk.org/index.php?topic=5164326), forums/Reddit"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalonminer-821": {
     "manufacturer": "canaan",
@@ -4643,7 +4933,9 @@
       "Warranty": "180 days from purchase (standard for Canaan Avalon miners)",
       "Sources": "[CryptoSlate](https://cryptoslate.com/products/canaan-avalon-821/), [Hashrate Index](https://hashrateindex.com/rigs/canaan-avalonminer-821-11.5th), [Bitcointalk Review](https://bitcointalk.org/index.php?topic=2937129.0), [D-Central](https://d-central.tech/miners/compare/avalonminer-821-vs-bitcoin-space-heater-s19/), [Mineshop Warranty](https://mineshop.eu/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner), [ZeusBTC Troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1653-how-to-troubleshoot-and-repair-avalon-721-741-761-821-and-841)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon-a1326": {
     "manufacturer": "canaan",
@@ -4667,7 +4959,9 @@
       "Warranty": "360 days from pickup for original buyer from Canaan; excludes fans, third-party mods, etc. [Canaan Warranty](https://shop.canaan.io/products/avalon-miner-a1326-106t-3520w), [Canaan Policy](https://help.canaan.io/hc/en-us/articles/6058550579737-After-Sales-Repair-Service-Policy)",
       "Sources": "[Canaan Official 106T](https://shop.canaan.io/products/avalon-miner-a1326-106t-3520w), [Canaan 109T](https://shop.canaan.io/products/avalon-miner-a1326-109t-3520w), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3696), [Coin Mining Central](https://coinminingcentral.com/products/canaan-avalon-a1326-bitcoin-miner-109-115th), [D-Central PSU Guide](https://d-central.tech/troubleshooting/troubleshooting-guide-for-avalon-miner-power-supply-failures/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon1-batch-1": {
     "manufacturer": "canaan",
@@ -4691,7 +4985,9 @@
       "Warranty": "Unknown (2013 legacy product)",
       "Sources": "[Bitcoin Wiki Avalon1](https://en.bitcoin.it/wiki/Avalon1), [LinkedIn Nico Smid](https://www.linkedin.com/posts/nicosmid_last-week-at-mining-disrupt-i-visited-the-activity-7312464616129748993-ltO7), [D-Central](https://d-central.tech/innovation-at-the-core-the-canaan-and-avalon-story/), [TopBitcoinMiningHardware](https://www.topbitcoinmininghardware.com/avalon-asic-review-solid-chips-and-asic-miner/), [Bitcointalk Avalon4 review](https://bitcointalk.org/index.php?topic=951897.0), [Bitcointalk Batch1 announcement](https://bitcointalk.org/index.php?topic=137534.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon-a1446": {
     "manufacturer": "canaan",
@@ -4715,7 +5011,9 @@
       "Warranty": "6 months (retailer); manufacturer warranty excludes misuse (details vary)",
       "Sources": "[Canaan Official Shop](https://shop.canaan.io/products/avalon-miner-a1446-124t-3310w), [BT-Miners](https://bt-miners.com/products/canaan-avalonminer-a1446-bitcoin-miner-135th-s-bt-miners/), [DCE Miner](https://dceminer.com/products/canaan-avalon-a1446), [Apexto Mining](https://apextomining.com/product/canaan-avalon-asic-miner-1446-135t-3310w-blockchain-hardware-for-bitcoin-mining-btc-rig-on-sale/), [Hashrate Index](https://hashrateindex.com/rigs/canaan-a1446-135th), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3140), [ASIC Miner Value](https://www.asicminervalue.com/), [CryptoMinerBros](https://www.cryptominerbros.com/blog/canaan-launched-avalon-a14-series/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon-a1266": {
     "manufacturer": "canaan",
@@ -4739,7 +5037,9 @@
       "Warranty": "180 days manufacturer warranty (standard for Canaan Avalon miners) [Mineshop](https://mineshop.eu/index.php/es/blog/asic-miner/how-to-claim-warranty-canaan-avalon-miner), [Canaan Help](https://help.canaan.io/hc/en-us/articles/6058550579737-After-Sales-Repair-Service-Policy)",
       "Sources": "[Canaan Shop](https://shop.canaan.io/products/canaan-avalon-miner-a1266-96t), [BiXBiT](https://bixbit.io/en/blog/post/review-of-canaan-avalon-made-a1266-asic-specifications-profitability-and-payback), [Miners1688](https://www.miners1688.com/product/avalon-made-a1266/), [Hashrate Index](https://hashrateindex.com/blog/what-is-canaans-avalon-1266-bitcoin-miner/), [D-Central](https://d-central.tech/manuals/avalonminer-1246-maintenance-repair-guide/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t2-turbo-25t": {
     "manufacturer": "innosilicon",
@@ -4763,7 +5063,9 @@
       "Warranty": "Not specified by manufacturer; resellers offer 6 months [desertcart](https://desertcart.ec/products/82522906-innosilicon-terminator-t-2-17-2-th-s-bitcoin-btc-miner-1800-w-power-supply); limited support noted in old forums",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [MiningNow](https://miningnow.com/asic-miner/innosilicon-t2-terminator-17-2th-s/), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting), [ASIC Miner Profitability](https://asic-miner-profitability.com/miner/innosilicon-t2-terminator-terminator-2)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e9.2": {
     "manufacturer": "ebang",
@@ -4787,7 +5089,9 @@
       "Warranty": "6 months whole unit, 1 year controller (original)",
       "Sources": "[CryptoCompare](https://www.cryptocompare.com/mining/ebang-communication/ebit-miner-e92-sha256-12-ths/), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/ebang), [D-Central](https://d-central.tech/miners/ebit-e9-2/), [Minetheasic](https://minetheasic.com/ebang-ebit-e9-2), [Zeus Mining](https://www.zeusbtc.com/ASIC-Miner-Repair/Parts-Tools-Details.asp?ID=2174), [Bitcointalk](https://bitcointalk.org/index.php?topic=5416742.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t2-turbo-hfplus": {
     "manufacturer": "innosilicon",
@@ -4811,7 +5115,9 @@
       "Warranty": "180 days factory warranty for new units (vendor-dependent)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/manufacturers/innosilicon), [CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [D-Central](https://d-central.tech/miners/compare/t2-terminator-vs-whatsminer-m56s-plus/), [Zeus Mining troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting), [Bitcointalk forum](https://bitcointalk.org/index.php?topic=3926710.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t2-turbo-26t": {
     "manufacturer": "innosilicon",
@@ -4835,7 +5141,9 @@
       "Warranty": "180 days for new units (retailer); original factory warranty varies",
       "Sources": "[2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [D-Central](https://d-central.tech/miners/t2-terminator/), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/innosilicon-terminator-t2-blake-256-172ths/), [Zeus Mining troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting), [asic-miner-profitability](https://asic-miner-profitability.com/miner/innosilicon-t2-terminator-terminator-2)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t2-turboplus-32t": {
     "manufacturer": "innosilicon",
@@ -4859,7 +5167,9 @@
       "Warranty": "Typically 180 days for new from resellers (unconfirmed from manufacturer)",
       "Sources": "[CryptoCompare](https://www.cryptocompare.com/mining/redbag-technologies/innosilicon-terminator-t2-sha256-172ths/), [CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [Bitcointalk](https://bitcointalk.org/index.php?topic=3926710.0), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting), [MiningNow](https://miningnow.com/asic-miner/innosilicon-t2-terminator-17-2th-s/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t2-turbo-29t/30t": {
     "manufacturer": "innosilicon",
@@ -4883,7 +5193,9 @@
       "Warranty": "180 days original factory (new units, per resellers); none for used hardware",
       "Sources": "[2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [D-Central](https://d-central.tech/miners/t2-terminator/), [CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e9plus": {
     "manufacturer": "ebang",
@@ -4907,7 +5219,9 @@
       "Warranty": "Not specified (typical for used miners ~6-12 months from resellers; contact Ebang support)",
       "Sources": "[Minetheasic](https://minetheasic.com/ebang-ebit-e9-3), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/ebit-e9plus-sha-256-14ths/), [Hashrate Index](https://hashrateindex.com/rigs/ebang-ebit-e9+-9th), [Bitcointalk](https://bitcointalk.org/index.php?topic=2638479.0), [Ebang User Guide](https://www.scribd.com/document/433227435/EBANG-EBIT-miner-E9-Instructions), [Zeus Mining](https://www.zeusbtc.com/ASIC-Miner-Repair/Parts-Tools-Details.asp?ID=1608)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e9.3": {
     "manufacturer": "ebang",
@@ -4931,7 +5245,9 @@
       "Warranty": "6 months whole machine, 1 year controller (original)",
       "Sources": "[CryptoCompare](https://www.cryptocompare.com/mining/ebang-communication/ebit-miner-e93-sha256-16-ths/), [Hashrate Index](https://hashrateindex.com/rigs/ebit-e9.3-16th), [Bitcoin Merch](https://bitcoinmerch.com/products/ebang-ebit-e9-3-16th-profitability), [ASIC Miner Profitability](https://asic-miner-profitability.com/miner/ebang-ebit-e93), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/2843-how-to-troubleshoot-simple-failures-of-ebit-miners), [Bitcointalk Firmware](https://bitcointalk.org/index.php?topic=5416742.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e9i": {
     "manufacturer": "ebang",
@@ -4955,7 +5271,9 @@
       "Warranty": "6 months whole machine, 1 year controller (per one source)",
       "Sources": "[Zeus Mining](https://www.zeusbtc.com/Used-ASIC-Miner/Used-Miner-Details.asp?ID=1263), [CryptoCompare](https://www.cryptocompare.com/mining/ebang-communication/ebit-miner-e9i-sha256-135ths/), [Minetheasic](https://minetheasic.com/ebang-ebit-e9i), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/ebang), [Ebang Guide](https://www.scribd.com/document/541281748/EBANG-EBIT-Miner-E9-i-E9i-Instructions-1), [Bitcointalk](https://bitcointalk.org/index.php?topic=5342474.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t3-50t": {
     "manufacturer": "innosilicon",
@@ -4979,7 +5297,9 @@
       "Warranty": "Typically 180 days for used/refurbished; original factory warranty unconfirmed (older model)",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [ASIC Miner Value](https://www.asicminervalue.com/), [Minetheasic](https://minetheasic.com/innosilicon-t2-terminator), [asic-miner-profitability](https://asic-miner-profitability.com/miner/innosilicon-t2-terminator-terminator-2), [Zeus Mining troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting), [MiningNow](https://miningnow.com/asic-miner/innosilicon-t2-terminator-17-2th-s/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t2-terminator": {
     "manufacturer": "innosilicon",
@@ -5003,7 +5323,9 @@
       "Warranty": "180 days factory for new (reseller); voids if cables misconnected or sticker damaged",
       "Sources": "[2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [D-Central](https://d-central.tech/miners/t2-terminator/), [CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [Innosilicon T2 Manual](https://www.zeusbtc.com/manuals/user-manuals/Innosilicon-T2-Manual.pdf), [Zeus Mining troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "bitfury-b8": {
     "manufacturer": "bitfury",
@@ -5027,7 +5349,9 @@
       "Warranty": "Not specified in sources",
       "Sources": "[HashrateIndex](https://hashrateindex.com/rigs/bitfury-b8-49th), [Minetheasic](https://minetheasic.com/bitfury-b8), [Bitfury BlockBox Datasheet](https://bitfury.com/content/downloads/datasheet-blockbox-a-11.8-14-phs-preview-v5.4.pdf), [Bitcointalk Forums](https://bitcointalk.org/index.php?topic=5376695.0), [Scribd QSG](https://www.scribd.com/document/522702513/B8-QSG-2018-12-v1-3)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "strongu-stu-u1plusplus": {
     "manufacturer": "strongu",
@@ -5051,7 +5375,9 @@
       "Warranty": "Unconfirmed (resellers: 6-12 months)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/strongu), [CryptoMinerBros STU-U8](https://www.cryptominerbros.com/product/strongu-stu-u8-sha-256-algorithm-bitcoin-miner/), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/strongu-stu-u1-blake256-11ths/), [D-Central](https://d-central.tech/miners/compare/stu-u1-vs-whatsminer-d1/), [Hashrate Index](https://hashrateindex.com/rigs/strongu-stu-u8-46th), [Bitcointalk](https://bitcointalk.org/index.php?topic=5210117.60)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t3plus-52t": {
     "manufacturer": "innosilicon",
@@ -5075,7 +5401,9 @@
       "Warranty": "Not specified in sources",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/manufacturers/innosilicon), [D-Central](https://d-central.tech/miners/t2-terminator/), [CryptoCompare](https://www.cryptocompare.com/mining/redbag-technologies/innosilicon-terminator-t2-sha256-172ths/), [CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "halong-mining-dragonmint-t1": {
     "manufacturer": "halong",
@@ -5099,7 +5427,9 @@
       "Warranty": "Not specified in sources (contact resellers like D-Central for service)",
       "Sources": "[Minetheasic](https://minetheasic.com/halong-mining-dragonmint-t1), [Hashrate Index](https://hashrateindex.com/rigs/halong-dragonmint-t1-16th), [D-Central](https://d-central.tech/manuals/innosilicon-t1-maintenance-repair-guide/), [Unblock.net Review](https://unblock.net/halong-dragonmint-t1-miner-review/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t3plus-43t": {
     "manufacturer": "innosilicon",
@@ -5123,7 +5453,9 @@
       "Warranty": "180 days for brand new (seller); no standard manufacturer warranty confirmed [2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/)",
       "Sources": "[D-Central](https://d-central.tech/miners/t2-terminator/), [2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "strongu-stu-u8": {
     "manufacturer": "strongu",
@@ -5147,7 +5479,9 @@
       "Warranty": "Unconfirmed; typical ASIC miner warranty 6-12 months (not specified in sources)",
       "Sources": "[ASIC Miner Value StrongU list](https://www.asicminervalue.com/miners/strongu), [CryptoCompare STU-U1](https://www.cryptocompare.com/mining/coin-mining-central/strongu-stu-u1-blake256-11ths/), [CryptoMinerBros STU-U8](https://www.cryptominerbros.com/product/strongu-stu-u8-sha-256-algorithm-bitcoin-miner/), [Bitcointalk STU-U6 issues](https://bitcointalk.org/index.php?topic=5210117.60), [WhatToMine STU-U1](https://whattomine.com/coins/152-dcr-blake-14r/asics/16-strongu-stu-u1)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "strongu-hornbill-h8": {
     "manufacturer": "strongu",
@@ -5171,7 +5505,9 @@
       "Warranty": "6 months (reseller typical; manufacturer unspecified)",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/strongu/hornbill-h8-pro), [Hashrate Index H8](https://hashrateindex.com/rigs/strongu-hornbill-h8-74th), [Coin Mining Central H8](https://coinminingcentral.com/products/strongu-stu-hornbill-h8-74-th-s), [D-Central H8 Pro](https://d-central.tech/fr/miners/hornbill-h8-pro/), [Reddit discussion](https://www.reddit.com/r/Bitcoin/comments/ljpnud/mining_with_the_strongu_hornbill_h8_pro/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "strongu-stu-u8-pro": {
     "manufacturer": "strongu",
@@ -5195,7 +5531,9 @@
       "Warranty": "Not specified",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/strongu-stu-u8-sha-256-algorithm-bitcoin-miner/), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/strongu-stu-u8-sha-256-46ths/), [ASIC Miner Value](https://www.asicminervalue.com/miners/strongu), [D-Central](https://d-central.tech/miners/stu-u1/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "kncminer-titan": {
     "manufacturer": "kncminer",
@@ -5219,7 +5557,9 @@
       "Warranty": "Unconfirmed/not available (KnCMiner bankrupt 2016)",
       "Sources": "[Bitcoin Wiki](https://en.bitcoin.it/wiki/Mining_hardware_comparison), [TradeKorea Scrypt Titan](https://www.tradekorea.com/product/detail/P688646/KnC-Miner-Titan-300-Mh-s-.html), [CCN Scrypt Titan](https://www.ccn.com/mining-asics-technologies-will-give-discount-scrypt-asics/), [Reddit Announcement](https://www.reddit.com/r/litecoinmining/comments/20sufo/knc_introduces_scrypt_miner_titan_100mhs/), [Fuk.io Review](https://fuk.io/knc-titan-asic-scrypt-miner-review-troubleshooting-and-guide/), [Bitcointalk Titan Review](https://bitcointalk.org/index.php?topic=1479409.0), [DogieCoin Jupiter](http://www.dogiecoin.com/kncminer-saturnjupiter.html)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "strongu-stu-u1": {
     "manufacturer": "strongu",
@@ -5243,7 +5583,9 @@
       "Warranty": "Typically 6-12 months from resellers; unconfirmed for model",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/miners/strongu), [D-Central](https://d-central.tech/miners/stu-u1/), [CryptoMinerBros STU-U1++](https://www.cryptominerbros.com/product/strongu-stu-u1-decred-miner/), [CryptoMinerBros STU-U8](https://www.cryptominerbros.com/product/strongu-stu-u8-sha-256-algorithm-bitcoin-miner/), [CryptoCompare](https://www.cryptocompare.com/mining/coin-mining-central/strongu-stu-u1-blake256-11ths/), [Bitcointalk](https://bitcointalk.org/index.php?topic=5202561.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e10": {
     "manufacturer": "ebang",
@@ -5267,7 +5609,9 @@
       "Warranty": "Manufacturer warranty (typically 6-12 months for ASICs, unconfirmed details) ([inovatecmining](https://inovatecmining.com/product/ebang-ebit-e10/))",
       "Sources": "[ASIC Miner Value](https://www.asicminervalue.com/manufacturers/ebang), [asicminercompare](https://asicminercompare.com/en/miners/ebang/ebit-e10), [minetheasic](https://minetheasic.com/ebang-ebit-e10), [CryptoCompare series](https://www.cryptocompare.com/mining/coin-mining-central/ebang-ebit-e103-sha-256-24ths/), [Bitcointalk](https://bitcointalk.org/index.php?topic=5125470.0), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/p790l4/im_looking_to_buy_ebang_miners_but_their_manage/), [WhatToMine](https://whattomine.com/asics/56-ebang-ebit-e10/history)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "kncminer-solar": {
     "manufacturer": "kncminer",
@@ -5291,7 +5635,9 @@
       "Warranty": "Unconfirmed/not found (company bankrupt 2016)",
       "Sources": "[Bitcointalk](https://bitcointalk.org/index.php?topic=864378.0), [Finance Magnates](https://www.financemagnates.com/cryptocurrency/news/kncminer-unveils-16-nm-solar-asic-says-it-will-increase-performance-six-fold/), [zorinaq blog](http://blog.zorinaq.com/bitcoin-electricity-consumption/), [BitcoinWiki](http://bitcoinwiki.org/wiki/kncminer), [FinTech Futures](https://www.fintechfutures.com/blockchain-crypto-digital-assets/bitcoin-firm-kncminer-declares-bankruptcy)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e12": {
     "manufacturer": "ebang",
@@ -5315,7 +5661,9 @@
       "Warranty": "Typically 365 days (industry standard; unconfirmed for Ebang)",
       "Sources": "[CryptoCompare 44TH](https://www.cryptocompare.com/mining/coin-mining-central/ebang-e12-sha256-44ths/), [CryptoCompare 50TH](https://www.cryptocompare.com/mining/ebang-communication/ebit-miner-e12plus-sha256-50ths/), [Hashrate Index](https://hashrateindex.com/rigs/ebang-ebit-e12-44th), [D-Central](https://d-central.tech/fr/miners/ebit-e12/), [Zeus](https://www.zeusbtc.com/articles/information/4181-ebang-ebit-e12-hash-board-repair-guide), [Minetheasic](https://minetheasic.com/ebang-ebit-e12-2)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "butterfly-labs-jalapeno": {
     "manufacturer": "butterfly_labs",
@@ -5339,7 +5687,9 @@
       "Warranty": "Unspecified",
       "Sources": "[Bitcoin Magazine](https://bitcoinmagazine.com/business/butterfly-labs-ships-first-finished-asic-for-review-1366653384), [Bitcoinist](https://bitcoinist.com/butterfly-labs-jalapeno-7-ghs-hands-on/), [Desertcart](https://www.desertcart.sc/products/10386558-butterfly-labs-jalapeno-bitforce-5-gh-s-sc-bitcoin-miner), [Bitcoin Talk](https://bitcointalk.org/index.php?topic=239625.0), Reddit/BitcoinMining, YouTube reviews"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "spondoolies-tech-sp20-jackson": {
     "manufacturer": "spondoolies",
@@ -5363,7 +5713,9 @@
       "Warranty": "Unspecified duration; non-transferable per some posts; not honored post-2016 shutdown",
       "Sources": "[CCN Review](https://www.ccn.com/review-spondoolies-tech-sp20-jackson-1-7-ths-bitcoin-miner-small-powerful/), [CryptoCoinsRevolution](https://www.cryptocoinsrevolution.com/spondolooies-sp20-jackson.php), [Bitcointalk SP20E Review](https://bitcointalk.org/index.php?topic=901758.0), [Bitcoinmining.com Review](https://www.bitcoinmining.com/spondoolies-tech-sp20-jackson-review/), [Bitcoinminer Announcement](https://www.bitcoinminer.com/bucking-the-cloud-mining-trend-spondoolies-tech/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "spondoolies-tech-sp35-yukon": {
     "manufacturer": "spondoolies",
@@ -5387,7 +5739,9 @@
       "Warranty": "Not specified (company Spondoolies-Tech closed May 2016)",
       "Sources": "[Tradekorea](https://www.tradekorea.com/product/detail/P700798/Spondooliestech-SP20-Jackson.html), [Bitcoinmining.com](https://www.bitcoinmining.com/spondoolies-tech-sp20-jackson-review/), [CCN.com](https://www.ccn.com/review-spondoolies-tech-sp20-jackson-1-7-ths-bitcoin-miner-small-powerful/), [Bitcointalk shipping](https://bitcointalk.org/index.php?topic=915391.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "butterfly-labs-monarch": {
     "manufacturer": "butterfly_labs",
@@ -5411,7 +5765,9 @@
       "Warranty": "Lifetime warranty offered (2012 announcement); upgrade orders non-refundable",
       "Sources": "[Bitcoin Magazine](https://bitcoinmagazine.com/business/butterfly-labs-ships-first-finished-asic-for-review-1366653384), [Bitcoinist](https://bitcoinist.com/butterfly-labs-jalapeno-7-ghs-hands-on/), [Desertcart](https://www.desertcart.sc/products/10386558-butterfly-labs-jalapeno-bitforce-5-gh-s-sc-bitcoin-miner), [Bitforce PDF](https://mineforeman.com/images/2012/12/BUTTERLYLABS_BITFORCE_Rev1.0.0.pdf), [Reddit](https://www.reddit.com/r/BitcoinMining/comments/1qmbg7/butterfly_labs_jalapeno_7gh_stopped_working_after/), [Bitcoin Magazine Warranty](https://bitcoinmagazine.com/business/butterfly-labs-offers-lifetime-warranty-asic-competition-surges-on-1349455470)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e12plus": {
     "manufacturer": "ebang",
@@ -5435,7 +5791,9 @@
       "Warranty": "Typically 180-365 days for new units (seller-dependent; unconfirmed official)",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/ebang-ebit-e12-50th-s-most-stable-bitcoin-miner/), [D-Central](https://d-central.tech/fr/miners/ebit-e12/), [ASIC Miner Value](https://www.asicminervalue.com/manufacturers/ebang), [CryptoCompare](https://www.cryptocompare.com/mining/ebang-communication/ebit-miner-e12plus-sha256-50ths/), [Zeus Mining](https://www.zeusbtc.com/ASIC-Miner-Repair/Parts-Tools-Details.asp?ID=1361), [Global Sources](https://www.globalsources.com/Blockchain-miner/Ebang-Ebit-E12-1190116555p.htm)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "strongu-hornbill-h8-pro": {
     "manufacturer": "strongu",
@@ -5459,7 +5817,9 @@
       "Warranty": "Not specified in sources; refurbished units offer 30 days [Bitcoin Merch](https://bitcoinmerch.com)",
       "Sources": "[AsicProfit](https://www.asicprofit.com/miners/strongu/hornbill-h8-pro), [ASIC Miner Value](https://www.asicminervalue.com), [D-Central](https://d-central.tech), [Reddit](https://www.reddit.com/r/Bitcoin/comments/ljpnud/mining_with_the_strongu_hornbill_h8_pro/), [Minerstat](https://minerstat.com)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t3-39t": {
     "manufacturer": "innosilicon",
@@ -5483,7 +5843,9 @@
       "Warranty": "180 days factory for new (reseller); none for used hardware",
       "Sources": "[2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [D-Central](https://d-central.tech/miners/t2-terminator/), [Zeus Mining troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting), [Zeus firmware](https://www.zeusbtc.com/firmware-download/details/4710-innosilicon-miner-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "innosilicon-t3plus-57t": {
     "manufacturer": "innosilicon",
@@ -5507,7 +5869,9 @@
       "Warranty": "180 days (new units per resellers); voided by PSU cable changes or damage (manufacturer policy)",
       "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [2140miner](https://www.2140miner.com/innosilicon-t2-terminator-17200ghs-product/), [CryptoMinersShop](https://cryptominersshop.com/product/innosilicon-terminator-2-t2-miner-sha-256-miner/), [MiningNow](https://miningnow.com/asic-miner/innosilicon-t2-terminator-17-2th-s/), [Zeus T2 Manual](https://www.zeusbtc.com/manuals/user-manuals/Innosilicon-T2-Manual.pdf), [Zeus Troubleshooting](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1271-innosilicon-t2-series-miner-troubleshooting)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "kncminer-neptune": {
     "manufacturer": "kncminer",
@@ -5531,7 +5895,9 @@
       "Warranty": "Unknown (company defunct post-2014)",
       "Sources": "[Yahoo Finance announcement](https://finance.yahoo.com/news/kncminer-debuts-most-powerful-bitcoin-210000931.html), [KitGuru review](https://www.kitguru.net/components/anton-shilov/the-first-20nm-processing-unit-a-bitcoin-miner/), [ExportersIndia](https://www.exportersindia.com/product-detail/new-kncminer-neptune-3-3th-s-20nm-bitcoin-miner-2493562.htm), [Bitcointalk repair thread](https://bitcointalk.org/index.php?topic=1283859.0), [GitHub firmware](https://github.com/KnCMiner/images/releases), [fuk.io review](https://fuk.io/knc-neptune-setup-guide-review-and-troubleshooting-35-terahash-bitcoin-miner/), [Neptune manual](https://4thamd.com/KnC/neptune/Manual_Neptune_1.0.pdf)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "avalon-a1346": {
     "manufacturer": "canaan",
@@ -5555,7 +5921,9 @@
       "Warranty": "360 days from Canaan for direct purchases ([Canaan Policy](https://help.canaan.io/hc/en-us/articles/6058550579737-After-Sales-Repair-Service-Policy)); 1 year from some resellers",
       "Sources": "[Canaan Shop](https://shop.canaan.io/products/avalon-miner-a1346-110t-3300w), [Hashrate Index](https://hashrateindex.com/rigs/canaan-avalon-a1346), [CryptoMinerBros](https://www.cryptominerbros.com/product/canaan-avalon-a1346-110t/), [AsicMarketplace](https://asicmarketplace.com/product/canaan-avalon-a1346-110th/), [D-Central](https://d-central.tech/miners/compare/avalon-a1346-vs-avalon-a15-194t/), [Miners1688](https://www.miners1688.com/product/canaan-avalon-a1346-bitcoin-miner-asic-mining/), [Zeus Mining](https://www.zeusbtc.com/firmware-download/details/4702-avalonminer-firmware-download)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "butterfly-labs-single-sc": {
     "manufacturer": "butterfly_labs",
@@ -5579,7 +5947,9 @@
       "Warranty": "Lifetime (main board; voided by non-official firmware)",
       "Sources": "[Bitcoin Magazine](https://bitcoinmagazine.com/business/butterfly-labs-ships-first-finished-asic-for-review-1366653384), [Home-Mining](https://home-mining.com/asic-miners/butterfly-labs/butterfly-labs-jalapeno/), [YouTube Unboxing](https://www.youtube.com/watch?v=MKcLZ_vqbiU), [YouTube Review Part 2](https://www.youtube.com/watch?v=PalJTasOh6Q), [Reddit Issues](https://www.reddit.com/r/BitcoinMining/comments/1qmbg7/butterfly_labs_jalapeno_7gh_stopped_working_after/)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "spondoolies-tech-sp31-yukon": {
     "manufacturer": "spondoolies",
@@ -5603,7 +5973,9 @@
       "Warranty": "Not found (company defunct)",
       "Sources": "[Ropesta](https://ropestamining.github.io/spondoolies/spondooliestech-sp31-yukon-enhanced.html), [Bitcointalk](https://bitcointalk.org/index.php?topic=1004456.0), [CryptoMiner Deals](https://cryptominer.deals/product/spondoolies-tech-sp31-yukon), [Worthpoint](https://www.worthpoint.com/worthopedia/spondoolies-sp31-yukon-rock-solid-925-1920828222)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "bitfury-tardis": {
     "manufacturer": "bitfury",
@@ -5627,7 +5999,9 @@
       "Warranty": "Not specified in sources",
       "Sources": "[Bitfury B9 Tardis Datasheet](https://bitfury.com/content/downloads/bitfury-b9-tardis-datasheet.pdf), [Bitfury Press Release Oct 2018](https://bitfury.com/content/downloads/09_10_18_bitfury_tardis_release.pdf), [Hashrate Index](https://hashrateindex.com/rigs/bitfury-tardis-80th), [BMC Specs](https://bmc.ai/bitfuryb9.pdf), [Bitfury Page](https://bitfury.com/crypto-infrastructure/oldtardis)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e10d": {
     "manufacturer": "ebang",
@@ -5651,7 +6025,9 @@
       "Warranty": "Not specified",
       "Sources": "[Hashrate Index](https://hashrateindex.com/rigs/ebit-e10d-25th), [ASIC Miner Compare](https://asicminercompare.com/miners/ebang/ebit-e10d), [ASIC-Miner-Profitability](https://asic-miner-profitability.com/miner/ebang-ebit-e10d), [D-Central](https://d-central.tech/miners/compare/ebit-e10-vs-ebit-e10d/), [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/1740-ebit-e10-miner-maintenance-guide), [MinerTheASIC](https://minetheasic.com/ebang-ebit-e10d), [Bitcointalk](https://bitcointalk.org/index.php?topic=5373746.0)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "ebang-ebit-e11plusplus": {
     "manufacturer": "ebang",
@@ -5675,7 +6051,9 @@
       "Warranty": "Not found in sources (typically 6-12 months for used miners; manufacturer warranty expired)",
       "Sources": "[ASIC Miner Compare](https://www.asicminercompare.com/en/miners/ebang/ebit-e11-plus-plus), [Hashrate Index](https://beta.hashrateindex.com/rigs/ebit-e11++-44th), [Bitcoin Merch](https://bitcoinmerch.com/products/ebang-ebit-e11-37th-s-bitcoin-miner), [D-Central](https://d-central.tech/miners/compare/avalonminer-1146-pro-vs-ebit-e11/), [Reddit](https://www.reddit.com/r/MiningRig/comments/rbixl7/ebit_e11_bricked_after_upgrading_to_soft_v1000827/), [Bitcointalk](https://bitcointalk.org/index.php?topic=5125470.0), [WhatToMine](https://whattomine.com/coins/54-uno-sha-256/asics/13-ebang-ebit-e11), [Apanel](https://www.apanel.com/miners/ebang/ebit-e11/35)"
     },
-    "specs": null
+    "specs": {
+      "cooling": "air"
+    }
   },
   "antminer-s19jpro": {
     "manufacturer": "bitmain",
