@@ -53,7 +53,7 @@ SPECS_JSON = str(REPO_DIR / "miner_specs.json")
 INDEX_JSON = str(_DATA_DIR / "unified_miner_index.json")
 
 # ── App Setup ─────────────────────────────────────────────────
-app = FastAPI(title="Mining Guardian Intelligence Report API", version="2.1.0")
+app = FastAPI(title="Mining Guardian Intelligence Report API", version="2.3.0")
 
 # ── Correction Rules Engine ───────────────────────────────────
 # Rules file: intelligence-catalog/data/correction_rules.json
@@ -404,7 +404,11 @@ def get_fleet_data(model_name: str) -> dict:
     """Query guardian.db for fleet operational data matching a model name.
     
     Uses miner_hardware.device_name to identify model, joined with
-    miner_state_readings for latest operational data per miner.
+    miner_readings for latest LIVE operational data per miner.
+    
+    IMPORTANT: Uses miner_readings (live hashrate, temp, consumption) NOT
+    miner_state_readings (which stores AMS threshold/nominal settings like
+    maxHashrate=75TH/s, maxTempChip=100°C — not actual readings).
     
     Search strategies for device_name:
     1. Direct case-insensitive LIKE match
@@ -466,43 +470,51 @@ def get_fleet_data(model_name: str) -> dict:
         miner_ids = list(miner_map.keys())
         total = len(miner_ids)
         
-        # Get latest state reading for each miner
+        # Get latest LIVE reading for each miner from miner_readings
+        # (NOT miner_state_readings which stores AMS threshold settings)
         placeholders = ','.join('?' * len(miner_ids))
         cur.execute(f"""
-            SELECT s.miner_id, s.ip, s.hashrate_medium, s.max_temp_chip,
-                   s.miner_status, s.max_consumption, s.scanned_at,
-                   s.worker_version
-            FROM miner_state_readings s
+            SELECT r.miner_id, r.ip, r.hashrate, r.temp_chip, r.temp_board,
+                   r.status, r.consumption, r.max_hashrate, r.hashrate_pct,
+                   r.scanned_at, r.firmware_version, r.current_profile,
+                   r.uptime, r.cooling_mode, r.pdu_power
+            FROM miner_readings r
             INNER JOIN (
                 SELECT miner_id, MAX(scanned_at) as latest
-                FROM miner_state_readings
+                FROM miner_readings
                 WHERE miner_id IN ({placeholders})
                 GROUP BY miner_id
-            ) latest ON s.miner_id = latest.miner_id AND s.scanned_at = latest.latest
+            ) latest ON r.miner_id = latest.miner_id AND r.scanned_at = latest.latest
         """, miner_ids)
         state_rows = {row['miner_id']: dict(row) for row in cur.fetchall()}
         
-        # Merge hardware + state into miner records
+        # Merge hardware + live readings into miner records
         miners = []
         for mid, hw in miner_map.items():
             state = state_rows.get(mid, {})
-            # hashrate_medium is in GH/s — convert to TH/s
-            hr_ghs = state.get('hashrate_medium', 0) or 0
+            # hashrate in miner_readings is in GH/s (raw AMS value) — convert to TH/s
+            hr_ghs = state.get('hashrate', 0) or 0
             hr_ths = round(hr_ghs / 1000, 1)
-            # miner_status: 0 = online/normal, 3/6 = issue states
-            status_code = state.get('miner_status')
-            status = 'online' if status_code == 0 and state else 'offline'
+            # status is stored as text: 'online'/'offline'
+            status = state.get('status', 'offline') or 'offline'
+            # consumption is in watts from AMS
+            power_w = state.get('consumption', 0) or 0
             miners.append({
                 'ip': hw.get('ip') or state.get('ip', ''),
                 'model': hw.get('model', ''),
                 'miner_id': mid,
                 'hashrate_ths': hr_ths,
-                'chip_temp': state.get('max_temp_chip', 0) or 0,
-                'power_w': state.get('max_consumption', 0) or 0,
+                'chip_temp': state.get('temp_chip', 0) or 0,
+                'temp_board': state.get('temp_board', 0) or 0,
+                'power_w': power_w,
+                'pdu_power_kw': state.get('pdu_power', 0) or 0,
                 'status': status,
-                'status_code': status_code,
+                'hashrate_pct': state.get('hashrate_pct', 0) or 0,
+                'max_hashrate_ghs': state.get('max_hashrate', 0) or 0,
                 'last_scan': state.get('scanned_at', ''),
-                'firmware': state.get('worker_version', '')
+                'firmware': state.get('firmware_version', ''),
+                'profile': state.get('current_profile', ''),
+                'uptime': state.get('uptime', ''),
             })
         
         online = sum(1 for m in miners if m['status'] == 'online')
@@ -724,7 +736,7 @@ def health():
     net = get_network_data()
     return {
         "status": "ok",
-        "version": "2.2.0",
+        "version": "2.3.0",
         "models": len(MODEL_LIST),
         "correction_rules": len(CORRECTION_RULES),
         "btc_price": net.get("btc_price_usd", 0),
