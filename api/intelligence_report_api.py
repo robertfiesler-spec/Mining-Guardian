@@ -17,7 +17,7 @@ Endpoints:
   GET /api/report/{slug}/html     → HTML formatted report for iframe rendering
   GET /health                     → health check
 
-Version: 2.1.2 — Fix fleet detection + 500 errors + safe float parsing (April 16 2026)
+Version: 2.2.0 — Real fleet data from guardian.db + all prior fixes (April 16 2026)
 """
 
 import json, csv, os, re, sqlite3, math, time, threading
@@ -403,10 +403,13 @@ print(f"Loaded {len(MODEL_LIST)} miner models for Intelligence Reports")
 def get_fleet_data(model_name: str) -> dict:
     """Query guardian.db for fleet operational data matching a model name.
     
-    Tries multiple search strategies:
-    1. Direct LIKE match (e.g. '%Antminer S19J Pro%')
-    2. Normalized match with spaces/hyphens/plus stripped from both sides
-    3. Short model name match (e.g. just 'S19J Pro')
+    Uses miner_hardware.device_name to identify model, joined with
+    miner_state_readings for latest operational data per miner.
+    
+    Search strategies for device_name:
+    1. Direct case-insensitive LIKE match
+    2. Normalized match (strip spaces/hyphens/plus from both sides)
+    3. Short name match (drop manufacturer prefix)
     """
     if not os.path.exists(GUARDIAN_DB):
         return {"deployed": False, "reason": "guardian.db not found"}
@@ -416,72 +419,125 @@ def get_fleet_data(model_name: str) -> dict:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         
-        # Strategy 1: Direct case-insensitive LIKE
-        cur.execute("""
-            SELECT ip, model, status, hashrate_pct, chip_temp, 
-                   last_scan_ts, flagged_count, dead_boards
-            FROM miners 
-            WHERE LOWER(model) LIKE ?
-            ORDER BY ip
-        """, (f"%{model_name.lower()}%",))
-        miners = [dict(r) for r in cur.fetchall()]
+        # First: find matching miner_ids from miner_hardware.device_name
+        miner_ids = []
         
-        # Strategy 2: Normalized match (strip spaces/hyphens/plus)
-        if not miners:
+        # Strategy 1: Direct case-insensitive LIKE on device_name
+        cur.execute("""
+            SELECT DISTINCT miner_id, ip, device_name
+            FROM miner_hardware
+            WHERE LOWER(device_name) LIKE ?
+        """, (f"%{model_name.lower()}%",))
+        hw_rows = [dict(r) for r in cur.fetchall()]
+        
+        # Strategy 2: Normalized match
+        if not hw_rows:
             norm = model_name.lower().replace(' ', '').replace('-', '').replace('+', '')
             cur.execute("""
-                SELECT ip, model, status, hashrate_pct, chip_temp, 
-                       last_scan_ts, flagged_count, dead_boards
-                FROM miners 
-                WHERE REPLACE(REPLACE(REPLACE(LOWER(model), ' ', ''), '-', ''), '+', '') LIKE ?
-                ORDER BY ip
+                SELECT DISTINCT miner_id, ip, device_name
+                FROM miner_hardware
+                WHERE REPLACE(REPLACE(REPLACE(LOWER(device_name), ' ', ''), '-', ''), '+', '') LIKE ?
             """, (f"%{norm}%",))
-            miners = [dict(r) for r in cur.fetchall()]
+            hw_rows = [dict(r) for r in cur.fetchall()]
         
-        # Strategy 3: Try just the model part without manufacturer prefix
-        # e.g. "Antminer S19J Pro" -> try "S19J Pro"
-        if not miners:
+        # Strategy 3: Drop manufacturer prefix (e.g. "Antminer S19J Pro" -> "S19J Pro")
+        if not hw_rows:
             parts = model_name.split()
             if len(parts) > 1:
-                # Drop first word (manufacturer prefix like Antminer, Whatsminer, Avalon)
                 short_name = ' '.join(parts[1:])
                 cur.execute("""
-                    SELECT ip, model, status, hashrate_pct, chip_temp, 
-                           last_scan_ts, flagged_count, dead_boards
-                    FROM miners 
-                    WHERE LOWER(model) LIKE ?
-                    ORDER BY ip
+                    SELECT DISTINCT miner_id, ip, device_name
+                    FROM miner_hardware
+                    WHERE LOWER(device_name) LIKE ?
                 """, (f"%{short_name.lower()}%",))
-                miners = [dict(r) for r in cur.fetchall()]
+                hw_rows = [dict(r) for r in cur.fetchall()]
         
-        if not miners:
+        if not hw_rows:
             conn.close()
             return {"deployed": False, "count": 0}
         
-        # Get fleet averages
-        total = len(miners)
-        online = sum(1 for m in miners if m.get('status') == 'online')
+        # Build unique miner list (miner_hardware has one row per board)
+        miner_map = {}  # miner_id -> {ip, device_name}
+        for row in hw_rows:
+            mid = row['miner_id']
+            if mid not in miner_map:
+                miner_map[mid] = {'miner_id': mid, 'ip': row['ip'], 'model': row['device_name']}
+        
+        miner_ids = list(miner_map.keys())
+        total = len(miner_ids)
+        
+        # Get latest state reading for each miner
+        placeholders = ','.join('?' * len(miner_ids))
+        cur.execute(f"""
+            SELECT s.miner_id, s.ip, s.hashrate_medium, s.max_temp_chip,
+                   s.miner_status, s.max_consumption, s.scanned_at,
+                   s.worker_version
+            FROM miner_state_readings s
+            INNER JOIN (
+                SELECT miner_id, MAX(scanned_at) as latest
+                FROM miner_state_readings
+                WHERE miner_id IN ({placeholders})
+                GROUP BY miner_id
+            ) latest ON s.miner_id = latest.miner_id AND s.scanned_at = latest.latest
+        """, miner_ids)
+        state_rows = {row['miner_id']: dict(row) for row in cur.fetchall()}
+        
+        # Merge hardware + state into miner records
+        miners = []
+        for mid, hw in miner_map.items():
+            state = state_rows.get(mid, {})
+            miners.append({
+                'ip': hw.get('ip') or state.get('ip', ''),
+                'model': hw.get('model', ''),
+                'miner_id': mid,
+                'hashrate_ths': state.get('hashrate_medium', 0) or 0,
+                'chip_temp': state.get('max_temp_chip', 0) or 0,
+                'power_w': state.get('max_consumption', 0) or 0,
+                'status': 'online' if state.get('miner_status') == 1 else 'offline',
+                'last_scan': state.get('scanned_at', ''),
+                'firmware': state.get('worker_version', '')
+            })
+        
+        online = sum(1 for m in miners if m['status'] == 'online')
         offline = total - online
-        avg_hashrate = sum(m.get('hashrate_pct', 0) or 0 for m in miners) / max(total, 1)
-        avg_temp = sum(m.get('chip_temp', 0) or 0 for m in miners if m.get('chip_temp', 0) > 0)
-        temp_count = sum(1 for m in miners if (m.get('chip_temp', 0) or 0) > 0)
-        avg_temp = avg_temp / max(temp_count, 1)
+        
+        # Averages (only from miners with data)
+        hashrates = [m['hashrate_ths'] for m in miners if m['hashrate_ths'] > 0]
+        temps = [m['chip_temp'] for m in miners if m['chip_temp'] > 0]
+        avg_hashrate_ths = sum(hashrates) / max(len(hashrates), 1)
+        avg_temp = sum(temps) / max(len(temps), 1)
+        
+        # Board count from hardware table
+        cur.execute(f"""
+            SELECT COUNT(*) as total_boards,
+                   SUM(CASE WHEN bad_chips_count > 0 THEN 1 ELSE 0 END) as boards_with_bad_chips
+            FROM miner_hardware
+            WHERE miner_id IN ({placeholders})
+        """, miner_ids)
+        board_row = cur.fetchone()
+        total_boards = board_row['total_boards'] if board_row else 0
+        bad_chip_boards = board_row['boards_with_bad_chips'] if board_row else 0
         
         # Get restart stats
-        cur.execute("""
-            SELECT COUNT(*) as total_restarts,
-                   SUM(CASE WHEN outcome = 'SUCCESS' THEN 1 ELSE 0 END) as successes
-            FROM miner_restarts 
-            WHERE LOWER(miner_ip) IN ({})
-        """.format(",".join(f"'{m['ip']}'" for m in miners)))
-        restart_row = cur.fetchone()
-        total_restarts = restart_row['total_restarts'] if restart_row else 0
-        successes = restart_row['successes'] if restart_row else 0
+        ip_list = [m['ip'] for m in miners if m['ip']]
+        total_restarts = 0
+        successes = 0
+        if ip_list:
+            ip_placeholders = ','.join('?' * len(ip_list))
+            cur.execute(f"""
+                SELECT COUNT(*) as total_restarts,
+                       SUM(CASE WHEN outcome = 'SUCCESS' THEN 1 ELSE 0 END) as successes
+                FROM miner_restarts 
+                WHERE LOWER(miner_ip) IN ({ip_placeholders})
+            """, [ip.lower() for ip in ip_list])
+            restart_row = cur.fetchone()
+            total_restarts = restart_row['total_restarts'] if restart_row else 0
+            successes = restart_row['successes'] if restart_row else 0
         
-        # Top/bottom performers
-        sorted_miners = sorted(miners, key=lambda m: m.get('hashrate_pct', 0) or 0, reverse=True)
+        # Top/bottom performers by hashrate
+        sorted_miners = sorted(miners, key=lambda m: m.get('hashrate_ths', 0), reverse=True)
         top_3 = sorted_miners[:3]
-        bottom_3 = [m for m in sorted_miners[-3:] if (m.get('hashrate_pct', 0) or 0) < 90]
+        bottom_3 = [m for m in sorted_miners[-3:] if m.get('hashrate_ths', 0) > 0 and m.get('hashrate_ths', 0) < avg_hashrate_ths * 0.85]
         
         conn.close()
         
@@ -490,7 +546,9 @@ def get_fleet_data(model_name: str) -> dict:
             "count": total,
             "online": online,
             "offline": offline,
-            "avg_hashrate_pct": round(avg_hashrate, 1),
+            "total_boards": total_boards,
+            "boards_with_bad_chips": bad_chip_boards,
+            "avg_hashrate_ths": round(avg_hashrate_ths, 1),
             "avg_chip_temp": round(avg_temp, 1),
             "total_restarts": total_restarts,
             "restart_success_rate": round(successes / max(total_restarts, 1) * 100, 1),
@@ -661,7 +719,7 @@ def health():
     net = get_network_data()
     return {
         "status": "ok",
-        "version": "2.1.2",
+        "version": "2.2.0",
         "models": len(MODEL_LIST),
         "correction_rules": len(CORRECTION_RULES),
         "btc_price": net.get("btc_price_usd", 0),
@@ -971,12 +1029,14 @@ def _section_3_fleet(report: dict) -> str:
     # Deployed — show full fleet stats
     count = fleet.get('count', 0)
     online = fleet.get('online', 0)
-    avg_hr = fleet.get('avg_hashrate_pct', 0)
+    avg_hr = fleet.get('avg_hashrate_ths', 0)
     avg_temp = fleet.get('avg_chip_temp', 0)
+    total_boards = fleet.get('total_boards', 0)
+    bad_boards = fleet.get('boards_with_bad_chips', 0)
     
-    hr_color = "#10b981" if avg_hr >= 95 else "#f59e0b" if avg_hr >= 85 else "#ef4444"
     temp_color = "#10b981" if avg_temp < 70 else "#f59e0b" if avg_temp < 80 else "#ef4444"
     online_pct = round(online / max(count, 1) * 100, 1)
+    board_health_pct = round((total_boards - bad_boards) / max(total_boards, 1) * 100, 1)
     
     # Top performers table
     top_html = ""
@@ -984,14 +1044,13 @@ def _section_3_fleet(report: dict) -> str:
     if top:
         top_rows = ""
         for m in top:
-            hr = m.get('hashrate_pct', 0) or 0
-            hrc = "#10b981" if hr >= 95 else "#f59e0b" if hr >= 85 else "#ef4444"
+            hr = m.get('hashrate_ths', 0) or 0
             st = m.get('status', 'unknown')
             stc = "#10b981" if st == 'online' else "#ef4444"
             top_rows += f"""
             <tr>
               <td class="mono">{m.get('ip','N/A')}</td>
-              <td class="right" style="color:{hrc}; font-weight:600;">{hr:.1f}%</td>
+              <td class="right" style="color:#06b6d4; font-weight:600;">{hr:.1f} TH/s</td>
               <td class="right">{m.get('chip_temp','N/A')}°C</td>
               <td style="text-align:center; color:{stc}; font-weight:500;">{st.upper()}</td>
             </tr>"""
@@ -1010,19 +1069,19 @@ def _section_3_fleet(report: dict) -> str:
     if prob:
         prob_rows = ""
         for m in prob:
-            hr = m.get('hashrate_pct', 0) or 0
+            hr = m.get('hashrate_ths', 0) or 0
             prob_rows += f"""
             <tr>
               <td class="mono">{m.get('ip','N/A')}</td>
-              <td class="right" style="color:#ef4444; font-weight:600;">{hr:.1f}%</td>
+              <td class="right" style="color:#ef4444; font-weight:600;">{hr:.1f} TH/s</td>
               <td class="right">{m.get('chip_temp','N/A')}°C</td>
-              <td class="right">{m.get('dead_boards',0)} dead</td>
+              <td style="text-align:center; color:#f59e0b;">{m.get('firmware','N/A')}</td>
             </tr>"""
         prob_html = f"""
         <div style="margin-top:16px;">
           <h4 style="color:#ef4444; font-size:13px; margin:0 0 10px 0; text-transform:uppercase; letter-spacing:0.5px;">Needs Attention</h4>
           <table>
-            <thead><tr><th>IP Address</th><th class="right">Hashrate</th><th class="right">Chip Temp</th><th class="right">Board Issues</th></tr></thead>
+            <thead><tr><th>IP Address</th><th class="right">Hashrate</th><th class="right">Chip Temp</th><th style="text-align:center;">Firmware</th></tr></thead>
             <tbody>{prob_rows}</tbody>
           </table>
         </div>"""
@@ -1036,7 +1095,7 @@ def _section_3_fleet(report: dict) -> str:
       <div class="stat-grid">
         <div class="stat-card">
           <div class="stat-value" style="color:#06b6d4;">{count}</div>
-          <div class="stat-label">Deployed</div>
+          <div class="stat-label">Miners Deployed</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color:#10b981;">{online_pct}%</div>
@@ -1044,23 +1103,27 @@ def _section_3_fleet(report: dict) -> str:
           <div class="progress-bar"><div class="progress-fill" style="width:{online_pct}%; background:#10b981;"></div></div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" style="color:{hr_color};">{avg_hr}%</div>
+          <div class="stat-value" style="color:#06b6d4;">{avg_hr} TH/s</div>
           <div class="stat-label">Avg Hashrate</div>
-          <div class="progress-bar"><div class="progress-fill" style="width:{avg_hr}%; background:{hr_color};"></div></div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color:{temp_color};">{avg_temp}°C</div>
           <div class="stat-label">Avg Chip Temp</div>
         </div>
       </div>
-      <div class="stat-grid" style="grid-template-columns:1fr 1fr;">
+      <div class="stat-grid" style="grid-template-columns:repeat(3, 1fr);">
         <div class="stat-card">
-          <div class="stat-value" style="color:#8b5cf6; font-size:22px;">{fleet.get('total_restarts',0)}</div>
-          <div class="stat-label">Total Restarts</div>
+          <div class="stat-value" style="color:#8b5cf6; font-size:22px;">{total_boards}</div>
+          <div class="stat-label">Total Boards</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" style="color:#10b981; font-size:22px;">{fleet.get('restart_success_rate',0)}%</div>
-          <div class="stat-label">Restart Success Rate</div>
+          <div class="stat-value" style="color:#10b981; font-size:22px;">{board_health_pct}%</div>
+          <div class="stat-label">Board Health</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:{board_health_pct}%; background:#10b981;"></div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#f59e0b; font-size:22px;">{fleet.get('total_restarts',0)}</div>
+          <div class="stat-label">Total Restarts</div>
         </div>
       </div>
       {top_html}
@@ -1439,22 +1502,34 @@ def _section_8_ai_analysis(report: dict) -> str:
         })
     
     if deployed:
-        avg_hr = fleet.get('avg_hashrate_pct', 0)
-        if avg_hr < 90:
+        avg_hr = fleet.get('avg_hashrate_ths', 0)
+        rated = hw.get('default_hashrate_th', 0) or 0
+        fleet_pct = round(avg_hr / max(rated, 1) * 100, 1) if rated > 0 else 0
+        fleet_count = fleet.get('count', 0)
+        prob_count = len(fleet.get('problem_miners', []))
+        if fleet_pct > 0 and fleet_pct < 90:
             insights.append({
                 "title": "Fleet Underperformance Detected",
                 "confidence": 94,
                 "conf_color": "#ef4444",
-                "body": f"Fleet average hashrate is {avg_hr}% of rated capacity. This indicates potential issues with cooling, power delivery, or hardware degradation across the deployed units. Investigate individual miners below 85% for targeted maintenance.",
+                "body": f"Fleet average hashrate is {avg_hr} TH/s ({fleet_pct}% of rated {rated} TH/s) across {fleet_count} units. This indicates potential issues with cooling, power delivery, or hardware degradation. {prob_count} miners identified as underperforming.",
                 "icon": "🔍"
             })
-        elif avg_hr >= 95:
+        elif fleet_pct >= 90:
             insights.append({
                 "title": "Fleet Performance Healthy",
                 "confidence": 96,
                 "conf_color": "#10b981",
-                "body": f"Fleet average hashrate of {avg_hr}% indicates healthy operation across all deployed units. Current maintenance schedule is effective. Continue monitoring for individual outliers.",
+                "body": f"Fleet average of {avg_hr} TH/s ({fleet_pct}% of rated {rated} TH/s) across {fleet_count} units indicates healthy operation. Current maintenance schedule is effective.",
                 "icon": "✓"
+            })
+        else:
+            insights.append({
+                "title": f"{fleet_count} Units Deployed in Fleet",
+                "confidence": 90,
+                "conf_color": "#06b6d4",
+                "body": f"Mining Guardian is actively monitoring {fleet_count} units of this model with an average hashrate of {avg_hr} TH/s and {fleet.get('avg_chip_temp', 0)}°C average chip temperature.",
+                "icon": "📊"
             })
     
     if prof:
@@ -1534,9 +1609,11 @@ def _section_9_recommendations(report: dict) -> str:
     
     # Fleet-specific recommendations
     if deployed:
-        avg_hr = fleet.get('avg_hashrate_pct', 0)
-        if avg_hr < 85:
-            recs.append(("🔍", "INVESTIGATE LOW PERFORMERS", f"Fleet average of {avg_hr}% is below target. Audit individual miners below 85% for hashboard failures, cooling issues, or firmware problems. Target: 95%+ fleet average.", "#ef4444"))
+        avg_hr = fleet.get('avg_hashrate_ths', 0)
+        rated = hw.get('default_hashrate_th', 0) or 0
+        fleet_pct = round(avg_hr / max(rated, 1) * 100, 1) if rated > 0 else 0
+        if fleet_pct > 0 and fleet_pct < 85:
+            recs.append(("🔍", "INVESTIGATE LOW PERFORMERS", f"Fleet average of {avg_hr} TH/s ({fleet_pct}% of rated {rated} TH/s) is below target. Audit individual miners for hashboard failures, cooling issues, or firmware problems. Target: 95%+ of rated hashrate.", "#ef4444"))
         
         prob = fleet.get('problem_miners', [])
         if prob:

@@ -1,23 +1,47 @@
 ---
 
-### 2026-04-16 (afternoon #2) · Intelligence Report v2.1.2 — fix fleet detection for deployed miners
+### 2026-04-16 (evening) · Intelligence Report v2.2.0 — real fleet data from guardian.db
 
 **What Bobby reported:**
-S19J Pro shows "NOT DEPLOYED IN FLEET" even though they are deployed in Bobby's facility.
+S19J Pro shows "NOT DEPLOYED IN FLEET" even though 32 S19J Pros are deployed in the facility.
 
-**Root cause:**
-The fleet lookup function was stripping spaces, hyphens, and plus signs from the search term (turning "Antminer S19J Pro" into "antminers19jpro") but then doing a SQL LIKE search against the raw `model` column in guardian.db which still has spaces (e.g. "Antminer S19j Pro"). The normalized search term never matched.
+**Root causes found:**
+
+1. **Wrong table** — The fleet query targeted a `miners` table that doesn't exist in guardian.db. The actual schema uses `miner_hardware` (device_name, board data) and `miner_state_readings` (live hashrate/temp/status per scan).
+2. **miner_id is AMS inventory ID** — miner_ids are numeric AMS inventory numbers (53476, 53477, etc.), not model names. Model identification comes from `miner_hardware.device_name`.
+3. **One row per board** — `miner_hardware` has one row per hashboard (3 per S19J Pro = 96 rows for 32 miners), so results must be deduplicated by miner_id.
 
 **What we changed:**
-- Rewrote `get_fleet_data()` with 3-strategy search:
-  1. Direct case-insensitive LIKE match ("Antminer S19J Pro" against raw model column)
-  2. Normalized match — strips spaces/hyphens/plus from BOTH the search term AND the DB column using SQLite REPLACE()
-  3. Short name match — drops the manufacturer prefix and searches for just "S19J Pro"
-- Passes the original display name (with spaces) instead of pre-stripping it
-- Any of the 3 strategies matching counts as deployed
+
+**Complete rewrite of `get_fleet_data()`:**
+- Searches `miner_hardware.device_name` instead of a nonexistent `miners.model` column
+- 3 search strategies: direct LIKE, normalized (strip spaces/hyphens), short name (drop manufacturer prefix)
+- Deduplicates by miner_id (hardware table has one row per board)
+- Joins with `miner_state_readings` to get latest operational data per miner (hashrate, temp, status, firmware)
+- Returns TH/s values (actual hashrate) instead of percentages
+- New fields: `total_boards`, `boards_with_bad_chips`, `avg_hashrate_ths`
+- Board health tracking from `miner_hardware.bad_chips_count`
+
+**Updated fleet HTML section:**
+- Shows: Miners Deployed, Online Rate, Avg Hashrate (TH/s), Avg Chip Temp
+- New row: Total Boards, Board Health %, Total Restarts
+- Top performers show TH/s instead of percentage
+- Problem miners show firmware version for troubleshooting
+
+**Updated AI insights + recommendations:**
+- Fleet performance comparisons now use rated TH/s percentage (avg_hr / rated * 100) instead of raw values
+- Shows "32 Units Deployed" with actual fleet metrics
+- Underperformance detection uses proper rated-vs-actual comparison
+
+**guardian.db schema (documented):**
+- `miner_hardware`: device_name (model), miner_id (AMS ID), board_index, serial_number, chip_die, bad_chips_count, etc.
+- `miner_state_readings`: miner_id, hashrate_medium, max_temp_chip, miner_status, max_consumption, worker_version
+- `miner_baselines`: has model column but currently empty
+- `miner_restarts`: miner_ip, outcome (SUCCESS/FAIL)
+- Bobby's fleet: 32 Antminer S19j Pro, 96 boards (3 per miner)
 
 **Files changed:**
-- `api/intelligence_report_api.py` — version 2.1.1 → 2.1.2, `get_fleet_data()` rewritten
+- `api/intelligence_report_api.py` — version 2.1.2 → 2.2.0, complete fleet rewrite
 
 **Commit:** (pending Bobby's VPS pull + restart)
 
