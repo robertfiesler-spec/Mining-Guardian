@@ -160,7 +160,7 @@ def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date:
         else:
             cur.execute('''INSERT INTO miner_logs (collected_at, miner_id, model, health_status, log_file, content)
                            VALUES (?, ?, ?, ?, ?, ?)''',
-                        (datetime.now().isoformat(), miner_id, 'direct', 'collected', log_file or 'miner.log', miner_log))
+                        (datetime.now().isoformat(), miner_id, 'direct', 'daily_baseline', log_file or 'miner.log', miner_log))
         
         conn.commit()
         conn.close()
