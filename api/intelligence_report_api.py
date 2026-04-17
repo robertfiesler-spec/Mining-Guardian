@@ -518,18 +518,16 @@ def get_fleet_data(model_name: str) -> dict:
         total_boards = board_row['total_boards'] if board_row else 0
         bad_chip_boards = board_row['boards_with_bad_chips'] if board_row else 0
         
-        # Get restart stats
-        ip_list = [m['ip'] for m in miners if m['ip']]
+        # Get restart stats using miner_id (matches miner_restarts.miner_id)
         total_restarts = 0
         successes = 0
-        if ip_list:
-            ip_placeholders = ','.join('?' * len(ip_list))
+        if miner_ids:
             cur.execute(f"""
                 SELECT COUNT(*) as total_restarts,
-                       SUM(CASE WHEN outcome = 'SUCCESS' THEN 1 ELSE 0 END) as successes
+                       SUM(CASE WHEN outcome IS NOT NULL AND outcome != 'FAIL' AND outcome != 'FAILED' THEN 1 ELSE 0 END) as successes
                 FROM miner_restarts 
-                WHERE LOWER(miner_ip) IN ({ip_placeholders})
-            """, [ip.lower() for ip in ip_list])
+                WHERE miner_id IN ({placeholders})
+            """, miner_ids)
             restart_row = cur.fetchone()
             total_restarts = restart_row['total_restarts'] if restart_row else 0
             successes = restart_row['successes'] if restart_row else 0
