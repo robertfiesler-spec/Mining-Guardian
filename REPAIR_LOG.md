@@ -43,7 +43,14 @@ S19J Pro shows "NOT DEPLOYED IN FLEET" even though 32 S19J Pros are deployed in 
 **Files changed:**
 - `api/intelligence_report_api.py` — version 2.1.2 → 2.2.0, complete fleet rewrite
 
-**Commit:** (pending Bobby's VPS pull + restart)
+**Commit:** `4d08dca` (deployed), then `e4108a4` (restart fix), then `814b2c4` (GH/s conversion + status codes)
+
+**Open issue — guardian.db data quality:**
+Fleet section now works but the data from `miner_state_readings` appears to be rated/expected values rather than actual live readings. All values are suspiciously round (90000, 70000, 100000 GH/s; 100.0, 90.0°C; 6000W). Real miners would show values like 89,437 GH/s or 72.3°C. Also:
+- `chip_readings` table has 0 rows — per-chip granular data not being collected
+- `chain_readings` table exists but unchecked
+- Need to investigate AMS data collection to understand why readings are rounded/static
+- This is the NEXT priority — Bobby opening AMS access for direct investigation
 
 ---
 

@@ -1,7 +1,32 @@
 # Next Session Priorities
 
-**Last Updated:** April 16, 2026 (morning)
-**Status:** Intelligence Report v2.1 LIVE on VPS, live BTC data, correction rules engine active, all dashboards working
+**Last Updated:** April 16, 2026 (evening)
+**Status:** Intelligence Report v2.2.0 LIVE on VPS — fleet data working, AMS data quality investigation needed
+
+---
+
+## IMMEDIATE — AMS Data Investigation
+
+The fleet section of the Intelligence Report is now pulling real data from guardian.db, but the values appear to be rated/expected values rather than actual live readings. All readings are suspiciously round numbers.
+
+**What we found:**
+- `miner_state_readings.hashrate_medium` = 90000, 70000, 67500 GH/s (always round)
+- `miner_state_readings.max_temp_chip` = 100.0, 90.0, 85.0, 80.0 (only 4 distinct values)
+- `miner_state_readings.max_consumption` = 6000.0 (always the same)
+- `chip_readings` table has 0 rows — per-chip data never collected
+- `chain_readings` table exists but not checked yet
+- All 32 S19J Pros show identical readings per scan
+
+**What we need:**
+1. Access AMS directly to see what real data looks like
+2. Understand how Mining Guardian's scan loop collects data from AMS
+3. Fix data collection to capture actual live readings (not rated specs)
+4. Populate chip_readings with real per-chip temp/freq/voltage data
+
+**Bobby offered AMS access via:**
+- Web-based AMS (not localhost)
+- Tailscale VPN access possible
+- Also has AMS API available
 
 ---
 
@@ -26,25 +51,36 @@ Bobby plans to use flight time to do a deep review of all manufacturers and capt
 
 ---
 
-## ✅ COMPLETED — Intelligence Report v2.1 LIVE (April 16 morning)
+## ✅ COMPLETED — Intelligence Report v2.2.0 (April 16 evening)
 
-- v2.1.0 deployed on VPS: 226 models, live BTC data, 3 correction rules
+- Fleet data rewrite: queries `miner_hardware.device_name` + `miner_state_readings` (actual guardian.db schema)
+- 32 S19J Pros detected, 96 boards, online/offline status, hashrate, temps
+- Hashrate GH/s → TH/s conversion, `miner_status` 0=online mapping
+- 3-strategy device_name search (direct, normalized, short name)
+- Board health tracking from `miner_hardware.bad_chips_count`
+- Error boundaries on all API endpoints — no more 500 errors
+
+## ✅ COMPLETED — Intelligence Report v2.1.1 (April 16 afternoon)
+
+- Fixed 500 errors: 4 unsafe float() calls, slug suffix merge, error boundaries
+- Dashboard proxy reads error body from 4xx/5xx responses
+
+## ✅ COMPLETED — Intelligence Report v2.1 (April 16 morning)
+
+- v2.1.0 deployed: 225 models, live BTC data, 3 correction rules
 - Live BTC price from CoinGecko + network difficulty from mempool.space (15-min cache)
 - Correction rules engine: JSON pattern matching, Bobby adds rules without code changes
-- WhatsMiner cooling auto-classification: M_0=air, M_3=hydro, M_6=immersion (44 corrections)
-- Health check: `{"status":"ok","version":"2.1.0","models":226,"correction_rules":3,"btc_price":74719}`
 
 ## ✅ COMPLETED — Intelligence Report v2.0 (April 15 late evening)
 
 - Full 9-section report: Hardware, Firmware, Fleet, Profitability, Market, Repair, Cooling, AI Analysis, Recommendations
-- Slug merge: 9 duplicate model pairs consolidated
+- Slug merge: 10 duplicate model pairs consolidated (225 unique from 235 raw)
 - Visual redesign: stat cards, progress bars, severity badges, table of contents
 
 ## ✅ COMPLETED — Intelligence Report v1.0 Dashboard (April 15 evening)
 
 - Three deployment bugs found and fixed (REPO_DIR, mixed content, script stripping)
 - Iframe approach working on Grafana 10.4.1
-- All 4 verification items confirmed ✅
 
 ---
 
@@ -69,9 +105,11 @@ Bobby plans to use flight time to do a deep review of all manufacturers and capt
 4. **Ship daily_deep_analyses permanent merge block** in train_cohort.py
 
 ### Intelligence Report Enhancements
+- [ ] Fix AMS data collection — real readings instead of rated specs
 - [ ] Qwen AI analysis paragraphs in reports (requires Qwen reachable from API)
 - [ ] PDF download button in Grafana
 - [ ] Auto-enrichment: catalog searches internet for updates daily
+- [ ] Update Grafana landing page panel text from "235+" to "225 models"
 
 ---
 
@@ -83,25 +121,30 @@ Bobby plans to use flight time to do a deep review of all manufacturers and capt
 
 ---
 
-## KEY FILES CHANGED TODAY (April 15, 2026)
+## guardian.db Schema Reference (discovered April 16)
 
-### New Files
-- `api/intelligence_report_api.py` — Intelligence Report API (port 8590)
-- `deploy/intelligence-report.service` — systemd service file
-- `docs/INTELLIGENCE_REPORT_API.md` — API documentation
-- `intelligence-catalog/data/unified_miner_index.json` — 235 models merged index
+**Tables with data:**
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `miner_hardware` | Hardware inventory, 1 row per board | `miner_id` (AMS ID), `device_name` (model), `board_index`, `serial_number`, `chip_die`, `bad_chips_count` |
+| `miner_state_readings` | Per-scan readings per miner | `miner_id`, `hashrate_medium` (GH/s), `max_temp_chip` (°C), `miner_status` (0=online, 3/6=issue), `max_consumption` (W) |
+| `miner_restarts` | Restart history | `miner_id`, `ip`, `outcome`, `hashrate_before/after`, `recovery_time_scans` |
+| `miner_baselines` | Learning baselines | `miner_id`, `model` (currently empty), `baseline_hashrate_ths`, `baseline_power_kw` |
+| `scans` | Scan summaries | `total_miners`, `online`, `offline`, `issues` |
+| `chip_readings` | Per-chip data (EMPTY) | `miner_id`, `board_index`, `chip_index`, `freq_mhz`, `voltage_mv`, `temp_c` |
+| `chain_readings` | Per-chain data (unchecked) | TBD |
+| `miner_logs` | Miner log entries | TBD |
+| `pool_readings` | Pool stats | TBD |
+| `hvac_readings` | HVAC data | TBD |
 
-### Updated Files
-- `README.md` — architecture, services, dashboards, key files tables
-- `AI_ROADMAP.md` — milestones, Grafana section, completed items, last updated
-- `docs/INTELLIGENCE_CATALOG_STATUS.md` — full rewrite reflecting live status
-- All 6 Grafana operational dashboards — duplicate panels removed, queries fixed
+**Bobby's fleet:** 32 Antminer S19j Pro, 96 boards (3 per miner), AMS IDs in 53xxx-64xxx range
 
-### Git Commits
-- `8e05461` — feat: Intelligence Report API (searchable miner reports for 235+ models)
-- `fad1096` — docs: update README architecture + AI_ROADMAP with Intelligence Report API status
-- (pending) — docs: comprehensive documentation audit pass
+**Key facts:**
+- `miner_id` = AMS inventory number (not IP, not model name)
+- `hashrate_medium` is in GH/s (divide by 1000 for TH/s)
+- `miner_status`: 0 = online/normal (44,451 readings), 3 = issue (1,509), 6 = critical (198)
+- `max_temp_chip` only has 4 distinct values: 100, 90, 85, 80 — likely rounded or rated
 
 ---
 
-**Current Status: PRODUCTION READY + INTELLIGENCE REPORT READY FOR DEPLOYMENT**
+**Current Status: v2.2.0 LIVE — Fleet data connected but AMS data quality needs investigation**
