@@ -1,5 +1,35 @@
 ---
 
+### 2026-04-16 (late night) · Intelligence Report v2.3.0 — fix fleet data quality (live vs threshold)
+
+**What Bobby reported:**
+Fleet data was showing bad values — avg chip temp 100°C (impossible for immersion-cooled miners), avg hashrate ~69.6 TH/s (way below actual ~130-145 TH/s), power at 6000W (matches AMS threshold setting, not real draw).
+
+**Root cause found:**
+`get_fleet_data()` in `intelligence_report_api.py` was querying `miner_state_readings` table, which stores AMS threshold/nominal settings — NOT live data. Specifically:
+- `hashrate_medium` = AMS hashrate warning threshold (from HASHRATE RANGE setting)
+- `max_temp_chip` = AMS MAX TEMP CHIP setting (100°C alert threshold)
+- `max_consumption` = AMS CONSUMPTION DRAW HIGH setting (6000W)
+
+These are the numbers operators configure in AMS Settings as alert thresholds. The scan loop correctly stores LIVE readings in the `miner_readings` table, but the dashboard was reading from the wrong table.
+
+**What we changed:**
+Rewrote the SQL query in `get_fleet_data()` to use `miner_readings` instead of `miner_state_readings`:
+- `hashrate` (live GH/s → converted to TH/s) instead of `hashrate_medium` (threshold)
+- `temp_chip` (live °C) instead of `max_temp_chip` (100°C threshold)
+- `consumption` (live watts) instead of `max_consumption` (6000W threshold)
+- `status` (text 'online'/'offline') instead of `miner_status` (numeric code)
+- Added: `temp_board`, `pdu_power`, `hashrate_pct`, `max_hashrate`, `profile`, `uptime`
+
+**Expected result after deploy:**
+- Avg hashrate: ~130-145 TH/s (instead of ~69.6)
+- Avg chip temp: ~74°C (instead of 100°C)
+- Real power draw per miner (instead of 6000W threshold)
+
+Commit: `545de2a` — version bumped to v2.3.0
+
+---
+
 ### 2026-04-16 (evening) · Intelligence Report v2.2.0 — real fleet data from guardian.db
 
 **What Bobby reported:**
