@@ -19,6 +19,53 @@ DB_PATH = '/root/Mining-Gaurdian/guardian.db'
 TIMEOUT = 60
 MAX_WORKERS = 5
 
+
+def filter_log_content(raw_log: str) -> str:
+    """
+    Filter out repetitive/noisy log lines to reduce prompt size.
+    Keeps errors, warnings, and important events.
+    Strips high-volume frequency tuning spam (50K+ lines/day).
+    """
+    if not raw_log:
+        return raw_log
+    
+    lines = raw_log.split('\n')
+    filtered = []
+    
+    skip_patterns = [
+        r'INFO: Set chain \d+ freq',
+        r'INFO: Psu current voltag',
+        r'INFO: Total cpu:',
+        r'INFO: Temp max NC',
+        r'INFO: Chain\[\d+\] chip temp',
+        r'INFO: Chain temp',
+    ]
+    skip_regex = re.compile('|'.join(skip_patterns))
+    
+    skipped = {'freq': 0, 'psu': 0, 'cpu': 0, 'temp': 0}
+    
+    for line in lines:
+        if not line.strip():
+            continue
+        if skip_regex.search(line):
+            if 'freq' in line.lower():
+                skipped['freq'] += 1
+            elif 'psu' in line.lower() or 'voltag' in line.lower():
+                skipped['psu'] += 1
+            elif 'cpu' in line.lower():
+                skipped['cpu'] += 1
+            elif 'temp' in line.lower():
+                skipped['temp'] += 1
+            continue
+        filtered.append(line)
+    
+    total_skipped = sum(skipped.values())
+    if total_skipped > 0:
+        summary = f"[LOG FILTER: removed {total_skipped} noisy lines (freq:{skipped['freq']}, psu:{skipped['psu']}, cpu:{skipped['cpu']}, temp:{skipped['temp']}), kept {len(filtered)} lines]\n---\n"
+        return summary + '\n'.join(filtered)
+    
+    return '\n'.join(filtered)
+
 def get_online_miners() -> List[Dict]:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -97,6 +144,9 @@ def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date:
                     (miner_id, target_date.isoformat()))
         existing = cur.fetchone()
         
+        # Apply log filter to remove noisy frequency tuning lines
+        miner_log = filter_log_content(miner_log)
+
         if existing:
             cur.execute('UPDATE miner_logs SET content = ?, collected_at = ? WHERE id = ?',
                         (miner_log, datetime.now().isoformat(), existing[0]))
