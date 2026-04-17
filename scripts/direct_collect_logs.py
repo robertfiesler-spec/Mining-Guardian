@@ -2,7 +2,7 @@
 """
 Direct Miner Log Collection — bypasses AMS entirely.
 """
-import sys, os, json, sqlite3, tarfile, io, logging, time, requests
+import sys, os, json, sqlite3, tarfile, io, logging, time, requests, re
 from requests.auth import HTTPDigestAuth
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
