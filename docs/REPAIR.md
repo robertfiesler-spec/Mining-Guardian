@@ -2,6 +2,8 @@
 
 **Last Updated:** 2026-04-17
 
+---
+
 ## Active Repair Queue
 
 ### Miner 53521 — CRITICAL
@@ -45,7 +47,11 @@ All 3 hashboards showing 0/126 ASICs detected with 126 bad chips each.
 - Filters out 50K+ frequency tuning lines per day
 - Removes PSU polling, CPU stats, temp reading spam
 - Expected: 3MB logs reduced to ~200KB
-- Result: More miners analyzable in deep dive
+
+**Date Filtering Added:**
+- Miners return multiple days even when requesting specific date
+- Now filters to only keep lines from target date
+- Result: 1.9MB logs reduced to ~400KB (80% reduction)
 
 **Prompt Cap Working:**
 - 45K char limit in ai/daily_deep_dive.py
@@ -63,3 +69,35 @@ All 3 hashboards showing 0/126 ASICs detected with 126 bad chips each.
 - 2 new insights added
 - 104 miner fingerprints built
 - Refinement chain Pass 3+4 complete
+
+---
+
+## Escalation Criteria
+
+A miner should be added to the repair queue when:
+
+1. **AI Deep Dive** flags it as failing with hardware issues
+2. **3+ consecutive restart failures** in overnight automation
+3. **Dead board** detected and confirmed
+4. **Known issues** table shows repeated failures for same problem
+5. **Manual operator observation** of physical problems
+
+---
+
+## Integration with Mining Guardian
+
+### Automatic Detection
+- Daily Deep Dive analyzes all miners and flags failing units
+- Overnight automation tracks restart failures
+- Dead board detection creates AMS tickets automatically
+
+### Tables Involved
+- known_dead_boards: Miners with confirmed dead boards
+- miner_restarts: Restart history and success rates
+- llm_analysis: AI analysis results
+- action_audit_log: All operator interventions
+
+### Slack Notifications
+- Failing miners flagged in #mg-ai-reports
+- Dead board tickets in #mg-alerts
+- Deep dive reports sent to operator DM
