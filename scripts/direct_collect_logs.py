@@ -20,14 +20,21 @@ TIMEOUT = 60
 MAX_WORKERS = 5
 
 
-def filter_log_content(raw_log: str) -> str:
+def filter_log_content(raw_log: str, target_date=None) -> str:
     """
     Filter out repetitive/noisy log lines to reduce prompt size.
     Keeps errors, warnings, and important events.
     Strips high-volume frequency tuning spam (50K+ lines/day).
+    Also filters to only target_date if specified.
     """
     if not raw_log:
         return raw_log
+    
+    # Filter to only target date if specified (miners return multiple days)
+    if target_date:
+        date_prefix = "[" + target_date.strftime("%Y/%m/%d")
+        all_lines = raw_log.split("\n")
+        raw_log = "\n".join(line for line in all_lines if line.startswith(date_prefix) or not line.startswith("["))
     
     lines = raw_log.split('\n')
     filtered = []
@@ -145,7 +152,7 @@ def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date:
         existing = cur.fetchone()
         
         # Apply log filter to remove noisy frequency tuning lines
-        miner_log = filter_log_content(miner_log)
+        miner_log = filter_log_content(miner_log, target_date)
 
         if existing:
             cur.execute('UPDATE miner_logs SET content = ?, collected_at = ? WHERE id = ?',
