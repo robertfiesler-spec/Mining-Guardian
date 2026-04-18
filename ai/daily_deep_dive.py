@@ -190,18 +190,18 @@ def get_online_miners(conn: sqlite3.Connection) -> List[Dict]:
 
 def get_miner_daily_log(conn: sqlite3.Connection, miner_id: str,
                          label: str = "daily_baseline") -> Optional[str]:
-    """Get the most recent daily_baseline miner.log content for this miner."""
+    """Get the most recent miner.log content for this miner (prefers today)."""
+    # Look for any recent miner.log from last 12 hours first (today)
     row = conn.execute("""
-        SELECT content, collected_at FROM miner_logs
+        SELECT content, collected_at, health_status FROM miner_logs
         WHERE miner_id = ?
-          AND health_status = ?
           AND log_file LIKE '%miner.log'
-          AND collected_at >= datetime('now', '-36 hours')
+          AND collected_at >= datetime('now', '-12 hours')
         ORDER BY collected_at DESC LIMIT 1
-    """, (miner_id, label)).fetchone()
+    """, (miner_id,)).fetchone()
     if row:
         return row["content"]
-    # Fallback: any recent miner.log regardless of label
+    # Fallback to 36 hours if nothing in last 12
     row = conn.execute("""
         SELECT content, collected_at, health_status FROM miner_logs
         WHERE miner_id = ?
@@ -210,7 +210,7 @@ def get_miner_daily_log(conn: sqlite3.Connection, miner_id: str,
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
     if row:
-        logger.info("Miner %s: no daily_baseline log, using %s from %s",
+        logger.info("Miner %s: using older log %s from %s",
                     miner_id, row["health_status"], row["collected_at"])
         return row["content"]
     return None

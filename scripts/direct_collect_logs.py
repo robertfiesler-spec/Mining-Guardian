@@ -147,7 +147,7 @@ def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date:
         cur = conn.cursor()
         
         # Check if we have this log already today
-        cur.execute('SELECT id FROM miner_logs WHERE miner_id = ? AND DATE(collected_at) = ?',
+        cur.execute("SELECT id FROM miner_logs WHERE miner_id = ? AND DATE(collected_at) = ? AND log_file LIKE '%miner.log'",
                     (miner_id, target_date.isoformat()))
         existing = cur.fetchone()
         
