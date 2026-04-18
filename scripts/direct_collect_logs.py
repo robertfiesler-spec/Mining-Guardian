@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 DB_PATH = '/root/Mining-Gaurdian/guardian.db'
 TIMEOUT = 60
 MAX_WORKERS = 5
+# Stock firmware miners - skip these (they return 404 on log backup endpoint)
+SKIP_MINER_IDS = {"54504", "63940"}
+
 
 
 def filter_log_content(raw_log: str, target_date=None) -> str:
@@ -196,7 +199,17 @@ def main():
     target_date = date.today()
     logger.info(f'=== DIRECT LOG COLLECTION START — {target_date} ===')
     
-    miners = get_online_miners()
+    all_miners = get_online_miners()
+    if not all_miners:
+        logger.error('No online miners')
+        return
+    
+    # Filter out stock firmware miners that don't support log backup
+    miners = [m for m in all_miners if m['miner_id'] not in SKIP_MINER_IDS]
+    skipped_count = len(all_miners) - len(miners)
+    if skipped_count > 0:
+        logger.info(f'Skipping {skipped_count} stock firmware miners: {SKIP_MINER_IDS}')
+    
     if not miners:
         logger.error('No online miners')
         return
