@@ -1,76 +1,88 @@
 # Mining Guardian — Cron Schedule
 
-**Last Updated:** 2026-04-17
+**Last Updated:** 2026-04-18
 
 ---
 
-## Daily Schedule (America/Chicago timezone)
+## Schedule (America/Chicago CDT)
 
-| Time | Job | Script | Description |
-|------|-----|--------|-------------|
-| 04:00 | Knowledge Backup | ai/backup_knowledge.py | Backup knowledge.json to GitHub |
-| 07:00 | Morning Briefing | scripts/morning_briefing.py | Slack summary of fleet status |
-| 12:45 | AMS Log Cleanup | scripts/cleanup_ams_logs.py | Clear AMS log queue (15 min before collection) |
-| 13:00 | Direct Log Collection | scripts/direct_collect_logs.py | Collect logs directly from miners (with filtering) |
-| 16:00 | Daily Deep Dive | ai/daily_deep_dive.py | Qwen analyzes all miners (45K prompt cap) |
-| 16:15 | Log Failure Report | scripts/daily_log_failure_report.py | Report miners with collection failures |
-| 00:00 | Weekly Training | ai/weekly_train.py | Claude cohort training |
-| 01:00 | Refinement Chain | ai/refinement_chain.py | Qwen reflection + Claude merge |
-
----
-
-## Hourly Jobs
-
-| Time | Job | Script | Description |
-|------|-----|--------|-------------|
-| Every hour | Benchmark | tests/run_benchmark.py | Performance benchmarks |
+| Time | Job | Script | Notes |
+|------|-----|--------|-------|
+| 04:00 | Knowledge Backup | ai/backup_knowledge.py | Commits to GitHub |
+| 07:00 | Morning Briefing | scripts/morning_briefing.py | Slack fleet summary |
+| 12:45 | AMS Log Cleanup | scripts/cleanup_ams_logs.py | 15 min before collection |
+| 13:00 | Direct Log Collection | scripts/direct_collect_logs.py | BiXBiT miner logs |
+| 16:00 | Daily Deep Dive | ai/daily_deep_dive.py | Qwen per-miner analysis |
+| 16:15 | Log Failure Report | scripts/daily_log_failure_report.py | Slack report |
+| 00:00 | Claude Training | ai/weekly_train.py | Cohort + fingerprints |
+| 01:00 | Refinement Chain | ai/refinement_chain.py | Qwen + Claude merge |
+| Hourly | Benchmark | tests/run_benchmark.py | Performance metrics |
 
 ---
 
-## Key Dependencies
+## PYTHONPATH Fix (2026-04-18)
 
-- **12:45 cleanup -> 13:00 collection:** AMS queue must be cleared before collection
-- **13:00 collection -> 16:00 deep dive:** Fresh logs needed for analysis
-- **16:00 deep dive -> 00:00 training:** Deep dive must complete first
+All cron jobs now include `PYTHONPATH=/root/Mining-Gaurdian` to fix module import errors.
+
+**Before (broken):**
+```
+cd /root/Mining-Gaurdian && /root/.../python ai/weekly_train.py
+```
+
+**After (fixed):**
+```
+cd /root/Mining-Gaurdian && PYTHONPATH=/root/Mining-Gaurdian /root/.../python ai/weekly_train.py
+```
+
+---
+
+## Dependencies
+
+- **12:45 cleanup -> 13:00 collection:** AMS queue cleared before collection
+- **13:00 collection -> 16:00 deep dive:** Fresh logs for analysis
+- **16:00 deep dive -> 00:00 training:** Deep dive must complete (~6-10h)
 - **00:00 training -> 01:00 refinement:** Training outputs feed refinement
 
 ---
 
 ## Log Files
 
-| Job | Log File |
-|-----|----------|
+| Job | Log |
+|-----|-----|
 | Knowledge backup | /tmp/knowledge_backup.log |
 | Morning briefing | /tmp/morning_briefing.log |
 | AMS cleanup | /tmp/ams_cleanup.log |
-| Direct log collection | /tmp/direct_log_collection.log |
+| Log collection | /tmp/direct_log_collection.log |
 | Deep dive | /tmp/daily_deep_dive.log |
 | Log failure report | /tmp/daily_log_failure_report.log |
-| Weekly training | /tmp/daily_claude_training.log |
+| Claude training | /tmp/daily_claude_training.log |
 | Refinement chain | /tmp/daily_refinement_chain.log |
 | Benchmark | /var/log/benchmark.log |
 
 ---
 
-## Recent Changes
+## Manual Run Commands
 
-### 2026-04-17
-- AMS cleanup moved from 10:00 to 12:45 (15 min before collection)
-- Log filtering added to direct_collect_logs.py
-- Date filtering added (only keep todays log lines)
-- 45K prompt cap confirmed working in daily_deep_dive.py
+```bash
+# Weekly training (with PYTHONPATH)
+cd /root/Mining-Gaurdian && source venv/bin/activate && \
+  PYTHONPATH=/root/Mining-Gaurdian python3 ai/weekly_train.py
 
-### 2026-04-16
-- Direct log collection implemented (bypasses AMS)
-- 45K prompt cap added to daily_deep_dive.py
-- Progress monitor and report watcher scripts added
+# Refinement chain
+cd /root/Mining-Gaurdian && source venv/bin/activate && \
+  PYTHONPATH=/root/Mining-Gaurdian python3 ai/refinement_chain.py
+
+# Deep dive
+cd /root/Mining-Gaurdian && source venv/bin/activate && \
+  PYTHONPATH=/root/Mining-Gaurdian python3 ai/daily_deep_dive.py
+
+# Log collection
+cd /root/Mining-Gaurdian && source venv/bin/activate && \
+  PYTHONPATH=/root/Mining-Gaurdian python3 scripts/direct_collect_logs.py
+```
 
 ---
 
-## Notes
+## Note
 
-- All times are CDT (America/Chicago)
-- Direct log collection bypasses AMS entirely, hits miners via Tailscale
-- Log filtering removes frequency tuning spam (~95% reduction in noise lines)
-- Date filtering keeps only todays logs (~80% reduction in size)
-- 45K prompt cap skips miners with huge logs to prevent multi-hour analysis
+Remove or reduce daily Claude training after ~April 25, 2026 — return to Sunday-only schedule.
