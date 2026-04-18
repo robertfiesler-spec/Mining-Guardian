@@ -1,147 +1,105 @@
-# Operator Rules
+# Mining Guardian — Operator Rules
 
-These rules are embedded in knowledge.json and guide all AI analysis and decision-making.
-Last updated: April 13, 2026
-
----
-
-## Rule 1: 20-Minute Post-Restart Cooldown
-
-After any restart or power cycle, wait 20 minutes before evaluating miner performance. Hashrate readings during warmup are unreliable and should not trigger additional actions.
-
-**Applies to:** All miner types
-**Source:** Operator feedback (April 10, 2026)
+**Last Updated:** 2026-04-18
 
 ---
 
-## Rule 2: Offline Miner Logic
+## Active Operator Rules (8 Total)
 
-If a miner is confirmed offline (unreachable via direct check), do NOT attempt firmware restart commands. Only PDU power cycle is valid for truly offline miners. Firmware restarts require the miner to be reachable.
+### Rule 1: 20-MINUTE POST-RESTART COOLDOWN
+After any restart or power cycle, wait 20 minutes before initiating profile changes, additional restarts, or any other actions. The miner needs time to stabilize and reach steady-state operation.
+
+**Rationale:** Prevents cascading restarts and allows accurate assessment of restart effectiveness.
+
+---
+
+### Rule 2: OFFLINE MINER LOGIC
+If a miner is confirmed offline (unreachable via direct check), do NOT recommend firmware restart.
 
 **Decision tree:**
-- Offline + has PDU → PDU_CYCLE
-- Offline + no PDU → PHYSICAL_INSPECTION
-- Reachable but underperforming → RESTART allowed
-
-**Applies to:** All miner types
-**Source:** Bug fix (April 11, 2026) — miner 192.168.188.231 kept getting restart attempts while unreachable
+- Miner offline + PDU available = PDU_CYCLE
+- Miner offline + no PDU = PHYSICAL_INSPECTION  
+- Miner reachable but underperforming = Firmware restart OK
 
 ---
 
-## Rule 3: Daily Log Collection Mandatory
+### Rule 3: DAILY LOG COLLECTION MANDATORY
+Every online miner MUST get a fresh log export every day. No 24-hour dedup.
 
-Every online miner MUST get a fresh log export every day. Do not rely on stale logs. If log collection fails for a miner, report it in Slack (#mg-logs channel) at 4:15pm so operator can investigate before leaving.
-
-**Cron:** 1pm daily (scripts/daily_collect_logs.py)
-**Report:** 4:15pm daily (scripts/daily_log_failure_report.py)
-
----
-
-## Rule 4: AMS Log Cleanup
-
-Delete ALL log files from AMS daily at 10am. Do not let failed or stale logs accumulate. Store logs in guardian.db only — AMS is not the system of record.
-
-**Cron:** 10am daily (scripts/cleanup_ams_logs.py)
-**Rationale:** AMS queue overflow caused 0 logs collected on April 12, 2026
-**Source:** Critical fix (April 12, 2026)
+**Fallback:** If fresh export fails, use most recent existing log.
+**Escalation:** Problem miners with broken exports need physical investigation.
 
 ---
 
-## Rule 5: S19J Pro CT Fans at 100%
+### Rule 4: AMS LOG CLEANUP
+Delete ALL log files from AMS daily at 12:45pm (before 1pm collection).
 
-S19J Pro container cooling tower (CT) fans are manually set to 100%. No VFD feedback will appear in HVAC data. This is intentional and NOT an equipment fault.
-
-**Do NOT:**
-- Flag missing CT fan feedback as a problem
-- Recommend checking CT fan operation
-- Treat zero VFD readings as a fault
-
-**Applies to:** S19J Pro container HVAC only
-**Source:** HVAC integration (April 13, 2026)
+**Why:** Failed exports accumulate and block new exports.
 
 ---
 
-## Rule 6: S19J Pro Overheating Boards (Aging Hardware)
+### Rule 5: S19J PRO CONTAINER CT FANS
+CT fans are manually set to 100% - no VFD feedback in HVAC data. This is intentional, NOT a fault.
 
+---
+
+### Rule 6: S19J PRO OVERHEATING BOARDS (AGING HARDWARE)
 When an S19J Pro shows overheating (chip temp >= 84C):
+1. Try ONE restart with log capture before and after
+2. Compare logs to see if restart helped
+3. If single restart does not fix it, these are old boards - let them run
 
-1. **Try ONE restart** with log capture before and after
-2. **Compare logs** to see if the restart helped
-3. **If restart doesn't fix it** — mark as aging hardware, let it run
-
-**Do NOT:**
-- Repeatedly restart overheating S19J Pros
-- Create tickets for aging thermal issues after first attempt fails
-- Flag these miners on every scan after marked as aging
-
-**Database:** s19jpro_overheat_tracking table
-**Source:** Operator rule (April 13, 2026)
+**Do NOT:** Repeatedly restart or create tickets for aging S19J Pro thermal issues.
 
 ---
 
-## Temperature Threshold Rule
+### Rule 7: WAREHOUSE MINERS OFFLINE FOR MAINTENANCE
+Currently offline for 1-2 days:
+- 2 Auradines (AH3880)
+- 2 S21 EXP Hydro
+- 2 S21 Immersion
+- Warehouse HVAC system
 
-Do NOT flag or warn about overheating until chip temp reaches **84C**. Anything below 84C must not generate any warning, alert, or recommendation about overheating regardless of cohort averages.
-
-**Previous threshold:** 76C (WRONG)
-**Current threshold:** 84C (CORRECT)
-**Applies to:** All miner types, all cooling modes
-
----
-
-## HVAC Delta-T Rule
-
-USA 188 HVAC is performing correctly. Low supply/return delta-T is intentional and will rise as outside temps climb.
-
-**Do NOT:**
-- Recommend checking HVAC because delta-T is low
-- Flag low delta-T as a problem
-- Suggest HVAC investigation for any thermal issues
+**Do NOT:** Flag these as problems - expected back online soon.
 
 ---
 
-## HVAC System Routing Rule
+### Rule 8: APPROVAL REQUIRES EXPLANATION (NEW)
+When approving any action (YES/APPROVE), the operator or AI MUST provide a brief explanation of WHY the action is appropriate.
 
-Compare miners to THEIR cooling system only:
+**No blind approvals** - every YES needs reasoning documented in the notes field.
 
-| Miner Type | HVAC System | IP Address |
-|------------|-------------|------------|
-| S19J Pro (all variants) | s19jpro container | 192.168.189.235 |
-| S21 EXP Hydro | warehouse | 192.168.188.235 |
-| S21 Immersion | warehouse | 192.168.188.235 |
-| AH3880 Auradine | warehouse | 192.168.188.235 |
-
-**Simple rule:** `if model.startswith('S19JPro'): system = 's19jpro' else: system = 'warehouse'`
-
-See [HVAC_SYSTEMS.md](./HVAC_SYSTEMS.md) for complete HVAC documentation.
+**Example:**
+- BAD: approve .36
+- GOOD: approve .36 hashrate dropped 40% after fan failure, restart should help
 
 ---
 
-## Hardware Facts (Locked)
+## Temperature Thresholds
 
-These are physical facts that cannot change:
+| Level | Temp | Action |
+|-------|------|--------|
+| Normal | < 76C | No action |
+| Yellow | 76-83C | Monitor |
+| Red/Alert | >= 84C | Investigate |
 
-| Miner | Board Count | Notes |
-|-------|-------------|-------|
-| S19J Pro | 3 boards | Chain 0, 1, 2 only. NO Chain 3. |
-| S21 EXP Hydro | 3 boards | BiXBiT firmware |
-| S21 Immersion | 3 boards | Stock firmware |
-| AH3880 Auradine | 2 boards | Auradine firmware |
-
-**Source:** Hardware audit (April 10, 2026) — Chain 3 references in insights were bugs
+**Note:** Do NOT flag anything below 84C as overheating. Fleet is liquid-cooled, 67-80C is NORMAL.
 
 ---
 
-## Summary Table
+## HVAC Rules
 
-| # | Rule | Added |
-|---|------|-------|
-| 1 | 20-minute restart cooldown | Apr 10 |
-| 2 | Offline miner logic | Apr 11 |
-| 3 | Daily log collection mandatory | Apr 11 |
-| 4 | AMS log cleanup | Apr 12 |
-| 5 | S19J Pro CT fans at 100% | Apr 13 |
-| 6 | S19J Pro overheating = one restart | Apr 13 |
-| - | Temperature threshold 84C | Apr 10 |
-| - | HVAC delta-T is fine | Apr 10 |
-| - | HVAC system routing | Apr 13 |
+- USA 188 HVAC is working correctly
+- Low supply/return delta-T is intentional
+- Do NOT recommend checking HVAC based on low delta-T
+
+---
+
+## Review Checklist
+
+Before approving, ask yourself:
+1. Has 20 minutes passed since last restart?
+2. Is the miner actually reachable?
+3. What is the root cause, not just symptom?
+4. Did I document WHY I am approving?
+5. Will this action teach the AI something useful?
