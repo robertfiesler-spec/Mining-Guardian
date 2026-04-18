@@ -540,7 +540,7 @@ def build_per_miner_prompt(
     if daily_log:
         # Cap the log at 60KB to leave room for the rest of the prompt within
         # Qwen's 32K token context. 60KB of log text ~= 15-20K tokens.
-        MAX_LOG_CHARS = 60_000
+        MAX_LOG_CHARS = 40_000  # Reduced to fit prompt budget
         log_text = daily_log[:MAX_LOG_CHARS]
         lines.append(f"--- TODAY'S DAILY BASELINE LOG ({len(daily_log)} chars, showing first {len(log_text)}) ---")
         lines.append(log_text)
@@ -878,7 +878,8 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
                     idx, len(online_miners), mid, miner.get("ip"), miner.get("model"))
 
         daily_log = get_miner_daily_log(conn, mid)
-        yesterday_log = get_miner_yesterday_log(conn, mid)
+        # REMOVED: yesterday log not needed - 1PM cron provides todays logs
+        yesterday_log = None  # Always None now
         trends = get_miner_24h_trends(conn, mid)
         hardware = get_miner_hardware(conn, mid)
         fingerprint = get_miner_fingerprint(knowledge, mid)
