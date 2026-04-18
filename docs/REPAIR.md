@@ -39,6 +39,49 @@ All 3 hashboards showing 0/126 ASICs detected with 126 bad chips each.
 ---
 
 ## System Updates Log
+### 2026-04-18
+
+**Deep Dive Prompt Size Fix (CRITICAL):**
+- ROOT CAUSE: yesterday_log was pulling old 1.1MB unfiltered logs from days ago
+- PLUS: Operator rules grew to 12KB after adding detailed pattern rules
+- RESULT: Prompts were 86K chars, exceeding 45K limit
+
+**Fixes Applied:**
+1. REMOVED yesterday_log lookup - set to None
+   - 1PM cron provides fresh daily logs, no need for old comparison
+2. REDUCED MAX_LOG_CHARS from 60K to 30K
+3. CAPPED operator rules to 2K chars in prompt (first line of each rule only)
+4. RESULT: Prompts now ~35K chars, well under 45K limit
+
+**Before:** 86,394 chars = SKIPPED
+**After:** 35,417 chars = PROCESSING
+
+**Operator Rules Added:**
+1. Rule 8: APPROVAL REQUIRES EXPLANATION
+2. Rule 9: PCB/BOM QUALITY GATE + CASCADE FAILURE (with full hardware detail)
+3. Rule 10: S19J PRO RESTART PROTOCOL
+4. Rule 11: FLEET INVENTORY AUDIT TRIGGER
+
+**Pattern Rules Added:**
+1. CHIP_QUALITY_DEGRADATION_PATTERN
+2. PSU_VOLTAGE_DEGRADATION_PATTERN
+
+**New Process Established:**
+- Daily operator review of AI proposals
+- All YES/NO decisions require explanation
+- Patterns, not miners - rules describe situations
+- More detail always - model, manufacturer, serial patterns, IPs
+
+**Git Commits:**
+- 3f53110: fix: Cap operator rules in deep dive prompt to 2K chars
+- f6c38ea: fix: Remove yesterday log from deep dive
+- e81f9e9: skip: Stock firmware miners excluded from log collection
+- 134737a: docs: Add comprehensive OPERATOR_RULES.md
+- 6c0dae0: rule: Add APPROVAL REQUIRES EXPLANATION rule
+
+---
+
+
 
 ### 2026-04-17
 
