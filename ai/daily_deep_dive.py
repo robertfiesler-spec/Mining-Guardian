@@ -517,11 +517,15 @@ def build_per_miner_prompt(
             lines.append(f"  [{ts}] ({model}): {text}...")
         lines.append("")
 
-    # Operator rules — compact
+    # Operator rules — compact (capped for prompt budget)
     if operator_rules:
-        lines.append("--- OPERATOR RULES (MUST FOLLOW) ---")
+        lines.append("--- OPERATOR RULES (KEY POINTS) ---")
+        rules_chars = 0
         for rule in operator_rules:
-            lines.append(f"  • {rule}")
+            title = rule.split(chr(10))[0][:120]
+            if rules_chars < 2000:
+                lines.append(f"  • {title}")
+                rules_chars += len(title)
         lines.append("")
 
     # Critical operator rules hardcoded as a reminder
@@ -540,7 +544,7 @@ def build_per_miner_prompt(
     if daily_log:
         # Cap the log at 60KB to leave room for the rest of the prompt within
         # Qwen's 32K token context. 60KB of log text ~= 15-20K tokens.
-        MAX_LOG_CHARS = 40_000  # Reduced to fit prompt budget
+        MAX_LOG_CHARS = 30_000  # Reduced - rules grew  # Reduced to fit prompt budget
         log_text = daily_log[:MAX_LOG_CHARS]
         lines.append(f"--- TODAY'S DAILY BASELINE LOG ({len(daily_log)} chars, showing first {len(log_text)}) ---")
         lines.append(log_text)
