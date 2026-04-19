@@ -30,7 +30,7 @@ from collections import defaultdict
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
-from fastapi import FastAPI, Query, Path as APIPath
+from fastapi import FastAPI, Query, Path as APIPath, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -269,8 +269,7 @@ def load_specs():
             return d.get('models', {})
     return {}
 
-# Load data at startup
-_RAW_INDEX = load_unified_index()
+# Load supplementary data at startup (enrichment CSV + specs JSON)
 ENRICHMENT = load_enrichment()
 SPECS = load_specs()
 
@@ -284,7 +283,7 @@ def merge_index(raw_index: dict) -> dict:
     for slug in raw_index:
         norm = slug.replace('-', '')
         groups[norm].append(slug)
-    
+
     # Second pass: detect manufacturer-prefix duplicates
     # e.g. "teraflux-ah3880" and "auradine-teraflux-ah3880" should merge
     all_norms = list(groups.keys())
@@ -300,13 +299,13 @@ def merge_index(raw_index: dict) -> dict:
                 merge_map[n1] = n2
             elif n1.endswith(n2) and len(n1) > len(n2):
                 merge_map[n2] = n1
-    
+
     # Apply merges: combine groups
     for short_norm, long_norm in merge_map.items():
         if short_norm in groups and long_norm in groups:
             groups[long_norm].extend(groups[short_norm])
             del groups[short_norm]
-    
+
     merged = {}
     merge_count = 0
     for norm, slugs in groups.items():
@@ -319,7 +318,7 @@ def merge_index(raw_index: dict) -> dict:
             enrichment_data = None
             best_entity = None
             best_display = None
-            
+
             for s in slugs:
                 entry = raw_index[s]
                 if entry.get('specs'):
@@ -332,11 +331,11 @@ def merge_index(raw_index: dict) -> dict:
                     # Prefer the longest/most descriptive display name
                     if not best_display or len(entry['display_name']) > len(best_display):
                         best_display = entry['display_name']
-            
+
             # Fallback: use first slug if none had specs
             if not primary:
                 primary = slugs[0]
-            
+
             # Build merged entry
             base = dict(raw_index[primary])
             if specs_data:
@@ -347,59 +346,117 @@ def merge_index(raw_index: dict) -> dict:
                 base['entity'] = best_entity
             if best_display:
                 base['display_name'] = best_display
-            
+
             merged[primary] = base
-            
+
             # Also register aliases so lookups work with either slug
             for s in slugs:
                 if s != primary:
                     merged[s] = base  # Point to same merged data
-            
+
             merge_count += 1
-    
+
     print(f"Merged {merge_count} duplicate slug pairs")
     return merged
 
-UNIFIED_INDEX = merge_index(_RAW_INDEX)
 
-# Apply correction rules
-CORRECTION_RULES = load_correction_rules()
-if CORRECTION_RULES:
-    corrections_made = apply_corrections(UNIFIED_INDEX, CORRECTION_RULES)
-    print(f"Applied {corrections_made} corrections across {len(UNIFIED_INDEX)} models")
+# ── Reloadable Catalog Loader ────────────────────────────────────
+# All catalog state is held in these module-level variables.
+# _load_catalog() rebuilds them from disk — called at startup and on hot-reload.
 
-# Build search-friendly list (deduplicated — skip aliases)
-MODEL_LIST = []
-_seen_displays = set()
-for slug, info in sorted(UNIFIED_INDEX.items()):
-    display = info.get('display_name', slug)
-    # Skip alias duplicates
-    display_key = display.lower().replace(' ', '')
-    if display_key in _seen_displays:
-        continue
-    _seen_displays.add(display_key)
-    
-    mfg = info.get('manufacturer', 'unknown').title()
-    hashrate = ""
-    entity = info.get('entity', '')
-    if entity:
-        m = re.search(r'\((\d+[\d.]*)\s*(?:TH|GH)', entity)
-        if m:
-            hashrate = m.group(1) + " TH/s"
-    if not hashrate and info.get('specs'):
-        ths = info['specs'].get('default_rated_ths')
-        if ths:
-            hashrate = f"{ths} TH/s"
-    
-    MODEL_LIST.append({
-        "slug": slug,
-        "display_name": display,
-        "manufacturer": mfg,
-        "hashrate": hashrate,
-        "label": f"{mfg} {display}" + (f" ({hashrate})" if hashrate else "")
-    })
+UNIFIED_INDEX: dict = {}
+MODEL_LIST: list = []
+CORRECTION_RULES: list = []
+_catalog_mtime: float = 0.0  # last mtime of unified_miner_index.json
+_catalog_lock = threading.Lock()
 
-print(f"Loaded {len(MODEL_LIST)} miner models for Intelligence Reports")
+
+def _load_catalog() -> int:
+    """(Re)load the catalog from disk into module-level globals.
+
+    Thread-safe — acquires _catalog_lock so the reload endpoint and
+    background watcher never race against each other.
+
+    Returns the new MODEL_LIST count.
+    """
+    global UNIFIED_INDEX, MODEL_LIST, CORRECTION_RULES, _catalog_mtime
+
+    with _catalog_lock:
+        raw_index = load_unified_index()
+        unified = merge_index(raw_index)
+
+        rules = load_correction_rules()
+        if rules:
+            corrections_made = apply_corrections(unified, rules)
+            print(f"Applied {corrections_made} corrections across {len(unified)} models")
+
+        # Build search-friendly list (deduplicated — skip aliases)
+        model_list = []
+        seen_displays: set[str] = set()
+        for slug, info in sorted(unified.items()):
+            display = info.get('display_name', slug)
+            display_key = display.lower().replace(' ', '')
+            if display_key in seen_displays:
+                continue
+            seen_displays.add(display_key)
+
+            mfg = info.get('manufacturer', 'unknown').title()
+            hashrate = ""
+            entity = info.get('entity', '')
+            if entity:
+                m = re.search(r'\((\d+[\d.]*)\s*(?:TH|GH)', entity)
+                if m:
+                    hashrate = m.group(1) + " TH/s"
+            if not hashrate and info.get('specs'):
+                ths = info['specs'].get('default_rated_ths')
+                if ths:
+                    hashrate = f"{ths} TH/s"
+
+            model_list.append({
+                "slug": slug,
+                "display_name": display,
+                "manufacturer": mfg,
+                "hashrate": hashrate,
+                "label": f"{mfg} {display}" + (f" ({hashrate})" if hashrate else "")
+            })
+
+        # Atomically swap globals
+        UNIFIED_INDEX = unified
+        MODEL_LIST = model_list
+        CORRECTION_RULES = rules
+
+        # Track file mtime for auto-refresh
+        try:
+            _catalog_mtime = os.path.getmtime(INDEX_JSON)
+        except OSError:
+            _catalog_mtime = 0.0
+
+        print(f"Loaded {len(MODEL_LIST)} miner models for Intelligence Reports")
+        return len(MODEL_LIST)
+
+
+# Initial load at startup
+_load_catalog()
+
+
+# ── Background auto-refresh (checks mtime every 5 minutes) ──────
+
+def _catalog_auto_refresh():
+    """Background thread: reload catalog if unified_miner_index.json changed on disk."""
+    global _catalog_mtime
+    while True:
+        time.sleep(300)  # 5 minutes
+        try:
+            current_mtime = os.path.getmtime(INDEX_JSON)
+        except OSError:
+            continue
+        if current_mtime > _catalog_mtime:
+            print(f"[auto-refresh] Catalog file changed (mtime {current_mtime:.0f} > {_catalog_mtime:.0f}), reloading...")
+            _load_catalog()
+
+
+_refresh_thread = threading.Thread(target=_catalog_auto_refresh, daemon=True, name="catalog-auto-refresh")
+_refresh_thread.start()
 
 
 # ── Guardian DB helpers ───────────────────────────────────────
@@ -746,6 +803,19 @@ def health():
         "network_difficulty_t": round(net.get("network_difficulty", 0) / 1e12, 2),
         "data_source": net.get("source", "initializing"),
     }
+
+@app.post("/api/catalog/reload")
+def reload_catalog():
+    """Hot-reload the catalog from disk without restarting the API."""
+    old_count = len(MODEL_LIST)
+    new_count = _load_catalog()
+    return {
+        "status": "reloaded",
+        "previous_model_count": old_count,
+        "new_model_count": new_count,
+        "delta": new_count - old_count,
+    }
+
 
 @app.get("/api/report/models")
 def list_models():
