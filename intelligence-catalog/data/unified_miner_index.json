@@ -6609,5 +6609,53 @@
       "default_rated_watts": 3360,
       "notes": "Entry-level A15. Range 170-185T"
     }
+  },
+  "antminer-s23e-u2h": {
+    "manufacturer": "bitmain",
+    "name": "Antminer S23e U2H",
+    "specs": {
+      "hashrate_ths": 865,
+      "power_watts": 8650,
+      "efficiency_jth": 10.0,
+      "cooling": "hydro",
+      "algorithm": "SHA-256",
+      "weight_kg": 19,
+      "dimensions_mm": "509 x 481 x 87",
+      "release_date": "2026-01-27",
+      "msrp_usd": 19030
+    }
+  },
+  "bitaxe-gamma-602": {
+    "manufacturer": "bitaxe",
+    "name": "Bitaxe Gamma 602",
+    "specs": {
+      "hashrate_ths": 1.2,
+      "power_watts": 18,
+      "efficiency_jth": 15.0,
+      "cooling": "air",
+      "algorithm": "SHA-256",
+      "chip_process_nm": 5,
+      "chip": "BM1370",
+      "board_count": 1,
+      "weight_kg": 0.34,
+      "release_date": "2025-04",
+      "msrp_usd": 100
+    }
+  },
+  "avalon-a16xp-300t": {
+    "manufacturer": "canaan",
+    "name": "Avalon A16XP-300T",
+    "specs": {
+      "hashrate_ths": 300,
+      "power_watts": 3850,
+      "efficiency_jth": 12.8,
+      "cooling": "air",
+      "algorithm": "SHA-256",
+      "chip_process_nm": 5,
+      "weight_kg": 14.9,
+      "dimensions_mm": "366 x 213 x 300",
+      "release_date": "2025-10-28",
+      "msrp_usd": 5580
+    }
   }
 }
