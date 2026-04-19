@@ -249,6 +249,72 @@ SECTION 6 — OPEN QUESTIONS: For disagreements you could not resolve, what addi
 Begin your reflection now. Be thorough."""
 
 
+
+
+# ── Claude fallback for Pass 3 (temporary until GPU fixed) ─────────────
+# Set USE_CLAUDE_FALLBACK=1 to route Pass 3 to Claude instead of Qwen
+# TEMPORARY - remove by Tuesday April 22 2026
+
+def fire_pass_3_claude_fallback(pass_1, pass_2, config, smoke_test=False):
+    """Fire Pass 3 using Claude API when Qwen GPU is unavailable."""
+    try:
+        import anthropic
+    except ImportError:
+        logger.error("Claude fallback failed: anthropic SDK not installed")
+        raise RuntimeError("anthropic SDK required for Claude fallback")
+    
+    api_key = get_api_key()
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY not found")
+    
+    if smoke_test:
+        prompt = "Say SMOKE TEST PASS 3 OK and nothing else."
+    else:
+        prompt = build_pass_3_prompt(pass_1, pass_2)
+    
+    # Modify prompt to address Claude instead of Qwen
+    prompt = prompt.replace(
+        "You are Qwen 2.5 32B, the local LLM",
+        "You are Claude, temporarily filling in for Qwen 2.5 32B as the local LLM"
+    )
+    
+    logger.info("Pass 3 [CLAUDE FALLBACK]: firing (prompt %d chars)", len(prompt))
+    t0 = time.time()
+    
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    
+    elapsed = time.time() - t0
+    reflection = response.content[0].text.strip()
+    
+    logger.info("Pass 3 [CLAUDE FALLBACK]: complete (%.1fs, %d chars)", elapsed, len(reflection))
+    
+    result = {
+        "timestamp": datetime.now().isoformat(),
+        "source": "claude_learning_reflection_fallback",
+        "model": "claude-sonnet-4-20250514",
+        "elapsed_s": round(elapsed, 1),
+        "reflection": reflection,
+        "prompt_chars": len(prompt),
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+    save_pass_wip("pass3", result)
+    return result
+
+
+def fire_pass_3(pass_1, pass_2, config, smoke_test=False):
+    """Route Pass 3 to Claude or Qwen based on USE_CLAUDE_FALLBACK env var."""
+    if os.environ.get("USE_CLAUDE_FALLBACK") == "1":
+        logger.info("Using Claude fallback for Pass 3 (USE_CLAUDE_FALLBACK=1)")
+        return fire_pass_3_claude_fallback(pass_1, pass_2, config, smoke_test)
+    else:
+        return fire_pass_3(pass_1, pass_2, config, smoke_test)
+
 def fire_pass_3_qwen_reflection(pass_1, pass_2, config, smoke_test=False):
     if smoke_test:
         prompt = "Say 'SMOKE TEST PASS 3 OK' and nothing else."
@@ -413,7 +479,7 @@ def run_chain(dry_run=False, smoke_test=False, resume_from=3):
 
     # Pass 3
     if resume_from <= 3:
-        pass_3 = fire_pass_3_qwen_reflection(pass_1, pass_2, config, smoke_test=smoke_test)
+        pass_3 = fire_pass_3(pass_1, pass_2, config, smoke_test=smoke_test)
     else:
         pass_3 = load_latest_pass_wip("pass3")
         logger.info("Pass 3: loaded from WIP (%d chars)", len(pass_3.get("reflection", "")))

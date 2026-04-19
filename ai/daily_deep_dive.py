@@ -105,6 +105,82 @@ NUM_CTX = 32768        # Qwen 2.5 32B quantized model's full context window
 NUM_PREDICT = -1       # -1 = unlimited output tokens per Ollama
 TEMPERATURE = 0.3      # low for factual analysis
 OLLAMA_TIMEOUT_SEC = 14400  # 4 hours per call
+
+# ── Claude API fallback (temporary until GPU fixed) ─────────────────────
+# Set USE_CLAUDE_FALLBACK=1 to route all LLM calls to Claude instead of Qwen
+# This is a TEMPORARY measure - remove by Tuesday April 22 2026
+
+def get_anthropic_key():
+    """Get Anthropic API key from env or .env file."""
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if key:
+        return key
+    env_path = _ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("ANTHROPIC_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
+def query_claude(prompt: str, label: str = "") -> Optional[str]:
+    """Call Claude API as fallback when Qwen GPU is unavailable.
+    
+    Uses claude-sonnet-4-20250514 for cost efficiency.
+    Same interface as query_llm() for drop-in replacement.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        logger.error("Claude fallback failed: anthropic SDK not installed")
+        return None
+    
+    api_key = get_anthropic_key()
+    if not api_key:
+        logger.error("Claude fallback failed: ANTHROPIC_API_KEY not found")
+        return None
+    
+    prompt_chars = len(prompt)
+    logger.info("Claude call [%s]: prompt=%d chars (fallback mode)", label, prompt_chars)
+    
+    start = time.time()
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        result = response.content[0].text
+        elapsed = time.time() - start
+        
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        
+        logger.info(
+            "Claude OK [%s]: %.1fs wall, input=%d tokens, output=%d tokens (%d chars)",
+            label, elapsed, input_tokens, output_tokens, len(result)
+        )
+        return result
+        
+    except Exception as e:
+        logger.error("Claude call failed [%s]: %s: %s", label, type(e).__name__, e)
+        return None
+
+
+def query_llm(prompt: str, label: str = "") -> Optional[str]:
+    """Route to Claude or Qwen based on USE_CLAUDE_FALLBACK env var.
+    
+    USE_CLAUDE_FALLBACK=1 -> Claude API (temporary, GPU broken)
+    Otherwise -> Qwen on ROBS-PC (normal operation)
+    """
+    if os.environ.get("USE_CLAUDE_FALLBACK") == "1":
+        return query_claude(prompt, label)
+    else:
+        return query_llm(prompt, label)
+
+
 MAX_PROMPT_CHARS = 45000   # Skip miners with prompts > 45K chars (~12K tokens)
                            # Prevents multi-hour analysis of miners with huge logs
 
@@ -934,7 +1010,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
             }, indent=2))
             continue
 
-        analysis = query_qwen(prompt, label=f"miner {mid} ({idx}/{len(online_miners)})")
+        analysis = query_llm(prompt, label=f"miner {mid} ({idx}/{len(online_miners)})")
         if not analysis:
             logger.warning("[%d/%d] miner %s: Qwen returned no analysis", idx, len(online_miners), mid)
             per_miner_failures.append(mid)
@@ -990,7 +1066,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
         fleet_analyses=fleet_analyses,
     )
 
-    fleet_synthesis = query_qwen(fleet_prompt, label="fleet synthesis")
+    fleet_synthesis = query_llm(fleet_prompt, label="fleet synthesis")
     if not fleet_synthesis:
         logger.error("Fleet synthesis returned no result")
         conn.close()
