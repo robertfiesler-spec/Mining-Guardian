@@ -15,6 +15,8 @@ Endpoints:
   GET /api/report/search?q=...    → search models by partial name
   GET /api/report/{slug}          → full intelligence report data for a model
   GET /api/report/{slug}/html     → HTML formatted report for iframe rendering
+  GET /api/discoveries            → list unacknowledged auto-discovered models/firmware
+  POST /api/discoveries/{id}/acknowledge → mark a discovery as reviewed or cataloged
   GET /health                     → health check
 
 Version: 2.2.0 — Real fleet data from guardian.db + all prior fixes (April 16 2026)
@@ -28,9 +30,10 @@ from collections import defaultdict
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 
 def _safe_float(val, default=0.0) -> float:
@@ -807,6 +810,72 @@ def get_report_html(slug: str):
             content={"html": f"<div style='color:#ef4444; padding:20px; font-size:16px;'>Report generation error for '{slug}': {str(e)}</div>",
                      "error": str(e)}
         )
+
+
+# ── Auto-Discovery Endpoints ─────────────────────────────────
+
+class AcknowledgeRequest(BaseModel):
+    level: int = 1       # 1=reviewed, 2=added to catalog
+    notes: Optional[str] = None
+
+@app.get("/api/discoveries")
+def list_discoveries(acknowledged: Optional[int] = Query(None, description="Filter by acknowledged status (0=new, 1=reviewed, 2=added)")):
+    """Return discovery_log entries. Defaults to unacknowledged (acknowledged=0)."""
+    try:
+        conn = sqlite3.connect(GUARDIAN_DB, timeout=30)
+        conn.row_factory = sqlite3.Row
+        if acknowledged is not None:
+            rows = conn.execute(
+                "SELECT * FROM discovery_log WHERE acknowledged = ? ORDER BY last_seen DESC",
+                (acknowledged,)
+            ).fetchall()
+        else:
+            # Default: show unacknowledged discoveries
+            rows = conn.execute(
+                "SELECT * FROM discovery_log WHERE acknowledged = 0 ORDER BY last_seen DESC"
+            ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            return []
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/discoveries/{discovery_id}/acknowledge")
+def acknowledge_discovery(
+    discovery_id: int = Path(..., description="Discovery log entry ID"),
+    body: AcknowledgeRequest = AcknowledgeRequest()
+):
+    """Mark a discovery as reviewed (1) or added-to-catalog (2)."""
+    if body.level not in (1, 2):
+        return JSONResponse(status_code=400, content={"error": "level must be 1 (reviewed) or 2 (added to catalog)"})
+    try:
+        conn = sqlite3.connect(GUARDIAN_DB, timeout=30)
+        conn.row_factory = sqlite3.Row
+        params = [body.level]
+        sql = "UPDATE discovery_log SET acknowledged = ?"
+        if body.notes is not None:
+            sql += ", notes = ?"
+            params.append(body.notes)
+        sql += " WHERE id = ?"
+        params.append(discovery_id)
+        cursor = conn.execute(sql, params)
+        conn.commit()
+        if cursor.rowcount == 0:
+            conn.close()
+            return JSONResponse(status_code=404, content={"error": f"Discovery {discovery_id} not found"})
+        # Return the updated row
+        row = conn.execute("SELECT * FROM discovery_log WHERE id = ?", (discovery_id,)).fetchone()
+        conn.close()
+        return dict(row) if row else {"success": True}
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            return JSONResponse(status_code=404, content={"error": "discovery_log table not yet created — run a scan first"})
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 # ── HTML Report Renderer (v2 — full 9-section report) ─────────

@@ -1755,6 +1755,35 @@ class GuardianDB:
 
                 CREATE INDEX IF NOT EXISTS idx_ams_ext_miner
                     ON miner_ams_extended(miner_id, scanned_at);
+
+                -- ── Auto-discovery log ────────────────────────────────────────
+                -- Tracks unknown models and firmware versions encountered during scans.
+                -- Bobby's rule: never skip a new data point — always register it.
+                CREATE TABLE IF NOT EXISTS discovery_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    discovery_type TEXT NOT NULL,
+                    device_name TEXT,
+                    normalized_name TEXT,
+                    firmware_version TEXT,
+                    miner_id TEXT,
+                    ip TEXT,
+                    hashrate REAL,
+                    temp_chip REAL,
+                    consumption REAL,
+                    board_count INTEGER,
+                    chip_count INTEGER,
+                    raw_data TEXT,
+                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    acknowledged INTEGER DEFAULT 0,
+                    notes TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_discovery_type_name
+                    ON discovery_log(discovery_type, normalized_name);
+
+                CREATE INDEX IF NOT EXISTS idx_discovery_ack
+                    ON discovery_log(acknowledged);
             """)
 
             # ── Schema migrations for existing databases ──────────────────────
@@ -1998,6 +2027,169 @@ class GuardianDB:
                  1 if hvac.ct2_fault else 0,
                  1 if hvac.pump_fault else 0)
             )
+
+    # ── Auto-discovery ───────────────────────────────────────────
+
+    def load_known_models(self, catalog_path: str) -> set:
+        """Load known model names from the Intelligence Catalog JSON.
+
+        Returns a set of normalized device names for fast lookup.
+        Normalization: lowercase, strip spaces/hyphens, keep plus signs
+        and trailing 's' variants as distinct (m63 != m63s != m63+ != m63s+).
+        """
+        known = set()
+        try:
+            with open(catalog_path, "r") as f:
+                catalog = json.load(f)
+            for key, entry in catalog.items():
+                # Add the slug key itself (e.g. "antminer-s21-pro")
+                known.add(self._normalize_model_name(key))
+                # Add the display_name (e.g. "Antminer S21 Pro (234 TH)")
+                display = entry.get("display_name", "")
+                if display:
+                    # Strip hashrate/parenthetical from display_name
+                    base = display.split("(")[0].strip()
+                    known.add(self._normalize_model_name(base))
+            logger.info("Loaded %d known models from Intelligence Catalog", len(known))
+        except FileNotFoundError:
+            logger.warning("Intelligence Catalog not found: %s — discovery will flag all models", catalog_path)
+        except Exception as e:
+            logger.error("Failed to load Intelligence Catalog: %s", e)
+        return known
+
+    @staticmethod
+    def _normalize_model_name(name: str) -> str:
+        """Normalize a model name for comparison.
+
+        Lowercase, strip manufacturer prefixes, remove spaces and hyphens.
+        Preserves plus signs and 's' suffixes so m63/m63s/m63+/m63s+ stay distinct.
+        """
+        n = name.lower().strip()
+        # Remove known manufacturer prefixes
+        for prefix in ("antminer", "whatsminer", "avalon", "canaan", "bitmain",
+                        "microbt", "innosilicon", "ebang", "strongu", "goldshell",
+                        "iceriver", "jasminer", "bombax", "bixbit"):
+            if n.startswith(prefix):
+                n = n[len(prefix):]
+        # Strip spaces and hyphens (but keep + for plus variants)
+        n = n.replace(" ", "").replace("-", "").replace("_", "")
+        return n
+
+    def load_known_firmware(self) -> set:
+        """Load known firmware versions from discovery_log.
+
+        Returns a set of firmware version strings already seen.
+        """
+        known = set()
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT firmware_version FROM discovery_log "
+                    "WHERE discovery_type = 'new_firmware' AND firmware_version IS NOT NULL"
+                ).fetchall()
+                for row in rows:
+                    known.add(row["firmware_version"])
+                # Also load firmware from existing miner_readings to bootstrap
+                rows2 = conn.execute(
+                    "SELECT DISTINCT firmware_version FROM miner_readings "
+                    "WHERE firmware_version IS NOT NULL AND firmware_version != ''"
+                ).fetchall()
+                for row in rows2:
+                    known.add(row["firmware_version"])
+        except Exception as e:
+            logger.warning("Failed to load known firmware: %s", e)
+        return known
+
+    def save_discovery(self, discovery_type: str, miner_data: Dict,
+                       normalized_name: str, device_name: str) -> None:
+        """Insert or update a discovery_log entry.
+
+        If an entry with the same discovery_type + normalized_name already exists,
+        update last_seen and raw_data. Otherwise, insert a new row.
+        """
+        now = datetime.now().isoformat()
+        raw_json = json.dumps(miner_data, default=str)
+        chains = miner_data.get("chains") or []
+        board_count = len(chains)
+        chip_count = chains[0].get("chips", 0) if chains else None
+
+        with self._connect() as conn:
+            if discovery_type == "new_model":
+                existing = conn.execute(
+                    "SELECT id FROM discovery_log "
+                    "WHERE discovery_type = 'new_model' AND normalized_name = ?",
+                    (normalized_name,)
+                ).fetchone()
+            else:
+                existing = conn.execute(
+                    "SELECT id FROM discovery_log "
+                    "WHERE discovery_type = 'new_firmware' AND firmware_version = ? AND normalized_name = ?",
+                    (miner_data.get("firmwareVersion", ""), normalized_name)
+                ).fetchone()
+
+            if existing:
+                conn.execute(
+                    "UPDATE discovery_log SET last_seen = ?, raw_data = ?, "
+                    "hashrate = ?, temp_chip = ?, consumption = ?, board_count = ? "
+                    "WHERE id = ?",
+                    (now, raw_json,
+                     miner_data.get("hashrate") or 0,
+                     miner_data.get("tempChip") or 0,
+                     miner_data.get("consumption") or 0,
+                     board_count,
+                     existing["id"])
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO discovery_log "
+                    "(discovery_type, device_name, normalized_name, firmware_version, "
+                    " miner_id, ip, hashrate, temp_chip, consumption, board_count, "
+                    " chip_count, raw_data, first_seen, last_seen) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (discovery_type,
+                     device_name,
+                     normalized_name,
+                     miner_data.get("firmwareVersion"),
+                     str(miner_data.get("id", "")),
+                     miner_data.get("ip"),
+                     miner_data.get("hashrate") or 0,
+                     miner_data.get("tempChip") or 0,
+                     miner_data.get("consumption") or 0,
+                     board_count,
+                     chip_count,
+                     raw_json,
+                     now, now)
+                )
+
+    def get_discoveries(self, acknowledged: Optional[int] = None) -> List[Dict]:
+        """Return discovery_log entries, optionally filtered by acknowledged status."""
+        with self._connect() as conn:
+            if acknowledged is not None:
+                rows = conn.execute(
+                    "SELECT * FROM discovery_log WHERE acknowledged = ? "
+                    "ORDER BY last_seen DESC", (acknowledged,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM discovery_log ORDER BY last_seen DESC"
+                ).fetchall()
+            return [dict(r) for r in rows]
+
+    def acknowledge_discovery(self, discovery_id: int, level: int = 1,
+                              notes: Optional[str] = None) -> bool:
+        """Mark a discovery as reviewed (1) or added-to-catalog (2).
+
+        Returns True if a row was updated, False if id not found.
+        """
+        with self._connect() as conn:
+            params = [level, discovery_id]
+            sql = "UPDATE discovery_log SET acknowledged = ?"
+            if notes is not None:
+                sql += ", notes = ?"
+                params = [level, notes, discovery_id]
+            sql += " WHERE id = ?"
+            updated = conn.execute(sql, params).rowcount
+            return updated > 0
 
     def save_scan(self, miners: List[Dict], issues: List[Dict]) -> int:
         """Write scan summary and all miner readings. Returns scan_id."""
@@ -3418,6 +3610,45 @@ class MiningGuardian:
         # S19JPros (outside container) have no PDU — not polled here.
         self.facility = FacilityMonitor()
         self.hvac     = HVACClient()
+
+        # ── Auto-discovery cache ─────────────────────────────────────────
+        _catalog_path = str(_ROOT / "intelligence-catalog" / "data" / "unified_miner_index.json")
+        self._known_models = self.db.load_known_models(_catalog_path)
+        self._known_firmware = self.db.load_known_firmware()
+
+    def _check_discoveries(self, miners: List[Dict]) -> None:
+        """Check each miner for unknown models or firmware versions.
+
+        Bobby's rule: if a new data point comes up that we've never seen before,
+        register it — never skip over it.
+        """
+        for m in miners:
+            if m.get("status") != "online":
+                continue
+
+            # ── Model check ──────────────────────────────────────────
+            device_name = m.get("shortModel") or m.get("name") or ""
+            if device_name:
+                normalized = GuardianDB._normalize_model_name(device_name)
+                if normalized and normalized not in self._known_models:
+                    self.db.save_discovery("new_model", m, normalized, device_name)
+                    logger.warning(
+                        "DISCOVERY: Unknown model detected: %s at %s",
+                        device_name, m.get("ip", "?")
+                    )
+                    # Add to in-memory cache so we only log once per session
+                    self._known_models.add(normalized)
+
+            # ── Firmware check ───────────────────────────────────────
+            firmware = m.get("firmwareVersion") or ""
+            if firmware and firmware not in self._known_firmware:
+                normalized = GuardianDB._normalize_model_name(device_name) if device_name else ""
+                self.db.save_discovery("new_firmware", m, normalized, device_name)
+                logger.info(
+                    "DISCOVERY: New firmware version detected: %s on %s",
+                    firmware, device_name or "unknown"
+                )
+                self._known_firmware.add(firmware)
 
     def _on_baseline_locked(self, miner_id: str, model: str,
                              ip: str, baseline_ths: float, samples: int) -> None:
@@ -5492,6 +5723,12 @@ class MiningGuardian:
             except Exception:
                 pass
             return {"scanned": len(miners), "issues": 0, "ams_down": True}
+
+        # ── Auto-discovery: flag unknown models and firmware ─────────
+        try:
+            self._check_discoveries(miners)
+        except Exception:
+            logger.exception("Auto-discovery check failed (non-fatal)")
 
         issues   = [r for r in (self._analyze_miner(m) for m in miners) if r]
         self._print_report(miners, issues, wx, ams_notifs, facility_snapshot, hvac_snapshot,
