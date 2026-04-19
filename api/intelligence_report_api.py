@@ -23,14 +23,14 @@ Version: 2.2.0 — Real fleet data from guardian.db + all prior fixes (April 16 
 """
 
 import json, csv, os, re, sqlite3, math, time, threading
-from pathlib import Path
+from pathlib import Path as FilePath
 from datetime import datetime
 from typing import Optional
 from collections import defaultdict
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
-from fastapi import FastAPI, Query, Path
+from fastapi import FastAPI, Query, Path as APIPath
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -46,7 +46,7 @@ def _safe_float(val, default=0.0) -> float:
         return default
 
 # ── Configuration ─────────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = FilePath(__file__).resolve().parent
 REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
 GUARDIAN_DB = os.environ.get("GUARDIAN_DB", str(REPO_DIR / "guardian.db"))
 # On VPS: API runs from repo root, data lives in intelligence-catalog/data/
@@ -845,7 +845,7 @@ def list_discoveries(acknowledged: Optional[int] = Query(None, description="Filt
 
 @app.post("/api/discoveries/{discovery_id}/acknowledge")
 def acknowledge_discovery(
-    discovery_id: int = Path(..., description="Discovery log entry ID"),
+    discovery_id: int = APIPath(..., description="Discovery log entry ID"),
     body: AcknowledgeRequest = AcknowledgeRequest()
 ):
     """Mark a discovery as reviewed (1) or added-to-catalog (2)."""
