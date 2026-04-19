@@ -1,0 +1,157 @@
+{
+  "type": "object",
+  "properties": {
+    "model_slug": {
+      "type": "string",
+      "title": "Model Slug"
+    },
+    "chip_model": {
+      "type": "string",
+      "title": "Chip Model"
+    },
+    "chip_process_nm": {
+      "type": "string",
+      "title": "Chip Process (nm)"
+    },
+    "chips_per_board": {
+      "type": "string",
+      "title": "Chips Per Board"
+    },
+    "boards_per_unit": {
+      "type": "string",
+      "title": "Boards Per Unit"
+    },
+    "voltage_range": {
+      "type": "string",
+      "title": "Voltage Range"
+    },
+    "frequency_range_mhz": {
+      "type": "string",
+      "title": "Frequency Range (MHz)"
+    },
+    "psu_type": {
+      "type": "string",
+      "title": "PSU Type"
+    },
+    "fan_count": {
+      "type": "string",
+      "title": "Fan Count"
+    },
+    "noise_db": {
+      "type": "string",
+      "title": "Noise (dB)"
+    },
+    "operating_temp_range": {
+      "type": "string",
+      "title": "Operating Temp Range"
+    },
+    "humidity_tolerance": {
+      "type": "string",
+      "title": "Humidity Tolerance"
+    },
+    "altitude_limit": {
+      "type": "string",
+      "title": "Altitude Limit"
+    },
+    "low_power_hashrate_ths": {
+      "type": "string",
+      "title": "Low Power Hashrate (TH/s)"
+    },
+    "low_power_watts": {
+      "type": "string",
+      "title": "Low Power Watts"
+    },
+    "turbo_hashrate_ths": {
+      "type": "string",
+      "title": "Turbo/OC Hashrate (TH/s)"
+    },
+    "turbo_watts": {
+      "type": "string",
+      "title": "Turbo/OC Watts"
+    },
+    "real_world_efficiency_notes": {
+      "type": "string",
+      "title": "Real World Efficiency Notes"
+    },
+    "stock_firmware_versions": {
+      "type": "string",
+      "title": "Stock Firmware Versions"
+    },
+    "compatible_3rd_party_firmware": {
+      "type": "string",
+      "title": "Compatible 3rd Party Firmware"
+    },
+    "known_firmware_bugs": {
+      "type": "string",
+      "title": "Known Firmware Bugs"
+    },
+    "announcement_date": {
+      "type": "string",
+      "title": "Announcement Date"
+    },
+    "ship_date": {
+      "type": "string",
+      "title": "Ship Date"
+    },
+    "eol_date": {
+      "type": "string",
+      "title": "EOL Date"
+    },
+    "current_street_price_usd": {
+      "type": "string",
+      "title": "Current Street Price (USD)"
+    },
+    "warranty_terms": {
+      "type": "string",
+      "title": "Warranty Terms"
+    },
+    "hardware_revisions": {
+      "type": "string",
+      "title": "Hardware Revisions"
+    },
+    "common_failure_modes": {
+      "type": "string",
+      "title": "Common Failure Modes"
+    },
+    "typical_lifespan": {
+      "type": "string",
+      "title": "Typical Lifespan"
+    },
+    "hashboard_interchangeability": {
+      "type": "string",
+      "title": "Hashboard Interchangeability"
+    },
+    "immersion_fluid_compatibility": {
+      "type": "string",
+      "title": "Immersion Fluid Compatibility"
+    },
+    "chip_degradation_notes": {
+      "type": "string",
+      "title": "Chip Degradation Notes"
+    },
+    "thermal_paste_specs": {
+      "type": "string",
+      "title": "Thermal Paste Specs"
+    },
+    "cleaning_interval": {
+      "type": "string",
+      "title": "Recommended Cleaning Interval"
+    },
+    "parts_availability": {
+      "type": "string",
+      "title": "Parts Availability Status"
+    },
+    "repair_difficulty": {
+      "type": "string",
+      "title": "Repair Difficulty Rating"
+    },
+    "new_findings": {
+      "type": "string",
+      "title": "New/Updated Findings This Week"
+    },
+    "sources": {
+      "type": "string",
+      "title": "Sources"
+    }
+  }
+}
