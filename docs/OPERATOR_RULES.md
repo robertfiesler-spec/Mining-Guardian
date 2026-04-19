@@ -156,3 +156,55 @@ Not loaded into AI analysis - just known quantities.
 - 2 rules moved to process_rules
 - 1 proposal rejected (no lumping models)
 
+
+---
+
+## Updates — April 19, 2026
+
+### New Approved Patterns
+
+#### HEALTHY_BASELINE_S19JPRO
+**Source:** `s19jpro_bixbit_4_0130_stable_hydro`
+
+**Definition:** S19JPro BIXBIT/4/0130/4 cohort (7 miners) showing stable 88%+ hashrate with consistent thermal behavior.
+
+**Use:** Benchmark for S19J Pro comparison. PCB=0130 + BiXBiT firmware = healthy performance baseline.
+
+**Approved by:** Rob Fiesler, 2026-04-19
+
+---
+
+#### PSU_VOLTAGE_DEGRADATION_PATTERN — Signal 6 Added
+**Source:** `voltage_regulation_failure_pattern_hydro`
+
+**New Signal 6:** Hashrate volatility (0-200%) with stable temps (67-73°C) indicates PSU voltage issue even without direct voltage readings.
+
+**Context:** Old PSUs pushed over max for 2+ years. This signal is great for future equipment, not a norm for current fleet.
+
+**Approved by:** Rob Fiesler, 2026-04-19
+
+---
+
+#### HIGH_OFFLINE_FREQUENCY_PATTERN
+**Source:** `s19jpro_catastrophic_offline_rates_hydro`
+
+**Trigger:**
+- Offline frequency >300 events per week
+- Normal temps (69-73°C)
+- Low hashrate (45-69%)
+
+**Indicates:** Hardware instability (control board or PSU failure), NOT thermal issue.
+
+**Action:** CREATE_TICKET — let operator decide on replacement. This catches miners in failing state between working and dead.
+
+**Approved by:** Rob Fiesler, 2026-04-19
+
+---
+
+### Temporary: HVAC Work Pause
+
+S21 Hydro, S21 Immersion, and Auradine AH3880 miners are OFF until Thursday April 24, 2026 for HVAC system work.
+
+**Skip in analysis until:** 2026-04-24
+
+**Hardware fact ID:** `hvac_work_apr2026`
