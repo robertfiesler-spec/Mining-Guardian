@@ -144,3 +144,37 @@ A miner should be added to the repair queue when:
 - Failing miners flagged in #mg-ai-reports
 - Dead board tickets in #mg-alerts
 - Deep dive reports sent to operator DM
+
+### 2026-04-18 (Evening Session)
+
+**Operator Review Session Completed:**
+All 21 AI proposals reviewed with operator decisions logged.
+
+**Knowledge Base Restructured:**
+- Created `process_rules` section for workflow rules
+- Created `hardware_facts` section for known quantities
+- Operator rules reduced from 13 to 6 (lean and focused)
+
+**Pattern Rules Created (4 total):**
+1. CHIP_QUALITY_DEGRADATION_PATTERN
+2. PSU_VOLTAGE_DEGRADATION_PATTERN  
+3. COMPLETE_HARDWARE_FAILURE_PATTERN
+4. PSU_PARTIAL_CIRCUIT_FAILURE_PATTERN
+
+**Key Decisions:**
+- Rule 1 changed from time-based (20 min) to status-based (wait for MINING)
+- Offline miner logic merged into COMPLETE_HARDWARE_FAILURE_PATTERN
+- AMS log cleanup removed (we bypass AMS, collect directly from miners)
+- CT fans, overheating, warehouse miners moved to hardware_facts
+- Validation workflow moved to process_rules
+
+**Cron Schedule Updated:**
+- Claude training: midnight → 3 AM
+- Refinement chain: 1 AM → 4 AM
+(Gives deep dive time to complete)
+
+**Deep Dive Fix Verified:**
+- Prompt size: 86K → 35K chars ✅
+- S19JPros now processing instead of skipping
+- Per-miner time: ~110 min (longer than expected but working)
+
