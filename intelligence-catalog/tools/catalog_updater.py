@@ -19,9 +19,12 @@ Importable as a module:
 import argparse
 import csv
 import json
+import os
 import sys
 from copy import deepcopy
 from pathlib import Path
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 
 # ── Paths ────────────────────────────────────────────────────────
@@ -259,6 +262,16 @@ def main() -> int:
         action="store_true",
         help="Regenerate catalog_known_models.txt from current index",
     )
+    parser.add_argument(
+        "--notify-api",
+        metavar="URL",
+        help="Hit the API hot-reload endpoint after changes (e.g. http://localhost:8590)",
+    )
+    parser.add_argument(
+        "--sync-grafana",
+        metavar="URL",
+        help="Sync Grafana dropdown variable with current models (e.g. http://grafana.fieslerfamily.com)",
+    )
 
     args = parser.parse_args()
 
@@ -300,12 +313,119 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
+    # Notify API to hot-reload the catalog
+    if args.notify_api:
+        api_url = args.notify_api
+        try:
+            req = Request(f"{api_url}/api/catalog/reload", method="POST")
+            resp = urlopen(req, timeout=10)
+            result = json.loads(resp.read())
+            messages.append(f"API reloaded: {result.get('old_count', '?')} → {result.get('new_count', '?')} models")
+        except Exception as exc:
+            messages.append(f"API reload failed: {exc}")
+
+    # Sync Grafana variable with current model list
+    if args.sync_grafana:
+        msg = sync_grafana_variable(index, args.sync_grafana)
+        messages.append(msg)
+
     # Print summary
     print(f"Catalog: {len(index)} models total")
     for msg in messages:
         print(f"  {msg}")
 
     return 0
+
+
+def sync_grafana_variable(index: dict, grafana_url: str) -> str:
+    """Update the Grafana Intelligence Report dashboard variable with current model list.
+    
+    Builds the Custom variable options from the catalog and pushes via Grafana API.
+    """
+    grafana_user = os.environ.get("GRAFANA_USER", "admin")
+    grafana_pass = os.environ.get("GRAFANA_PASS", "temppass123")
+    
+    # Build sorted label:value pairs for Grafana Custom variable
+    labels = []
+    for slug, info in sorted(index.items()):
+        if info is None:
+            continue
+        mfr = (info.get('manufacturer') or 'unknown').title()
+        name = info.get('name') or slug.replace('-', ' ').title()
+        specs = info.get('specs') or {}
+        hr = specs.get('hashrate_ths')
+        label = f"{mfr} {name}"
+        if hr:
+            label += f" ({hr} TH/s)"
+        labels.append(f"{label} : {slug}")
+    
+    custom_options = ','.join(labels)
+    
+    # Find the Intelligence Report dashboard UID
+    try:
+        import base64
+        auth = base64.b64encode(f"{grafana_user}:{grafana_pass}".encode()).decode()
+        headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+        
+        # Search for the dashboard
+        req = Request(f"{grafana_url}/api/search?query=Intelligence%20Report", headers=headers)
+        resp = urlopen(req, timeout=10)
+        dashboards = json.loads(resp.read())
+        
+        intel_dash = None
+        for d in dashboards:
+            if 'Intelligence' in d.get('title', '') and 'Report' in d.get('title', ''):
+                intel_dash = d
+                break
+        
+        if not intel_dash:
+            return "Grafana sync: Intelligence Report dashboard not found"
+        
+        uid = intel_dash['uid']
+        
+        # Get the full dashboard JSON
+        req = Request(f"{grafana_url}/api/dashboards/uid/{uid}", headers=headers)
+        resp = urlopen(req, timeout=10)
+        dash_data = json.loads(resp.read())
+        
+        dashboard = dash_data['dashboard']
+        
+        # Find and update the miner_model variable
+        templating = dashboard.get('templating', {}).get('list', [])
+        updated = False
+        for var in templating:
+            if var.get('name') == 'miner_model':
+                var['query'] = custom_options
+                var['type'] = 'custom'
+                # Rebuild options list
+                var['options'] = []
+                for pair in labels:
+                    text, value = pair.rsplit(' : ', 1)
+                    var['options'].append({'text': text.strip(), 'value': value.strip(), 'selected': False})
+                if var['options']:
+                    var['options'][0]['selected'] = True
+                    var['current'] = {'text': var['options'][0]['text'], 'value': var['options'][0]['value']}
+                updated = True
+                break
+        
+        if not updated:
+            return "Grafana sync: miner_model variable not found in dashboard"
+        
+        # Save the updated dashboard
+        payload = json.dumps({
+            'dashboard': dashboard,
+            'folderId': dash_data.get('meta', {}).get('folderId', 0),
+            'overwrite': True
+        }).encode()
+        
+        req = Request(f"{grafana_url}/api/dashboards/db", data=payload, headers=headers, method="POST")
+        resp = urlopen(req, timeout=10)
+        result = json.loads(resp.read())
+        
+        return f"Grafana synced: {len(labels)} models in dropdown (version {result.get('version', '?')})"
+        
+    except Exception as exc:
+        return f"Grafana sync failed: {exc}"
 
 
 if __name__ == "__main__":
