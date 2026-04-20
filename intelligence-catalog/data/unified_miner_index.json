@@ -45,7 +45,8 @@
       "Firmware Support": "Official Bitmain firmware (e.g., v1.2.7 Amlogic); custom firmwares available (Braiins OS+, etc.)",
       "Distinguishing Features": "BM1370 ASIC chips (5nm); 234 TH/s at 15 J/TH efficiency; improved per-chip performance vs S21 (200 TH/s @17.5 J/TH); larger 140mm fans for better airflow; wide temp tolerance up to 45\u00b0C",
       "Warranty": "365 days (1 year) from shipment date for new miners",
-      "Sources": "[Bitmain Support S21 Pro Spec](https://support.bitmain.com/hc/en-us/articles/31321354157593-S21-Pro-Specification), [S21 Pro Manual v204](https://cdn.webshopapp.com/shops/353164/files/466212163/s21-pro-product-manual-v204.pdf), [S21 Pro Manual 2](https://5.imimg.com/data5/SELLER/Doc/2025/6/515469297/EC/ZJ/MK/245722431/s21-pro-245th-air-cooled-bitcoin-miner.pdf), [Bitmain Warranty Policy](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central Review](https://d-central.tech/antminer-s21-pro-review/), [Bitcoin Magazine Launch](https://bitcoinmagazine.com/business/bitmain-launches-antminer-s21-pro-advanced-bitcoin-mining), [Reddit Issues](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/)"
+      "Sources": "[Bitmain Support S21 Pro Spec](https://support.bitmain.com/hc/en-us/articles/31321354157593-S21-Pro-Specification), [S21 Pro Manual v204](https://cdn.webshopapp.com/shops/353164/files/466212163/s21-pro-product-manual-v204.pdf), [S21 Pro Manual 2](https://5.imimg.com/data5/SELLER/Doc/2025/6/515469297/EC/ZJ/MK/245722431/s21-pro-245th-air-cooled-bitcoin-miner.pdf), [Bitmain Warranty Policy](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [D-Central Review](https://d-central.tech/antminer-s21-pro-review/), [Bitcoin Magazine Launch](https://bitcoinmagazine.com/business/bitmain-launches-antminer-s21-pro-advanced-bitcoin-mining), [Reddit Issues](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/)",
+      "Altitude Limit": "\u22642000 m"
     },
     "specs": {
       "cooling": "air"
@@ -145,11 +146,12 @@
       "PSU Requirements": "APW17; adapted output 4000 W; AC input 20 A",
       "Voltage Range": "220-277 V AC",
       "Cooling Details": "Air-cooled; 4 fans; max airflow 380 CFM",
-      "Known Issues": "Hash board failures (EEPROM read errors, low hashrate); power/voltage errors; fan failures; temperature protection shutdowns; reports of high failure rates in S21 series (e.g., 70% in one farm); control board/display issues in some units",
+      "Known Issues": "Hash board failures (EEPROM read errors, low hashrate); power/voltage errors; fan failures; temperature protection shutdowns; reports of high failure rates in S21 series (e.g., 70% in one farm); control board/display issues in some units; Secure Boot enabled; Root Authority disabled (anti-virus measure)",
       "Firmware Support": "Ongoing official updates (e.g., FR-1.12(251009-S21) Nov 2025); custom firmwares available (v1.2.7 Jan 2026)",
       "Distinguishing Features": "5nm ASIC chips; 17.5 J/TH efficiency; Secure Boot enabled (prevents root access/viruses); part of S21 series (vs S19); air-cooled variant (vs Hydro/Imm)",
       "Warranty": "365 days from Bitmain shipment date for new units",
-      "Sources": "[Bitmain Support S21 Spec](https://support.bitmain.com/hc/en-us/articles/23794895251609-S21-Specification), [S21 User Guide V1.2.5](https://file12.bitmain.com/shop-product-s3/firmware/c17a60d7-51c8-41a3-8365-b7e5d1506caa/2025/04/10/14/S21%20User%20Guide-V1.2.5.pdf), [S21 Manual PDF](https://www.zeusbtc.com/manuals/user-manuals/Antminer%20S21%20Manual.pdf), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-bitcoin-miner-200th-s-bt-miners/), [Reddit failures](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Firmware downloads](https://www.hashrate.farm/mining-hub/firmwares)"
+      "Sources": "[Bitmain Support S21 Spec](https://support.bitmain.com/hc/en-us/articles/23794895251609-S21-Specification), [S21 User Guide V1.2.5](https://file12.bitmain.com/shop-product-s3/firmware/c17a60d7-51c8-41a3-8365-b7e5d1506caa/2025/04/10/14/S21%20User%20Guide-V1.2.5.pdf), [S21 Manual PDF](https://www.zeusbtc.com/manuals/user-manuals/Antminer%20S21%20Manual.pdf), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-bitcoin-miner-200th-s-bt-miners/), [Reddit failures](https://www.reddit.com/r/BitcoinMining/comments/1q3kwu0/antminer_s21_reliability_anyone_else_seeing_high/), [Bitmain Warranty](https://support.bitmain.com/hc/en-us/articles/223400048-Product-Warranty), [Firmware downloads](https://www.hashrate.farm/mining-hub/firmwares)",
+      "Altitude Limit": "\u22642000 m"
     },
     "specs": {
       "display_name": "Antminer S21",
@@ -423,7 +425,9 @@
       "Firmware Support": "Stock Bitmain FW (e.g., FR-1.104 Dec 2025); custom/optimized v1.2.7 (Amlogic, Jan 2026)",
       "Distinguishing Features": "270 TH/s at 13.5 J/TH efficiency; improved over S21 (200 TH/s @17.5 J/TH); air-cooled flagship vs hydro/immersion variants (473/300 TH/s)",
       "Warranty": "365 days (12 months) from dispatch; PSU 365 days; custom FW voids",
-      "Sources": "[Bitmain Support Specs](https://support.bitmain.com/hc/en-us/articles/35383015643673-S21-XP-Specifications), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s21-xp), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-xp-bitcoin-miner-270th-s-bt-miners/), [D-Central](https://d-central.tech/antminer-s21-xp-specs/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21-xp-270th-s/), [OneMiners](https://oneminers.com/blogs/news/bitmain-s-antminer-s21-xp-sets-a-new-standard-with-13-5-j-th-efficiency), [Firmware sites](https://www.hashrate.farm/mining-hub/firmwares), [Troubleshooting](https://mineshop.eu/blog/asic-miner/antminer-s21-xp-troubleshooting-fixing-common-errors-step-by-step), [Warranty guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)"
+      "Sources": "[Bitmain Support Specs](https://support.bitmain.com/hc/en-us/articles/35383015643673-S21-XP-Specifications), [Hashrate Index](https://hashrateindex.com/rigs/bitmain-antminer-s21-xp), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-xp-bitcoin-miner-270th-s-bt-miners/), [D-Central](https://d-central.tech/antminer-s21-xp-specs/), [MiningNow](https://miningnow.com/asic-miner/bitmain-antminer-s21-xp-270th-s/), [OneMiners](https://oneminers.com/blogs/news/bitmain-s-antminer-s21-xp-sets-a-new-standard-with-13-5-j-th-efficiency), [Firmware sites](https://www.hashrate.farm/mining-hub/firmwares), [Troubleshooting](https://mineshop.eu/blog/asic-miner/antminer-s21-xp-troubleshooting-fixing-common-errors-step-by-step), [Warranty guide](https://d-central.tech/understanding-the-antminer-warranty-a-comprehensive-guide/)",
+      "Altitude Limit": "\u22642000 m",
+      "Field Performance Notes": "Altitude derating: highest operating temperature decreases 1\u00b0C per +300m from 900m to 2000m."
     },
     "specs": {
       "cooling": "air"
@@ -568,7 +572,7 @@
       "Network Interface": "RJ45 Ethernet 10/100M [BITMAIN Support S21 Hyd Spec](https://support.bitmain.com/hc/en-us/articles/26824251926681-S21-Hyd-Specification)",
       "PSU Requirements": "APW11 or compatible; 3-phase, 5360W [S21 Hyd User Guide](https://file12.bitmain.com/shop-product-s3/firmware/b27218d7-1eec-4907-83c7-28e9f8437890/2025/03/20/16/S21%20Hyd.%20User%20Guide-V4.0.14.pdf), [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-hyd-bitcoin-miner-335th-s-bt-miners/)",
       "Voltage Range": "380-415V AC, 50-60 Hz, 12A max (3-phase) [BITMAIN Support S21 Hyd Spec](https://support.bitmain.com/hc/en-us/articles/26824251926681-S21-Hyd-Specification)",
-      "Cooling Details": "Hydro-cooling: 8.0-10.0 L/min flow, \u22643.5 bar pressure, 20-50\u00b0C inlet temp, deionized/pure water or antifreeze (pH 8.5-9.5), OD10 mm connectors, no fans [BITMAIN Support S21 Hyd Spec](https://support.bitmain.com/hc/en-us/articles/26824251926681-S21-Hyd-Specification), [S21 Hyd User Guide](https://file12.bitmain.com/shop-product-s3/firmware/b27218d7-1eec-4907-83c7-28e9f8437890/2025/03/20/16/S21%20Hyd.%20User%20Guide-V4.0.14.pdf)",
+      "Cooling Details": "Hydro-cooling: 8.0-10.0 L/min flow, \u22643.5 bar pressure, 20-50\u00b0C inlet temp, deionized/pure water or antifreeze (pH 8.5-9.5), OD10 mm connectors, no fans [BITMAIN Support S21 Hyd Spec](https://support.bitmain.com/hc/en-us/articles/26824251926681-S21-Hyd-Specification), [S21 Hyd User Guide](https://file12.bitmain.com/shop-product-s3/firmware/b27218d7-1eec-4907-83c7-28e9f8437890/2025/03/20/16/S21%20Hyd.%20User%20Guide-V4.0.14.pdf); Fluid spec: Working fluid: deionized/pure water; pH 8.5~9.5; conductivity replace if \u2265100 \u03bcS/cm",
       "Known Issues": "EEPROM read failures on hashboards, high ASIC temps causing shutdowns, zero hash rate (often cooling/power related); repairable but common in hydro models [Zeus Mining](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/5744-how-to-repair-the-antminer-s21-hydro-miner-eeprom-read-failure), [Zeus Mining no hash](https://www.zeusbtc.com/articles/asic-miner-troubleshooting/5743-antminer-s21-hydro-miner-no-hash-rate-fault-solution)",
       "Firmware Support": "Official: e.g., 202405191051.bmu; custom up to v1.2.7 (Xilinx/NAND, Jan 2026); fixed freq 410 MHz; regular updates recommended [BT-Miners](https://bt-miners.com/products/bitmain-antminer-s21-hyd-bitcoin-miner-335th-s-bt-miners/), [Hashrate Farm](https://www.hashrate.farm/mining-hub/firmwares)",
       "Distinguishing Features": "Hydro-cooled (vs air-cooled S21), 16 J/TH efficiency, 335 TH/s, 3-phase high voltage, designed for ANTSPACE containers, superior heat dissipation/quiet operation vs air models [BITMAIN Support S21 Hyd Spec](https://support.bitmain.com/hc/en-us/articles/26824251926681-S21-Hyd-Specification), [Zeus Mining announcement](https://www.zeusbtc.com/articles/information/4750-bitmain-releases-antminer-s21-and-antminer-s21-hyd)",
@@ -6656,6 +6660,69 @@
       "dimensions_mm": "366 x 213 x 300",
       "release_date": "2025-10-28",
       "msrp_usd": 5580
+    }
+  },
+  "futurebit-apollo-iii": {
+    "manufacturer": "futurebit",
+    "display_name": "FutureBit Apollo III",
+    "entity": "futurebit FutureBit Apollo III",
+    "enrichment": {
+      "entity": "futurebit FutureBit Apollo III",
+      "Release Date (exact)": "April 2026 (shipping target)",
+      "Dimensions (mm)": "~5x5 inch cube (approx 127x127 mm)",
+      "Weight (kg)": "N/A",
+      "Operating Temp Range": "N/A",
+      "Humidity Range": "N/A",
+      "Noise (dB)": "N/A (home-use design, expected quiet)",
+      "Network Interface": "N/A",
+      "PSU Requirements": "<100W in low-power mode",
+      "Voltage Range": "N/A",
+      "Cooling Details": "Air-cooled, compact cube form factor",
+      "Known Issues": "None reported (pre-release)",
+      "Firmware Support": "More open firmware architecture; no STM32; SBC-controlled hashboards",
+      "Distinguishing Features": "3nm digital ASIC; up to 18 TH/s max; ~5 TH/s at <100W low-power mode (12-13 J/TH); home/solo miner; open board design for third-party development",
+      "Warranty": "N/A",
+      "Sources": "[BitcoinTalk Apollo III thread](https://bitcointalk.org/index.php?topic=5574943.0)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 18,
+      "power_w": null,
+      "efficiency_jth": null,
+      "boards": null,
+      "chip_process_nm": 3
+    }
+  },
+  "fluminer-t3": {
+    "manufacturer": "fluminer",
+    "display_name": "Fluminer T3",
+    "entity": "fluminer Fluminer T3",
+    "enrichment": {
+      "entity": "fluminer Fluminer T3",
+      "Release Date (exact)": "2026 (available)",
+      "Dimensions (mm)": "N/A",
+      "Weight (kg)": "N/A",
+      "Operating Temp Range": "N/A",
+      "Humidity Range": "N/A",
+      "Noise (dB)": "59-67 dB (observed)",
+      "Network Interface": "N/A",
+      "PSU Requirements": "~1940W observed (claimed 1700W)",
+      "Voltage Range": "N/A (note: 120V/20A circuit only supports Silent mode)",
+      "Cooling Details": "Air-cooled; 6 fans (3 intake, 3 exhaust); ~4-inch thick heatsink on chip side, ~1-inch rear; ~3x standard heatsink thickness",
+      "Known Issues": "E205 error after ~24h (firmware-related, reported by multiple users); power draw 180-250W higher than UI indicates; hashrate fluctuations and high reject rates during tuning; firmware described as incomplete",
+      "Firmware Support": "Stock firmware only (incomplete per field reports)",
+      "Distinguishing Features": "Single-board design; 96x Bitmain BM1370 chips; home/office form factor; claims 115 TH/s at 1700W (15 J/TH) but real-world shows ~113 TH/s at ~1940W (~18 J/TH)",
+      "Warranty": "N/A",
+      "Sources": "[r/BitcoinMining field report](https://www.reddit.com/r/BitcoinMining/comments/1r9up7j/fluminer_t3_bitcoin_miner_initial_impressions_by/)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 115,
+      "power_w": 1700,
+      "efficiency_jth": 15,
+      "boards": 1,
+      "chips_per_board": 96,
+      "chip_model": "BM1370"
     }
   }
 }
