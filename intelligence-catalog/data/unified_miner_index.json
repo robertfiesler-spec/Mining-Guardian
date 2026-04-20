@@ -6629,23 +6629,6 @@
       "msrp_usd": 19030
     }
   },
-  "bitaxe-gamma-602": {
-    "manufacturer": "bitaxe",
-    "name": "Bitaxe Gamma 602",
-    "specs": {
-      "hashrate_ths": 1.2,
-      "power_watts": 18,
-      "efficiency_jth": 15.0,
-      "cooling": "air",
-      "algorithm": "SHA-256",
-      "chip_process_nm": 5,
-      "chip": "BM1370",
-      "board_count": 1,
-      "weight_kg": 0.34,
-      "release_date": "2025-04",
-      "msrp_usd": 100
-    }
-  },
   "avalon-a16xp-300t": {
     "manufacturer": "canaan",
     "name": "Avalon A16XP-300T",
@@ -6723,6 +6706,270 @@
       "boards": 1,
       "chips_per_board": 96,
       "chip_model": "BM1370"
+    }
+  },
+  "bitaxe-max-100": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Max 100",
+    "entity": "bitaxe Bitaxe Max 100",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Max 100",
+      "Release Date (exact)": "2023 (original model, discontinued)",
+      "Dimensions (mm)": "N/A",
+      "Weight (kg)": "N/A",
+      "Operating Temp Range": "5-45\u00b0C",
+      "Humidity Range": "5-95% RH",
+      "Noise (dB)": "~30 dB",
+      "Network Interface": "WiFi (ESP32-S3-WROOM-1, 2.4GHz)",
+      "PSU Requirements": "5V DC, 15W+, spade connectors",
+      "Voltage Range": "5V DC input",
+      "Cooling Details": "Air-cooled, single fan, fanless option possible",
+      "Known Issues": "Discontinued; BM1397 less efficient than newer chips",
+      "Firmware Support": "AxeOS (ESP-Miner), open source, auto-tune capable",
+      "Distinguishing Features": "World's first open-source Bitcoin ASIC miner; BM1397 from Antminer S17 era; standalone WiFi miner with OLED display; ESP32-S3 controller; open-source KiCad hardware design; fully documented BOM",
+      "Warranty": "N/A (open-source project, varies by vendor)",
+      "Sources": "[GitHub bitaxeMax](https://github.com/bitaxeorg/bitaxeMax), [D-Central Guide](https://d-central.tech/bitaxe-series-detailed-the-ultimate-guide-to-bitaxes-open-source-revolution-in-bitcoin-mining/)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 0.4,
+      "power_w": 15,
+      "efficiency_jth": 38,
+      "boards": 1,
+      "chips_per_board": 1,
+      "chip_model": "BM1397",
+      "chip_process_nm": 7
+    }
+  },
+  "bitaxe-ultra-200": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Ultra 200",
+    "entity": "bitaxe Bitaxe Ultra 200",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Ultra 200",
+      "Release Date (exact)": "August 2023",
+      "Dimensions (mm)": "100 x 60 x 60",
+      "Weight (kg)": "0.4",
+      "Operating Temp Range": "5-45\u00b0C",
+      "Humidity Range": "5-95% RH",
+      "Noise (dB)": "35 dB",
+      "Network Interface": "WiFi (ESP32-S3, 2.4GHz)",
+      "PSU Requirements": "5V DC, 5.5x2.1mm barrel jack, 15W+",
+      "Voltage Range": "5V DC (110-230V via adapter)",
+      "Cooling Details": "Air-cooled, single fan, fanless possible at lower clocks",
+      "Known Issues": "Superseded by Supra 400 (same price, better efficiency)",
+      "Firmware Support": "AxeOS (ESP-Miner), open source, auto-tune, frequency/voltage adjustable via web UI",
+      "Distinguishing Features": "Single BM1366 chip (from Antminer S19 XP); ~500 GH/s; OLED display; standalone WiFi solo miner; entry-level model for BM1366 era",
+      "Warranty": "N/A (varies by vendor)",
+      "Sources": "[Apexto Mining](https://apextomining.com/product/bitaxe-ultra-1366-solo-miner/), [D-Central Comparison](https://d-central.tech/bitaxe-supra-vs-gamma-vs-hex-vs-gt/)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 0.5,
+      "power_w": 12,
+      "efficiency_jth": 24,
+      "boards": 1,
+      "chips_per_board": 1,
+      "chip_model": "BM1366",
+      "chip_process_nm": 5
+    }
+  },
+  "bitaxe-hex-300": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Hex 300",
+    "entity": "bitaxe Bitaxe Hex 300",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Hex 300",
+      "Release Date (exact)": "2024",
+      "Dimensions (mm)": "N/A",
+      "Weight (kg)": "N/A",
+      "Operating Temp Range": "5-45\u00b0C",
+      "Humidity Range": "5-95% RH",
+      "Noise (dB)": "~45 dB (active fan)",
+      "Network Interface": "WiFi (2.4GHz)",
+      "PSU Requirements": "12V DC, 10A minimum (120W+)",
+      "Voltage Range": "12V DC input",
+      "Cooling Details": "Air-cooled, active fan required (dual ball bearing 80mm fan), PWM controlled",
+      "Known Issues": "Uses older BM1366 chips (less efficient per chip than BM1370); higher power draw requires 12V PSU vs 5V for single-chip models",
+      "Firmware Support": "Modified AxeOS with PWM fan speed control",
+      "Distinguishing Features": "6x BM1366 chips on single PCB; highest total hashrate in Bitaxe family at 3+ TH/s; brute-force approach to hashrate; designed by TinyChipHub",
+      "Warranty": "N/A (varies by vendor)",
+      "Sources": "[TinyChipHub](https://tinychiphub.com/products/bitaxe-hex), [D-Central Comparison](https://d-central.tech/bitaxe-supra-vs-gamma-vs-hex-vs-gt/), [Zeus Mining](https://www.zeusbtc.com/blog/details/5694-bm1366-vs-bm1370-asic-chips)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 3.0,
+      "power_w": 57,
+      "efficiency_jth": 19,
+      "boards": 1,
+      "chips_per_board": 6,
+      "chip_model": "BM1366",
+      "chip_process_nm": 5
+    }
+  },
+  "bitaxe-supra-400": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Supra 400",
+    "entity": "bitaxe Bitaxe Supra 400",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Supra 400",
+      "Release Date (exact)": "2024",
+      "Dimensions (mm)": "N/A",
+      "Weight (kg)": "N/A",
+      "Operating Temp Range": "5-45\u00b0C",
+      "Humidity Range": "5-95% RH",
+      "Noise (dB)": "~30 dB",
+      "Network Interface": "WiFi (ESP32-S3, 2.4GHz)",
+      "PSU Requirements": "5V DC, 5.5x2.1mm barrel jack",
+      "Voltage Range": "5V DC",
+      "Cooling Details": "Air-cooled, dual ball bearing fans for improved cooling over Ultra",
+      "Known Issues": "None significant",
+      "Firmware Support": "AxeOS (ESP-Miner), open source, auto-tune, frequency/voltage adjustable via web UI",
+      "Distinguishing Features": "Single BM1368 chip (from Antminer S21 family); ~600-700 GH/s; better efficiency than Ultra at similar price; entry-level recommendation for 2026; handles overclocking well due to dual bearing fans",
+      "Warranty": "N/A (varies by vendor)",
+      "Sources": "[D-Central Buying Guide](https://d-central.tech/bitaxe-buying-guide/), [D-Central Comparison](https://d-central.tech/bitaxe-supra-vs-gamma-vs-hex-vs-gt/)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 0.7,
+      "power_w": 12,
+      "efficiency_jth": 17,
+      "boards": 1,
+      "chips_per_board": 1,
+      "chip_model": "BM1368",
+      "chip_process_nm": 5
+    }
+  },
+  "bitaxe-gamma-601": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Gamma 601",
+    "entity": "bitaxe Bitaxe Gamma 601",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Gamma 601",
+      "Release Date (exact)": "August 2024 (first batch)",
+      "Dimensions (mm)": "150 x 100 x 50",
+      "Weight (kg)": "0.34",
+      "Operating Temp Range": "0-40\u00b0C (some sources: 5-45\u00b0C)",
+      "Humidity Range": "5-95% RH (non-condensing)",
+      "Noise (dB)": "35 dB",
+      "Network Interface": "WiFi (ESP32-S3, 2.4GHz)",
+      "PSU Requirements": "5V USB-C (any 5V/6A adapter)",
+      "Voltage Range": "5V DC",
+      "Cooling Details": "Air-cooled, single fan, removable OLED display; compact cube form factor",
+      "Known Issues": "None significant; thermal headroom limited by compact form factor and 5V power for overclocking",
+      "Firmware Support": "AxeOS (ESP-Miner), open source, auto-tune; community has pushed to 2 TH/s with overclocking (60-90% above stock gains reported)",
+      "Distinguishing Features": "Single BM1370 chip (from Antminer S21 Pro, 3nm); ~1.2 TH/s stock; best single-chip efficiency in Bitaxe family; enterprise-level performance in plug-and-play format; most recommended model for 2026; overclockable to ~2 TH/s with proper cooling",
+      "Warranty": "180 days (CryptoMinerBros); varies by vendor",
+      "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/bitaxe-gamma-601-bitcoin-miner/), [BT-Miners](https://bt-miners.com/products/bitaxe-gamma-601-bitcoin-miner-1-2th-s-bt-miners/), [MiningNow](https://miningnow.com/asic-miner/bitaxe-gamma-601-1-2th-s/), [D-Central Overclocking Guide](https://d-central.tech/bitaxe-overclocking-guide/)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 1.2,
+      "power_w": 17,
+      "efficiency_jth": 14.17,
+      "boards": 1,
+      "chips_per_board": 1,
+      "chip_model": "BM1370",
+      "chip_process_nm": 3
+    }
+  },
+  "bitaxe-supra-hex-701": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Supra Hex 701",
+    "entity": "bitaxe Bitaxe Supra Hex 701",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Supra Hex 701",
+      "Release Date (exact)": "July 2024 (first batch)",
+      "Dimensions (mm)": "60 x 100 x 60",
+      "Weight (kg)": "0.4",
+      "Operating Temp Range": "5-45\u00b0C",
+      "Humidity Range": "5-95% RH",
+      "Noise (dB)": "35-48 dB",
+      "Network Interface": "WiFi (2.4GHz)",
+      "PSU Requirements": "12V DC, 10A (120W PSU), 100-240V 50/60Hz 2.5A max input",
+      "Voltage Range": "12V DC",
+      "Cooling Details": "Air-cooled, 80mm double ball bearing fan, optimized for high-temp environments",
+      "Known Issues": "None significant",
+      "Firmware Support": "Modified AxeOS by TinyChipHub; manufactured by D-Central; LED display for real-time monitoring",
+      "Distinguishing Features": "6x BM1368 chips (from Antminer S21 family); 4.2+ TH/s at 90W; most efficient multi-chip Bitaxe; best overall value per D-Central; 550MHz / 1250mV optimal setting",
+      "Warranty": "N/A (varies by vendor)",
+      "Sources": "[Apexto Mining](https://apextomining.com/product/bitaxe-supra-hex-701-bitcoin-miner/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3888), [MiningNow](https://miningnow.com/asic-miner/bitaxe-supra-hex-701-4-2th-s/)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 4.2,
+      "power_w": 90,
+      "efficiency_jth": 21.43,
+      "boards": 1,
+      "chips_per_board": 6,
+      "chip_model": "BM1368",
+      "chip_process_nm": 5
+    }
+  },
+  "bitaxe-gt-801": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Gamma Turbo GT 801",
+    "entity": "bitaxe Bitaxe Gamma Turbo GT 801",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Gamma Turbo GT 801",
+      "Release Date (exact)": "Early 2026 (pre-order)",
+      "Dimensions (mm)": "60 x 60 x 25",
+      "Weight (kg)": "0.35",
+      "Operating Temp Range": "0-40\u00b0C",
+      "Humidity Range": "10-95% RH",
+      "Noise (dB)": "~35 dB",
+      "Network Interface": "WiFi (2.4GHz)",
+      "PSU Requirements": "12V DC via XT30 male connector, needs 10A+ (120W+) for OC headroom",
+      "Voltage Range": "12V DC",
+      "Cooling Details": "Air-cooled, single fan, 6-layer PCB design for improved thermal dissipation; designed by Skot (original Bitaxe creator)",
+      "Known Issues": "None reported; new model still in early production",
+      "Firmware Support": "AxeOS, updatable firmware; overclockable to 3.5+ TH/s (torture test showed 3.61 TH/s max)",
+      "Distinguishing Features": "2x BM1370 chips on single 6-layer PCB; 2.15 TH/s stock, 2.4 TH/s easy OC; most powerful single-board Bitaxe; smallest form factor for dual-chip (60x60x25mm); removable 0.91-inch OLED display; XT30 power connector",
+      "Warranty": "N/A (varies by vendor)",
+      "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/bitaxe-gamma-turbo-gt-801-bitcoin-miner/), [Asic Marketplace](https://asicmarketplace.com/product/bitaxe-gamma-turbo-gt-801-bitcoin-miner/), [Zeus Mining](https://www.zeusbtc.com/Asic-Miner/Asic-Miner-Details.asp?ID=3993), [YouTube Torture Test](https://www.youtube.com/watch?v=DiDGzxqWfGg)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 2.15,
+      "power_w": 43,
+      "efficiency_jth": 20,
+      "boards": 1,
+      "chips_per_board": 2,
+      "chip_model": "BM1370",
+      "chip_process_nm": 3
+    }
+  },
+  "bitaxe-touch": {
+    "manufacturer": "bitaxe",
+    "display_name": "Bitaxe Touch",
+    "entity": "bitaxe Bitaxe Touch",
+    "enrichment": {
+      "entity": "bitaxe Bitaxe Touch",
+      "Release Date (exact)": "January 2025",
+      "Dimensions (mm)": "N/A",
+      "Weight (kg)": "0.6",
+      "Operating Temp Range": "5-45\u00b0C",
+      "Humidity Range": "5-95% RH",
+      "Noise (dB)": "35 dB",
+      "Network Interface": "Ethernet (RJ45 10/100M)",
+      "PSU Requirements": "5V DC",
+      "Voltage Range": "5V AC (via adapter)",
+      "Cooling Details": "Air-cooled, 2 fans",
+      "Known Issues": "None reported",
+      "Firmware Support": "AxeOS with touchscreen UI integration",
+      "Distinguishing Features": "Built-in 800x480 LCD touchscreen; single BM1370 chip; 1.6 TH/s at 22W; Ethernet connectivity (not WiFi); interactive touchscreen interface for live monitoring; premium home miner experience",
+      "Warranty": "180 days (CryptoMinerBros); varies by vendor",
+      "Sources": "[CryptoMinerBros](https://www.cryptominerbros.com/product/bitaxe-touch-bitcoin-miner/), [Apexto Mining](https://apextomining.com/product/bitaxe-touch-solo-miner/), [X-ON Mining](https://xonmining.com/product/bitaxe-touch-bitcoin-solo-miner-1-6-th-s-22w/), [Advanced Crypto Services](https://www.advancedcryptoservices.com/bitaxe)"
+    },
+    "specs": {
+      "cooling": "air",
+      "hashrate_ths": 1.6,
+      "power_w": 22,
+      "efficiency_jth": 13.75,
+      "boards": 1,
+      "chips_per_board": 1,
+      "chip_model": "BM1370",
+      "chip_process_nm": 3
     }
   }
 }
