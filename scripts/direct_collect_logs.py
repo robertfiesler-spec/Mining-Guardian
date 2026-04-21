@@ -133,7 +133,7 @@ def download_miner_log(miner: Dict, target_date: date) -> Tuple[str, bool, str, 
 
 def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date: date) -> bool:
     try:
-        with tarfile.open(fileobj=io.BytesIO(log_bytes), mode='r:bz2') as tar:
+        with tarfile.open(fileobj=io.BytesIO(log_bytes), mode='r:*') as tar:
             miner_log = None
             log_file = None
             for member in tar.getmembers():
