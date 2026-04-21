@@ -412,7 +412,7 @@ def metrics():
     scan_id_row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
     if scan_id_row:
         miners = conn.execute("""
-            SELECT ip, model, hashrate_pct, hashrate, temp_chip, pdu_power,
+            SELECT ip, model, hashrate_pct, ROUND(hashrate/1000.0, 2) AS hashrate_ths, temp_chip, pdu_power,
                    consumption, map_location, issue, status
             FROM miner_readings
             WHERE scan_id = ?
@@ -518,7 +518,7 @@ def metrics():
             pdu = m["pdu_power"] if m["pdu_power"] is not None else 0.0
             is_online = (m["status"] == "online") and hr > 0
             if is_online:
-                actual_ths = float(m["hashrate"] or 0) / 1000.0
+                actual_ths = float(m["hashrate_ths"] or 0)  # Already converted to TH/s in SQL
                 rated_ths  = actual_ths / (hr / 100.0) if hr > 0 else 0
                 actual_w   = pdu * 1000 if pdu > 0 else float(m["consumption"] or 0)
                 g_hashrate_ths.labels(miner_ip=ip, model=mdl, site=SITE).set(round(actual_ths, 2))
@@ -1547,8 +1547,8 @@ def query_fleet_summary():
             "online": scan["online"],
             "offline": scan["offline"],
             "flagged": flagged,
-            "total_hashrate_ths": round(agg["total_hashrate"], 1) if agg["total_hashrate"] else 0,
-            "total_max_hashrate_ths": round(agg["total_max_hashrate"], 1) if agg["total_max_hashrate"] else 0,
+            "total_hashrate_ths": round(agg["total_hashrate"] / 1000, 1) if agg["total_hashrate"] else 0,
+            "total_max_hashrate_ths": round(agg["total_max_hashrate"] / 1000, 1) if agg["total_max_hashrate"] else 0,
             "avg_hashrate_pct": round(agg["avg_pct"], 1) if agg["avg_pct"] else 0,
         }
 
@@ -1566,7 +1566,7 @@ def query_flagged_miners():
             return {"error": "no scans in database yet", "miners": []}
 
         rows = conn.execute(
-            "SELECT ip, model, status, hashrate, max_hashrate, hashrate_pct, "
+            "SELECT ip, model, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, ROUND(max_hashrate/1000.0, 2) AS max_hashrate_ths, hashrate_pct, "
             "       temp_chip, temp_board, issue, action, current_profile, "
             "       firmware_version, map_location, uptime "
             "FROM miner_readings "
@@ -1600,7 +1600,7 @@ def query_miner_history(ip: str, hours: int = 24):
 
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT scan_id, scanned_at, status, hashrate, hashrate_pct, "
+            "SELECT scan_id, scanned_at, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, hashrate_pct, "
             "       temp_chip, temp_board, issue, action, current_profile "
             "FROM miner_readings "
             "WHERE ip = ? "
@@ -1750,7 +1750,7 @@ def query_worst_performers(limit: int = 5):
             return {"error": "no scans in database yet", "miners": []}
 
         rows = conn.execute(
-            "SELECT ip, model, status, hashrate, max_hashrate, hashrate_pct, "
+            "SELECT ip, model, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, ROUND(max_hashrate/1000.0, 2) AS max_hashrate_ths, hashrate_pct, "
             "       temp_chip, issue, map_location "
             "FROM miner_readings "
             "WHERE scan_id = ? AND status != 'OFFLINE' "
@@ -2088,7 +2088,7 @@ def ask_query(q: str):
             if m:
                 hours = min(int(m.group(1)), 168)
             rows = conn.execute(
-                "SELECT scanned_at, status, hashrate, hashrate_pct, temp_chip, issue, action "
+                "SELECT scanned_at, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, hashrate_pct, temp_chip, issue, action "
                 "FROM miner_readings WHERE ip = ? "
                 "AND scanned_at >= datetime('now', ? || ' hours') "
                 "ORDER BY scanned_at DESC LIMIT 20",
