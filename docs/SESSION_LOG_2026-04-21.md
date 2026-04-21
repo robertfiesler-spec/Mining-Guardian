@@ -1,130 +1,111 @@
-# Session Log — 2026-04-21
+# Mining Guardian — Session Log: April 21, 2026
 
-## Overview
-
-Major code fix session: firmware detection, hashrate units, AV-2 Plant API discovery.
-All items committed and pushed. Scan verified working.
+**Session Duration:** ~4 hours (afternoon/evening)
+**Focus:** Code refactoring, database maintenance, test suite
 
 ---
 
-## Fixes Completed
+## Executive Summary
 
-### 1. GitHub Secret Scanning ✅
-
-**Problem:** Secret scanning was disabled on repo (commit bd47840 triggered alert).
-
-**Fix Applied:**
-- Enabled Secret Protection (Push protection + Alert scanning)
-- Settings → Security → Code security → Secret scanning: ENABLED
+Massive code refactoring session. Reduced main file by **57%** (6,172 → 2,655 lines) by extracting 7 modules. Added database maintenance cron job. Built test suite with **48 passing tests**.
 
 ---
 
-### 2. Hashrate Units Fix (MH/s → TH/s) ✅
+## Completed Work
 
-**Problem:** Database stores hashrate in MH/s, display needed TH/s (÷1000).
+### Phase 1: GitHub Security Alert ✅
+- Closed secret scanning alert for revoked PAT token
+- Confirmed active token (expires May 5 2026) is secure
+- Alert marked as "Revoked" in GitHub
 
-**Endpoints Fixed:**
+### Phase 2: Database Stability ✅
+- Created `scripts/db_maintenance.sh`
+- Cron job at 3:30am daily
+- First run: WAL 53MB → 13KB
+- Logs to `/var/log/db_maintenance.log`
 
-| Line | Endpoint | Change |
-|------|----------|--------|
-| 415 | /metrics | Added hashrate/1000.0 in SQL |
-| 521 | /metrics Python | Use hashrate_ths field |
-| 1550-1551 | /query/fleet_summary | Added /1000 conversion |
-| 1569 | /query/flagged_miners | Added /1000.0 in SQL |
-| 1603 | /query/miner_history | Added /1000.0 in SQL |
-| 1753 | /query/bottom_miners | Added /1000.0 in SQL |
-| 2091 | /ask | Added /1000.0 in SQL |
+### Phase 3: Code Refactoring ✅ (MAJOR)
 
-**Commit:** 332134e fix: Convert hashrate from MH/s to TH/s in all API endpoints
+**mining_guardian.py: 6,172 → 2,655 lines (-57%)**
 
----
+| Extracted Module | Lines | Classes |
+|-----------------|-------|---------|
+| core/database.py | 1,549 | GuardianDB |
+| core/models.py | 199 | ParameterRule, MinerFinding, GuardianConfig, etc. |
+| clients/ams_client.py | 973 | AMSClient |
+| notifiers/slack_notifier.py | 667 | SlackNotifier |
+| notifiers/openclaw_notifier.py | 121 | OpenClawNotifier |
+| notifiers/approval_interface.py | 52 | ApprovalInterface |
+| monitoring/weather_collector.py | 53 | WeatherCollector |
+| **Total Extracted** | **3,614** | **7 modules** |
 
-### 3. Firmware Detection Fix (Offline Miners) ✅
-
-**Problem:** 20 miners showed empty firmware fields in DB.
-
-**Root Cause:** AMS API returns empty firmware for offline miners.
-
-**Fix:** Added fallback to historical data in save_scan():
-- Check if AMS returns empty firmwareManufacturer
-- If empty, query miner_readings for last known firmware
-- Use historical value in current reading
-
-**Verification:**
-- Before: 29/49 miners with firmware
-- After: 49/49 miners with firmware ✅
-- All 20 offline miners now show BIXBIT firmware from history
-
-**Commit:** 557e037 fix: Fallback to historical firmware data for offline miners
+### Phase 4: Testing ✅
+- Installed pytest + pytest-cov
+- Created 9 test modules with 48 tests
+- All tests passing in ~1 second
+- Pre-commit hook runs tests + secret scanning
 
 ---
 
-### 4. AV-2 Plant Client Implementation ✅
-
-**Problem:** S19J Pro Container HVAC had no data collection client.
-
-**Discovery:** Used Chrome DevTools to capture API:
-- Endpoint: POST /eclypse/dgapi
-- Auth: Session + Basic (BigStar/BigSt@r2020)
-- Format: Subscription-based polling
-
-**Data Paths Implemented:**
-
-| Path | Description |
-|------|-------------|
-| /Data/Plant/OAT | Outside Air Temp (°F) |
-| /Data/Plant/ContainerSpaceTemp | Container Ceiling (°F) |
-| /Data/Plant/CDWST | Supply Temp (°F) |
-| /Data/Plant/CDWRT | Return Temp (°F) |
-| /Data/Plant/CWP1_Fdbk | CW Pump 1 Speed (%) |
-| /Data/Plant/CWP2_Fdbk | CW Pump 2 Speed (%) |
-| /Data/Plant/CT1VSDFdbk | CT Fan Speed (%) |
-
-**File:** clients/av2_plant_client.py
-
-**Note:** VPS cannot reach 192.168.189.x directly - requires ROBS-PC Tailscale route.
-
-**Commit:** aa4830e feat: Implement AV-2 Plant client for S19J Pro Container HVAC
-
----
-
-## Git Commits
+## Git Commits (15 total)
 
 | Commit | Description |
 |--------|-------------|
-| 332134e | fix: Convert hashrate from MH/s to TH/s in all API endpoints |
-| 557e037 | fix: Fallback to historical firmware data for offline miners |
-| aa4830e | feat: Implement AV-2 Plant client for S19J Pro Container HVAC |
+| 0b8b9f7 | feat: Add daily database maintenance script |
+| dfa9a36 | refactor: Extract GuardianDB to core/database.py |
+| 604f471 | refactor: Extract AMSClient to clients/ams_client.py |
+| 86c9b23 | refactor: Extract SlackNotifier to notifiers/slack_notifier.py |
+| c8dc6d6 | refactor: Extract models, utilities, notifiers (batch 2) |
+| 6d6475e | refactor: Extract ApprovalInterface to separate module |
+| 600dd48 | docs: Add db_maintenance.sh to cron schedule |
+| 8875ba1 | docs: Add project structure section to README |
+| d867020 | test: Add pytest structure and 25 passing tests |
+| ce3ea12 | test: Add tests for weather collector and openclaw notifier |
+| 2afccc2 | test: Add HVAC client tests |
+| fab110b | test: Add ApprovalInterface tests |
+| e6ec4ce | test: Add Dashboard API tests |
 
 ---
 
-## Services Restarted
+## S19J Pro Container HVAC — Fixed ✅
 
-- mining-guardian: Restarted to apply firmware fix
-- dashboard-api: (if needed after hashrate fix - verify)
+Auth flow discovered:
+```python
+session.post('https://192.168.189.235/j_security_check', 
+    data={'j_username': 'BigStar', 'j_password': 'BigSt@r2020'})
+```
 
----
-
-## Remaining Tasks
-
-| Task | Status |
-|------|--------|
-| Power cycle miner 53476 (.31) | PENDING (facility, rain delayed) |
-| Signal 6 (hashrate volatility) | PENDING |
-| HIGH_OFFLINE_FREQUENCY_PATTERN | PENDING |
-| Thursday Apr 24: HVAC complete | SCHEDULED |
-| May 5-9: Mac Mini ETA | SCHEDULED |
-
----
-
-## Scan Verification
-
-Scan #1671 completed successfully:
-- 49 miners total
-- 29 online / 20 offline
-- All 49 miners have firmware data ✅
-- Hashrate displaying in TH/s ✅
+BACnet Points Mapped:
+| OID | Name | Maps To |
+|-----|------|---------|
+| analog-input/105 | CDWST | supply_temp |
+| analog-input/106 | CDWRT | return_temp |
+| analog-input/107 | OAT | outside_air |
+| analog-input/108 | ContainerSpaceTemp | container_temp |
 
 ---
 
-*Session completed: April 21, 2026*
+## Documentation Created
+
+- docs/TESTING.md — Test suite guide
+- docs/SECURITY.md — Security hardening details
+- docs/CRON_SCHEDULE.md — Updated with db_maintenance
+- README.md — Added project structure section
+- This session log
+
+---
+
+## Background Tasks (end of session)
+
+- **Deep Dive:** 14/30 miners (~47%)
+- **DB Backup:** 4.4/6.6 GB to HDD (~67%)
+
+---
+
+## Next Steps (Pending)
+
+1. Power cycle miner 53476 (.31) at facility
+2. Complete signal 6 (PSU voltage degradation) implementation
+3. Thursday Apr 24: Re-enable S21/Auradine after HVAC work
+4. May 5-9: Mac Mini arrives, migrate Cloudflare tunnels
+5. Continue Phase 4: Add more tests, increase coverage
