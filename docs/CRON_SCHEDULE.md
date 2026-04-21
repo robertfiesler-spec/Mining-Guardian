@@ -10,6 +10,7 @@
 |------|-----|--------|---------|
 | 12:00 AM | Claude Training (Pass 2) | weekly_train.py | Claude cohort analysis |
 | 1:00 AM | Refinement (Pass 3+4) | refinement_chain.py | Qwen reflection + Claude merge |
+| 3:30 AM | DB Maintenance | db_maintenance.sh | WAL checkpoint, vacuum, integrity |
 | 4:00 AM | Knowledge Backup | backup_knowledge.py | Backup knowledge.json |
 | 7:00 AM | Morning Briefing | morning_briefing.py | Daily summary to Slack |
 | 8:00 AM | Operator Review | daily_operator_review.py | Generate operator review report |
