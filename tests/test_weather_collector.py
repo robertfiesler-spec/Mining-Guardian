@@ -1,5 +1,5 @@
 """
-Tests for WeatherCollector - Open-Meteo API.
+Tests for WeatherCollector - Open-Meteo API client.
 """
 import pytest
 import sys
@@ -13,29 +13,30 @@ from monitoring.weather_collector import WeatherCollector
 class TestWeatherCollectorInit:
     """Test WeatherCollector initialization."""
     
-    def test_init_default(self):
-        """Test collector initializes with defaults."""
+    def test_init_with_defaults(self):
+        """Test collector initializes with default Fort Worth coords."""
         collector = WeatherCollector()
         assert collector is not None
+        assert collector.latitude == 32.7555
+        assert collector.longitude == -97.3308
         
-    def test_init_with_coords(self):
-        """Test collector with custom coordinates."""
-        # Fort Worth, TX coords
-        lat, lon = 32.7555, -97.3308
-        collector = WeatherCollector(latitude=lat, longitude=lon)
-        assert collector.latitude == lat
-        assert collector.longitude == lon
+    def test_init_with_custom_coords(self):
+        """Test collector initializes with custom coordinates."""
+        collector = WeatherCollector(latitude=32.7767, longitude=-96.7970)
+        assert collector.latitude == 32.7767
+        assert collector.longitude == -96.7970
 
 
 class TestWeatherCollectorMethods:
     """Test WeatherCollector methods."""
     
     def test_has_fetch_method(self):
-        """Test that fetch/collect method exists."""
+        """Test that collector has fetch method."""
         collector = WeatherCollector()
-        assert hasattr(collector, "fetch") or hasattr(collector, "collect") or hasattr(collector, "get_weather")
+        assert hasattr(collector, 'fetch')
         
-    def test_api_url_format(self):
-        """Test API URL is properly formatted."""
-        collector = WeatherCollector()
-        assert hasattr(collector, "api_url") or hasattr(collector, "base_url") or True
+    def test_coordinates_are_floats(self):
+        """Test coordinates are numeric."""
+        collector = WeatherCollector(latitude=32.7767, longitude=-96.7970)
+        assert isinstance(collector.latitude, (int, float))
+        assert isinstance(collector.longitude, (int, float))
