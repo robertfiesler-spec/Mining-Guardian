@@ -32,6 +32,13 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+# ── Rate limiting (added Apr 21 2026) ─────────────────────────
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+
 # ── Prometheus metrics ────────────────────────────────────────
 from prometheus_client import (
     Gauge, generate_latest, CONTENT_TYPE_LATEST, REGISTRY
@@ -126,6 +133,8 @@ SITE = "usa_188"
 
 DB_PATH = str(_ROOT / "guardian.db")
 app = FastAPI(title="Mining Guardian API", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Allow Retool and any local client to connect
 app.add_middleware(
@@ -389,7 +398,8 @@ _metrics_cache = {"data": None, "timestamp": 0.0}
 _METRICS_CACHE_TTL = 25  # seconds — Prometheus scrapes every 30s
 
 @app.get("/metrics")
-def metrics():
+@limiter.limit("120/minute")
+def metrics(request: Request):
     """Prometheus metrics endpoint — scraped every 30s by Prometheus.
     Cached for 25 seconds to avoid hammering SQLite with ~15 queries per scrape.
     """
@@ -1002,7 +1012,8 @@ def miner_status_html(miner_ip: str):
 {history_html}
 </body></html>"""
 @app.get("/fleet/latest")
-def fleet_latest():
+@limiter.limit("60/minute")
+def fleet_latest(request: Request):
     """Latest scan summary — fleet status right now."""
     conn = get_db()
     scan = conn.execute(
@@ -1026,7 +1037,8 @@ def fleet_latest():
 
 
 @app.get("/fleet/history")
-def fleet_history(days: int = 7):
+@limiter.limit("30/minute")
+def fleet_history(request: Request, days: int = 7):
     days = min(max(days, 1), 90)
     """Scan history over the last N days."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
@@ -1042,7 +1054,8 @@ def fleet_history(days: int = 7):
 # ── Miners ───────────────────────────────────────────────────
 
 @app.get("/miners/flagged")
-def miners_flagged():
+@limiter.limit("60/minute")
+def miners_flagged(request: Request):
     """All miners currently flagged in the latest scan."""
     conn = get_db()
     scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
@@ -1129,7 +1142,8 @@ def temps_hot_miners():
 
 
 @app.get("/temps/history")
-def temps_history(days: int = 7):
+@limiter.limit("30/minute")
+def temps_history(request: Request, days: int = 7):
     days = min(max(days, 1), 90)
     """Average chip temp across fleet over time."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
@@ -1285,7 +1299,8 @@ def environment_history(days: int = 5):
     return result
 
 @app.get("/notifications/recent")
-def notifications_recent(limit: int = 50):
+@limiter.limit("60/minute")
+def notifications_recent(request: Request, limit: int = 50):
     """Recent AMS notifications grouped by type."""
     conn = get_db()
     rows = conn.execute("""
@@ -1327,7 +1342,8 @@ def restarts_recent(limit: int = 20):
 
 
 @app.get("/audit/log")
-def audit_log(days: int = None, miner_id: str = None, limit: int = 100):
+@limiter.limit("30/minute")
+def audit_log(request: Request, days: int = None, miner_id: str = None, limit: int = 100):
     if days is not None:
         days = min(max(days, 1), 90)
     limit = min(max(limit, 1), 500)
