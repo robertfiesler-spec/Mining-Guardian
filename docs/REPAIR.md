@@ -178,3 +178,79 @@ All 21 AI proposals reviewed with operator decisions logged.
 - S19JPros now processing instead of skipping
 - Per-miner time: ~110 min (longer than expected but working)
 
+
+### 2026-04-21
+
+**Hashrate Units Fix (dashboard_api.py):**
+- ROOT CAUSE: Database stores hashrate in MH/s, API was returning raw values
+- Display needed TH/s (divide by 1000)
+
+**Endpoints Fixed:**
+- /metrics (SQL + Python)
+- /query/fleet_summary (total_hashrate, total_max_hashrate)
+- /query/flagged_miners
+- /query/miner_history
+- /query/bottom_miners
+- /ask
+
+**Verification:** /query/fleet_summary returns total_hashrate_ths: 3871.7 ✅
+
+**Git Commit:** 332134e
+
+---
+
+**Firmware Detection Fix (core/mining_guardian.py):**
+- ROOT CAUSE: AMS API returns empty firmware fields for offline miners
+- AMS cannot query device firmware when miner isn't communicating
+- 20 miners showed empty firmware_manufacturer/firmware_version
+
+**Discovery:**
+- All 20 miners with empty firmware were OFFLINE
+- Historical data in miner_readings showed firmware when miners were online
+- Example: 192.168.188.52 had BIXBIT/0.9.9.3-stage29.2799 on April 13
+
+**Fix Applied:**
+- Added fallback logic in save_scan() (lines 2234-2272)
+- If AMS returns empty firmware, query miner_readings for last known value
+- Use historical firmware instead of empty string
+
+**Verification:**
+- Before: 29/49 miners with firmware (only online miners)
+- After: 49/49 miners with firmware ✅
+- All 20 offline miners now show historical firmware
+
+**Git Commit:** 557e037
+
+---
+
+**AV-2 Plant Client Implementation:**
+- PROBLEM: S19J Pro Container HVAC (192.168.189.235) had no data collection
+- Previously just a stub returning None
+
+**API Discovery (via Chrome DevTools):**
+- Endpoint: POST https://192.168.189.235/eclypse/dgapi
+- Auth: Session-based + Basic (BigStar/BigSt@r2020)
+- Framework: Distech DGLux (dgluxjs)
+- Format: Subscription-based polling model
+
+**Data Paths Implemented:**
+| Path | Description |
+|------|-------------|
+| /Data/Plant/OAT | Outside Air Temp (°F) |
+| /Data/Plant/ContainerSpaceTemp | Container Ceiling (°F) |
+| /Data/Plant/CDWST | Supply Temp (°F) |
+| /Data/Plant/CDWRT | Return Temp (°F) |
+| /Data/Plant/CWP1_Fdbk | CW Pump 1 Speed (%) |
+| /Data/Plant/CWP2_Fdbk | CW Pump 2 Speed (%) |
+| /Data/Plant/CT1VSDFdbk | CT Fan Speed (%) |
+
+**Note:** VPS cannot reach 192.168.189.x directly - requires ROBS-PC Tailscale route.
+
+**Git Commit:** aa4830e
+
+---
+
+**GitHub Security:**
+- Enabled Secret Protection on Mining-Guardian repo
+- Push protection + Alert scanning now active
+
