@@ -18,7 +18,6 @@ import requests
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
-from clients.av2_plant_client import AV2PlantClient
 
 load_dotenv()
 
@@ -132,78 +131,28 @@ class HVACClient:
     """
     Polls Eclypse BAS controllers for environmental data.
     Supports multiple systems (warehouse, s19jpro).
-    
-    Note: s19jpro requires form-based login (/j_security_check),
-    while warehouse uses basic auth.
     """
-    
-    # Class-level session cache for form-based login
-    _sessions = {}
     
     def __init__(self, system_id: str = "warehouse"):
         if system_id not in SYSTEMS:
             raise ValueError(f"Unknown HVAC system: {system_id}. Valid: {list(SYSTEMS.keys())}")
         self.system_id = system_id
         self.system = SYSTEMS[system_id]
-        self.ip = self.system['ip']
-        self.base_url = f"https://{self.ip}/api/rest/v1/protocols/bacnet/local/objects"
-        self._session = None
-
-    def _get_session(self) -> requests.Session:
-        """Get or create a session with proper authentication."""
-        # s19jpro needs form-based login
-        if self.system_id == "s19jpro":
-            if self.system_id not in HVACClient._sessions:
-                session = requests.Session()
-                session.verify = False
-                # Form-based login for Eclypse controllers
-                login_data = {
-                    'j_username': ECLYPSE_USER,
-                    'j_password': ECLYPSE_PASS
-                }
-                try:
-                    resp = session.post(
-                        f"https://{self.ip}/j_security_check",
-                        data=login_data,
-                        timeout=15,
-                        allow_redirects=True
-                    )
-                    if resp.status_code == 200 and 'ECLYPSERESTSESSIONID' in session.cookies:
-                        logger.debug("HVAC s19jpro: Form login successful")
-                        HVACClient._sessions[self.system_id] = session
-                    else:
-                        logger.warning("HVAC s19jpro: Form login failed - %s", resp.status_code)
-                        return None
-                except Exception as e:
-                    logger.warning("HVAC s19jpro: Login error - %s", e)
-                    return None
-            return HVACClient._sessions.get(self.system_id)
-        else:
-            # warehouse uses basic auth (no session needed)
-            return None
+        self.base_url = f"https://{self.system['ip']}/api/rest/v1/protocols/bacnet/local/objects"
 
     def _curl(self, url: str) -> Optional[dict]:
         """Fetch a BACnet property from the Eclypse controller."""
         try:
-            session = self._get_session()
-            if session:
-                # Use session for s19jpro (form-based auth)
-                r = session.get(url, timeout=10)
-            else:
-                # Use basic auth for warehouse
-                r = requests.get(
-                    url,
-                    auth=(ECLYPSE_USER, ECLYPSE_PASS),
-                    verify=False,
-                    timeout=6
-                )
+            r = requests.get(
+                url,
+                auth=(ECLYPSE_USER, ECLYPSE_PASS),
+                verify=False,
+                timeout=6
+            )
             r.raise_for_status()
             return r.json()
         except requests.exceptions.RequestException as e:
             logger.debug("HVAC request failed for %s: %s", url, e)
-            # Clear session cache on auth failure
-            if self.system_id in HVACClient._sessions:
-                del HVACClient._sessions[self.system_id]
             return None
         except ValueError:
             logger.debug("HVAC bad JSON from %s", url)
@@ -342,18 +291,13 @@ def format_hvac_report(snap: HVACSnapshot) -> str:
     lines.append(f"  CW Pump 1         :  {cwp1_icon} {cwp1_pct}")
     lines.append(f"  CW Pump 2         :  {cwp2_icon} {cwp2_pct}")
 
-    # Cooling tower fans - S19J Pro has only 1 fan, manually set to 100%
-    if snap.system_id == "s19jpro":
-        # S19J Pro: Single fan, always 100% (manual control)
-        lines.append(f"  CT Fan 1          :  🟢 100% (manual)")
-    else:
-        # Warehouse: Both fans, actual readings
-        ct1_pct = f"{snap.ct1_vfd_pct:.0f}%" if snap.ct1_vfd_pct is not None else "?"
-        ct2_pct = f"{snap.ct2_vfd_pct:.0f}%" if snap.ct2_vfd_pct is not None else "?"
-        ct1_icon = "🟢" if snap.ct1_vfd_pct and snap.ct1_vfd_pct > 0 else "⚫"
-        ct2_icon = "🟢" if snap.ct2_vfd_pct and snap.ct2_vfd_pct > 0 else "⚫"
-        lines.append(f"  CT Fan 1          :  {ct1_icon} {ct1_pct}")
-        lines.append(f"  CT Fan 2          :  {ct2_icon} {ct2_pct}")
+    # Cooling tower fans
+    ct1_pct = f"{snap.ct1_vfd_pct:.0f}%" if snap.ct1_vfd_pct is not None else "?"
+    ct2_pct = f"{snap.ct2_vfd_pct:.0f}%" if snap.ct2_vfd_pct is not None else "?"
+    ct1_icon = "🟢" if snap.ct1_vfd_pct and snap.ct1_vfd_pct > 0 else "⚫"
+    ct2_icon = "🟢" if snap.ct2_vfd_pct and snap.ct2_vfd_pct > 0 else "⚫"
+    lines.append(f"  CT Fan 1          :  {ct1_icon} {ct1_pct}")
+    lines.append(f"  CT Fan 2          :  {ct2_icon} {ct2_pct}")
 
     # Spray pump if available
     if snap.spray_pump_on is not None:
@@ -365,14 +309,11 @@ def format_hvac_report(snap: HVACSnapshot) -> str:
     if snap.leak_alarm:       alarms.append("🔴 LEAK DETECTED")
     if snap.tower_vibration:  alarms.append("🔴 TOWER VIBRATION ALARM")
     if snap.ct1_fault:        alarms.append("🔴 CT Fan 1 FAULT")
-    if snap.system_id != "s19jpro" and snap.ct2_fault:
-        alarms.append("🔴 CT Fan 2 FAULT")  # S19J Pro has only 1 CT fan
+    if snap.ct2_fault:        alarms.append("🔴 CT Fan 2 FAULT")
     if snap.pump_fault:       alarms.append("🔴 Spray Pump FAULT")
-    # Note: S19J Pro "trip" signals mean "running", not "faulted" - skip them
-    if snap.system_id != "s19jpro":
-        if snap.cwp1_trip:    alarms.append("🔴 CW Pump 1 TRIP")
-        if snap.cwp2_trip:    alarms.append("🔴 CW Pump 2 TRIP")
-        if snap.ct_trip:      alarms.append("🔴 CT TRIP")
+    if snap.cwp1_trip:        alarms.append("🔴 CW Pump 1 TRIP")
+    if snap.cwp2_trip:        alarms.append("🔴 CW Pump 2 TRIP")
+    if snap.ct_trip:          alarms.append("🔴 CT TRIP")
 
     lines.append("")
     if alarms:

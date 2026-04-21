@@ -4,7 +4,7 @@ Uses Distech Eclypse dgapi subscription-based polling.
 
 API discovered via Chrome DevTools:
 - Endpoint: POST https://{ip}/eclypse/dgapi
-- Auth: Session-based with dguser/session endpoint
+- Auth: Form-based login via /j_security_check (NOT basic auth)
 - Data: Subscription model returns real-time sensor values
 """
 import os
@@ -55,23 +55,32 @@ class AV2PlantClient:
         self.password = password
         self.session = requests.Session()
         self.session.verify = False
-        self.timeout = 10
+        self.timeout = 15
         self._subscription_id: Optional[str] = None
+        self._logged_in = False
 
     def _login(self) -> bool:
-        """Establish session with the Eclypse controller."""
+        """Establish session with the Eclypse controller via form-based login."""
+        if self._logged_in:
+            return True
         try:
-            # Get session
-            resp = self.session.get(
-                f"{self.base_url}/eclypse/dguser/session",
-                auth=(self.username, self.password),
-                timeout=self.timeout
+            # Use j_security_check for form-based login (NOT basic auth)
+            login_data = {
+                'j_username': self.username,
+                'j_password': self.password
+            }
+            resp = self.session.post(
+                f"{self.base_url}/j_security_check",
+                data=login_data,
+                timeout=self.timeout,
+                allow_redirects=True
             )
-            if resp.status_code == 200:
-                logger.debug("AV2 Plant: Session established")
+            if resp.status_code == 200 and 'ECLYPSERESTSESSIONID' in self.session.cookies:
+                self._logged_in = True
+                logger.debug("AV2 Plant: Login successful")
                 return True
             else:
-                logger.warning("AV2 Plant: Session failed - %s", resp.status_code)
+                logger.warning("AV2 Plant: Login failed - status %s", resp.status_code)
                 return False
         except Exception as e:
             logger.warning("AV2 Plant: Login error - %s", e)
@@ -102,7 +111,6 @@ class AV2PlantClient:
             resp = self.session.post(
                 f"{self.base_url}/eclypse/dgapi",
                 json=payload,
-                auth=(self.username, self.password),
                 timeout=self.timeout
             )
             
@@ -119,9 +127,11 @@ class AV2PlantClient:
 
     def _poll_subscription(self) -> Dict[str, Any]:
         """Poll the subscription for current values."""
-        if not self._subscription_id:
+        if not self._logged_in:
             if not self._login():
                 return {}
+        
+        if not self._subscription_id:
             if not self._create_subscription():
                 return {}
         
@@ -134,7 +144,6 @@ class AV2PlantClient:
             resp = self.session.post(
                 f"{self.base_url}/eclypse/dgapi",
                 json=payload,
-                auth=(self.username, self.password),
                 timeout=self.timeout
             )
             
@@ -156,9 +165,13 @@ class AV2PlantClient:
                                 }
                 
                 return values
-            else:
-                # Reset subscription on error
+            elif resp.status_code == 401:
+                # Session expired, reset and retry
+                self._logged_in = False
                 self._subscription_id = None
+                return self._poll_subscription()  # Retry once
+            else:
+                logger.warning("AV2 Plant: Poll failed - %s", resp.status_code)
                 return {}
         except Exception as e:
             logger.warning("AV2 Plant: Poll error - %s", e)
