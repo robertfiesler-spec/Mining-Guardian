@@ -517,3 +517,54 @@ Remaining items are MEDIUM/LOW priority tracked in `AI_ROADMAP.md`. See `REPAIR_
 ---
 
 *Last updated: April 16 2026. See `CLAUDE.md` for binding rules and `docs/VISION.md` for the canonical plan. See `AI_ROADMAP.md` for feature status and hard deadlines. See `.env.example` for all 30+ environment variables.*
+
+---
+
+## Project Structure
+
+```
+Mining-Guardian/
+├── core/                    # Core application logic
+│   ├── mining_guardian.py   # Main orchestrator (2655 lines)
+│   ├── database.py          # SQLite database layer (1549 lines)
+│   ├── models.py            # Dataclasses and utilities (199 lines)
+│   ├── hashrate_evaluation.py
+│   ├── llm_analyzer.py
+│   └── overnight_automation.py
+├── clients/                 # External service clients
+│   ├── ams_client.py        # BiXBiT AMS API (973 lines)
+│   ├── hvac_client.py       # Distech Eclypse HVAC
+│   ├── auradine_client.py   # Teraflux/Auradine API
+│   └── pdu_client.py        # PDU control
+├── notifiers/               # Notification services
+│   ├── slack_notifier.py    # Slack messaging (667 lines)
+│   ├── openclaw_notifier.py # OpenClaw webhook (121 lines)
+│   └── approval_interface.py
+├── monitoring/              # Monitoring utilities
+│   ├── facility_monitor.py
+│   └── weather_collector.py # Open-Meteo API (53 lines)
+├── ai/                      # AI/ML components
+│   ├── daily_deep_dive.py   # Qwen per-miner analysis
+│   ├── weekly_train.py      # Claude cohort training
+│   └── refinement_chain.py  # Multi-pass learning
+├── scripts/                 # Utility scripts
+│   ├── morning_briefing.py
+│   ├── direct_collect_logs.py
+│   ├── db_maintenance.sh    # Daily SQLite maintenance
+│   └── ...
+├── api/                     # REST API
+│   └── dashboard_api.py     # FastAPI dashboard
+└── docs/                    # Documentation
+    ├── SECURITY.md
+    ├── CRON_SCHEDULE.md
+    └── ...
+```
+
+### Code Metrics (After April 21, 2026 Refactor)
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| mining_guardian.py | 6,172 lines | 2,655 lines | **-57%** |
+| Extracted modules | 0 | 7 | +7 |
+| Total extracted lines | 0 | 3,614 | - |
+
