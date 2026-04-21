@@ -2231,6 +2231,23 @@ class GuardianDB:
                 err_codes = str(m.get("errorCodes") or []) if m.get("errorCodes") else None
                 issue     = issue_map.get(miner_id)
 
+                # Firmware fallback: if AMS returns empty firmware, use last known value
+                fw_mfr = m.get("firmwareManufacturer") or ""
+                fw_ver = m.get("firmwareVersion") or ""
+                if not fw_mfr and miner_id:
+                    try:
+                        _fw_row = conn.execute(
+                            "SELECT firmware_manufacturer, firmware_version FROM miner_readings "
+                            "WHERE miner_id = ? AND firmware_manufacturer != '' "
+                            "AND firmware_manufacturer IS NOT NULL "
+                            "ORDER BY id DESC LIMIT 1", (miner_id,)
+                        ).fetchone()
+                        if _fw_row:
+                            fw_mfr = _fw_row["firmware_manufacturer"] or ""
+                            fw_ver = _fw_row["firmware_version"] or ""
+                    except Exception:
+                        pass  # Keep empty if lookup fails
+
                 # Use 'name' when profile confirms BiXBiT firmware and shortModel is wrong
                 raw_model = m.get("shortModel", m.get("name", "unknown"))
                 profile_str = m.get("currentProfile", "")
@@ -2251,8 +2268,8 @@ class GuardianDB:
                     temp_board if temp_board >= 0 else None,
                     m.get("coolingMode"),
                     m.get("currentProfile"),
-                    m.get("firmwareManufacturer"),
-                    m.get("firmwareVersion"),
+                    fw_mfr,
+                    fw_ver,
                     m.get("uptime"),
                     m.get("consumption") or 0,
                     m.get("maxConsumption") or 0,
