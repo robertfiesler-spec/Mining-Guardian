@@ -12,10 +12,14 @@
 |---------|------|---------|--------|
 | Dashboard API | 8585 | 127.0.0.1 | ✅ Secure |
 | Approval API | 8686 | 127.0.0.1 | ✅ Secure |
-| Prometheus | 9090 | 127.0.0.1 | ⚠️ FIXED Apr 21 |
-| Grafana | 3000 | 127.0.0.1 | ⚠️ FIXED Apr 21 |
+| Prometheus | 9090 | 127.0.0.1 | ✅ FIXED Apr 21 |
+| Grafana | 3000 | 127.0.0.1 | ✅ FIXED Apr 21 |
 
 **Access Method:** All services accessible via Cloudflare tunnels only.
+
+**Changes Made (Apr 21 2026):**
+- Prometheus: Changed `/etc/systemd/system/prometheus.service` from `--web.listen-address=0.0.0.0:9090` to `127.0.0.1:9090`
+- Grafana: Uncommented and set `http_addr = 127.0.0.1` in `/etc/grafana/grafana.ini`
 
 ### 2. Authentication
 
@@ -28,7 +32,21 @@
 | Grafana | Username/password | Via Cloudflare tunnel |
 | Prometheus | None | Localhost only |
 
-### 3. Secrets Management
+### 3. Rate Limiting (Added Apr 21 2026)
+
+Using `slowapi` library.
+
+| Endpoint | Limit | Notes |
+|----------|-------|-------|
+| /metrics | 120/min | Prometheus scraping |
+| /fleet/latest | 60/min | Dashboard refresh |
+| /fleet/history | 30/min | Historical queries |
+| /miners/flagged | 60/min | Current issues |
+| /temps/history | 30/min | Temperature queries |
+| /notifications/recent | 60/min | Recent alerts |
+| /audit/log | 30/min | Audit trail |
+
+### 4. Secrets Management
 
 **Location:** `/root/Mining-Gaurdian/.env`
 
@@ -38,44 +56,31 @@
 | SLACK_BOT_TOKEN | Slack App | Manual |
 | SLACK_SIGNING_SECRET | Slack App | Manual |
 | ANTHROPIC_API_KEY | Anthropic | Manual |
-| INTERNAL_API_SECRET | Generated | Should rotate quarterly |
+| INTERNAL_API_SECRET | Generated | Quarterly |
 | ECLYPSE_USER/PASS | Distech | Manual |
 
 **Best Practice:** Never commit `.env` to git. Template at `.env.example`.
 
-### 4. Rate Limiting
-
-| Endpoint | Limit | Implementation |
-|----------|-------|----------------|
-| /fleet | 60/min | slowapi |
-| /metrics | 120/min | slowapi |
-| /miner/* | 60/min | slowapi |
-| /approve | 10/min | slowapi |
-
-### 5. Input Validation
-
-- All miner_id parameters: alphanumeric only
-- All IP parameters: IPv4 format validation
-- All date parameters: ISO format validation
-
-### 6. CORS Policy
+### 5. CORS Policy
 
 ```python
 allow_origins=[
-    "https://dashboard.fieslerfamily.com",
-    "https://grafana.fieslerfamily.com",
-    "https://retool.com",
-    "http://localhost:8585",
-    "http://127.0.0.1:8585",
+    https://dashboard.fieslerfamily.com,
+    https://grafana.fieslerfamily.com,
+    https://retool.com,
+    http://localhost:8585,
+    http://127.0.0.1:8585,
 ]
 ```
 
-### 7. Known Issues
+### 6. Known Issues / Resolved
 
-#### GitHub Secret Alert (Resolved Apr 21, 2026)
+#### GitHub Secret Alert (Apr 5-21, 2026)
 - **Issue:** GitHub PAT committed in `git hub paswords.rtfd/TXT.rtf`
-- **Resolution:** Token revoked, file removed from repo
-- **Note:** Secret remains in git history; token is now invalid
+- **Token:** `ghp_q0iv5r0qUYy24gxZ1e8XVWrDrKdTCQ1QwLkV`
+- **Status:** PENDING - Token needs to be revoked in GitHub Settings
+- **File removed:** Yes, in commit `ac0a215`
+- **Note:** Token remains in git history; revoke to invalidate
 
 ---
 
@@ -83,10 +88,28 @@ allow_origins=[
 
 ### April 21, 2026
 
-1. **Prometheus binding** - Changed from 0.0.0.0:9090 to 127.0.0.1:9090
-2. **Grafana binding** - Changed from 0.0.0.0:3000 to 127.0.0.1:3000
-3. **Rate limiting** - Added slowapi to dashboard_api.py
-4. **GitHub secret** - Token revoked, alert closed
+1. ✅ **Prometheus binding** - Changed from 0.0.0.0:9090 to 127.0.0.1:9090
+2. ✅ **Grafana binding** - Changed from 0.0.0.0:3000 to 127.0.0.1:3000  
+3. ✅ **Rate limiting** - Added slowapi to dashboard_api.py (7 endpoints)
+4. ⏳ **GitHub secret** - Token needs to be revoked manually
+
+---
+
+## Verification Commands
+
+```bash
+# Check port bindings (all should be 127.0.0.1)
+ss -tlnp | grep -E '8585|8686|9090|3000'
+
+# Test rate limiting
+for i in {1..5}; do curl -s http://127.0.0.1:8585/fleet/latest | jq .id; done
+
+# Check Prometheus config
+grep listen-address /etc/systemd/system/prometheus.service
+
+# Check Grafana config
+grep http_addr /etc/grafana/grafana.ini
+```
 
 ---
 
