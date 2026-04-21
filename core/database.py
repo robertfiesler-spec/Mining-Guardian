@@ -10,6 +10,13 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+# Import hashrate evaluation utilities
+try:
+    from hashrate_evaluation import parse_bixbit_profile
+except ImportError:
+    def parse_bixbit_profile(profile_str):
+        return None  # Fallback if not available
+
 logger = logging.getLogger(__name__)
 
 class GuardianDB:
