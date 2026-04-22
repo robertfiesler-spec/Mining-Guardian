@@ -12,6 +12,8 @@ Commands:
   /dead            — list known dead boards
   /knowledge       — what the LLM has learned
   /btc             — current Bitcoin price + daily revenue estimate
+  /cost            — electricity cost & profitability analysis
+  /profit          — daily/monthly profit calculation
   @Mining Guardian  — ask the LLM any mining question
 
 Runs as a systemd service alongside the other listeners.
@@ -228,6 +230,34 @@ class CommandHandler:
             self._reply(channel, thread_ts, "\n".join(lines))
         except Exception as e:
             self._reply(channel, thread_ts, f"BTC price unavailable: {e}")
+
+
+    def cmd_cost(self, channel, thread_ts, option: str = "full"):
+        """Electricity cost and profitability analysis.
+        
+        Options:
+            fleet - Option A: Simple fleet total
+            miners - Option B: Per-miner breakdown
+            profit - Option C: Full profitability
+            full - All three options combined
+        """
+        try:
+            from monitoring.cost_tracker import CostTracker
+            tracker = CostTracker(DB_PATH)
+            
+            if option in ("fleet", "power", "simple"):
+                msg = tracker.format_fleet_summary()
+            elif option in ("miners", "miner", "breakdown", "per-miner"):
+                msg = tracker.format_per_miner_costs(top_n=10)
+            elif option in ("profit", "profitability", "revenue"):
+                msg = tracker.format_profitability()
+            else:  # "full" or default
+                msg = tracker.format_full_report()
+            
+            self._reply(channel, thread_ts, msg)
+        except Exception as e:
+            logger.exception("cmd_cost failed")
+            self._reply(channel, thread_ts, f"Cost analysis failed: {e}")
 
     def _build_fleet_context(self) -> str:
         """Pull current fleet state to inject into every LLM question."""
@@ -547,6 +577,10 @@ class CommandHandler:
             "  `hot` — miners running warm",
             "  `dead` — known dead boards",
             "  `btc` — Bitcoin price + revenue",
+            "  `cost` — Electricity cost & profitability (full report)",
+            "  `cost fleet` — Fleet power summary only",
+            "  `cost miners` — Per-miner cost breakdown",
+            "  `profit` — Profitability analysis (revenue - cost)",
             "  `knowledge` — what AI has learned",
             "  `audit` — recent actions taken",
             "  `overnight` — what happened overnight",
@@ -596,6 +630,14 @@ class CommandHandler:
         elif lower in ("knowledge", "/knowledge", "what have you learned"):
             self.cmd_knowledge(channel, thread_ts)
         elif lower in ("btc", "/btc", "bitcoin", "price"):
+            self.cmd_btc(channel, thread_ts)
+        elif lower in ("cost", "/cost", "electricity", "power cost"):
+            self.cmd_cost(channel, thread_ts, "full")
+        elif lower.startswith(("cost ", "/cost ")):
+            option = lower.split(" ", 1)[1] if " " in lower else "full"
+            self.cmd_cost(channel, thread_ts, option)
+        elif lower in ("profit", "/profit", "profitability", "revenue"):
+            self.cmd_cost(channel, thread_ts, "profit")
             self.cmd_btc(channel, thread_ts)
         elif lower.startswith(("history ", "why ", "what's wrong with ", "tell me about ")):
             # Extract IP from the question and ask LLM with full history

@@ -200,6 +200,24 @@ def build_briefing(data: dict, btc_price: float) -> str:
         est_daily_usd = est_daily_btc * btc_price
         lines.append(f"*₿ BTC:* ${btc_price:,.0f} | Est. daily revenue: ~${est_daily_usd:,.0f} ({fleet_ths:,.0f} TH/s)")
 
+    # Cost & Profitability (Apr 22 2026)
+    try:
+        from monitoring.cost_tracker import CostTracker
+        from core.database import GuardianDB
+        db = GuardianDB(os.path.join(os.path.dirname(__file__), "..", "guardian.db"))
+        tracker = CostTracker(db)
+        profit_data = tracker.get_profitability_analysis()
+        if "error" not in profit_data:
+            daily_cost = profit_data["daily_electricity_cost"]
+            daily_profit = profit_data["daily_profit"]
+            margin = profit_data["profit_margin_pct"]
+            rate = profit_data["electricity_rate"]
+            emoji = "📈" if daily_profit > 0 else "📉"
+            lines.append(f"*⚡ Electricity:* ${daily_cost:,.0f}/day @ ${rate}/kWh | {emoji} Profit: ${daily_profit:,.0f}/day ({margin:.0f}% margin)")
+    except Exception as e:
+        logger.warning(f"Cost tracking unavailable for briefing: {e}")
+
+
     # Overnight actions
     actions = data["actions"]
     if actions:
