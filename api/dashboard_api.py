@@ -2622,6 +2622,269 @@ def proxy_intelligence_report(path: str, request: Request):
         return {"error": str(e)}
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MOBILE DASHBOARD — Phone-friendly fleet status
+# Added: April 22, 2026
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/mobile", response_class=HTMLResponse)
+def mobile_dashboard():
+    """Mobile-friendly fleet status page. Works on any phone browser."""
+    conn = get_db()
+    
+    # Fleet summary
+    fleet = conn.execute('''
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
+            SUM(CASE WHEN status != 'online' THEN 1 ELSE 0 END) as offline
+        FROM miner_readings 
+        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+    ''').fetchone()
+    
+    # Flagged miners count
+    flagged = conn.execute('''
+        SELECT COUNT(DISTINCT miner_id) FROM miner_readings
+        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+        AND issue IS NOT NULL AND issue != 
+    ''').fetchone()[0]
+    
+    # Latest scan time
+    latest_scan = conn.execute(
+        "SELECT scanned_at FROM scans ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    scan_time = latest_scan[0][:16] if latest_scan else "Unknown"
+    
+    # Critical miners (0% hashrate, online)
+    critical = conn.execute('''
+        SELECT ip, model, hashrate_pct, temp_chip
+        FROM miner_readings
+        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+        AND status = 'online' AND hashrate_pct < 10
+        ORDER BY hashrate_pct ASC
+        LIMIT 5
+    ''').fetchall()
+    
+    # Hot miners (temp > 75C)
+    hot = conn.execute('''
+        SELECT ip, model, temp_chip, hashrate_pct
+        FROM miner_readings
+        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+        AND temp_chip > 75
+        ORDER BY temp_chip DESC
+        LIMIT 5
+    ''').fetchall()
+    
+    # Weather
+    weather = conn.execute(
+        "SELECT temp_f, humidity_pct FROM weather_readings ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    
+    conn.close()
+    
+    # Build critical miners HTML
+    critical_html = ""
+    if critical:
+        for m in critical:
+            critical_html += f'''
+            <div class="miner-card critical">
+                <div class="ip">{m[0]}</div>
+                <div class="model">{(m[1] or 'Unknown').replace('Antminer_', '')}</div>
+                <div class="stats">
+                    <span class="bad">{m[2]:.0f}% HR</span>
+                    <span>{m[3]:.0f}°C</span>
+                </div>
+            </div>'''
+    else:
+        critical_html = '<div class="no-issues">✓ No critical miners</div>'
+    
+    # Build hot miners HTML
+    hot_html = ""
+    if hot:
+        for m in hot:
+            temp_class = "warn" if m[2] < 84 else "bad"
+            hot_html += f'''
+            <div class="miner-card hot">
+                <div class="ip">{m[0]}</div>
+                <div class="model">{(m[1] or 'Unknown').replace('Antminer_', '')}</div>
+                <div class="stats">
+                    <span class="{temp_class}">{m[2]:.0f}°C</span>
+                    <span>{m[3]:.0f}% HR</span>
+                </div>
+            </div>'''
+    else:
+        hot_html = '<div class="no-issues">✓ All temps normal</div>'
+    
+    weather_html = f"{weather[0]:.0f}°F / {weather[1]:.0f}%" if weather else "N/A"
+    
+    return f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Mining Guardian</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 16px;
+            padding-top: env(safe-area-inset-top, 16px);
+        }}
+        .header {{
+            text-align: center;
+            margin-bottom: 20px;
+        }}
+        .header h1 {{
+            font-size: 1.5rem;
+            color: #4ade80;
+        }}
+        .header .scan-time {{
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 4px;
+        }}
+        .weather {{
+            font-size: 0.9rem;
+            color: #60a5fa;
+            margin-top: 4px;
+        }}
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 20px;
+        }}
+        .stat {{
+            background: #252542;
+            border-radius: 12px;
+            padding: 12px 8px;
+            text-align: center;
+        }}
+        .stat .value {{
+            font-size: 1.8rem;
+            font-weight: bold;
+        }}
+        .stat .label {{
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+        }}
+        .stat.online .value {{ color: #4ade80; }}
+        .stat.offline .value {{ color: #f87171; }}
+        .stat.flagged .value {{ color: #fbbf24; }}
+        .stat.total .value {{ color: #60a5fa; }}
+        .section {{
+            background: #252542;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }}
+        .section h2 {{
+            font-size: 1rem;
+            margin-bottom: 12px;
+            color: #888;
+        }}
+        .section h2.critical {{ color: #f87171; }}
+        .section h2.hot {{ color: #fbbf24; }}
+        .miner-card {{
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }}
+        .miner-card .ip {{
+            font-family: monospace;
+            font-size: 0.9rem;
+        }}
+        .miner-card .model {{
+            font-size: 0.75rem;
+            color: #888;
+        }}
+        .miner-card .stats {{
+            text-align: right;
+        }}
+        .miner-card .stats span {{
+            display: block;
+            font-size: 0.9rem;
+        }}
+        .bad {{ color: #f87171; }}
+        .warn {{ color: #fbbf24; }}
+        .good {{ color: #4ade80; }}
+        .no-issues {{
+            color: #4ade80;
+            text-align: center;
+            padding: 20px;
+        }}
+        .refresh-btn {{
+            display: block;
+            width: 100%;
+            padding: 14px;
+            background: #4ade80;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }}
+        .refresh-btn:active {{
+            background: #22c55e;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⛏️ Mining Guardian</h1>
+        <div class="scan-time">Last scan: {scan_time}</div>
+        <div class="weather">🌡️ {weather_html}</div>
+    </div>
+    
+    <div class="stats-grid">
+        <div class="stat total">
+            <div class="value">{fleet[0] or 0}</div>
+            <div class="label">Total</div>
+        </div>
+        <div class="stat online">
+            <div class="value">{fleet[1] or 0}</div>
+            <div class="label">Online</div>
+        </div>
+        <div class="stat offline">
+            <div class="value">{fleet[2] or 0}</div>
+            <div class="label">Offline</div>
+        </div>
+        <div class="stat flagged">
+            <div class="value">{flagged}</div>
+            <div class="label">Flagged</div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2 class="critical">🚨 Critical Miners</h2>
+        {critical_html}
+    </div>
+    
+    <div class="section">
+        <h2 class="hot">🔥 Hot Miners</h2>
+        {hot_html}
+    </div>
+    
+    <button class="refresh-btn" onclick="location.reload()">↻ Refresh</button>
+    
+    <script>
+        // Auto-refresh every 60 seconds
+        setTimeout(() => location.reload(), 60000);
+    </script>
+</body>
+</html>'''
+
 if __name__ == "__main__":
     import uvicorn
     print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -2630,3 +2893,5 @@ if __name__ == "__main__":
     print("  http://localhost:8585/docs  ← interactive API docs")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
     uvicorn.run(app, host="127.0.0.1", port=8585)
+
+

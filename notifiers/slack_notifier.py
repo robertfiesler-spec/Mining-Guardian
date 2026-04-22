@@ -36,6 +36,8 @@ class SlackNotifier:
     APPROVALS_CHANNEL_ID = "C0AR79YRZ9V"  # #mg-approvals
     # Critical alerts — firmware regressions, ticket creation, dead boards
     ALERTS_CHANNEL_ID  = "C0ARJP300J0"  # #mining-guardian-alerts (existing)
+    # Wake-up level critical alerts — physical inspection required, offline after PDU, dead board escalation
+    CRITICAL_CHANNEL_ID = "C0AUX8DNGTB"  # #mg-critical
     # Pre/post log comparisons + dual-model verdicts + manual upload analyses
     LOGS_CHANNEL_ID    = "C0ASH2CPHBJ"  # #mg-logs
 
@@ -59,6 +61,7 @@ class SlackNotifier:
                                      or os.getenv("MG_CHANNEL_ALERTS")
                                      or self.ALERTS_CHANNEL_ID)
         self.logs_channel_id      = os.getenv("MG_CHANNEL_LOGS")      or self.LOGS_CHANNEL_ID
+        self.critical_channel_id  = os.getenv("MG_CHANNEL_CRITICAL")  or self.CRITICAL_CHANNEL_ID
 
     def post_to_channel(self, message: str, channel_id: Optional[str] = None) -> str:
         """Post a plain message to a channel. Defaults to the main channel.
@@ -91,6 +94,15 @@ class SlackNotifier:
         """
         return self.post_to_channel(message, channel_id=self.alerts_channel_id)
 
+
+    def post_to_critical_channel(self, message: str) -> str:
+        """Post to the #mg-critical channel.
+
+        Wake-up level alerts only — physical inspection required, hardware
+        failures confirmed, offline after PDU cycle, dead board escalation.
+        This is the highest priority channel that should interrupt the operator.
+        """
+        return self.post_to_channel(message, channel_id=self.critical_channel_id)
     # ── New category-specific helpers (Apr 8 2026 channel split) ──────────
 
     def post_to_scans(self, message: str) -> str:

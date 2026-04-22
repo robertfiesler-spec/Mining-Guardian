@@ -911,7 +911,7 @@ class MiningGuardian:
                 notes=f"All boards recovered. Pre/post logs saved. Recovered: {recovered_idx}"
             )
             try:
-                self.slack.post_to_alerts_channel(msg)
+                self.slack.post_to_scans(msg)
             except Exception as e:
                 logger.warning("[%s] Slack notification failed: %s", miner_id, e)
 
@@ -1169,7 +1169,7 @@ class MiningGuardian:
             f"Physical inspection and board replacement needed."
         )
         try:
-            self.slack.post_to_alerts_channel(slack_msg)
+            self.slack.post_to_critical_channel(slack_msg)
         except Exception as e:
             logger.warning("[%s] Slack escalation alert failed: %s", miner_id, e)
 
@@ -1683,7 +1683,7 @@ class MiningGuardian:
 
                 # Slack alert
                 try:
-                    self.slack.post_to_alerts_channel(
+                    self.slack.post_to_critical_channel(
                         f"🔴 *Offline after PDU cycle — physical inspection required*\n"
                         f"  `{ip}` ({model})\n"
                         f"  Ticket #{ticket_id} created.\n"
