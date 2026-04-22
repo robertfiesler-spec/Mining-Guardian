@@ -298,6 +298,10 @@ def _predict_miner(miner_id: str, ip: str, model: str,
 
     # ── Signal 15: PSU voltage degradation (chain_readings voltage trend) ────
     s, sig = _check_psu_voltage_degradation(miner_id, ip)
+
+    # ── Signal 16: High offline/restart frequency (miner_restarts pattern) ───
+    s, sig = _check_high_offline_frequency(miner_id, ip)
+    if sig: signals.append(sig); scores.append(s)
     if sig: signals.append(sig); scores.append(s)
     if sig: signals.append(sig); scores.append(s)
 
@@ -767,6 +771,122 @@ def _check_psu_voltage_degradation(miner_id: str, ip: str) -> Tuple[float, Optio
 
     if score > 0 and signals_parts:
         return score, f"PSU voltage: {'; '.join(signals_parts)}"
+    return 0.0, None
+
+
+def _check_high_offline_frequency(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
+    """Signal 16: High offline/restart frequency pattern.
+
+    Detects miners that frequently go offline or require restarts, indicating:
+    1. Unstable hardware (failing PSU, loose connections)
+    2. Firmware issues requiring repeated remediation
+    3. Environmental problems (heat cycling, power fluctuations)
+
+    IMPORTANT: This signal is COMPLEMENTARY to the ticket system:
+    - Ticket system triggers on 3+ FAILURE outcomes (miner already broken)
+    - This signal detects INSTABILITY before failures accumulate
+    - Miners with existing tickets (in known_dead_boards) are SKIPPED
+    
+    Miners with high restart frequency often fail completely soon after,
+    even if individual restarts succeed.
+    """
+    conn = get_db()
+    try:
+        # FIRST: Skip miners that already have tickets/are suppressed
+        # These are handled by the ticket system, not the predictor
+        suppressed = conn.execute("""
+            SELECT 1 FROM known_dead_boards 
+            WHERE miner_id=? AND ticket_created=1
+            LIMIT 1
+        """, (miner_id,)).fetchone()
+        
+        if suppressed:
+            return 0.0, None  # Already ticketed, skip
+        
+        # Get restart history from miner_restarts
+        rows = conn.execute("""
+            SELECT restarted_at, restart_type, outcome
+            FROM miner_restarts
+            WHERE miner_id=?
+            ORDER BY restarted_at DESC
+            LIMIT 50
+        """, (miner_id,)).fetchall()
+    except Exception:
+        return 0.0, None
+    finally:
+        conn.close()
+
+    if len(rows) < 2:
+        return 0.0, None
+
+    # Parse timestamps
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    
+    restarts_7d = 0
+    restarts_24h = 0
+    restarts_total = len(rows)
+    failures = 0
+    successes = 0
+    
+    for r in rows:
+        try:
+            ts_str = r["restarted_at"]
+            # Handle ISO format with or without timezone
+            ts = datetime.fromisoformat(ts_str.replace("Z", "").split("+")[0])
+            age = now - ts
+            
+            if age <= timedelta(days=7):
+                restarts_7d += 1
+            if age <= timedelta(hours=24):
+                restarts_24h += 1
+            
+            # Count outcomes
+            outcome = r["outcome"]
+            if outcome:
+                if outcome.upper() in ("FAILURE", "FAILED", "NO_RECOVERY"):
+                    failures += 1
+                elif outcome.upper() in ("SUCCESS", "PARTIAL"):
+                    successes += 1
+        except Exception:
+            continue
+
+    # If this miner has 2+ failures already, ticket system will handle it
+    # We focus on miners that SUCCEED but still restart too often
+    if failures >= 2:
+        return 0.0, None  # Let ticket system handle it at 3 failures
+
+    signals_parts = []
+    score = 0.0
+
+    # Check 1: Multiple restarts in 24 hours (very concerning even if succeeding)
+    if restarts_24h >= 3:
+        score = max(score, 70.0 + (restarts_24h - 3) * 5.0)
+        signals_parts.append(f"{restarts_24h} restarts in 24h (unstable)")
+    elif restarts_24h >= 2:
+        score = max(score, 50.0)
+        signals_parts.append(f"{restarts_24h} restarts in 24h")
+
+    # Check 2: High restart frequency over 7 days (chronic instability)
+    if restarts_7d >= 5:
+        week_score = min(75.0, 45.0 + (restarts_7d - 5) * 6.0)
+        score = max(score, week_score)
+        signals_parts.append(f"{restarts_7d} restarts in 7 days")
+    elif restarts_7d >= 3:
+        week_score = 35.0 + (restarts_7d - 3) * 5.0
+        score = max(score, week_score)
+        signals_parts.append(f"{restarts_7d} restarts in 7 days")
+
+    # Check 3: Many total restarts despite recovering (chronic problem)
+    # This catches miners like 64345 with 8 restarts but no failures
+    if restarts_total >= 6 and successes >= 4:
+        chronic_score = min(65.0, 40.0 + (restarts_total - 6) * 4.0)
+        if chronic_score > score * 0.7:
+            score = max(score, chronic_score)
+            signals_parts.append(f"{restarts_total} total restarts ({successes} recovered)")
+
+    if score > 0 and signals_parts:
+        return min(score, 90.0), f"offline frequency: {'; '.join(signals_parts)}"
     return 0.0, None
 
 
