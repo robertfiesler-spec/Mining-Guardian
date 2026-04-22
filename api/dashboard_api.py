@@ -1533,6 +1533,23 @@ def trends_temperatures(request: Request, hours: int = 24):
     finally:
         conn.close()
 
+@app.get("/predictions/eta")
+@limiter.limit("10/minute")
+def predictions_eta(request: Request):
+    """Get predictive failure ETA for all at-risk miners."""
+    from ai.predictive_eta import get_fleet_eta_ranking
+    return get_fleet_eta_ranking()
+
+
+@app.get("/predictions/eta/{ip_or_id}")
+@limiter.limit("30/minute")
+def predictions_eta_miner(request: Request, ip_or_id: str):
+    """Get predictive failure ETA for a specific miner."""
+    from ai.predictive_eta import get_eta_for_miner
+    return get_eta_for_miner(ip_or_id)
+
+
+
 
 @app.get("/charts/environment", response_class=HTMLResponse)
 def environment_chart():

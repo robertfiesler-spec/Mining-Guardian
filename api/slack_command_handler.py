@@ -549,6 +549,38 @@ class CommandHandler:
         )
         self.cmd_ask_llm(channel, thread_ts, prompt)
 
+
+    def cmd_eta(self, channel, thread_ts, ip_or_id: str = None):
+        """Predictive failure ETA - when will miners likely fail."""
+        try:
+            from ai.predictive_eta import format_eta_report, get_eta_for_miner
+            
+            if ip_or_id:
+                # Specific miner
+                eta = get_eta_for_miner(ip_or_id)
+                if "error" in eta:
+                    self._reply(channel, thread_ts, f"⚠️ {eta['error']}")
+                    return
+                
+                emoji = {"Critical": "🔴", "High": "🟠", "Medium": "🟡", "Low": "🟢", "Healthy": "✅"}.get(eta["risk_level"], "❓")
+                factors_str = "\n    • ".join(eta["factors"]) if eta["factors"] else "No concerning factors"
+                
+                msg = (
+                    f"⏰ *Predictive ETA: `{eta['ip']}`*\n"
+                    f"{emoji} Risk Level: *{eta['risk_level']}*\n"
+                    f"ETA: {eta['eta_label']} ({eta['confidence']} confidence)\n"
+                    f"Restarts: {eta['restarts_24h']} (24h) / {eta['restarts_7d']} (7d) / {eta['failures_30d']} failures\n"
+                    f"\n*Factors:*\n    • {factors_str}"
+                )
+            else:
+                # Fleet overview
+                msg = format_eta_report()
+            
+            self._reply(channel, thread_ts, msg)
+        except Exception as e:
+            logger.exception("cmd_eta failed")
+            self._reply(channel, thread_ts, f"ETA analysis failed: {e}")
+
     def cmd_audit(self, channel, thread_ts):
         """Show recent audit log entries."""
         conn = self._get_db()
@@ -615,6 +647,9 @@ class CommandHandler:
         # Strip bot mention if present
         if BOT_USER_ID:
             text = re.sub(f"<@{BOT_USER_ID}>", "", text).strip()
+        # Strip Slack metadata like "*Sent using* Claude"
+        text = re.sub(r"[\n ]\*Sent using\*.*", "", text).strip()
+        text = text.split("\n")[0].strip()  # Take only first line
 
         lower = text.lower()
 
@@ -646,6 +681,11 @@ class CommandHandler:
             self.cmd_overnight_report(channel, thread_ts)
         elif lower in ("predict", "predictions", "who's next", "which miner will fail"):
             self.cmd_predict(channel, thread_ts)
+        elif lower in ("eta", "/eta", "failure eta", "when will it fail"):
+            self.cmd_eta(channel, thread_ts)
+        elif lower.startswith(("eta ", "/eta ")):
+            ip = lower.split(" ", 1)[1].strip()
+            self.cmd_eta(channel, thread_ts, ip)
         elif lower in ("audit", "recent actions", "what was done"):
             self.cmd_audit(channel, thread_ts)
         elif lower in ("help", "/help", "commands"):
