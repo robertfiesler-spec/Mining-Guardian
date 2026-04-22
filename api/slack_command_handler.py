@@ -45,7 +45,17 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "clients")]:
         sys.path.insert(0, _p)
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-CHANNEL_ID = "C0AQ8SE1448"
+# All Mining Guardian channels to listen for commands
+CHANNEL_IDS = [
+    "C0AQ8SE1448",   # mining-guardian (primary)
+    "C0ARLJUJ3BQ",   # mg-scans
+    "C0ARSB1U604",   # mg-ai-reports
+    "C0AR79YRZ9V",   # mg-approvals
+    "C0ARJP300J0",   # mining-guardian-alerts
+    "C0ASH2CPHBJ",   # mg-logs
+    "C0AUX8DNGTB",   # mg-critical
+]
+CHANNEL_ID = CHANNEL_IDS[0]  # Default for backwards compat
 DB_PATH = str(_ROOT / "guardian.db")
 OLLAMA_URL = "http://localhost:11434/api/generate"
 POLL_INTERVAL = 5
@@ -758,55 +768,67 @@ class CommandHandler:
             self.cmd_ask_llm(channel, thread_ts, text)
 
     def run(self):
-        """Main loop — poll for new messages in #mining-guardian."""
-        logger.info("Command Handler started — watching #mining-guardian")
-        logger.info("Commands: status, miner <ip>, hot, dead, knowledge, btc, or ask anything")
+        """Main loop — poll for new messages in all Mining Guardian channels."""
+        logger.info("Command Handler started — watching %d channels", len(CHANNEL_IDS))
+        logger.info("Channels: %s", ", ".join(CHANNEL_IDS))
+        logger.info("Commands: help, status, miner <ip>, hot, dead, knowledge, btc, cost, eta, compare, or ask anything")
 
-        # Get latest message timestamp as starting point
-        try:
-            resp = self.client.conversations_history(channel=CHANNEL_ID, limit=1)
-            msgs = resp.get("messages", [])
-            if msgs:
-                self.last_ts = msgs[0]["ts"]
-                logger.info("Starting after latest message ts: %s", self.last_ts)
-            else:
-                self.last_ts = str(time.time())
-                logger.info("No messages found, starting from now")
-        except Exception as e:
-            self.last_ts = str(time.time())
-            logger.error("Could not read channel history: %s", e)
-            logger.error("Check that bot has groups:history scope for private channels")
+        # Track last_ts per channel
+        self.channel_last_ts = {}
+        
+        # Get latest message timestamp for each channel as starting point
+        for ch_id in CHANNEL_IDS:
+            try:
+                resp = self.client.conversations_history(channel=ch_id, limit=1)
+                msgs = resp.get("messages", [])
+                if msgs:
+                    self.channel_last_ts[ch_id] = msgs[0]["ts"]
+                else:
+                    self.channel_last_ts[ch_id] = str(time.time())
+            except Exception as e:
+                self.channel_last_ts[ch_id] = str(time.time())
+                logger.warning("Could not read history for %s: %s", ch_id, e)
+        
+        logger.info("Initialized timestamps for %d channels", len(self.channel_last_ts))
 
         while True:
             try:
-                resp = self.client.conversations_history(
-                    channel=CHANNEL_ID, oldest=self.last_ts, limit=10)
-                messages = resp.get("messages", [])
-                if messages:
-                    logger.info("Poll returned %d messages (oldest_ts=%s)", len(messages), self.last_ts)
+                # Poll each channel
+                for ch_id in CHANNEL_IDS:
+                    try:
+                        last_ts = self.channel_last_ts.get(ch_id, "0")
+                        resp = self.client.conversations_history(
+                            channel=ch_id, oldest=last_ts, limit=10)
+                        messages = resp.get("messages", [])
 
-                # Process oldest first
-                for msg in sorted(messages, key=lambda m: float(m.get("ts", "0"))):
-                    ts = msg.get("ts", "")
-                    if ts in self.processed or ts == self.last_ts:
-                        continue
-                    self._mark_processed(ts)
-                    self.last_ts = ts
+                        # Process oldest first
+                        for msg in sorted(messages, key=lambda m: float(m.get("ts", "0"))):
+                            ts = msg.get("ts", "")
+                            if ts in self.processed or ts == last_ts:
+                                continue
+                            self._mark_processed(ts)
+                            self.channel_last_ts[ch_id] = ts
 
-                    # Skip bot messages
-                    if msg.get("subtype") or msg.get("bot_id"):
-                        continue
+                            # Skip bot messages
+                            if msg.get("subtype") or msg.get("bot_id"):
+                                continue
 
-                    text = msg.get("text", "").strip()
-                    user = msg.get("user", "?")
-                    logger.info("Message from %s: '%s'", user, text[:80])
-                    self._handle_message(msg)
+                            text = msg.get("text", "").strip()
+                            if not text:
+                                continue
+
+                            # Inject channel into message for routing
+                            msg["channel"] = ch_id
+                            logger.info("Processing message in %s: %s", ch_id, text[:50])
+                            self._handle_message(msg)
+
+                    except Exception as e:
+                        logger.warning("Error polling channel %s: %s", ch_id, e)
 
             except Exception as e:
-                logger.error("Poll error: %s", e)
+                logger.error("Error in poll loop: %s", e)
 
             time.sleep(POLL_INTERVAL)
-
 
 if __name__ == "__main__":
     print("=" * 50)
