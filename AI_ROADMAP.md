@@ -40,6 +40,35 @@ Overnight automation runs 8pm–6am. LOW-risk actions execute without approval. 
 - "always wait 20 minutes after a power cycle to make changes"
 ---
 
+## Recent Feature Completions (2026-04-22)
+
+### Field Intelligence Pipeline — Layer 2 SHIPPED ✅ COMPLETED
+
+**Status:** LIVE. First real archive processed end-to-end: 14,178 rows in 0.45 seconds.
+
+**What Was Built:**
+Two-tier model resolver that links every field-log row to a catalog model. The monolithic single-table design was replaced with a Tier-1 (unambiguous, unique) + Tier-2 (hashrate-disambiguated families) architecture after discovering that WhatsMiner V-codes legitimately map to model families rather than single variants.
+
+**Architecture:**
+- **Tier 1** = `hardware.model_aliases` — `UNIQUE(alias_normalized)`, 1:1 authoritative. **12,852 seed rows** covering canonical slugs, parenthetical qualifiers, all 15 V-code variants (V10-V100, VE30-VE80, VK10-VK30), retailer SKUs
+- **Tier 2** = `mg.model_family_aliases` — `candidate_model_ids UUID[]` + `candidate_hashrates_ths NUMERIC[]`. **1,494 seed rows**. Resolver picks nearest hashrate bin (no tolerance), ties break to lower-rated variant
+- **Fallback** = `mg.unresolved_models` — manual GUI triage queue. No guessing
+- **`mg.import_runs`** = per-archive status tracker (ok/failed/partial/skipped), powers SSE progress + `/api/resolver-summary`
+
+**Resolver pipeline** (`clients/resolver.py`, 445 lines): normalize → Tier-1 exact → Tier-2 family+hashrate → V-code introspection on both `miner_type` AND `control_board_version` → fallback.
+
+**v3.3 import tool API surface:**
+- `POST /api/import-files-stream` — SSE batch import with per-archive error isolation + sha256 dedup
+- `GET /api/resolver-summary` — Tier-1/Tier-2/unresolved coverage
+- `GET /api/unresolved-sample?limit=N` — triage queue peek
+- `POST /api/cancel-batch` — cooperative cancel
+
+277 tests passing. See `intelligence-catalog/FIELD_INTELLIGENCE_PIPELINE.md` for full design + schema. See `docs/SESSION_LOG_2026-04-22.md` for shipping narrative.
+
+**Next:** 83-archive mass import tomorrow, target ≥95% auto-resolve coverage.
+
+---
+
 ## Recent Feature Completions (2026-04-15)
 
 ### Intelligence Catalog Integration + Miner Intelligence Report Generator ✅ COMPLETED
@@ -310,6 +339,9 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ## Build Queue (Current Priority Order)
 
 ### P0 — Immediate (this week)
+
+0. **Field Intelligence Pipeline — Layer 2 rollout** — SHIPPED 2026-04-22 ✅
+   Two-tier resolver (12,852 Tier-1 + 1,494 Tier-2 aliases) live in Postgres; v3.3 import tool ready for tomorrow's 83-archive mass import. Then: SQLite → Postgres Phase 2 migration (Phase 1 split completed 2026-04-22 afternoon). See `NEXT_SESSION.md`.
 
 1. **Wire OpenClaw to `guardian.db` via guardian-db skill**
    Unblock the skill auto-discovery issue. 2hr time budget on the skill-loading investigation. This is the top priority because OpenClaw is the conversational brain of the product and without it, the LLM can't answer real-time operator questions with live fleet data.
