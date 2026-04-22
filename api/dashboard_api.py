@@ -1551,6 +1551,34 @@ def predictions_eta_miner(request: Request, ip_or_id: str):
 
 
 
+
+# ── Fleet Comparison API (Apr 22 2026) ───────────────────────────────────────
+
+@app.get("/fleet/comparison")
+@limiter.limit("10/minute")
+def fleet_comparison(request: Request):
+    """Compare all miner models by performance metrics."""
+    from fleet_comparison import get_model_comparison
+    electricity_rate = float(os.getenv("ELECTRICITY_RATE_KWH", "0.042"))
+    return get_model_comparison(electricity_rate)
+
+
+@app.get("/fleet/comparison/{model_name}")
+@limiter.limit("30/minute")
+def fleet_comparison_model(request: Request, model_name: str):
+    """Get detailed stats for a specific model."""
+    from fleet_comparison import get_model_detail
+    return get_model_detail(model_name)
+
+
+@app.get("/fleet/efficiency_ranking")
+@limiter.limit("10/minute")
+def fleet_efficiency_ranking(request: Request, limit: int = 50):
+    """Rank all miners by efficiency (J/TH, lower is better)."""
+    from fleet_comparison import get_efficiency_ranking
+    return get_efficiency_ranking()[:min(limit, 100)]
+
+
 @app.get("/charts/environment", response_class=HTMLResponse)
 def environment_chart():
     """Standalone HTML line chart — outside temp, supply/return water, humidity."""

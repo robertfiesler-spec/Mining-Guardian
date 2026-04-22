@@ -581,6 +581,47 @@ class CommandHandler:
             logger.exception("cmd_eta failed")
             self._reply(channel, thread_ts, f"ETA analysis failed: {e}")
 
+
+    def cmd_compare(self, channel, thread_ts, model_name: str = None):
+        """Fleet model comparison - compare performance by model."""
+        try:
+            from fleet_comparison import format_comparison_report, format_efficiency_ranking, get_model_detail
+            
+            if model_name:
+                # Specific model detail
+                detail = get_model_detail(model_name)
+                if "error" in detail:
+                    self._reply(channel, thread_ts, f"⚠️ {detail['error']}")
+                    return
+                
+                lines = [f"📊 *Model Detail: {detail['model']}*"]
+                lines.append(f"Miners: {detail['online_count']}/{detail['miner_count']} online")
+                lines.append(f"Total: {detail['total_hashrate_ths']:.1f} TH/s @ {detail['total_power_kw']:.1f} kW")
+                lines.append(f"Average: {detail['avg_hashrate_ths']:.1f} TH/s @ {detail['avg_power_w']:.0f}W")
+                lines.append("\n*Individual Miners:*")
+                for m in detail['miners'][:10]:
+                    status = "✅" if m['status'] == 'online' else "❌"
+                    lines.append(f"  {status} `{m['ip']}` — {m['hashrate_ths']:.1f} TH/s | {m['efficiency_jth']:.1f} J/TH")
+                msg = "\n".join(lines)
+            else:
+                # Fleet comparison
+                msg = format_comparison_report()
+            
+            self._reply(channel, thread_ts, msg)
+        except Exception as e:
+            logger.exception("cmd_compare failed")
+            self._reply(channel, thread_ts, f"Comparison failed: {e}")
+
+    def cmd_efficient(self, channel, thread_ts):
+        """Show most efficient miners ranked by J/TH."""
+        try:
+            from fleet_comparison import format_efficiency_ranking
+            msg = format_efficiency_ranking(top_n=10)
+            self._reply(channel, thread_ts, msg)
+        except Exception as e:
+            logger.exception("cmd_efficient failed")
+            self._reply(channel, thread_ts, f"Efficiency ranking failed: {e}")
+
     def cmd_audit(self, channel, thread_ts):
         """Show recent audit log entries."""
         conn = self._get_db()
@@ -686,6 +727,13 @@ class CommandHandler:
         elif lower.startswith(("eta ", "/eta ")):
             ip = lower.split(" ", 1)[1].strip()
             self.cmd_eta(channel, thread_ts, ip)
+        elif lower in ("compare", "/compare", "models", "comparison"):
+            self.cmd_compare(channel, thread_ts)
+        elif lower.startswith(("compare ", "/compare ")):
+            model = text.split(" ", 1)[1].strip()
+            self.cmd_compare(channel, thread_ts, model)
+        elif lower in ("efficient", "/efficient", "efficiency", "best miners"):
+            self.cmd_efficient(channel, thread_ts)
         elif lower in ("audit", "recent actions", "what was done"):
             self.cmd_audit(channel, thread_ts)
         elif lower in ("help", "/help", "commands"):
