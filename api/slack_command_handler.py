@@ -650,6 +650,19 @@ class CommandHandler:
                         f"by {r['approved_by'] or 'auto'} @ {r['timestamp'][5:16]}")
         self._reply(channel, thread_ts, "\n".join(lines))
 
+
+    def cmd_maintenance(self, channel, thread_ts, args=""):
+        """Maintenance schedule commands."""
+        try:
+            from api.maintenance_scheduler import cmd_maintenance as maint_cmd
+            response = maint_cmd(args)
+            self._reply(channel, thread_ts, response)
+        except ImportError as e:
+            self._reply(channel, thread_ts, f":x: Maintenance module not available: {e}")
+        except Exception as e:
+            logger.error("Maintenance command error: %s", e)
+            self._reply(channel, thread_ts, f":x: Error: {e}")
+
     def cmd_help(self, channel, thread_ts):
         """List all available commands."""
         lines = [
@@ -692,6 +705,11 @@ class CommandHandler:
             "",
             "*📱 Mobile Dashboard:*",
             "  Visit: `dashboard.fieslerfamily.com/mobile/v2`",
+            "",
+            "*:calendar: Maintenance:*",
+            "  maintenance - show active/upcoming",
+            "  maintenance all - show history",
+            "  maintenance cancel N - cancel",
         ]
         self._reply(channel, thread_ts, "\n".join(lines))
 
@@ -762,6 +780,11 @@ class CommandHandler:
             self.cmd_efficient(channel, thread_ts)
         elif lower in ("audit", "recent actions", "what was done"):
             self.cmd_audit(channel, thread_ts)
+        elif lower in ("maintenance", "/maintenance", "maint", "schedule"):
+            self.cmd_maintenance(channel, thread_ts)
+        elif lower.startswith(("maintenance ", "/maintenance ", "maint ")):
+            args = lower.split(" ", 1)[1] if " " in lower else ""
+            self.cmd_maintenance(channel, thread_ts, args)
         elif lower in ("help", "/help", "commands"):
             self.cmd_help(channel, thread_ts)
         else:
