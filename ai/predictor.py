@@ -295,6 +295,10 @@ def _predict_miner(miner_id: str, ip: str, model: str,
 
     # ── Signal 14: ASIC OK ratio decline (miner_ams_extended) ────────────────
     s, sig = _check_asic_ok_ratio(miner_id, ip)
+
+    # ── Signal 15: PSU voltage degradation (chain_readings voltage trend) ────
+    s, sig = _check_psu_voltage_degradation(miner_id, ip)
+    if sig: signals.append(sig); scores.append(s)
     if sig: signals.append(sig); scores.append(s)
 
     if not signals:
@@ -653,6 +657,116 @@ def _check_asic_ok_ratio(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
 
     if score > 0 and signals_parts:
         return score, f"ASIC health: {'; '.join(signals_parts)}"
+    return 0.0, None
+
+
+def _check_psu_voltage_degradation(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
+    """Signal 15: PSU voltage degradation from chain_readings.
+
+    Detects PSU issues by looking for:
+    1. Voltage dropping below safe threshold (<12.5V is concerning)
+    2. Voltage declining trend over time (>2% drop in recent readings)
+    3. Voltage variance between boards (>0.5V spread is unusual)
+    
+    PSU degradation often precedes complete failure, causing hash drops,
+    board disconnects, or full miner shutdown.
+    """
+    conn = get_db()
+    try:
+        # Get voltage readings from last 24 hours
+        rows = conn.execute("""
+            SELECT board_index, voltage, scanned_at
+            FROM chain_readings
+            WHERE miner_id=? AND voltage IS NOT NULL AND voltage > 0
+            ORDER BY scanned_at DESC
+            LIMIT 100
+        """, (miner_id,)).fetchall()
+    except Exception:
+        return 0.0, None
+    finally:
+        conn.close()
+
+    if len(rows) < 3:
+        return 0.0, None
+
+    # Group by timestamp to get per-scan readings
+    by_ts: dict = {}
+    for r in rows:
+        ts = r["scanned_at"]
+        bi = r["board_index"] if r["board_index"] is not None else 0
+        v = float(r["voltage"])
+        if ts not in by_ts:
+            by_ts[ts] = {}
+        by_ts[ts][bi] = v
+
+    if not by_ts:
+        return 0.0, None
+
+    signals_parts = []
+    score = 0.0
+
+    # Get latest reading
+    latest_ts = max(by_ts.keys())
+    latest_voltages = by_ts[latest_ts]
+    
+    if not latest_voltages:
+        return 0.0, None
+
+    avg_voltage = sum(latest_voltages.values()) / len(latest_voltages)
+    min_voltage = min(latest_voltages.values())
+    max_voltage = max(latest_voltages.values())
+    voltage_spread = max_voltage - min_voltage
+
+    # Check 1: Absolute low voltage (below 12.5V is concerning)
+    LOW_VOLTAGE_THRESHOLD = 12.5
+    CRITICAL_VOLTAGE_THRESHOLD = 12.0
+    
+    if min_voltage < CRITICAL_VOLTAGE_THRESHOLD:
+        score = max(score, 80.0)
+        signals_parts.append(f"critical voltage: {min_voltage:.2f}V (< {CRITICAL_VOLTAGE_THRESHOLD}V)")
+    elif min_voltage < LOW_VOLTAGE_THRESHOLD:
+        score = max(score, 55.0 + (LOW_VOLTAGE_THRESHOLD - min_voltage) * 20.0)
+        signals_parts.append(f"low voltage: {min_voltage:.2f}V (< {LOW_VOLTAGE_THRESHOLD}V)")
+
+    # Check 2: Voltage spread between boards (>0.5V is unusual)
+    SPREAD_THRESHOLD = 0.5
+    if voltage_spread > SPREAD_THRESHOLD and len(latest_voltages) > 1:
+        spread_score = min(60.0, 40.0 + (voltage_spread - SPREAD_THRESHOLD) * 40.0)
+        score = max(score, spread_score)
+        signals_parts.append(
+            f"voltage spread: {voltage_spread:.2f}V across boards "
+            f"({min_voltage:.2f}V to {max_voltage:.2f}V)"
+        )
+
+    # Check 3: Voltage declining trend over time
+    if len(by_ts) >= 3:
+        # Compute average voltage per scan, ordered by time
+        ts_sorted = sorted(by_ts.keys())
+        avg_per_ts = []
+        for ts in ts_sorted:
+            voltages = list(by_ts[ts].values())
+            if voltages:
+                avg_per_ts.append((ts, sum(voltages) / len(voltages)))
+
+        if len(avg_per_ts) >= 3:
+            # Compare first 3 vs last 3 readings
+            early_avg = sum(v for _, v in avg_per_ts[:3]) / 3
+            recent_avg = sum(v for _, v in avg_per_ts[-3:]) / 3
+
+            if early_avg > 0:
+                decline_pct = ((early_avg - recent_avg) / early_avg) * 100
+
+                # >2% decline is concerning, >5% is serious
+                if decline_pct > 2.0:
+                    decline_score = min(75.0, 45.0 + decline_pct * 6.0)
+                    score = max(score, decline_score)
+                    signals_parts.append(
+                        f"voltage declining: {early_avg:.2f}V -> {recent_avg:.2f}V "
+                        f"({decline_pct:.1f}% drop)"
+                    )
+
+    if score > 0 and signals_parts:
+        return score, f"PSU voltage: {'; '.join(signals_parts)}"
     return 0.0, None
 
 
