@@ -1427,6 +1427,75 @@ def llm_history(limit: int = 10):
 
 # ── Environment Chart (standalone HTML) ───────────────────────
 
+
+# ── Trend Visualization API (Apr 22 2026) ────────────────────────────────────
+
+@app.get("/trends/fleet")
+@limiter.limit("30/minute")
+def trends_fleet(request: Request, hours: int = 24):
+    """Fleet-wide trends: hashrate, power, efficiency, temps over time."""
+    hours = min(max(hours, 1), 720)  # 1 hour to 30 days
+    from trends_api import get_fleet_trends
+    conn = get_db()
+    try:
+        return get_fleet_trends(conn, hours)
+    finally:
+        conn.close()
+
+
+@app.get("/trends/miner/{miner_id}")
+@limiter.limit("30/minute")
+def trends_miner(request: Request, miner_id: str, hours: int = 24):
+    """Single miner trend data for degradation tracking."""
+    hours = min(max(hours, 1), 720)
+    from trends_api import get_miner_trend
+    conn = get_db()
+    try:
+        return get_miner_trend(conn, miner_id, hours)
+    finally:
+        conn.close()
+
+
+@app.get("/trends/degradation")
+@limiter.limit("10/minute")
+def trends_degradation(request: Request, days: int = 7):
+    """Rank miners by performance degradation over time."""
+    days = min(max(days, 1), 30)
+    from trends_api import get_degradation_ranking
+    conn = get_db()
+    try:
+        return get_degradation_ranking(conn, days)
+    finally:
+        conn.close()
+
+
+@app.get("/trends/profitability")
+@limiter.limit("10/minute")
+def trends_profitability(request: Request, hours: int = 168):
+    """Profitability trend over time (default: 7 days)."""
+    hours = min(max(hours, 1), 720)
+    from trends_api import get_profitability_trend
+    electricity_rate = float(os.getenv("ELECTRICITY_RATE_KWH", "0.042"))
+    conn = get_db()
+    try:
+        return get_profitability_trend(conn, electricity_rate, hours)
+    finally:
+        conn.close()
+
+
+@app.get("/trends/temperatures")
+@limiter.limit("30/minute")
+def trends_temperatures(request: Request, hours: int = 24):
+    """Temperature trends with HVAC correlation."""
+    hours = min(max(hours, 1), 720)
+    from trends_api import get_temperature_trends
+    conn = get_db()
+    try:
+        return get_temperature_trends(conn, hours)
+    finally:
+        conn.close()
+
+
 @app.get("/charts/environment", response_class=HTMLResponse)
 def environment_chart():
     """Standalone HTML line chart — outside temp, supply/return water, humidity."""
