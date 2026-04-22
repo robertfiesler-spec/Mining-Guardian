@@ -10,6 +10,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+# Import the database router for split database support
+from core.database_router import get_router, get_connection, TABLE_ROUTING
+
 # Import hashrate evaluation utilities
 try:
     from hashrate_evaluation import parse_bixbit_profile
@@ -23,9 +26,15 @@ class GuardianDB:
 
     def __init__(self, db_path: str = "guardian.db"):
         self.db_path = db_path
+        self._router = get_router()
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect(self, table_name: str = "scans") -> sqlite3.Connection:
+        """Get connection for the database containing the specified table."""
+        return self._router.connection(table_name)
+    
+    def _connect_legacy(self) -> sqlite3.Connection:
+        """Legacy connection method - connects to guardian.db directly."""
         conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('PRAGMA journal_mode=WAL')
         conn.execute('PRAGMA busy_timeout=30000')
@@ -34,13 +43,13 @@ class GuardianDB:
 
     def _latest_scan_id(self) -> Optional[int]:
         """Get the latest scan ID. Returns None if no scans exist."""
-        with self._connect() as conn:
+        with self._connect('scans') as conn:
             row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
             return row["id"] if row else None
 
     def _init_db(self) -> None:
         """Create tables if they don't exist."""
-        with self._connect() as conn:
+        with self._connect('scans') as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS scans (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -435,7 +444,7 @@ class GuardianDB:
             so the thread_ts and problem stay current without creating duplicates
         """
         now  = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('pending_approvals') as conn:
             for i in issues:
                 if i["action"] not in ("PDU_CYCLE", "RESTART", "RESTART_CHECK_BOARDS", "POWER_PROFILE_UP", "PREEMPTIVE_RESTART", "ECO_MODE", "MONITOR_CLOSE"):
                     continue
@@ -498,7 +507,7 @@ class GuardianDB:
         This prevents the queue from growing unboundedly across scans.
         """
         cutoff = (datetime.now() - timedelta(minutes=max_age_minutes)).isoformat()
-        with self._connect() as conn:
+        with self._connect('pending_approvals') as conn:
             expired = conn.execute(
                 "SELECT id, miner_id, ip, action_type FROM pending_approvals "
                 "WHERE status='PENDING' AND created_at < ?",
@@ -541,7 +550,7 @@ class GuardianDB:
         decision should be 'APPROVED' or 'DENIED'.
         """
         now  = datetime.now()
-        with self._connect() as conn:
+        with self._connect('action_audit_log') as conn:
             conn.execute(
                 "INSERT INTO action_audit_log "
                 "(timestamp, date, scan_id, miner_id, ip, model, "
@@ -569,7 +578,7 @@ class GuardianDB:
             params.append(miner_id)
         query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
-        with self._connect() as conn:
+        with self._connect('action_audit_log') as conn:
             rows = conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
 
@@ -591,7 +600,7 @@ class GuardianDB:
                 params.get("minerIp"),
                 json.dumps(n),
             ))
-        with self._connect() as conn:
+        with self._connect('ams_notifications') as conn:
             conn.executemany(
                 "INSERT INTO ams_notifications "
                 "(recorded_at, notification_id, device_id, type, key, "
@@ -603,7 +612,7 @@ class GuardianDB:
     def save_weather(self, weather: Dict[str, Any]) -> None:
         """Store a weather reading alongside scan data."""
         now = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('weather_readings') as conn:
             conn.execute(
                 "INSERT INTO weather_readings "
                 "(recorded_at, temp_f, humidity_pct, feels_like_f, "
@@ -624,7 +633,7 @@ class GuardianDB:
         if hvac is None:
             return
         now = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('hvac_readings') as conn:
             conn.execute(
                 "INSERT INTO hvac_readings "
                 "(recorded_at, supply_temp_f, return_temp_f, delta_t_f, "
@@ -701,7 +710,7 @@ class GuardianDB:
         """
         known = set()
         try:
-            with self._connect() as conn:
+            with self._connect('discovery_log') as conn:
                 rows = conn.execute(
                     "SELECT DISTINCT firmware_version FROM discovery_log "
                     "WHERE discovery_type = 'new_firmware' AND firmware_version IS NOT NULL"
@@ -732,7 +741,7 @@ class GuardianDB:
         board_count = len(chains)
         chip_count = chains[0].get("chips", 0) if chains else None
 
-        with self._connect() as conn:
+        with self._connect('discovery_log') as conn:
             if discovery_type == "new_model":
                 existing = conn.execute(
                     "SELECT id FROM discovery_log "
@@ -782,7 +791,7 @@ class GuardianDB:
 
     def get_discoveries(self, acknowledged: Optional[int] = None) -> List[Dict]:
         """Return discovery_log entries, optionally filtered by acknowledged status."""
-        with self._connect() as conn:
+        with self._connect('discovery_log') as conn:
             if acknowledged is not None:
                 rows = conn.execute(
                     "SELECT * FROM discovery_log WHERE acknowledged = ? "
@@ -800,7 +809,7 @@ class GuardianDB:
 
         Returns True if a row was updated, False if id not found.
         """
-        with self._connect() as conn:
+        with self._connect('discovery_log') as conn:
             params = [level, discovery_id]
             sql = "UPDATE discovery_log SET acknowledged = ?"
             if notes is not None:
@@ -816,7 +825,7 @@ class GuardianDB:
         online   = sum(1 for m in miners if m.get("status") == "online")
         offline  = len(miners) - online
 
-        with self._connect() as conn:
+        with self._connect('scans') as conn:
             cur = conn.execute(
                 "INSERT INTO scans (scanned_at, total_miners, online, offline, issues) "
                 "VALUES (?, ?, ?, ?, ?)",
@@ -925,7 +934,7 @@ class GuardianDB:
         """
         now = datetime.now().isoformat()
         saved = 0
-        with self._connect() as conn:
+        with self._connect('miner_logs') as conn:
             for filename, content in log_files.items():
                 # Dedup check — skip if this exact file was already stored
                 # under the SAME health_status label. The same physical log file
@@ -959,7 +968,7 @@ class GuardianDB:
         for filename, content in log_files.items():
             if "miner.log" in filename and content:
                 try:
-                    with self._connect() as conn:
+                    with self._connect('miner_logs') as conn:
                         row = conn.execute(
                             "SELECT ip, mac FROM miner_readings WHERE miner_id=? ORDER BY id DESC LIMIT 1",
                             (miner_id,)
@@ -980,7 +989,7 @@ class GuardianDB:
         Scan history and miner_readings are kept permanently for trending.
         """
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        with self._connect() as conn:
+        with self._connect('miner_logs') as conn:
             cur = conn.execute(
                 "DELETE FROM miner_logs WHERE collected_at < ?", (cutoff,)
             )
@@ -991,7 +1000,7 @@ class GuardianDB:
 
     def has_known_dead_boards(self, miner_id: str) -> bool:
         """Check if this miner has unresolved known dead boards (already attempted restart)."""
-        with self._connect() as conn:
+        with self._connect('known_dead_boards') as conn:
             row = conn.execute(
                 "SELECT id FROM known_dead_boards WHERE miner_id = ? AND resolved_at IS NULL AND restart_attempted IS NOT NULL",
                 (miner_id,)
@@ -1004,7 +1013,7 @@ class GuardianDB:
         Sets ticket_created=None so the next scan knows to create an AMS ticket.
         """
         now = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('known_dead_boards') as conn:
             existing = conn.execute(
                 "SELECT id FROM known_dead_boards WHERE miner_id = ? AND resolved_at IS NULL",
                 (miner_id,)
@@ -1026,7 +1035,7 @@ class GuardianDB:
 
     def needs_ticket(self, miner_id: str) -> Optional[dict]:
         """Return dead board record if it needs an AMS ticket created (ticket_created IS NULL)."""
-        with self._connect() as conn:
+        with self._connect('known_dead_boards') as conn:
             row = conn.execute(
                 "SELECT miner_id, ip, model, board_indices, first_seen, restart_result "
                 "FROM known_dead_boards "
@@ -1039,7 +1048,7 @@ class GuardianDB:
     def mark_ticket_created(self, miner_id: str, ticket_id: str = None) -> None:
         """Record that an AMS ticket has been created for this dead board miner."""
         now = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('known_dead_boards') as conn:
             conn.execute(
                 "UPDATE known_dead_boards SET ticket_created=? "
                 "WHERE miner_id=? AND resolved_at IS NULL",
@@ -1057,7 +1066,7 @@ class GuardianDB:
         Now we track ticket_noticed_at separately. Only rows where ticket_noticed_at
         IS NULL are returned — marking them noticed happens immediately after posting.
         """
-        with self._connect() as conn:
+        with self._connect('known_dead_boards') as conn:
             rows = conn.execute(
                 "SELECT miner_id, ip, model, board_indices, ticket_created "
                 "FROM known_dead_boards "
@@ -1071,7 +1080,7 @@ class GuardianDB:
         if not miner_ids:
             return
         now = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('known_dead_boards') as conn:
             for miner_id in miner_ids:
                 conn.execute(
                     "UPDATE known_dead_boards SET ticket_noticed_at=? "
@@ -1082,7 +1091,7 @@ class GuardianDB:
     def resolve_dead_boards(self, miner_id: str):
         """Mark dead boards as resolved (boards recovered after restart or repair)."""
         now = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('known_dead_boards') as conn:
             conn.execute(
                 "UPDATE known_dead_boards SET resolved_at = ? WHERE miner_id = ? AND resolved_at IS NULL",
                 (now, miner_id)
@@ -1104,7 +1113,7 @@ class GuardianDB:
                 ))
         if not rows:
             return
-        with self._connect() as conn:
+        with self._connect('chain_readings') as conn:
             conn.executemany("""
                 INSERT INTO chain_readings
                 (scan_id, scanned_at, miner_id, ip, board_index,
@@ -1133,7 +1142,7 @@ class GuardianDB:
                 ))
         if not rows:
             return
-        with self._connect() as conn:
+        with self._connect('pool_readings') as conn:
             conn.executemany("""
                 INSERT INTO pool_readings
                 (scan_id, scanned_at, miner_id, ip, pool_priority,
@@ -1157,7 +1166,7 @@ class GuardianDB:
             ))
         if not rows:
             return
-        with self._connect() as conn:
+        with self._connect('miner_state_readings') as conn:
             conn.executemany("""
                 INSERT INTO miner_state_readings
                 (scan_id, scanned_at, miner_id, ip,
@@ -1188,7 +1197,7 @@ class GuardianDB:
             ))
         if not rows:
             return
-        with self._connect() as conn:
+        with self._connect('miner_ams_extended') as conn:
             conn.executemany("""
                 INSERT INTO miner_ams_extended
                 (scan_id, scanned_at, miner_id, ip,
@@ -1259,7 +1268,7 @@ class GuardianDB:
             pic_map[int(match.group(1))] = match.group(2)
 
         boards_parsed = 0
-        with self._connect() as conn:
+        with self._connect('miner_hardware') as conn:
             for match in eeprom_pattern.finditer(log_content):
                 board_idx = int(match.group(1))
                 asic_info = asic_map.get(board_idx, {})
@@ -1323,7 +1332,7 @@ class GuardianDB:
 
     def get_hardware_identity(self, miner_id: str) -> List[Dict]:
         """Return hardware identity records for a miner (one per board)."""
-        with self._connect() as conn:
+        with self._connect('miner_hardware') as conn:
             rows = conn.execute(
                 "SELECT * FROM miner_hardware WHERE miner_id=? ORDER BY board_index",
                 (miner_id,)
@@ -1375,7 +1384,7 @@ class GuardianDB:
         )
 
         # Ensure log_metrics table exists
-        with self._connect() as conn:
+        with self._connect('log_metrics') as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS log_metrics (
                     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1463,7 +1472,7 @@ class GuardianDB:
         if not all_rows:
             return
 
-        with self._connect() as conn:
+        with self._connect('log_metrics') as conn:
             conn.executemany("""
                 INSERT INTO log_metrics
                 (miner_id, ip, log_timestamp, metric_type,
@@ -1486,7 +1495,7 @@ class GuardianDB:
         """
         now            = datetime.now()
         elevated_until = (now + timedelta(hours=elevated_hours)).isoformat()
-        with self._connect() as conn:
+        with self._connect('miner_restarts') as conn:
             conn.execute(
                 "INSERT INTO miner_restarts "
                 "(restarted_at, miner_id, ip, model, restart_type, elevated_until, "
@@ -1501,7 +1510,7 @@ class GuardianDB:
     def is_elevated_monitoring(self, miner_id: str) -> bool:
         """Return True if this miner is within its post-restart elevated monitoring window."""
         now = datetime.now().isoformat()
-        with self._connect() as conn:
+        with self._connect('miner_restarts') as conn:
             row = conn.execute(
                 "SELECT elevated_until FROM miner_restarts "
                 "WHERE miner_id=? AND elevated_until > ? "
@@ -1513,7 +1522,7 @@ class GuardianDB:
     def get_failed_restart_count(self, miner_id: str, days: int = 7) -> int:
         """Count restarts in the last N days where the miner did not recover."""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        with self._connect() as conn:
+        with self._connect('miner_restarts') as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM miner_restarts
                 WHERE miner_id=? AND restarted_at >= ?
@@ -1522,7 +1531,7 @@ class GuardianDB:
 
     def count_outcome_failures(self, miner_id: str) -> int:
         """Count restarts labeled FAILURE by the outcome feedback loop (Feature 1)."""
-        with self._connect() as conn:
+        with self._connect('action_audit_log') as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM miner_restarts
                 WHERE miner_id=? AND outcome='FAILURE'
@@ -1532,7 +1541,7 @@ class GuardianDB:
     def _count_pdu_cycles(self, miner_id: str, days: int = 1) -> int:
         """Count PDU power cycles attempted for this miner in the last N days."""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        with self._connect() as conn:
+        with self._connect('miner_restarts') as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM action_audit_log
                 WHERE miner_id=? AND action_taken='PDU_CYCLE'
@@ -1542,7 +1551,7 @@ class GuardianDB:
 
     def last_log_collected(self, miner_id: str) -> Optional[datetime]:
         """Return datetime of last log collection for this miner, or None."""
-        with self._connect() as conn:
+        with self._connect('miner_logs') as conn:
             row = conn.execute(
                 "SELECT collected_at FROM miner_logs WHERE miner_id=? "
                 "ORDER BY id DESC LIMIT 1",

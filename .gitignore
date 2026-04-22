@@ -70,3 +70,7 @@ guardian.db-wal
 # Backups directory (local only)
 backups/
 deploy/*_LIVE.json
+# Split databases - too large for GitHub
+databases/*.db
+databases/*.db-shm
+databases/*.db-wal
