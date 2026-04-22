@@ -105,14 +105,16 @@ def cleanup_stale_pending():
     try:
         cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
         conn = get_db()
-        cur  = conn.execute(
-            "UPDATE pending_approvals SET status='EXPIRED' WHERE status='PENDING' AND created_at < ?",
-            (cutoff,)
-        )
-        if cur.rowcount:
-            logger.info("Cleaned up %d stale pending approvals", cur.rowcount)
-        conn.commit()
-        conn.close()
+        try:
+            cur  = conn.execute(
+                "UPDATE pending_approvals SET status='EXPIRED' WHERE status='PENDING' AND created_at < ?",
+                (cutoff,)
+            )
+            if cur.rowcount:
+                logger.info("Cleaned up %d stale pending approvals", cur.rowcount)
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as e:
         logger.warning("cleanup failed: %s", e)
 
@@ -145,10 +147,12 @@ class ApprovalListener:
 
     def _get_pending_threads(self):
         conn = get_db()
-        rows = conn.execute(
-            "SELECT DISTINCT thread_ts FROM pending_approvals WHERE status='PENDING'"
-        ).fetchall()
-        conn.close()
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT thread_ts FROM pending_approvals WHERE status='PENDING'"
+            ).fetchall()
+        finally:
+            conn.close()
         return [r[0] for r in rows]
 
     def _check_thread(self, thread_ts):
@@ -329,18 +333,20 @@ class ApprovalListener:
             if reason:
                 # Store reason in action_audit_log for recent DENY entries in this thread
                 conn = get_db()
-                conn.execute("""
-                    UPDATE action_audit_log
-                    SET notes = COALESCE(notes || ' | ', '') || 'DENIAL_REASON: ' || ?
-                    WHERE decision = 'DENIED'
-                      AND approved_by = ?
-                      AND date = date('now')
-                      AND (notes IS NULL OR notes NOT LIKE '%DENIAL_REASON%')
-                    ORDER BY timestamp DESC
-                    LIMIT 5
-                """, (reason, user_name))
-                conn.commit()
-                conn.close()
+                try:
+                    conn.execute("""
+                        UPDATE action_audit_log
+                        SET notes = COALESCE(notes || ' | ', '') || 'DENIAL_REASON: ' || ?
+                        WHERE decision = 'DENIED'
+                          AND approved_by = ?
+                          AND date = date('now')
+                          AND (notes IS NULL OR notes NOT LIKE '%DENIAL_REASON%')
+                        ORDER BY timestamp DESC
+                        LIMIT 5
+                    """, (reason, user_name))
+                    conn.commit()
+                finally:
+                    conn.close()
 
                 # Acknowledge receipt
                 self.client.chat_postMessage(

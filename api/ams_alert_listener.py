@@ -94,29 +94,31 @@ class AlertListenerDB:
 
     def _ensure_tables(self):
         conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS alert_listener_seen (
-                notification_id INTEGER PRIMARY KEY,
-                key TEXT,
-                alert_level TEXT,
-                miner_id TEXT,
-                ip TEXT,
-                action_taken TEXT,
-                seen_at TEXT,
-                acted_at TEXT,
-                outcome TEXT
-            )
-        ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS alert_listener_cooldown (
-                miner_id TEXT PRIMARY KEY,
-                last_action TEXT,
-                last_action_at TEXT
-            )
-        ''')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_seen_miner ON alert_listener_seen(miner_id)')
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS alert_listener_seen (
+                    notification_id INTEGER PRIMARY KEY,
+                    key TEXT,
+                    alert_level TEXT,
+                    miner_id TEXT,
+                    ip TEXT,
+                    action_taken TEXT,
+                    seen_at TEXT,
+                    acted_at TEXT,
+                    outcome TEXT
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS alert_listener_cooldown (
+                    miner_id TEXT PRIMARY KEY,
+                    last_action TEXT,
+                    last_action_at TEXT
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_seen_miner ON alert_listener_seen(miner_id)')
+            conn.commit()
+        finally:
+            conn.close()
 
     def has_seen(self, notification_id: int) -> bool:
         conn = sqlite3.connect(self.db_path, timeout=30)

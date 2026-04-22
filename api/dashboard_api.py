@@ -683,39 +683,41 @@ def metrics(request: Request):
 def fleet_board_stats():
     """Fleet board health: worst rejection rates + worst HW error miners, side by side."""
     conn = get_db()
-    scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
-    if not scan:
+    try:
+        scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+        if not scan:
+            conn.close()
+            return HTMLResponse("<p>No scan data yet.</p>")
+
+        rej_rows = conn.execute("""
+            SELECT p.ip,
+                   COALESCE(m.model, 'Unknown') as model,
+                   CASE WHEN SUM(p.accepted)+SUM(p.rejected)>0
+                        THEN CAST(SUM(p.rejected) AS FLOAT)/(SUM(p.accepted)+SUM(p.rejected))
+                        ELSE 0 END as rej_rate
+            FROM pool_readings p
+            LEFT JOIN (
+                SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
+            ) m ON p.ip = m.ip
+            WHERE p.scan_id=? GROUP BY p.ip
+            ORDER BY rej_rate DESC LIMIT 10
+        """, (scan["id"], scan["id"])).fetchall()
+
+        hw_rows = conn.execute("""
+            SELECT c.ip,
+                   COALESCE(m.model, 'Unknown') as model,
+                   SUM(c.hw_errors) as total_hw
+            FROM chain_readings c
+            LEFT JOIN (
+                SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
+            ) m ON c.ip = m.ip
+            WHERE c.scan_id=?
+            GROUP BY c.ip HAVING total_hw > 0
+            ORDER BY total_hw DESC LIMIT 10
+        """, (scan["id"], scan["id"])).fetchall()
+
+    finally:
         conn.close()
-        return HTMLResponse("<p>No scan data yet.</p>")
-
-    rej_rows = conn.execute("""
-        SELECT p.ip,
-               COALESCE(m.model, 'Unknown') as model,
-               CASE WHEN SUM(p.accepted)+SUM(p.rejected)>0
-                    THEN CAST(SUM(p.rejected) AS FLOAT)/(SUM(p.accepted)+SUM(p.rejected))
-                    ELSE 0 END as rej_rate
-        FROM pool_readings p
-        LEFT JOIN (
-            SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
-        ) m ON p.ip = m.ip
-        WHERE p.scan_id=? GROUP BY p.ip
-        ORDER BY rej_rate DESC LIMIT 10
-    """, (scan["id"], scan["id"])).fetchall()
-
-    hw_rows = conn.execute("""
-        SELECT c.ip,
-               COALESCE(m.model, 'Unknown') as model,
-               SUM(c.hw_errors) as total_hw
-        FROM chain_readings c
-        LEFT JOIN (
-            SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
-        ) m ON c.ip = m.ip
-        WHERE c.scan_id=?
-        GROUP BY c.ip HAVING total_hw > 0
-        ORDER BY total_hw DESC LIMIT 10
-    """, (scan["id"], scan["id"])).fetchall()
-
-    conn.close()
 
     def rej_color(r):
         if r >= 0.01: return "#ff4d4f"
@@ -767,35 +769,37 @@ def mhs_panel():
     Top 5 healthiest on the left, bottom 5 on the right. Online miners only.
     """
     conn = get_db()
-    scan_id_row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
-    if not scan_id_row:
+    try:
+        scan_id_row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+        if not scan_id_row:
+            conn.close()
+            return HTMLResponse("<p>No scan data yet.</p>")
+
+        miners = conn.execute("""
+            SELECT ip, model, hashrate_pct, pdu_power, status, issue
+            FROM miner_readings
+            WHERE scan_id=? AND status='online' AND hashrate_pct > 0
+            ORDER BY hashrate_pct DESC
+        """, (scan_id_row["id"],)).fetchall()
+
+        hw_errors_by_ip = {}
+        for row in conn.execute("""
+            SELECT ip, SUM(hw_errors) as total_hw FROM chain_readings WHERE scan_id=? GROUP BY ip
+        """, (scan_id_row["id"],)).fetchall():
+            hw_errors_by_ip[row["ip"]] = float(row["total_hw"] or 0)
+
+        rejection_by_ip = {}
+        for row in conn.execute("""
+            SELECT ip,
+                   CASE WHEN SUM(accepted)+SUM(rejected) > 0
+                        THEN CAST(SUM(rejected) AS FLOAT)/(SUM(accepted)+SUM(rejected))
+                        ELSE 0 END as rej_rate
+            FROM pool_readings WHERE scan_id=? GROUP BY ip
+        """, (scan_id_row["id"],)).fetchall():
+            rejection_by_ip[row["ip"]] = float(row["rej_rate"] or 0)
+
+    finally:
         conn.close()
-        return HTMLResponse("<p>No scan data yet.</p>")
-
-    miners = conn.execute("""
-        SELECT ip, model, hashrate_pct, pdu_power, status, issue
-        FROM miner_readings
-        WHERE scan_id=? AND status='online' AND hashrate_pct > 0
-        ORDER BY hashrate_pct DESC
-    """, (scan_id_row["id"],)).fetchall()
-
-    hw_errors_by_ip = {}
-    for row in conn.execute("""
-        SELECT ip, SUM(hw_errors) as total_hw FROM chain_readings WHERE scan_id=? GROUP BY ip
-    """, (scan_id_row["id"],)).fetchall():
-        hw_errors_by_ip[row["ip"]] = float(row["total_hw"] or 0)
-
-    rejection_by_ip = {}
-    for row in conn.execute("""
-        SELECT ip,
-               CASE WHEN SUM(accepted)+SUM(rejected) > 0
-                    THEN CAST(SUM(rejected) AS FLOAT)/(SUM(accepted)+SUM(rejected))
-                    ELSE 0 END as rej_rate
-        FROM pool_readings WHERE scan_id=? GROUP BY ip
-    """, (scan_id_row["id"],)).fetchall():
-        rejection_by_ip[row["ip"]] = float(row["rej_rate"] or 0)
-
-    conn.close()
 
     scores = []
     for m in miners:
@@ -855,32 +859,34 @@ def mhs_panel():
 def miner_status(miner_ip: str):
     """Current problem + full action history for a specific miner IP."""
     conn = get_db()
-    miner_ip_clean = miner_ip.replace("_", ".")
+    try:
+        miner_ip_clean = miner_ip.replace("_", ".")
 
-    current = conn.execute("""
-        SELECT mr.ip, mr.model, mr.issue, mr.action, mr.scanned_at,
-               mr.hashrate_pct, mr.temp_chip, mr.pdu_power, mr.status,
-               mr.current_profile, mr.map_location
-        FROM miner_readings mr
-        WHERE mr.ip = ?
-        ORDER BY mr.id DESC LIMIT 1
-    """, (miner_ip_clean,)).fetchone()
+        current = conn.execute("""
+            SELECT mr.ip, mr.model, mr.issue, mr.action, mr.scanned_at,
+                   mr.hashrate_pct, mr.temp_chip, mr.pdu_power, mr.status,
+                   mr.current_profile, mr.map_location
+            FROM miner_readings mr
+            WHERE mr.ip = ?
+            ORDER BY mr.id DESC LIMIT 1
+        """, (miner_ip_clean,)).fetchone()
 
-    history = conn.execute("""
-        SELECT timestamp, problem, action_taken, decision, approved_by, notes
-        FROM action_audit_log
-        WHERE ip = ?
-        ORDER BY timestamp DESC LIMIT 20
-    """, (miner_ip_clean,)).fetchall()
+        history = conn.execute("""
+            SELECT timestamp, problem, action_taken, decision, approved_by, notes
+            FROM action_audit_log
+            WHERE ip = ?
+            ORDER BY timestamp DESC LIMIT 20
+        """, (miner_ip_clean,)).fetchall()
 
-    dead_boards = conn.execute("""
-        SELECT board_indices, first_seen, restart_attempted,
-               restart_result, ticket_created
-        FROM known_dead_boards
-        WHERE ip = ? AND resolved_at IS NULL
-    """, (miner_ip_clean,)).fetchone()
+        dead_boards = conn.execute("""
+            SELECT board_indices, first_seen, restart_attempted,
+                   restart_result, ticket_created
+            FROM known_dead_boards
+            WHERE ip = ? AND resolved_at IS NULL
+        """, (miner_ip_clean,)).fetchone()
 
-    conn.close()
+    finally:
+        conn.close()
     return {
         "current": dict(current) if current else None,
         "history": [dict(r) for r in history],
@@ -895,29 +901,31 @@ def miner_status_html(miner_ip: str):
         return html_lib.escape(str(val)) if val is not None else ""
 
     conn = get_db()
-    miner_ip_clean = miner_ip.replace("_", ".")
+    try:
+        miner_ip_clean = miner_ip.replace("_", ".")
 
-    current = conn.execute("""
-        SELECT ip, model, issue, action, scanned_at,
-               hashrate_pct, temp_chip, pdu_power, status,
-               current_profile, map_location
-        FROM miner_readings WHERE ip = ?
-        ORDER BY id DESC LIMIT 1
-    """, (miner_ip_clean,)).fetchone()
+        current = conn.execute("""
+            SELECT ip, model, issue, action, scanned_at,
+                   hashrate_pct, temp_chip, pdu_power, status,
+                   current_profile, map_location
+            FROM miner_readings WHERE ip = ?
+            ORDER BY id DESC LIMIT 1
+        """, (miner_ip_clean,)).fetchone()
 
-    history = conn.execute("""
-        SELECT timestamp, problem, action_taken, decision, approved_by, notes
-        FROM action_audit_log WHERE ip = ?
-        ORDER BY timestamp DESC LIMIT 15
-    """, (miner_ip_clean,)).fetchall()
+        history = conn.execute("""
+            SELECT timestamp, problem, action_taken, decision, approved_by, notes
+            FROM action_audit_log WHERE ip = ?
+            ORDER BY timestamp DESC LIMIT 15
+        """, (miner_ip_clean,)).fetchall()
 
-    dead = conn.execute("""
-        SELECT board_indices, first_seen, restart_attempted,
-               restart_result, ticket_created
-        FROM known_dead_boards WHERE ip = ? AND resolved_at IS NULL
-    """, (miner_ip_clean,)).fetchone()
+        dead = conn.execute("""
+            SELECT board_indices, first_seen, restart_attempted,
+                   restart_result, ticket_created
+            FROM known_dead_boards WHERE ip = ? AND resolved_at IS NULL
+        """, (miner_ip_clean,)).fetchone()
 
-    conn.close()
+    finally:
+        conn.close()
 
     # Build current status block
     if current:
@@ -1016,23 +1024,25 @@ def miner_status_html(miner_ip: str):
 def fleet_latest(request: Request):
     """Latest scan summary — fleet status right now."""
     conn = get_db()
-    scan = conn.execute(
-        "SELECT * FROM scans ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    if not scan:
-        return {"error": "No scans yet"}
-    scan = dict(scan)
+    try:
+        scan = conn.execute(
+            "SELECT * FROM scans ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not scan:
+            return {"error": "No scans yet"}
+        scan = dict(scan)
 
-    # Latest readings breakdown
-    readings = conn.execute("""
-        SELECT action, COUNT(*) as count
-        FROM miner_readings
-        WHERE scan_id = ? AND action IS NOT NULL
-        GROUP BY action
-    """, (scan["id"],)).fetchall()
+        # Latest readings breakdown
+        readings = conn.execute("""
+            SELECT action, COUNT(*) as count
+            FROM miner_readings
+            WHERE scan_id = ? AND action IS NOT NULL
+            GROUP BY action
+        """, (scan["id"],)).fetchall()
 
-    scan["action_breakdown"] = {r["action"]: r["count"] for r in readings}
-    conn.close()
+        scan["action_breakdown"] = {r["action"]: r["count"] for r in readings}
+    finally:
+        conn.close()
     return scan
 
 
@@ -1043,11 +1053,13 @@ def fleet_history(request: Request, days: int = 7):
     """Scan history over the last N days."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM scans WHERE scanned_at > ? ORDER BY id DESC",
-        (cutoff,)
-    ).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM scans WHERE scanned_at > ? ORDER BY id DESC",
+            (cutoff,)
+        ).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1058,17 +1070,19 @@ def fleet_history(request: Request, days: int = 7):
 def miners_flagged(request: Request):
     """All miners currently flagged in the latest scan."""
     conn = get_db()
-    scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
-    if not scan:
-        return []
-    rows = conn.execute("""
-        SELECT miner_id, ip, model, status, hashrate_pct,
-               temp_chip, action, issue
-        FROM miner_readings
-        WHERE scan_id = ? AND action IS NOT NULL
-        ORDER BY action, ip
-    """, (scan["id"],)).fetchall()
-    conn.close()
+    try:
+        scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+        if not scan:
+            return []
+        rows = conn.execute("""
+            SELECT miner_id, ip, model, status, hashrate_pct,
+                   temp_chip, action, issue
+            FROM miner_readings
+            WHERE scan_id = ? AND action IS NOT NULL
+            ORDER BY action, ip
+        """, (scan["id"],)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1076,18 +1090,20 @@ def miners_flagged(request: Request):
 def miners_most_flagged(limit: int = 20):
     """Miners flagged most often — trouble list."""
     conn = get_db()
-    rows = conn.execute("""
-        SELECT miner_id, ip, model,
-               COUNT(*) as times_flagged,
-               MAX(scanned_at) as last_flagged,
-               action
-        FROM miner_readings
-        WHERE action IS NOT NULL
-        GROUP BY miner_id
-        ORDER BY times_flagged DESC
-        LIMIT ?
-    """, (limit,)).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("""
+            SELECT miner_id, ip, model,
+                   COUNT(*) as times_flagged,
+                   MAX(scanned_at) as last_flagged,
+                   action
+            FROM miner_readings
+            WHERE action IS NOT NULL
+            GROUP BY miner_id
+            ORDER BY times_flagged DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1097,13 +1113,15 @@ def miner_history(miner_id: str, days: int = 7):
     """Full telemetry history for a specific miner."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
-    rows = conn.execute("""
-        SELECT scanned_at, hashrate_pct, temp_chip, status, action, issue
-        FROM miner_readings
-        WHERE miner_id = ? AND scanned_at > ?
-        ORDER BY scanned_at ASC
-    """, (miner_id, cutoff)).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("""
+            SELECT scanned_at, hashrate_pct, temp_chip, status, action, issue
+            FROM miner_readings
+            WHERE miner_id = ? AND scanned_at > ?
+            ORDER BY scanned_at ASC
+        """, (miner_id, cutoff)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1111,14 +1129,16 @@ def miner_history(miner_id: str, days: int = 7):
 def miner_logs(miner_id: str, limit: int = 10):
     """Recent log files collected for a miner."""
     conn = get_db()
-    rows = conn.execute("""
-        SELECT collected_at, health_status, log_file, content
-        FROM miner_logs
-        WHERE miner_id = ?
-        ORDER BY id DESC
-        LIMIT ?
-    """, (miner_id, limit)).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("""
+            SELECT collected_at, health_status, log_file, content
+            FROM miner_logs
+            WHERE miner_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (miner_id, limit)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1128,16 +1148,18 @@ def miner_logs(miner_id: str, limit: int = 10):
 def temps_hot_miners():
     """Miners currently in yellow or red temp zones."""
     conn = get_db()
-    scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
-    if not scan:
-        return []
-    rows = conn.execute("""
-        SELECT miner_id, ip, model, temp_chip, action
-        FROM miner_readings
-        WHERE scan_id = ? AND temp_chip >= 76
-        ORDER BY temp_chip DESC
-    """, (scan["id"],)).fetchall()
-    conn.close()
+    try:
+        scan = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
+        if not scan:
+            return []
+        rows = conn.execute("""
+            SELECT miner_id, ip, model, temp_chip, action
+            FROM miner_readings
+            WHERE scan_id = ? AND temp_chip >= 76
+            ORDER BY temp_chip DESC
+        """, (scan["id"],)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1148,18 +1170,20 @@ def temps_history(request: Request, days: int = 7):
     """Average chip temp across fleet over time."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
-    rows = conn.execute("""
-        SELECT s.scanned_at,
-               AVG(r.temp_chip) as avg_temp,
-               MAX(r.temp_chip) as max_temp,
-               MIN(r.temp_chip) as min_temp
-        FROM miner_readings r
-        JOIN scans s ON r.scan_id = s.id
-        WHERE s.scanned_at > ? AND r.temp_chip > 0
-        GROUP BY s.id
-        ORDER BY s.scanned_at ASC
-    """, (cutoff,)).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("""
+            SELECT s.scanned_at,
+                   AVG(r.temp_chip) as avg_temp,
+                   MAX(r.temp_chip) as max_temp,
+                   MIN(r.temp_chip) as min_temp
+            FROM miner_readings r
+            JOIN scans s ON r.scan_id = s.id
+            WHERE s.scanned_at > ? AND r.temp_chip > 0
+            GROUP BY s.id
+            ORDER BY s.scanned_at ASC
+        """, (cutoff,)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1171,11 +1195,13 @@ def weather_history(days: int = 7):
     """Ambient temp and humidity history."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM weather_readings WHERE recorded_at > ? ORDER BY id ASC",
-        (cutoff,)
-    ).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM weather_readings WHERE recorded_at > ? ORDER BY id ASC",
+            (cutoff,)
+        ).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1238,49 +1264,51 @@ def environment_history(days: int = 5):
     """
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     conn = get_db()
+    try:
 
-    # Downsample to one point per 6-hour bucket using SQLite strftime
-    wx_rows = conn.execute("""
-        SELECT
-            strftime('%Y-%m-%dT', recorded_at) ||
-            CASE CAST(strftime('%H', recorded_at) AS INT)
-                WHEN 0 THEN '00:00:00' WHEN 1 THEN '00:00:00' WHEN 2 THEN '00:00:00'
-                WHEN 3 THEN '00:00:00' WHEN 4 THEN '00:00:00' WHEN 5 THEN '00:00:00'
-                WHEN 6 THEN '06:00:00' WHEN 7 THEN '06:00:00' WHEN 8 THEN '06:00:00'
-                WHEN 9 THEN '06:00:00' WHEN 10 THEN '06:00:00' WHEN 11 THEN '06:00:00'
-                WHEN 12 THEN '12:00:00' WHEN 13 THEN '12:00:00' WHEN 14 THEN '12:00:00'
-                WHEN 15 THEN '12:00:00' WHEN 16 THEN '12:00:00' WHEN 17 THEN '12:00:00'
-                ELSE '18:00:00'
-            END as bucket,
-            AVG(temp_f) as outside_temp_f,
-            AVG(humidity_pct) as humidity_pct
-        FROM weather_readings
-        WHERE recorded_at > ?
-        GROUP BY bucket
-        ORDER BY bucket ASC
-    """, (cutoff,)).fetchall()
+        # Downsample to one point per 6-hour bucket using SQLite strftime
+        wx_rows = conn.execute("""
+            SELECT
+                strftime('%Y-%m-%dT', recorded_at) ||
+                CASE CAST(strftime('%H', recorded_at) AS INT)
+                    WHEN 0 THEN '00:00:00' WHEN 1 THEN '00:00:00' WHEN 2 THEN '00:00:00'
+                    WHEN 3 THEN '00:00:00' WHEN 4 THEN '00:00:00' WHEN 5 THEN '00:00:00'
+                    WHEN 6 THEN '06:00:00' WHEN 7 THEN '06:00:00' WHEN 8 THEN '06:00:00'
+                    WHEN 9 THEN '06:00:00' WHEN 10 THEN '06:00:00' WHEN 11 THEN '06:00:00'
+                    WHEN 12 THEN '12:00:00' WHEN 13 THEN '12:00:00' WHEN 14 THEN '12:00:00'
+                    WHEN 15 THEN '12:00:00' WHEN 16 THEN '12:00:00' WHEN 17 THEN '12:00:00'
+                    ELSE '18:00:00'
+                END as bucket,
+                AVG(temp_f) as outside_temp_f,
+                AVG(humidity_pct) as humidity_pct
+            FROM weather_readings
+            WHERE recorded_at > ?
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        """, (cutoff,)).fetchall()
 
-    hvac_rows = conn.execute("""
-        SELECT
-            strftime('%Y-%m-%dT', recorded_at) ||
-            CASE CAST(strftime('%H', recorded_at) AS INT)
-                WHEN 0 THEN '00:00:00' WHEN 1 THEN '00:00:00' WHEN 2 THEN '00:00:00'
-                WHEN 3 THEN '00:00:00' WHEN 4 THEN '00:00:00' WHEN 5 THEN '00:00:00'
-                WHEN 6 THEN '06:00:00' WHEN 7 THEN '06:00:00' WHEN 8 THEN '06:00:00'
-                WHEN 9 THEN '06:00:00' WHEN 10 THEN '06:00:00' WHEN 11 THEN '06:00:00'
-                WHEN 12 THEN '12:00:00' WHEN 13 THEN '12:00:00' WHEN 14 THEN '12:00:00'
-                WHEN 15 THEN '12:00:00' WHEN 16 THEN '12:00:00' WHEN 17 THEN '12:00:00'
-                ELSE '18:00:00'
-            END as bucket,
-            AVG(supply_temp_f) as supply_temp_f,
-            AVG(return_temp_f) as return_temp_f,
-            AVG(delta_t_f) as delta_t_f
-        FROM hvac_readings
-        WHERE recorded_at > ?
-        GROUP BY bucket
-        ORDER BY bucket ASC
-    """, (cutoff,)).fetchall()
-    conn.close()
+        hvac_rows = conn.execute("""
+            SELECT
+                strftime('%Y-%m-%dT', recorded_at) ||
+                CASE CAST(strftime('%H', recorded_at) AS INT)
+                    WHEN 0 THEN '00:00:00' WHEN 1 THEN '00:00:00' WHEN 2 THEN '00:00:00'
+                    WHEN 3 THEN '00:00:00' WHEN 4 THEN '00:00:00' WHEN 5 THEN '00:00:00'
+                    WHEN 6 THEN '06:00:00' WHEN 7 THEN '06:00:00' WHEN 8 THEN '06:00:00'
+                    WHEN 9 THEN '06:00:00' WHEN 10 THEN '06:00:00' WHEN 11 THEN '06:00:00'
+                    WHEN 12 THEN '12:00:00' WHEN 13 THEN '12:00:00' WHEN 14 THEN '12:00:00'
+                    WHEN 15 THEN '12:00:00' WHEN 16 THEN '12:00:00' WHEN 17 THEN '12:00:00'
+                    ELSE '18:00:00'
+                END as bucket,
+                AVG(supply_temp_f) as supply_temp_f,
+                AVG(return_temp_f) as return_temp_f,
+                AVG(delta_t_f) as delta_t_f
+            FROM hvac_readings
+            WHERE recorded_at > ?
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        """, (cutoff,)).fetchall()
+    finally:
+        conn.close()
 
     # Merge weather + HVAC on bucket timestamp
     hvac_map = {r["bucket"]: dict(r) for r in hvac_rows}
@@ -1303,13 +1331,15 @@ def environment_history(days: int = 5):
 def notifications_recent(request: Request, limit: int = 50):
     """Recent AMS notifications grouped by type."""
     conn = get_db()
-    rows = conn.execute("""
-        SELECT key, alert_level, miner_ip, recorded_at
-        FROM ams_notifications
-        ORDER BY id DESC
-        LIMIT ?
-    """, (limit,)).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("""
+            SELECT key, alert_level, miner_ip, recorded_at
+            FROM ams_notifications
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1317,13 +1347,15 @@ def notifications_recent(request: Request, limit: int = 50):
 def notifications_summary():
     """Notification counts grouped by type and severity."""
     conn = get_db()
-    rows = conn.execute("""
-        SELECT key, alert_level, COUNT(*) as count
-        FROM ams_notifications
-        GROUP BY key, alert_level
-        ORDER BY count DESC
-    """).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("""
+            SELECT key, alert_level, COUNT(*) as count
+            FROM ams_notifications
+            GROUP BY key, alert_level
+            ORDER BY count DESC
+        """).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1333,11 +1365,13 @@ def notifications_summary():
 def restarts_recent(limit: int = 20):
     """Recent restart events."""
     conn = get_db()
-    rows = conn.execute("""
-        SELECT * FROM miner_restarts
-        ORDER BY id DESC LIMIT ?
-    """, (limit,)).fetchall()
-    conn.close()
+    try:
+        rows = conn.execute("""
+            SELECT * FROM miner_restarts
+            ORDER BY id DESC LIMIT ?
+        """, (limit,)).fetchall()
+    finally:
+        conn.close()
     return [dict(r) for r in rows]
 
 
@@ -1374,25 +1408,27 @@ def audit_log(request: Request, days: int = None, miner_id: str = None, limit: i
 def audit_summary():
     """Audit log summary — counts by decision, action, and approver."""
     conn = get_db()
-    by_decision = conn.execute("""
-        SELECT decision, COUNT(*) as count
-        FROM action_audit_log
-        GROUP BY decision
-    """).fetchall()
-    by_action = conn.execute("""
-        SELECT action_taken, decision, COUNT(*) as count
-        FROM action_audit_log
-        GROUP BY action_taken, decision
-        ORDER BY count DESC
-    """).fetchall()
-    by_approver = conn.execute("""
-        SELECT approved_by, decision, COUNT(*) as count
-        FROM action_audit_log
-        WHERE approved_by IS NOT NULL
-        GROUP BY approved_by, decision
-        ORDER BY count DESC
-    """).fetchall()
-    conn.close()
+    try:
+        by_decision = conn.execute("""
+            SELECT decision, COUNT(*) as count
+            FROM action_audit_log
+            GROUP BY decision
+        """).fetchall()
+        by_action = conn.execute("""
+            SELECT action_taken, decision, COUNT(*) as count
+            FROM action_audit_log
+            GROUP BY action_taken, decision
+            ORDER BY count DESC
+        """).fetchall()
+        by_approver = conn.execute("""
+            SELECT approved_by, decision, COUNT(*) as count
+            FROM action_audit_log
+            WHERE approved_by IS NOT NULL
+            GROUP BY approved_by, decision
+            ORDER BY count DESC
+        """).fetchall()
+    finally:
+        conn.close()
     return {
         "by_decision": [dict(r) for r in by_decision],
         "by_action":   [dict(r) for r in by_action],
@@ -1408,12 +1444,14 @@ def llm_history(limit: int = 10):
     """Recent LLM analysis results — proxied from VPS if local DB is empty."""
     conn = get_db()
     try:
-        rows = conn.execute(
-            "SELECT * FROM llm_analysis ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
-    except Exception:
-        rows = []
-    conn.close()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM llm_analysis ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        except Exception:
+            rows = []
+    finally:
+        conn.close()
     if rows:
         return [dict(r) for r in rows]
     # Fallback: proxy from VPS
@@ -1551,11 +1589,13 @@ def ai_score_json():
 @app.get("/")
 def health():
     conn = get_db()
-    scan_count = conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
-    latest = conn.execute(
-        "SELECT scanned_at FROM scans ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    conn.close()
+    try:
+        scan_count = conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
+        latest = conn.execute(
+            "SELECT scanned_at FROM scans ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
     return {
         "status": "online",
         "db": "guardian.db",  # path redacted — don't leak filesystem layout
@@ -2620,19 +2660,21 @@ async def ingest_hvac_data(request: Request):
 async def get_latest_hvac():
     """Get latest HVAC readings for all systems."""
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    try:
+        conn.row_factory = sqlite3.Row
     
-    results = {}
-    for system_id in ["warehouse", "s19jpro"]:
-        row = conn.execute("""
-            SELECT * FROM hvac_readings
-            WHERE system_id = ?
-            ORDER BY recorded_at DESC LIMIT 1
-        """, (system_id,)).fetchone()
-        if row:
-            results[system_id] = dict(row)
+        results = {}
+        for system_id in ["warehouse", "s19jpro"]:
+            row = conn.execute("""
+                SELECT * FROM hvac_readings
+                WHERE system_id = ?
+                ORDER BY recorded_at DESC LIMIT 1
+            """, (system_id,)).fetchone()
+            if row:
+                results[system_id] = dict(row)
     
-    conn.close()
+    finally:
+        conn.close()
     return results
 
 
@@ -2700,56 +2742,58 @@ def proxy_intelligence_report(path: str, request: Request):
 def mobile_dashboard():
     """Mobile-friendly fleet status page. Works on any phone browser."""
     conn = get_db()
+    try:
     
-    # Fleet summary
-    fleet = conn.execute('''
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
-            SUM(CASE WHEN status != 'online' THEN 1 ELSE 0 END) as offline
-        FROM miner_readings 
-        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
-    ''').fetchone()
+        # Fleet summary
+        fleet = conn.execute('''
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
+                SUM(CASE WHEN status != 'online' THEN 1 ELSE 0 END) as offline
+            FROM miner_readings 
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+        ''').fetchone()
     
-    # Flagged miners count
-    flagged = conn.execute('''
-        SELECT COUNT(DISTINCT miner_id) FROM miner_readings
-        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
-        AND issue IS NOT NULL AND issue != 
-    ''').fetchone()[0]
+        # Flagged miners count
+        flagged = conn.execute('''
+            SELECT COUNT(DISTINCT miner_id) FROM miner_readings
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+            AND issue IS NOT NULL AND issue != 
+        ''').fetchone()[0]
     
-    # Latest scan time
-    latest_scan = conn.execute(
-        "SELECT scanned_at FROM scans ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    scan_time = latest_scan[0][:16] if latest_scan else "Unknown"
+        # Latest scan time
+        latest_scan = conn.execute(
+            "SELECT scanned_at FROM scans ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        scan_time = latest_scan[0][:16] if latest_scan else "Unknown"
     
-    # Critical miners (0% hashrate, online)
-    critical = conn.execute('''
-        SELECT ip, model, hashrate_pct, temp_chip
-        FROM miner_readings
-        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
-        AND status = 'online' AND hashrate_pct < 10
-        ORDER BY hashrate_pct ASC
-        LIMIT 5
-    ''').fetchall()
+        # Critical miners (0% hashrate, online)
+        critical = conn.execute('''
+            SELECT ip, model, hashrate_pct, temp_chip
+            FROM miner_readings
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+            AND status = 'online' AND hashrate_pct < 10
+            ORDER BY hashrate_pct ASC
+            LIMIT 5
+        ''').fetchall()
     
-    # Hot miners (temp > 75C)
-    hot = conn.execute('''
-        SELECT ip, model, temp_chip, hashrate_pct
-        FROM miner_readings
-        WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
-        AND temp_chip > 75
-        ORDER BY temp_chip DESC
-        LIMIT 5
-    ''').fetchall()
+        # Hot miners (temp > 75C)
+        hot = conn.execute('''
+            SELECT ip, model, temp_chip, hashrate_pct
+            FROM miner_readings
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+            AND temp_chip > 75
+            ORDER BY temp_chip DESC
+            LIMIT 5
+        ''').fetchall()
     
-    # Weather
-    weather = conn.execute(
-        "SELECT temp_f, humidity_pct FROM weather_readings ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+        # Weather
+        weather = conn.execute(
+            "SELECT temp_f, humidity_pct FROM weather_readings ORDER BY id DESC LIMIT 1"
+        ).fetchone()
     
-    conn.close()
+    finally:
+        conn.close()
     
     # Build critical miners HTML
     critical_html = ""
