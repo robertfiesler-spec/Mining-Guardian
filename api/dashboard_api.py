@@ -1580,6 +1580,297 @@ def fleet_efficiency_ranking(request: Request, limit: int = 50):
 
 
 @app.get("/charts/environment", response_class=HTMLResponse)
+
+# ── Enhanced Mobile Dashboard v2 (Apr 22 2026) ───────────────────────────────
+
+@app.get("/mobile/v2", response_class=HTMLResponse)
+def mobile_dashboard_v2():
+    """Enhanced mobile dashboard with cost, ETA, and model comparison."""
+    import os
+    conn = get_db()
+    try:
+        # Fleet summary
+        fleet = conn.execute('''
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'online' THEN 1 ELSE 0 END) as online,
+                SUM(CASE WHEN status != 'online' THEN 1 ELSE 0 END) as offline,
+                SUM(hashrate) / 1000.0 as total_ths,
+                SUM(consumption) as total_watts
+            FROM miner_readings 
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+        ''').fetchone()
+        
+        total_ths = fleet[3] or 0
+        total_watts = fleet[4] or 0
+        total_kw = total_watts / 1000
+        
+        # Cost calculation
+        electricity_rate = float(os.getenv("ELECTRICITY_RATE_KWH", "0.042"))
+        daily_cost = total_kw * 24 * electricity_rate
+        
+        # BTC price (from latest weather or hardcoded)
+        btc_price = 95000  # Hardcoded for now
+        # Daily BTC estimate (simplified)
+        daily_btc = (total_ths * 86400) / (2**32 * 85e12) if total_ths > 0 else 0
+        daily_revenue = daily_btc * btc_price
+        daily_profit = daily_revenue - daily_cost
+        
+        # Flagged miners
+        flagged = conn.execute('''
+            SELECT COUNT(DISTINCT miner_id) FROM miner_readings
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+            AND issue IS NOT NULL AND issue != ''
+        ''').fetchone()[0]
+        
+        # Latest scan
+        latest_scan = conn.execute(
+            "SELECT scanned_at FROM scans ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        scan_time = latest_scan[0][11:16] if latest_scan else "?"
+        
+        # Weather
+        weather = conn.execute(
+            "SELECT temp_f, humidity_pct FROM weather_readings ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        
+        # Miners with issues (flagged)
+        eta_critical = conn.execute('''
+            SELECT ip, model, issue
+            FROM miner_readings 
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+            AND issue IS NOT NULL AND issue != ''
+            ORDER BY hashrate_pct ASC
+            LIMIT 5
+        ''').fetchall()
+        # Model comparison
+        models = conn.execute('''
+            SELECT 
+                model,
+                COUNT(*) as cnt,
+                AVG(hashrate) / 1000.0 as avg_ths,
+                AVG(consumption) as avg_w
+            FROM miner_readings 
+            WHERE id IN (SELECT MAX(id) FROM miner_readings GROUP BY miner_id)
+            AND model IS NOT NULL AND model != ''
+            GROUP BY model
+            ORDER BY avg_ths DESC
+            LIMIT 5
+        ''').fetchall()
+        
+    finally:
+        conn.close()
+    
+    # Build flagged miners HTML
+    eta_html = ""
+    if eta_critical:
+        for m in eta_critical:
+            issue = (m[2] or '')[:20]  # Truncate issue text
+            eta_html += f'''
+            <div class="eta-row">
+                <span class="ip">{m[0]}</span>
+                <span class="warn">{issue}</span>
+            </div>'''
+    else:
+        eta_html = '<div class="no-issues">✓ No flagged miners</div>'
+    
+    # Build models HTML
+    models_html = ""
+    for m in models:
+        model_name = (m[0] or '').replace('Antminer ', '').replace('Antminer_', '')[:12]
+        avg_ths = m[2] or 0
+        avg_w = m[3] or 0
+        efficiency = (avg_w / avg_ths) if avg_ths > 0 else 0
+        models_html += f'''
+        <div class="model-row">
+            <span class="name">{model_name}</span>
+            <span class="stats">{m[1]}× | {avg_ths:.0f} TH/s | {efficiency:.0f} J/TH</span>
+        </div>'''
+    
+    # Profit indicator
+    profit_class = "good" if daily_profit > 0 else "bad"
+    profit_sign = "+" if daily_profit > 0 else ""
+    
+    weather_html = f"{weather[0]:.0f}°F" if weather else "?"
+    
+    return f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>⛏ Mining Guardian</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            color: #eee;
+            padding: 12px;
+            padding-top: max(env(safe-area-inset-top), 12px);
+            min-height: 100vh;
+        }}
+        .header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }}
+        .header h1 {{ font-size: 1.2rem; color: #4ade80; }}
+        .header .meta {{ font-size: 0.75rem; color: #666; text-align: right; }}
+        
+        .hero {{
+            background: linear-gradient(135deg, #252542 0%, #1e1e38 100%);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }}
+        .hero-stat {{
+            text-align: center;
+        }}
+        .hero-stat .value {{
+            font-size: 1.6rem;
+            font-weight: 700;
+        }}
+        .hero-stat .label {{
+            font-size: 0.65rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .hero-stat.online .value {{ color: #4ade80; }}
+        .hero-stat.hashrate .value {{ color: #60a5fa; }}
+        .hero-stat.power .value {{ color: #fbbf24; }}
+        .hero-stat.profit .value {{ color: #4ade80; }}
+        .hero-stat.profit.negative .value {{ color: #f87171; }}
+        
+        .quick-stats {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }}
+        .quick-stat {{
+            background: #252542;
+            border-radius: 10px;
+            padding: 10px 6px;
+            text-align: center;
+        }}
+        .quick-stat .val {{ font-size: 1.1rem; font-weight: 600; }}
+        .quick-stat .lbl {{ font-size: 0.6rem; color: #888; }}
+        .quick-stat.warn .val {{ color: #fbbf24; }}
+        .quick-stat.bad .val {{ color: #f87171; }}
+        
+        .section {{
+            background: #252542;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }}
+        .section h3 {{
+            font-size: 0.75rem;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        
+        .eta-row, .model-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #1a1a2e;
+        }}
+        .eta-row:last-child, .model-row:last-child {{ border: none; }}
+        .eta-row .ip {{ font-family: monospace; font-size: 0.85rem; }}
+        .model-row .name {{ font-size: 0.85rem; }}
+        .model-row .stats {{ font-size: 0.75rem; color: #888; }}
+        
+        .bad {{ color: #f87171; }}
+        .warn {{ color: #fbbf24; }}
+        .good {{ color: #4ade80; }}
+        .no-issues {{ color: #4ade80; text-align: center; padding: 16px; font-size: 0.9rem; }}
+        
+        .refresh {{
+            display: block;
+            width: 100%;
+            background: #4ade80;
+            color: #000;
+            border: none;
+            border-radius: 12px;
+            padding: 14px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+        }}
+        .refresh:active {{ opacity: 0.8; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⛏ Mining Guardian</h1>
+        <div class="meta">{scan_time} | {weather_html}</div>
+    </div>
+    
+    <div class="hero">
+        <div class="hero-stat online">
+            <div class="value">{fleet[1]}/{fleet[0]}</div>
+            <div class="label">Miners Online</div>
+        </div>
+        <div class="hero-stat hashrate">
+            <div class="value">{total_ths/1000:.1f}</div>
+            <div class="label">PH/s Hashrate</div>
+        </div>
+        <div class="hero-stat power">
+            <div class="value">{total_kw:.0f}</div>
+            <div class="label">kW Power</div>
+        </div>
+        <div class="hero-stat profit {"negative" if daily_profit < 0 else ""}">
+            <div class="value">{profit_sign}${abs(daily_profit):.0f}</div>
+            <div class="label">Daily Profit</div>
+        </div>
+    </div>
+    
+    <div class="quick-stats">
+        <div class="quick-stat {"warn" if flagged > 0 else ""}">
+            <div class="val">{flagged}</div>
+            <div class="lbl">Flagged</div>
+        </div>
+        <div class="quick-stat">
+            <div class="val">${daily_cost:.0f}</div>
+            <div class="lbl">Elec/Day</div>
+        </div>
+        <div class="quick-stat">
+            <div class="val">${daily_revenue:.0f}</div>
+            <div class="lbl">Rev/Day</div>
+        </div>
+        <div class="quick-stat">
+            <div class="val">${btc_price/1000:.0f}k</div>
+            <div class="lbl">BTC</div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h3>⚠️ Flagged Miners</h3>
+        {eta_html}
+    </div>
+    
+    <div class="section">
+        <h3>📊 Model Performance</h3>
+        {models_html}
+    </div>
+    
+    <button class="refresh" onclick="location.reload()">↻ Refresh</button>
+</body>
+</html>'''
+
+
 def environment_chart():
     """Standalone HTML line chart — outside temp, supply/return water, humidity."""
     return ENVIRONMENT_CHART_HTML
