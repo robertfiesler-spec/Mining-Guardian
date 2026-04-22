@@ -29,7 +29,7 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"
     if _p not in sys.path:
         sys.path.insert(0, _p)
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── Rate limiting (added Apr 21 2026) ─────────────────────────
@@ -3333,6 +3333,64 @@ def mobile_dashboard():
     </script>
 </body>
 </html>'''
+
+
+# ------------------------------------------------
+# PDF Report Endpoints
+# ------------------------------------------------
+
+@app.get("/reports/{filename}")
+async def get_report(filename: str):
+    """Download a generated PDF report."""
+    from pathlib import Path
+    reports_dir = Path(__file__).parent.parent / "reports"
+    file_path = reports_dir / filename
+    
+    if not file_path.exists() or not file_path.suffix == ".pdf":
+        return {"error": "Report not found"}
+    
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type="application/pdf"
+    )
+
+
+@app.get("/reports")
+async def list_reports():
+    """List available PDF reports."""
+    from pathlib import Path
+    reports_dir = Path(__file__).parent.parent / "reports"
+    
+    if not reports_dir.exists():
+        return {"reports": []}
+    
+    reports = []
+    for f in sorted(reports_dir.glob("*.pdf"), reverse=True):
+        reports.append({
+            "filename": f.name,
+            "size_kb": round(f.stat().st_size / 1024, 1),
+            "url": f"/reports/{f.name}"
+        })
+    
+    return {"reports": reports[:20]}
+
+
+@app.post("/reports/generate")
+async def generate_report(days: int = Query(default=7, ge=1, le=30)):
+    """Generate a new PDF report."""
+    try:
+        from api.report_builder import generate_weekly_report
+        path = generate_weekly_report(days=days)
+        return {
+            "status": "success",
+            "filename": path.name,
+            "url": f"/reports/{path.name}",
+            "period_days": days
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
 
 if __name__ == "__main__":
     import uvicorn

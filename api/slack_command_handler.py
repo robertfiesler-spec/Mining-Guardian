@@ -651,6 +651,19 @@ class CommandHandler:
         self._reply(channel, thread_ts, "\n".join(lines))
 
 
+
+    def cmd_report(self, channel, thread_ts, args=""):
+        """Generate PDF report."""
+        try:
+            from api.report_builder import cmd_report as report_cmd
+            response = report_cmd(args)
+            self._reply(channel, thread_ts, response)
+        except ImportError as e:
+            self._reply(channel, thread_ts, f":x: Report module not available: {e}")
+        except Exception as e:
+            logger.error("Report command error: %s", e)
+            self._reply(channel, thread_ts, f":x: Error: {e}")
+
     def cmd_maintenance(self, channel, thread_ts, args=""):
         """Maintenance schedule commands."""
         try:
@@ -710,6 +723,10 @@ class CommandHandler:
             "  maintenance - show active/upcoming",
             "  maintenance all - show history",
             "  maintenance cancel N - cancel",
+            "",
+            "*:page_facing_up: Reports:*",
+            "  report - generate weekly PDF report",
+            "  report 14 - last 14 days",
         ]
         self._reply(channel, thread_ts, "\n".join(lines))
 
@@ -780,6 +797,11 @@ class CommandHandler:
             self.cmd_efficient(channel, thread_ts)
         elif lower in ("audit", "recent actions", "what was done"):
             self.cmd_audit(channel, thread_ts)
+        elif lower in ("report", "/report", "pdf", "weekly"):
+            self.cmd_report(channel, thread_ts)
+        elif lower.startswith(("report ", "/report ")):
+            args = lower.split(" ", 1)[1] if " " in lower else ""
+            self.cmd_report(channel, thread_ts, args)
         elif lower in ("maintenance", "/maintenance", "maint", "schedule"):
             self.cmd_maintenance(channel, thread_ts)
         elif lower.startswith(("maintenance ", "/maintenance ", "maint ")):
