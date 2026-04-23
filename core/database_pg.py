@@ -485,3 +485,337 @@ class GuardianPGDB:
         connections.
         """
         pass
+
+    # ── Phase 4: medium methods (Postgres-translated from core/database.py) ─────
+
+    def save_notifications(self, notifications: list) -> None:
+        """Store AMS notifications in Postgres."""
+        if not notifications:
+            return
+        import json
+        now = datetime.now().isoformat()
+        rows = []
+        for n in notifications:
+            params = n.get("params", {})
+            rows.append((
+                now,
+                n.get("id"),
+                str(n.get("deviceID", "")),
+                n.get("type"),
+                n.get("key"),
+                params.get("alertLevel"),
+                params.get("minerIp"),
+                json.dumps(n),
+            ))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                execute_batch(
+                    cur,
+                    "INSERT INTO ams_notifications "
+                    "(recorded_at, notification_id, device_id, type, key, "
+                    " alert_level, miner_ip, raw) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    rows,
+                )
+        logger.info("Saved %s AMS notifications", len(rows))
+
+    def save_weather(self, weather: dict) -> None:
+        """Store a weather reading alongside scan data."""
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO weather_readings "
+                    "(recorded_at, temp_f, humidity_pct, feels_like_f, "
+                    " temp_high_f, temp_low_f, humidity_max, humidity_min) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (now,
+                     weather.get("temp_f"),
+                     weather.get("humidity_pct"),
+                     weather.get("feels_like_f"),
+                     weather.get("temp_high_f"),
+                     weather.get("temp_low_f"),
+                     weather.get("humidity_max"),
+                     weather.get("humidity_min")),
+                )
+
+    def save_hvac(self, hvac) -> None:
+        """Store an HVAC snapshot alongside scan data."""
+        if hvac is None:
+            return
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO hvac_readings "
+                    "(recorded_at, supply_temp_f, return_temp_f, delta_t_f, "
+                    " diff_pressure, spray_pump_on, cwp1_vfd_pct, cwp2_vfd_pct, "
+                    " ct1_vfd_pct, ct2_vfd_pct, leak_alarm, ct1_fault, ct2_fault, pump_fault) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (now,
+                     hvac.supply_temp_f,
+                     hvac.return_temp_f,
+                     hvac.delta_t_f,
+                     hvac.diff_pressure_psi,
+                     1 if hvac.spray_pump_on else 0,
+                     hvac.cwp1_vfd_pct,
+                     hvac.cwp2_vfd_pct,
+                     hvac.ct1_vfd_pct,
+                     hvac.ct2_vfd_pct,
+                     1 if hvac.leak_alarm else 0,
+                     1 if hvac.ct1_fault else 0,
+                     1 if hvac.ct2_fault else 0,
+                     1 if hvac.pump_fault else 0),
+                )
+
+    def load_known_models(self, catalog_path: str) -> set:
+        """Load known model names from the Intelligence Catalog JSON.
+
+        Pure file-read operation — no DB access. Copied verbatim from
+        core/database.py::GuardianDB.load_known_models logic (minus the
+        @staticmethod _normalize_model_name call which is still on the
+        SQLite class). We inline the normalization here.
+        """
+        import json
+        known = set()
+
+        def _normalize(name: str) -> str:
+            """Normalize a model name for comparison: lowercase, strip spaces/hyphens."""
+            if not name:
+                return ""
+            return name.lower().replace(" ", "").replace("-", "")
+
+        try:
+            with open(catalog_path, "r") as f:
+                catalog = json.load(f)
+            for key, entry in catalog.items():
+                known.add(_normalize(key))
+                display = entry.get("display_name", "")
+                if display:
+                    base = display.split("(")[0].strip()
+                    known.add(_normalize(base))
+            logger.info("Loaded %d known models from Intelligence Catalog", len(known))
+        except FileNotFoundError:
+            logger.warning(
+                "Intelligence Catalog not found: %s — discovery will flag all models",
+                catalog_path,
+            )
+        except Exception as e:
+            logger.error("Failed to load Intelligence Catalog: %s", e)
+        return known
+
+    def save_chain_readings(self, scan_id: int, scanned_at: str, miners: list) -> None:
+        """Store per-board chain data every scan."""
+        rows = []
+        for m in miners:
+            miner_id = str(m.get("id", ""))
+            ip = m.get("ip", "")
+            for chain in (m.get("chains", []) or []):
+                rows.append((
+                    scan_id, scanned_at, miner_id, ip,
+                    chain.get("index", 0), chain.get("rate", 0),
+                    chain.get("voltage"), chain.get("freq"),
+                    chain.get("consumption"), chain.get("HWErrors", 0),
+                    chain.get("tempBoard"), chain.get("tempChip"),
+                ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                execute_batch(
+                    cur,
+                    "INSERT INTO chain_readings "
+                    "(scan_id, scanned_at, miner_id, ip, board_index, "
+                    " rate_mhs, voltage, freq_mhz, consumption_w, "
+                    " hw_errors, temp_board, temp_chip) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    rows,
+                    page_size=200,
+                )
+
+    def save_pool_readings(self, scan_id: int, scanned_at: str, miners: list) -> None:
+        """Store per-pool stats every scan."""
+        rows = []
+        for m in miners:
+            miner_id = str(m.get("id", ""))
+            ip = m.get("ip", "")
+            for pool in (m.get("pools", []) or []):
+                rows.append((
+                    scan_id, scanned_at, miner_id, ip,
+                    pool.get("priority", 0), pool.get("url", ""),
+                    pool.get("user", ""), pool.get("poolType", ""),
+                    pool.get("status", ""),
+                    int(pool.get("accepted", 0) or 0),
+                    int(pool.get("rejected", 0) or 0),
+                    float(pool.get("acceptedDiff", 0) or 0),
+                    float(pool.get("rejectedDiff", 0) or 0),
+                    pool.get("diff", ""),
+                ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                execute_batch(
+                    cur,
+                    "INSERT INTO pool_readings "
+                    "(scan_id, scanned_at, miner_id, ip, pool_priority, "
+                    " pool_url, pool_user, pool_type, status, "
+                    " accepted, rejected, accepted_diff, rejected_diff, difficulty) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    rows,
+                    page_size=200,
+                )
+
+    def save_miner_state_readings(self, scan_id: int, scanned_at: str, miners: list) -> None:
+        """Store extended state fields from AMS miner list."""
+        rows = []
+        for m in miners:
+            rows.append((
+                scan_id, scanned_at, str(m.get("id", "")), m.get("ip", ""),
+                m.get("hashrateMedium"), m.get("hashrateLow"),
+                m.get("maxHashrate"), m.get("maxConsumption"),
+                m.get("maxTempBoard"), m.get("maxTempChip"),
+                m.get("tempChipLow"), m.get("tempChipMedium"),
+                m.get("minerStatus"), m.get("coolingMode"),
+                m.get("workerVersion", ""), m.get("activePoolUser", ""),
+            ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                execute_batch(
+                    cur,
+                    "INSERT INTO miner_state_readings "
+                    "(scan_id, scanned_at, miner_id, ip, "
+                    " hashrate_medium, hashrate_low, max_hashrate, max_consumption, "
+                    " max_temp_board, max_temp_chip, temp_chip_low, temp_chip_medium, "
+                    " miner_status, cooling_mode, worker_version, active_pool_user) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    rows,
+                    page_size=200,
+                )
+
+    def save_ams_extended(self, scan_id: int, scanned_at: str, miners: list) -> None:
+        """Store AMS fields not captured elsewhere."""
+        rows = []
+        for m in miners:
+            map_loc = m.get("mapLocation") or {}
+            pdu_out = m.get("pduOutlet") or {}
+            pools = m.get("pools") or []
+            stratum_url = pools[0].get("stratumURL", "") if pools else ""
+            rows.append((
+                scan_id, scanned_at, str(m.get("id", "")), m.get("ip", ""),
+                m.get("timestamp", ""),
+                map_loc.get("id"),
+                map_loc.get("x"),
+                map_loc.get("y"),
+                pdu_out.get("counter"),
+                stratum_url,
+                1 if m.get("favorite") else 0,
+            ))
+        if not rows:
+            return
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                execute_batch(
+                    cur,
+                    "INSERT INTO miner_ams_extended "
+                    "(scan_id, scanned_at, miner_id, ip, "
+                    " ams_timestamp, map_location_id, map_x, map_y, "
+                    " pdu_counter, stratum_url, favorite) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    rows,
+                    page_size=200,
+                )
+
+    def save_discovery(self, discovery_type: str, miner_data: dict,
+                       normalized_name: str, device_name: str) -> None:
+        """Insert or update a discovery_log entry."""
+        import json
+        now = datetime.now().isoformat()
+        raw_json = json.dumps(miner_data, default=str)
+        chains = miner_data.get("chains") or []
+        board_count = len(chains)
+        chip_count = chains[0].get("chips", 0) if chains else None
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                if discovery_type == "new_model":
+                    cur.execute(
+                        "SELECT id FROM discovery_log "
+                        "WHERE discovery_type = 'new_model' AND normalized_name = %s",
+                        (normalized_name,),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT id FROM discovery_log "
+                        "WHERE discovery_type = 'new_firmware' AND firmware_version = %s "
+                        "AND normalized_name = %s",
+                        (miner_data.get("firmwareVersion", ""), normalized_name),
+                    )
+                existing = cur.fetchone()
+
+            with conn.cursor() as cur:
+                if existing:
+                    cur.execute(
+                        "UPDATE discovery_log SET last_seen = %s, raw_data = %s, "
+                        "hashrate = %s, temp_chip = %s, consumption = %s, board_count = %s "
+                        "WHERE id = %s",
+                        (now, raw_json,
+                         miner_data.get("hashrate") or 0,
+                         miner_data.get("tempChip") or 0,
+                         miner_data.get("consumption") or 0,
+                         board_count,
+                         existing["id"]),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO discovery_log "
+                        "(discovery_type, device_name, normalized_name, firmware_version, "
+                        " miner_id, ip, hashrate, temp_chip, consumption, board_count, "
+                        " chip_count, raw_data, first_seen, last_seen) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (discovery_type, device_name, normalized_name,
+                         miner_data.get("firmwareVersion"),
+                         str(miner_data.get("id", "")),
+                         miner_data.get("ip"),
+                         miner_data.get("hashrate") or 0,
+                         miner_data.get("tempChip") or 0,
+                         miner_data.get("consumption") or 0,
+                         board_count, chip_count, raw_json,
+                         now, now),
+                    )
+
+    def log_action(self, miner_id: str, ip: str, model: str,
+                   problem: str, action_taken: str, decision: str,
+                   approved_by: str = None, slack_user_id: str = None,
+                   scan_id: int = None, notes: str = None) -> None:
+        """Log every approval or denial to the permanent action audit log."""
+        now = datetime.now()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO action_audit_log "
+                    "(timestamp, date, scan_id, miner_id, ip, model, "
+                    " problem, action_taken, decision, approved_by, "
+                    " slack_user_id, notes) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (now.isoformat(), now.strftime("%Y-%m-%d"), scan_id,
+                     miner_id, ip, model, problem, action_taken,
+                     decision, approved_by, slack_user_id, notes),
+                )
+        logger.info("Audit log: %s %s on %s (%s) by %s",
+                    decision, action_taken, ip, model, approved_by or "unknown")
+
+    def purge_old_logs(self, days: int = 7) -> int:
+        """Delete miner log entries older than N days. Returns count deleted."""
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM miner_logs WHERE collected_at < %s",
+                    (cutoff,),
+                )
+                deleted = cur.rowcount
+        if deleted:
+            logger.info("Purged %s log entries older than %s days", deleted, days)
+        return deleted
