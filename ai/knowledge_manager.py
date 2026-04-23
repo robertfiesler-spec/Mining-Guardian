@@ -13,7 +13,8 @@ Weekly training passes update it with deeper analysis.
 import json
 import logging
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -25,6 +26,27 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
+
+
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut.
+    See core/overnight_automation.py for rationale.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
 
 
 class KnowledgeManager:
@@ -146,19 +168,17 @@ class KnowledgeManager:
 
         # Pull live board-level data — chronic HW errors, dead boards
         try:
-            import sqlite3
-            conn = sqlite3.connect(self.db_path, timeout=30)
-            conn.row_factory = sqlite3.Row
+            conn = _PgConnWrapper(psycopg2.connect(self.db_path, cursor_factory=RealDictCursor))
 
             # Miners with hardware identity parsed
-            hw_count = conn.execute("SELECT COUNT(DISTINCT miner_id) FROM miner_hardware").fetchone()[0]
+            hw_count = conn.execute("SELECT COUNT(DISTINCT miner_id) AS cnt FROM miner_hardware").fetchone()["cnt"]
             parts.append(f"\nHardware identity: {hw_count} miners with full board/chip data")
 
             # Boards with HW errors in last 7 days
             hwerr = conn.execute("""
                 SELECT miner_id, ip, board_index, SUM(hw_errors) as total_errors
                 FROM chain_readings
-                WHERE scanned_at > datetime('now', '-7 days')
+                WHERE scanned_at > (NOW() - INTERVAL '7 days')::text
                 GROUP BY miner_id, board_index
                 HAVING total_errors > 0
                 ORDER BY total_errors DESC LIMIT 10
@@ -173,7 +193,7 @@ class KnowledgeManager:
                 SELECT miner_id, ip, pool_url,
                        ROUND(MAX(rejected)*100.0/NULLIF(MAX(accepted)+MAX(rejected),0), 2) as reject_pct
                 FROM pool_readings
-                WHERE scanned_at > datetime('now', '-24 hours')
+                WHERE scanned_at > (NOW() - INTERVAL '24 hours')::text
                 GROUP BY miner_id
                 HAVING reject_pct > 1.0
                 ORDER BY reject_pct DESC LIMIT 5
@@ -199,7 +219,7 @@ class KnowledgeManager:
                 SELECT ip, metric_type, COUNT(*) as cnt,
                        AVG(CASE WHEN numeric_value IS NOT NULL THEN numeric_value END) as avg_val
                 FROM log_metrics
-                WHERE recorded_at >= datetime('now', '-24 hours')
+                WHERE recorded_at >= (NOW() - INTERVAL '24 hours')::text
                   AND metric_type IN ('chain_event', 'chip_hashrate', 'voltage_domain', 'fan_speed', 'psu_status')
                 GROUP BY ip, metric_type
                 HAVING cnt >= 3
