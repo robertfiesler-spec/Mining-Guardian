@@ -858,6 +858,7 @@ class GuardianDB:
         online   = sum(1 for m in miners if m.get("status") == "online")
         offline  = len(miners) - online
 
+        # First block: write the scan header row (scans table, operational.db).
         with self._connect('scans') as conn:
             cur = conn.execute(
                 "INSERT INTO scans (scanned_at, total_miners, online, offline, issues) "
@@ -866,6 +867,16 @@ class GuardianDB:
             )
             scan_id = cur.lastrowid
 
+        # Second block: build per-miner rows and bulk-insert into miner_readings
+        # (timeseries.db). Uses a separate connection because miner_readings lives
+        # in a different split DB than scans. The firmware-fallback SELECT inside
+        # the loop also reads from miner_readings, so it belongs on this
+        # connection, not on the scans-block connection.
+        # Tradeoff: the scans INSERT has already committed when this block runs.
+        # If this block crashes, we'd have a scans row with no miner_readings.
+        # Acceptable — the scan header is a durable record of "a scan happened";
+        # a retry can re-populate miner_readings from AMS if needed.
+        with self._connect('miner_readings') as conn:
             # Build a quick lookup of issues by miner id
             issue_map = {i["id"]: i for i in issues}
 
