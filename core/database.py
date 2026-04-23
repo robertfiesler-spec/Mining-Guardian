@@ -6,6 +6,7 @@ This module handles all SQLite database operations for Mining Guardian.
 """
 
 import sqlite3
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -30,8 +31,27 @@ class GuardianDB:
         self._init_db()
 
     def _connect(self, table_name: str = "scans") -> sqlite3.Connection:
-        """Get connection for the database containing the specified table."""
-        return self._router.connection(table_name)
+        """Return a connection to the legacy monolithic guardian.db.
+        
+        TEMPORARY: Router-based split-DB routing disabled on 2026-04-22 because
+        several extracted methods (e.g. count_outcome_failures, _count_pdu_cycles)
+        issue cross-table queries that cannot span SQLite databases. Falling back
+        to the single legacy guardian.db keeps all joins working. The split DBs
+        remain as point-in-time snapshots for future Postgres migration work.
+        The `table_name` argument is accepted but ignored."""
+        from contextlib import contextmanager
+        @contextmanager
+        def _cm():
+            conn = sqlite3.connect(self.db_path, timeout=30)
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA busy_timeout=30000')
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+                conn.commit()
+            finally:
+                conn.close()
+        return _cm()
     
     def _connect_legacy(self) -> sqlite3.Connection:
         """Legacy connection method - connects to guardian.db directly."""
