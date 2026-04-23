@@ -25,7 +25,8 @@ import re
 import time
 import json
 import logging
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import requests
 from collections import OrderedDict
 from datetime import datetime
@@ -56,7 +57,19 @@ CHANNEL_IDS = [
     "C0AUX8DNGTB",   # mg-critical
 ]
 CHANNEL_ID = CHANNEL_IDS[0]  # Default for backwards compat
-DB_PATH = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+# Kept as a module-level value so CostTracker(DB_PATH) at line ~256 still works.
+# DB_PATH is now a DSN string, not a filesystem path.
+DB_PATH = _pg_dsn()
 OLLAMA_URL = "http://localhost:11434/api/generate"
 POLL_INTERVAL = 5
 # Authorized Slack users who can execute commands
@@ -66,6 +79,40 @@ BOT_USER_ID = None
 
 
 _PROCESSED_MAX = 10000  # Cap to prevent unbounded memory growth
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut.
+    See core/overnight_automation.py for rationale.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
 
 class CommandHandler:
     def __init__(self):
@@ -90,9 +137,8 @@ class CommandHandler:
             logger.warning("Could not get bot ID: %s", e)
 
     def _get_db(self):
-        conn = sqlite3.connect(DB_PATH, timeout=30)
-        conn.row_factory = sqlite3.Row
-        return conn
+        """Return a psycopg2-backed connection with SQLite-style execute shortcut."""
+        return _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
 
     def _reply(self, channel, thread_ts, text):
         """Post a reply in the channel or thread."""
@@ -129,7 +175,7 @@ class CommandHandler:
         """Detailed info on a specific miner."""
         conn = self._get_db()
         row = conn.execute(
-            "SELECT * FROM miner_readings WHERE ip = ? OR miner_id = ? ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM miner_readings WHERE ip = %s OR miner_id = %s ORDER BY id DESC LIMIT 1",
             (ip_or_id, ip_or_id)).fetchone()
         if not row:
             self._reply(channel, thread_ts, f"Miner `{ip_or_id}` not found in recent scans.")
@@ -138,12 +184,12 @@ class CommandHandler:
 
         # Count flags
         flags = conn.execute(
-            "SELECT COUNT(*) FROM miner_readings WHERE miner_id = ? AND action IS NOT NULL AND action != 'MONITOR'",
-            (row['miner_id'],)).fetchone()[0]
+            "SELECT COUNT(*) AS cnt FROM miner_readings WHERE miner_id = %s AND action IS NOT NULL AND action != 'MONITOR'",
+            (row['miner_id'],)).fetchone()['cnt']
 
         # Check dead boards
         dead = conn.execute(
-            "SELECT board_indices FROM known_dead_boards WHERE miner_id = ? AND resolved_at IS NULL",
+            "SELECT board_indices FROM known_dead_boards WHERE miner_id = %s AND resolved_at IS NULL",
             (row['miner_id'],)).fetchone()
         conn.close()
 
@@ -341,7 +387,7 @@ class CommandHandler:
             # Resolve to miner_id and ip
             row = conn.execute(
                 "SELECT miner_id, ip, model FROM miner_readings "
-                "WHERE ip=? OR miner_id=? ORDER BY id DESC LIMIT 1",
+                "WHERE ip=%s OR miner_id=%s ORDER BY id DESC LIMIT 1",
                 (ip_or_id, ip_or_id)
             ).fetchone()
             if not row:
@@ -357,7 +403,7 @@ class CommandHandler:
                 SELECT DATE(scanned_at) as day, action, COUNT(*) as cnt,
                        AVG(hashrate_pct) as avg_hr, AVG(temp_chip) as avg_temp
                 FROM miner_readings
-                WHERE miner_id=? AND action IS NOT NULL AND action!='MONITOR'
+                WHERE miner_id=%s AND action IS NOT NULL AND action!='MONITOR'
                 GROUP BY DATE(scanned_at), action
                 ORDER BY day DESC LIMIT 14
             """, (mid,)).fetchall()
@@ -365,21 +411,21 @@ class CommandHandler:
             # Audit history
             audit = conn.execute("""
                 SELECT action_taken, decision, approved_by, timestamp, notes
-                FROM action_audit_log WHERE miner_id=?
+                FROM action_audit_log WHERE miner_id=%s
                 ORDER BY timestamp DESC LIMIT 10
             """, (mid,)).fetchall()
 
             # Dead board history
             dead = conn.execute(
                 "SELECT board_indices, first_seen, restart_result, resolved_at "
-                "FROM known_dead_boards WHERE miner_id=? ORDER BY first_seen DESC LIMIT 5",
+                "FROM known_dead_boards WHERE miner_id=%s ORDER BY first_seen DESC LIMIT 5",
                 (mid,)
             ).fetchall()
 
             # Most recent log snippets
             logs = conn.execute("""
                 SELECT health_status, collected_at, content FROM miner_logs
-                WHERE miner_id=? ORDER BY id DESC LIMIT 3
+                WHERE miner_id=%s ORDER BY id DESC LIMIT 3
             """, (mid,)).fetchall()
 
             conn.close()
@@ -526,7 +572,7 @@ class CommandHandler:
         since = (datetime.now() - timedelta(hours=10)).isoformat()
         actions = conn.execute("""
             SELECT miner_id, ip, model, action_taken, decision, approved_by, timestamp
-            FROM action_audit_log WHERE timestamp >= ? ORDER BY timestamp
+            FROM action_audit_log WHERE timestamp >= %s ORDER BY timestamp
         """, (since,)).fetchall()
         conn.close()
         if not actions:
