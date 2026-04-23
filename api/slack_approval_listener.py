@@ -382,7 +382,7 @@ class ApprovalListener:
                         WHERE decision = 'DENIED'
                           AND approved_by = %s
                           AND date = date('now')
-                          AND (notes IS NULL OR notes NOT LIKE '%DENIAL_REASON%')
+                          AND (notes IS NULL OR notes NOT LIKE '%%DENIAL_REASON%%')
                         ORDER BY timestamp DESC
                         LIMIT 5
                     """, (reason, user_name))

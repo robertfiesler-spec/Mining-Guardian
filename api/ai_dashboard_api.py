@@ -129,16 +129,16 @@ def get_prediction_status():
 def get_feature_status():
     conn = _db()
     outcomes = conn.execute("SELECT COUNT(*) FROM miner_restarts WHERE outcome IS NOT NULL AND outcome != 'PENDING'").fetchone()[0] or 0
-    conf = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE notes LIKE '%confidence%' OR notes LIKE '%Conf:%'").fetchone()[0] or 0
-    denials = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE notes LIKE '%DENIAL_REASON%'").fetchone()[0] or 0
+    conf = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE notes LIKE '%%confidence%%' OR notes LIKE '%%Conf:%%'").fetchone()[0] or 0
+    denials = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE notes LIKE '%%DENIAL_REASON%%'").fetchone()[0] or 0
     try:
         with open(KNOWLEDGE_PATH) as f:
             fps = len(json.load(f).get("miner_profiles", {}))
     except Exception:
         fps = 0
     hvac = conn.execute("SELECT COUNT(*) FROM hvac_readings").fetchone()[0] or 0
-    preds = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE action_taken LIKE '%PREEMPTIVE%'").fetchone()[0] or 0
-    diverse = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE action_taken LIKE '%POWER_PROFILE%' OR action_taken LIKE '%ECO_MODE%'").fetchone()[0] or 0
+    preds = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE action_taken LIKE '%%PREEMPTIVE%%'").fetchone()[0] or 0
+    diverse = conn.execute("SELECT COUNT(*) FROM action_audit_log WHERE action_taken LIKE '%%POWER_PROFILE%%' OR action_taken LIKE '%%ECO_MODE%%'").fetchone()[0] or 0
     conn.close()
     return [
         {"name": "Outcome Feedback", "status": "ACTIVE", "metric": f"{outcomes} labeled", "desc": "Labels every restart SUCCESS/FAILURE/PARTIAL to learn what works"},

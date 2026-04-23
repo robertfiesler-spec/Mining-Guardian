@@ -23,6 +23,9 @@ import html as html_lib
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+import logging
+
+logger = logging.getLogger('dashboard_api')
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
@@ -697,7 +700,7 @@ def metrics(request: Request):
         ).fetchone()[0]
         expired = conn.execute(
             "SELECT COUNT(*) FROM action_audit_log WHERE decision='DENIED' "
-            "AND approved_by LIKE '%Auto-Expired%'"
+            "AND approved_by LIKE '%%Auto-Expired%%'"
         ).fetchone()[0]
         restarts = conn.execute(
             "SELECT COUNT(*) FROM miner_restarts"
