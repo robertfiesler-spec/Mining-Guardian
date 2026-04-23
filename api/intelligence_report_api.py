@@ -22,7 +22,9 @@ Endpoints:
 Version: 2.2.0 — Real fleet data from guardian.db + all prior fixes (April 16 2026)
 """
 
-import json, csv, os, re, sqlite3, math, time, threading
+import json, csv, os, re, math, time, threading
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from pathlib import Path as FilePath
 from datetime import datetime
 from typing import Optional
@@ -48,7 +50,58 @@ def _safe_float(val, default=0.0) -> float:
 # ── Configuration ─────────────────────────────────────────────
 BASE_DIR = FilePath(__file__).resolve().parent
 REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
-GUARDIAN_DB = os.environ.get("GUARDIAN_DB", str(REPO_DIR / "guardian.db"))
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+# Kept for compatibility with any external callers that import this constant.
+# Now holds a DSN string, not a filesystem path.
+GUARDIAN_DB = _pg_dsn()
+
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut.
+    See core/overnight_automation.py for rationale.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def cursor(self):
+        return self._conn.cursor()
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 # On VPS: API runs from repo root, data lives in intelligence-catalog/data/
 _DATA_DIR = REPO_DIR / "intelligence-catalog" / "data"
 ENRICHMENT_CSV = str(_DATA_DIR / "miner_enrichment_master.csv")
@@ -475,12 +528,15 @@ def get_fleet_data(model_name: str) -> dict:
     2. Normalized match (strip spaces/hyphens/plus from both sides)
     3. Short name match (drop manufacturer prefix)
     """
-    if not os.path.exists(GUARDIAN_DB):
-        return {"deployed": False, "reason": "guardian.db not found"}
+    # Postgres: do a quick connection probe. If DB is unreachable, bail early.
+    try:
+        _probe = psycopg2.connect(_pg_dsn())
+        _probe.close()
+    except psycopg2.OperationalError as e:
+        return {"deployed": False, "reason": f"Postgres unreachable: {e}"}
     
     try:
-        conn = sqlite3.connect(GUARDIAN_DB, timeout=5)
-        conn.row_factory = sqlite3.Row
+        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
         cur = conn.cursor()
         
         # First: find matching miner_ids from miner_hardware.device_name
@@ -490,7 +546,7 @@ def get_fleet_data(model_name: str) -> dict:
         cur.execute("""
             SELECT DISTINCT miner_id, ip, device_name
             FROM miner_hardware
-            WHERE LOWER(device_name) LIKE ?
+            WHERE LOWER(device_name) LIKE %s
         """, (f"%{model_name.lower()}%",))
         hw_rows = [dict(r) for r in cur.fetchall()]
         
@@ -500,7 +556,7 @@ def get_fleet_data(model_name: str) -> dict:
             cur.execute("""
                 SELECT DISTINCT miner_id, ip, device_name
                 FROM miner_hardware
-                WHERE REPLACE(REPLACE(REPLACE(LOWER(device_name), ' ', ''), '-', ''), '+', '') LIKE ?
+                WHERE REPLACE(REPLACE(REPLACE(LOWER(device_name), ' ', ''), '-', ''), '+', '') LIKE %s
             """, (f"%{norm}%",))
             hw_rows = [dict(r) for r in cur.fetchall()]
         
@@ -512,7 +568,7 @@ def get_fleet_data(model_name: str) -> dict:
                 cur.execute("""
                     SELECT DISTINCT miner_id, ip, device_name
                     FROM miner_hardware
-                    WHERE LOWER(device_name) LIKE ?
+                    WHERE LOWER(device_name) LIKE %s
                 """, (f"%{short_name.lower()}%",))
                 hw_rows = [dict(r) for r in cur.fetchall()]
         
@@ -532,7 +588,7 @@ def get_fleet_data(model_name: str) -> dict:
         
         # Get latest LIVE reading for each miner from miner_readings
         # (NOT miner_state_readings which stores AMS threshold settings)
-        placeholders = ','.join('?' * len(miner_ids))
+        placeholders = ','.join(['%s'] * len(miner_ids))
         cur.execute(f"""
             SELECT r.miner_id, r.ip, r.hashrate, r.temp_chip, r.temp_board,
                    r.status, r.consumption, r.max_hashrate, r.hashrate_pct,
@@ -892,11 +948,10 @@ class AcknowledgeRequest(BaseModel):
 def list_discoveries(acknowledged: Optional[int] = Query(None, description="Filter by acknowledged status (0=new, 1=reviewed, 2=added)")):
     """Return discovery_log entries. Defaults to unacknowledged (acknowledged=0)."""
     try:
-        conn = sqlite3.connect(GUARDIAN_DB, timeout=30)
-        conn.row_factory = sqlite3.Row
+        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
         if acknowledged is not None:
             rows = conn.execute(
-                "SELECT * FROM discovery_log WHERE acknowledged = ? ORDER BY last_seen DESC",
+                "SELECT * FROM discovery_log WHERE acknowledged = %s ORDER BY last_seen DESC",
                 (acknowledged,)
             ).fetchall()
         else:
@@ -906,9 +961,9 @@ def list_discoveries(acknowledged: Optional[int] = Query(None, description="Filt
             ).fetchall()
         conn.close()
         return [dict(r) for r in rows]
-    except sqlite3.OperationalError as e:
-        if "no such table" in str(e):
-            return []
+    except psycopg2.errors.UndefinedTable:
+        return []
+    except psycopg2.Error as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -922,14 +977,13 @@ def acknowledge_discovery(
     if body.level not in (1, 2):
         return JSONResponse(status_code=400, content={"error": "level must be 1 (reviewed) or 2 (added to catalog)"})
     try:
-        conn = sqlite3.connect(GUARDIAN_DB, timeout=30)
-        conn.row_factory = sqlite3.Row
+        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
         params = [body.level]
-        sql = "UPDATE discovery_log SET acknowledged = ?"
+        sql = "UPDATE discovery_log SET acknowledged = %s"
         if body.notes is not None:
-            sql += ", notes = ?"
+            sql += ", notes = %s"
             params.append(body.notes)
-        sql += " WHERE id = ?"
+        sql += " WHERE id = %s"
         params.append(discovery_id)
         cursor = conn.execute(sql, params)
         conn.commit()
@@ -937,12 +991,13 @@ def acknowledge_discovery(
             conn.close()
             return JSONResponse(status_code=404, content={"error": f"Discovery {discovery_id} not found"})
         # Return the updated row
-        row = conn.execute("SELECT * FROM discovery_log WHERE id = ?", (discovery_id,)).fetchone()
+        row = conn.execute("SELECT * FROM discovery_log WHERE id = %s", (discovery_id,)).fetchone()
         conn.close()
         return dict(row) if row else {"success": True}
-    except sqlite3.OperationalError as e:
-        if "no such table" in str(e):
-            return JSONResponse(status_code=404, content={"error": "discovery_log table not yet created — run a scan first"})
+    except psycopg2.errors.UndefinedTable:
+        return JSONResponse(status_code=404, content={"error": "discovery_log table not yet created — run a scan first"})
+    except psycopg2.Error as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
         return JSONResponse(status_code=500, content={"error": str(e)})
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
