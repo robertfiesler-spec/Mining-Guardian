@@ -10,7 +10,8 @@ can investigate before leaving work. Runs at 4:15pm daily.
 import os
 import sys
 import json
-import sqlite3
+import psycopg2
+from psycopg2.extras import DictCursor
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -21,7 +22,51 @@ _ROOT = Path(__file__).resolve().parent.parent
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-DB_PATH = _ROOT / "guardian.db"
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut."""
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
 CONFIG_PATH = _ROOT / "config.json"
 
 
@@ -35,9 +80,7 @@ def get_slack_client():
 
 def get_miners_without_logs():
     """Get all miners that did NOT get logs in the last 12 hours."""
-    conn = sqlite3.connect(str(DB_PATH), timeout=30)
-    conn.row_factory = sqlite3.Row
-    
+    conn = _PgConnWrapper(_pg_dsn())
     rows = conn.execute("""
         SELECT DISTINCT mr.miner_id, mr.ip, mr.model, mr.status
         FROM miner_readings mr
@@ -56,7 +99,7 @@ def get_miners_without_logs():
 
 def get_fleet_stats():
     """Get fleet size and log count."""
-    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    conn = _PgConnWrapper(_pg_dsn())
     
     fleet = conn.execute(
         "SELECT COUNT(DISTINCT miner_id) FROM miner_readings WHERE scanned_at > datetime('now', '-1 day')"

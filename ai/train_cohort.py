@@ -58,7 +58,8 @@ just as much as it reduces Claude workload — each container only needs to run
 import json
 import logging
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import DictCursor
 import sys
 import time
 from datetime import datetime
@@ -91,7 +92,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger('train_cohort')
 
-DB_PATH = str(_ROOT / 'guardian.db')
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut."""
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
 KNOWLEDGE_PATH = _ROOT / 'knowledge.json'
 
 # Tunables — keep these conservative for Tier 1 safety
@@ -132,7 +177,7 @@ def _normalize_field(value: str) -> str:
     return str(value).strip().strip(',').strip()
 
 
-def build_cohorts(conn: sqlite3.Connection) -> Dict[Tuple, List[Dict]]:
+def build_cohorts(conn: "_PgConnWrapper") -> Dict[Tuple, List[Dict]]:
     """Group miners by hardware identity into cohorts.
 
     Returns a dict keyed by cohort tuple, with values being lists of miner
@@ -192,7 +237,7 @@ def build_cohorts(conn: sqlite3.Connection) -> Dict[Tuple, List[Dict]]:
     return cohorts
 
 
-def summarize_cohort(conn: sqlite3.Connection, cohort_key: Tuple,
+def summarize_cohort(conn: "_PgConnWrapper", cohort_key: Tuple,
                       members: List[Dict]) -> Dict:
     """Compute SQL aggregates for a cohort. No LLM, no API calls.
 
@@ -203,7 +248,7 @@ def summarize_cohort(conn: sqlite3.Connection, cohort_key: Tuple,
     if not miner_ids:
         return {}
 
-    placeholders = ','.join('?' for _ in miner_ids)
+    placeholders = ','.join('%s' for _ in miner_ids)
 
     # Fleet-wide aggregates for these miners
     agg = conn.execute(f'''
@@ -340,8 +385,8 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         f"Members: {summary['member_count']} miners",
         '',
         '--- Aggregates (last 7 days) ---',
-        f"  Avg hashrate: {agg.get('avg_hr', '?')}%   range: [{agg.get('min_hr','?')}, {agg.get('max_hr','?')}]",
-        f"  Avg chip temp: {agg.get('avg_temp', '?')}°C   max: {agg.get('max_temp', '?')}°C",
+        f"  Avg hashrate: {agg.get('avg_hr', '%s')}%   range: [{agg.get('min_hr','%s')}, {agg.get('max_hr','%s')}]",
+        f"  Avg chip temp: {agg.get('avg_temp', '%s')}°C   max: {agg.get('max_temp', '%s')}°C",
         f"  Total readings: {agg.get('total_readings', 0)}",
         f"  Offline events: {agg.get('offline_count', 0)}",
         f"  Times flagged for action: {agg.get('flag_count', 0)}",
@@ -369,7 +414,7 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         lines.append('')
         lines.append(f'--- Local LLM analyses for this cohort (most recent {len(local_llm_analyses)}) ---')
         for a in local_llm_analyses:
-            ts = (a.get('timestamp') or '?')[:16]
+            ts = (a.get('timestamp') or '%s')[:16]
             text = (a.get('analysis') or '')[:400]
             lines.append(f"  [{ts}] {text}")
             lines.append('')
@@ -384,9 +429,9 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         lines.append(f'=== PAST AI ANALYSES FOR COHORT MINERS (last 7 days, {len(past_analyses)}) ===')
         lines.append('What AI previously said about these miners (do NOT repeat, focus on what changed):')
         for pa in past_analyses:
-            ts = (pa.get("analyzed_at") or "?")[:16]
-            model = pa.get("model_used") or "?"
-            ip = pa.get("ip") or "?"
+            ts = (pa.get("analyzed_at") or "%s")[:16]
+            model = pa.get("model_used") or "%s"
+            ip = pa.get("ip") or "%s"
             text = (pa.get("response") or "")[:300]
             lines.append(f'  [{ts}] {ip} ({model}): {text}...')
 
@@ -420,23 +465,23 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         'it to make per-scan decisions, so be SPECIFIC and PRESCRIPTIVE — generic advice helps',
         'no one. Reference actual miner IPs, actual hashrate numbers, actual temperatures.',
         '',
-        '1. BEHAVIORAL BASELINE (3-5 sentences): What is normal for this hardware cohort?',
+        '1. BEHAVIORAL BASELINE (3-5 sentences): What is normal for this hardware cohort%s',
         '   Use the aggregates as ground truth. Note any unusual baseline characteristics',
         '   (e.g., these miners run hot, these miners restart often, these miners drift HR).',
         '',
         '2. COMMON FAILURE MODES (detailed bullet list, 4-8 items): What problems repeat',
-        '   across this cohort? Distinguish hardware-pattern issues (chip degradation, PSU',
+        '   across this cohort%s Distinguish hardware-pattern issues (chip degradation, PSU',
         '   failures, board death) from environmental triggers (HVAC stress, ambient temp,',
         '   water flow). For each mode, cite the data evidence (e.g., "39 occurrences in',
         '   action_audit_log over 7 days").',
         '',
         '3. RESTART EFFECTIVENESS (2-3 sentences): Calculate the SUCCESS RATE from the',
         '   restart_outcomes data. Are restarts actually fixing root causes, or just',
-        '   resetting symptoms? Does this cohort show "restart fatigue" (multiple restarts',
-        '   without lasting improvement)?',
+        '   resetting symptoms%s Does this cohort show "restart fatigue" (multiple restarts',
+        '   without lasting improvement)%s',
         '',
         '4. RECOMMENDED ACTION BIAS (4-6 specific recommendations): For THIS cohort',
-        '   specifically, what action thresholds should the on-site LLM use? Be numeric:',
+        '   specifically, what action thresholds should the on-site LLM use%s Be numeric:',
         '   - HR threshold for flagging restart: ___% (vs fleet default 80%)',
         '   - Restart attempts before ticketing: ___ (vs fleet default 3)',
         '   - Temp threshold for action: ___°C (vs fleet default 86°C)',
@@ -448,12 +493,12 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         '   or if its issue is already explained by cohort-wide patterns. Justify each.',
         '',
         '6. HARDWARE QUALITY ASSESSMENT (2-3 sentences): Based on this weeks data, is',
-        '   this cohort a candidate for procurement review? Are the units holding up to',
-        '   spec, or is there a hardware quality concern that warrants ordering replacements?',
+        '   this cohort a candidate for procurement review%s Are the units holding up to',
+        '   spec, or is there a hardware quality concern that warrants ordering replacements%s',
         '',
         '7. CROSS-COHORT INSIGHTS (1-2 sentences): Anything notable about how this cohort',
-        '   compares to the rest of the fleet? Higher/lower restart rates? More/less',
-        '   thermal headroom? This will feed into the fleet-wide synthesis pass.',
+        '   compares to the rest of the fleet%s Higher/lower restart rates%s More/less',
+        '   thermal headroom%s This will feed into the fleet-wide synthesis pass.',
         '',
         'Format with markdown headers. Cite specific evidence. Aim for 600-1200 words of',
         'genuine analysis — no filler, no executive summary fluff.',
@@ -479,7 +524,7 @@ def build_outlier_prompt(miner_id: str, profile: dict, cohort_key: Tuple,
         extras.append('')
         extras.append(f'--- Local LLM observations mentioning this miner ({len(local_llm_analyses)}) ---')
         for a in local_llm_analyses:
-            ts = (a.get('timestamp') or '?')[:16]
+            ts = (a.get('timestamp') or '%s')[:16]
             text = (a.get('analysis') or '')[:300]
             extras.append(f'  [{ts}] {text}')
             extras.append('')
@@ -513,7 +558,7 @@ def build_outlier_prompt(miner_id: str, profile: dict, cohort_key: Tuple,
         'opportunity.',
         '',
         '1. ROOT CAUSE HYPOTHESIS (3-5 sentences): What is most likely wrong with this',
-        '   miner? Be specific — name the suspected component (PSU, hashboard, chip die,',
+        '   miner%s Be specific — name the suspected component (PSU, hashboard, chip die,',
         '   chip bin, control board, fan, network, AMS sync, etc.). Reference the chip',
         '   bin or PCB version if hardware fingerprint data is available.',
         '',
@@ -523,9 +568,9 @@ def build_outlier_prompt(miner_id: str, profile: dict, cohort_key: Tuple,
         '   from 68°C to 79°C — classic thermal throttling pattern". Be quantitative.',
         '',
         '3. CONFIDENCE LEVEL (1 sentence): How confident are you in the diagnosis (high/',
-        '   medium/low) and what data would increase confidence?',
+        '   medium/low) and what data would increase confidence%s',
         '',
-        '4. RECOMMENDED ACTION (2-4 specific steps): What should the operator do? Order',
+        '4. RECOMMENDED ACTION (2-4 specific steps): What should the operator do%s Order',
         '   matters — what to try first, what to escalate to. Include thresholds for',
         '   when to give up and ticket. Examples:',
         '   - First: PDU cycle, wait 20 min, check if HR recovers above X%',
@@ -533,7 +578,7 @@ def build_outlier_prompt(miner_id: str, profile: dict, cohort_key: Tuple,
         '   - Third: ticket as bad PSU, swap to spare',
         '',
         '5. PARALLEL INDICATORS (1-2 sentences): Are there other miners in the fleet',
-        '   showing similar early warning signs that we should preemptively check?',
+        '   showing similar early warning signs that we should preemptively check%s',
         '',
         'Format with markdown headers. 400-800 words.',
     ])
@@ -566,7 +611,7 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
         lines.append('=== OUTLIER ANALYSIS RESULTS ===')
         for o in outlier_results:
             lines.append('')
-            lines.append(f"--- Miner {o['miner_id']} ({o.get('ip', '?')}) ---")
+            lines.append(f"--- Miner {o['miner_id']} ({o.get('ip', '%s')}) ---")
             lines.append(o.get('claude_response', '')[:800])
 
     if operator_rules:
@@ -586,7 +631,7 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
         lines.append('Below are all the analyses the on-site LLM (Qwen 32B) produced.')
         lines.append('Validate its conclusions, correct mistakes, identify patterns it missed.')
         for a in all_local_llm_analyses:
-            ts = (a.get('timestamp') or '?')[:16]
+            ts = (a.get('timestamp') or '%s')[:16]
             text = (a.get('analysis') or '')[:300]
             lines.append('')
             lines.append(f'[{ts}] {text}')
@@ -620,12 +665,12 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
         'week and the operator will act on. This report becomes part of the systems long-term',
         'memory — it is the highest-leverage moment in the entire learning cycle.',
         '',
-        '1. EXECUTIVE SUMMARY (3-5 sentences): What is the headline of this week? What is',
-        '   the single most important thing the operator should know? What changed from',
-        '   previous weeks (if cross_miner_analysis history is available)?',
+        '1. EXECUTIVE SUMMARY (3-5 sentences): What is the headline of this week%s What is',
+        '   the single most important thing the operator should know%s What changed from',
+        '   previous weeks (if cross_miner_analysis history is available)%s',
         '',
         '2. TOP 5 SYSTEMIC ISSUES (numbered list with detail): What patterns repeat across',
-        '   multiple cohorts? Distinguish:',
+        '   multiple cohorts%s Distinguish:',
         '   a) Hardware quality patterns (specific chip bins / PCB versions failing)',
         '   b) Firmware bugs (BiXBiT vs Stock vs Auradine differences)',
         '   c) Environmental stressors (HVAC correlation, weather, time-of-day)',
@@ -642,30 +687,30 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
         '4. LOCAL LLM PERFORMANCE REVIEW (bullet list, 5-10 items): The on-site LLM (Qwen',
         '   32B) made 130+ scan analyses this week. Sample several at random (cite their',
         '   timestamps) and:',
-        '   - Was its diagnosis correct? What did it get right?',
-        '   - What did it miss that you can see now with fleet-wide context?',
-        '   - Where was it overconfident? Underconfident?',
-        '   - What pattern recognition could it learn from your analysis?',
+        '   - Was its diagnosis correct%s What did it get right%s',
+        '   - What did it miss that you can see now with fleet-wide context%s',
+        '   - Where was it overconfident%s Underconfident%s',
+        '   - What pattern recognition could it learn from your analysis%s',
         '   This is critical — your job is to TRAIN the local LLM, not replace it.',
         '',
         '5. OPERATOR RULE REFINEMENT (bullet list): Look at the 3 captured operator rules',
         '   from denial reasons. For each:',
-        '   - Is the rule correctly stated, or should it be generalized/narrowed?',
-        '   - Should any rules be merged into one?',
+        '   - Is the rule correctly stated, or should it be generalized/narrowed%s',
+        '   - Should any rules be merged into one%s',
         '   - Are there NEW rules implied by patterns you see in the data that the system',
-        '     hasnt captured yet? Propose them.',
+        '     hasnt captured yet%s Propose them.',
         '',
         '6. PREDICTIVE WARNINGS (bullet list, 3-7 items): Based on the trends in the data,',
-        '   what miners are likely to fail or need attention in the NEXT 7 days? Be specific:',
+        '   what miners are likely to fail or need attention in the NEXT 7 days%s Be specific:',
         '   miner IP, expected failure mode, expected timeframe, what to do preemptively.',
         '   This is where you earn your weekly run — predict the future with the data you have.',
         '',
         '7. NEXT-WEEK FOCUS AREAS (numbered list, 3-5 items): What should the on-site LLM',
-        '   pay closest attention to in the next 7 days? What signals matter most? What',
-        '   should it ignore that it has been over-flagging?',
+        '   pay closest attention to in the next 7 days%s What signals matter most%s What',
+        '   should it ignore that it has been over-flagging%s',
         '',
         '8. METRICS TO ADD (bullet list, optional): Are there metrics or data points the',
-        '   system isnt currently capturing that would help future analysis? This goes to',
+        '   system isnt currently capturing that would help future analysis%s This goes to',
         '   Bobby for the next sprint.',
         '',
         '9. REFINED INSIGHTS (CRITICAL — JSON OUTPUT REQUIRED):',
@@ -726,9 +771,7 @@ def run_cohort_training():
     analyzer = LLMAnalyzer()
     km = KnowledgeManager()
 
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-
+    conn = _PgConnWrapper(_pg_dsn())
     logger.info('=' * 60)
     logger.info('COHORT-BASED WEEKLY TRAINING')
     logger.info('=' * 60)
@@ -899,7 +942,7 @@ def run_cohort_training():
         try:
             cohort_ips = summary.get("all_member_ips", [])
             if cohort_ips:
-                placeholders = ",".join("?" * len(cohort_ips))
+                placeholders = ",".join("%s" * len(cohort_ips))
                 cohort_past_analyses = [dict(r) for r in conn.execute(f"""
                     SELECT ip, analyzed_at, response, model_used
                     FROM llm_analysis
@@ -942,7 +985,7 @@ def run_cohort_training():
     for i, outlier in enumerate(all_outliers, 1):
         miner_id = outlier['miner_id']
         logger.info('[%d/%d] Outlier miner %s (%s)', i, len(all_outliers),
-                    miner_id, outlier.get('ip', '?'))
+                    miner_id, outlier.get('ip', '%s'))
         try:
             profile = get_miner_full_profile(conn, miner_id)
             if not profile['scan'] or not profile['scan'].get('scan_count'):

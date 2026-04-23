@@ -13,10 +13,12 @@ Uses EVERY available data point:
   known_dead_boards:    confirmed hardware failures
 """
 
+import os
 import sys
 import json
 import logging
-import sqlite3
+import psycopg2
+from psycopg2.extras import DictCursor
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -31,15 +33,58 @@ from core.file_lock import locked_knowledge_update
 
 logger = logging.getLogger("fingerprint_builder")
 
-DB_PATH        = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut."""
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 LOOKBACK_DAYS  = 30
 MIN_RESTARTS_FOR_RATE = 2
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
+def get_db() -> "_PgConnWrapper":
+    conn = _PgConnWrapper(_pg_dsn())
     return conn
 
 
@@ -91,7 +136,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 1. Restart outcomes ───────────────────────────────────────────────────
     restarts = conn.execute("""
         SELECT outcome, recovery_time_scans FROM miner_restarts
-        WHERE miner_id=? AND restarted_at>=? ORDER BY restarted_at DESC
+        WHERE miner_id=%s AND restarted_at>=%s ORDER BY restarted_at DESC
     """, (miner_id, cutoff)).fetchall()
     total_restarts = len(restarts)
     successes = sum(1 for r in restarts if r["outcome"] == "SUCCESS")
@@ -105,8 +150,8 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 2. Hashrate + temps + uptime + errors (miner_readings) ───────────────
     mr_rows = conn.execute("""
         SELECT hashrate_pct, temp_chip, temp_board, consumption, uptime, error_codes
-        FROM miner_readings WHERE miner_id=? AND status='online' AND hashrate_pct>0
-          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=? ORDER BY id DESC LIMIT 100)
+        FROM miner_readings WHERE miner_id=%s AND status='online' AND hashrate_pct>0
+          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=%s ORDER BY id DESC LIMIT 100)
         ORDER BY id DESC LIMIT 50
     """, (miner_id, cutoff)).fetchall()
 
@@ -149,7 +194,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
                SUM(hw_errors)    as total_hw,
                AVG(rate_mhs)     as avg_rate,
                AVG(consumption_w)as avg_power_w
-        FROM chain_readings WHERE miner_id=? AND scanned_at>=?
+        FROM chain_readings WHERE miner_id=%s AND scanned_at>=%s
         GROUP BY board_index
     """, (miner_id, cutoff)).fetchall()
 
@@ -184,7 +229,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
                AVG(max_temp_chip)   as a_max_chip,
                AVG(hashrate_medium) as a_hr_med,
                AVG(hashrate_low)    as a_hr_low
-        FROM miner_state_readings WHERE miner_id=? AND scanned_at>=?
+        FROM miner_state_readings WHERE miner_id=%s AND scanned_at>=%s
     """, (miner_id, cutoff)).fetchone()
     avg_max_board_temp = round(float(state["a_max_bd"]),   1) if state and state["a_max_bd"]   else None
     avg_max_chip_temp  = round(float(state["a_max_chip"]), 1) if state and state["a_max_chip"]  else None
@@ -193,7 +238,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 5. Pool rejection rate ────────────────────────────────────────────────
     pool = conn.execute("""
         SELECT SUM(accepted) as acc, SUM(rejected) as rej
-        FROM pool_readings WHERE miner_id=? AND scanned_at>=?
+        FROM pool_readings WHERE miner_id=%s AND scanned_at>=%s
     """, (miner_id, cutoff)).fetchone()
     rej_rate = None
     if pool and pool["acc"] is not None:
@@ -203,7 +248,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 6. AMS notifications ──────────────────────────────────────────────────
     ams = conn.execute("""
         SELECT key, COUNT(*) as cnt FROM ams_notifications
-        WHERE miner_ip=? AND recorded_at>=? GROUP BY key
+        WHERE miner_ip=%s AND recorded_at>=%s GROUP BY key
     """, (ip, cutoff)).fetchall()
     ams_counts = {r["key"]: r["cnt"] for r in ams}
     hashrate_drop_alerts = ams_counts.get("hashrateDropLevel", 0)
@@ -214,7 +259,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 7. Hardware identity ──────────────────────────────────────────────────
     hw = conn.execute("""
         SELECT chip_bin, bad_chips_count, pcb_version, ideal_hashrate, asic_count
-        FROM miner_hardware WHERE miner_id=? ORDER BY last_updated DESC LIMIT 1
+        FROM miner_hardware WHERE miner_id=%s ORDER BY last_updated DESC LIMIT 1
     """, (miner_id,)).fetchone()
     chip_bin       = hw["chip_bin"]             if hw else None
     bad_chips      = int(hw["bad_chips_count"] or 0) if hw and hw["bad_chips_count"] is not None else 0
@@ -222,19 +267,19 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
 
     # ── 8. Flagging frequency ─────────────────────────────────────────────────
     flagged_cnt = conn.execute("""
-        SELECT COUNT(*) as c FROM miner_readings WHERE miner_id=? AND issue IS NOT NULL
-          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=?)
+        SELECT COUNT(*) as c FROM miner_readings WHERE miner_id=%s AND issue IS NOT NULL
+          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=%s)
     """, (miner_id, cutoff)).fetchone()["c"]
     total_scans = conn.execute("""
-        SELECT COUNT(*) as c FROM miner_readings WHERE miner_id=?
-          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=?)
+        SELECT COUNT(*) as c FROM miner_readings WHERE miner_id=%s
+          AND scan_id IN (SELECT id FROM scans WHERE scanned_at>=%s)
     """, (miner_id, cutoff)).fetchone()["c"]
     flag_freq = round(flagged_cnt/(LOOKBACK_DAYS/7.0), 2)
 
     # ── 8b. PDU power variance (miner_readings.pdu_power) ────────────────────
     pdu_rows = conn.execute("""
         SELECT pdu_power FROM miner_readings
-        WHERE miner_id=? AND pdu_power > 0 AND scanned_at>=?
+        WHERE miner_id=%s AND pdu_power > 0 AND scanned_at>=%s
         ORDER BY id DESC LIMIT 50
     """, (miner_id, cutoff)).fetchall()
     pdu_readings = [float(r["pdu_power"]) for r in pdu_rows]
@@ -247,7 +292,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 8c. Chain events (log_metrics — BiXBiT only) ─────────────────────────
     chain_evt_rows = conn.execute("""
         SELECT text_value as event, COUNT(*) as cnt
-        FROM log_metrics WHERE ip=? AND metric_type='chain_event' AND recorded_at>=?
+        FROM log_metrics WHERE ip=%s AND metric_type='chain_event' AND recorded_at>=%s
         GROUP BY text_value
     """, (ip, cutoff)).fetchall()
     chain_detaches = sum(r["cnt"] for r in chain_evt_rows if r["event"] == "detached")
@@ -256,7 +301,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 9. Known issues ───────────────────────────────────────────────────────
     known_issues = []
     dead = conn.execute("""
-        SELECT board_indices FROM known_dead_boards WHERE miner_id=? AND resolved_at IS NULL
+        SELECT board_indices FROM known_dead_boards WHERE miner_id=%s AND resolved_at IS NULL
     """, (miner_id,)).fetchone()
     if dead:                              known_issues.append(f"dead_boards:{dead['board_indices']}")
     if bad_chips > 0:                     known_issues.append(f"bad_chips:{bad_chips}")
@@ -272,7 +317,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     # ── 9b. AMS extended data (location, pool) ───────────────────────────────
     ams_ext = conn.execute("""
         SELECT map_location_id, map_x, map_y, stratum_url
-        FROM miner_ams_extended WHERE miner_id=? ORDER BY id DESC LIMIT 1
+        FROM miner_ams_extended WHERE miner_id=%s ORDER BY id DESC LIMIT 1
     """, (miner_id,)).fetchone()
     map_location_id = int(ams_ext["map_location_id"]) if ams_ext and ams_ext["map_location_id"] else None
     map_position = f"{ams_ext['map_x']},{ams_ext['map_y']}" if ams_ext and ams_ext["map_x"] else None
@@ -379,7 +424,7 @@ def print_fleet_fingerprints():
         uptime = f"{fp['latest_uptime_hours']:.0f}h" if fp.get("latest_uptime_hours") else "N/A"
         mod    = f"{fp.get('confidence_modifier', 0):+.2f}"
         issues = ", ".join(fp.get("known_issues", [])) or "none"
-        print(f"{fp.get('ip','?'):<20} {rate:>5} {stab:>5} {volt:>6} {freq:>5} {rej:>6} "
+        print(f"{fp.get('ip','%s'):<20} {rate:>5} {stab:>5} {volt:>6} {freq:>5} {rej:>6} "
               f"{hw:>4} {ams:>4} {hot:>5} {uptime:>7} {mod:>6}  {issues[:50]}")
     print(f"{'='*110}\n")
 

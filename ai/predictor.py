@@ -19,10 +19,12 @@ Mining Guardian — Feature 6: Pre-Failure Prediction (Full Data)
   14. ASIC OK ratio decline        (miner_ams_extended)
 """
 
+import os
 import sys
 import json
 import logging
-import sqlite3
+import psycopg2
+from psycopg2.extras import DictCursor
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -85,7 +87,51 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
 
 logger = logging.getLogger("predictor")
 
-DB_PATH        = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut."""
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
 TREND_WINDOW        = 5
@@ -104,9 +150,8 @@ AMS_ALERT_WINDOW_H  = 24
 MAX_BOARD_TEMP_WARN = 80.0
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
+def get_db() -> "_PgConnWrapper":
+    conn = _PgConnWrapper(_pg_dsn())
     return conn
 
 
@@ -117,7 +162,7 @@ def run_predictions(scan_id: int) -> List[Dict[str, Any]]:
                mr.temp_chip, mr.temp_board, mr.uptime, mr.status,
                mr.action, mr.firmware_manufacturer
         FROM miner_readings mr
-        WHERE mr.scan_id=? AND mr.status='online'
+        WHERE mr.scan_id=%s AND mr.status='online'
           AND (mr.action='MONITOR' OR mr.action IS NULL)
     """, (scan_id,)).fetchall()
 
@@ -162,8 +207,8 @@ def _predict_miner(miner_id: str, ip: str, model: str,
             SELECT mr.hashrate_pct, mr.temp_chip, mr.temp_board, mr.uptime
             FROM miner_readings mr
             JOIN scans s ON mr.scan_id=s.id
-            WHERE mr.miner_id=? AND mr.status='online' AND mr.hashrate_pct IS NOT NULL
-            ORDER BY s.scanned_at DESC LIMIT ?
+            WHERE mr.miner_id=%s AND mr.status='online' AND mr.hashrate_pct IS NOT NULL
+            ORDER BY s.scanned_at DESC LIMIT %s
         """, (miner_id, max(TREND_WINDOW, VOLATILITY_WINDOW)+5)).fetchall()
 
         if len(history) < MIN_SCANS_FOR_PRED:
@@ -174,15 +219,15 @@ def _predict_miner(miner_id: str, ip: str, model: str,
             SELECT c.board_index, c.rate_mhs, c.voltage, c.freq_mhz,
                    c.temp_board, c.hw_errors
             FROM chain_readings c
-            WHERE c.ip=? AND c.scan_id=(
-                SELECT MAX(scan_id) FROM chain_readings WHERE ip=?
+            WHERE c.ip=%s AND c.scan_id=(
+                SELECT MAX(scan_id) FROM chain_readings WHERE ip=%s
             )
         """, (ip, ip)).fetchall()
 
         # Pool rejection rate (last 10 scans)
         pool = conn.execute("""
             SELECT SUM(accepted) as acc, SUM(rejected) as rej
-            FROM pool_readings WHERE miner_id=?
+            FROM pool_readings WHERE miner_id=%s
               AND scan_id IN (SELECT id FROM scans ORDER BY id DESC LIMIT 10)
         """, (miner_id,)).fetchone()
 
@@ -190,21 +235,21 @@ def _predict_miner(miner_id: str, ip: str, model: str,
         ams_cutoff = (datetime.now() - timedelta(hours=AMS_ALERT_WINDOW_H)).isoformat()
         ams = conn.execute("""
             SELECT key, COUNT(*) as cnt FROM ams_notifications
-            WHERE miner_ip=? AND recorded_at>=? GROUP BY key
+            WHERE miner_ip=%s AND recorded_at>=%s GROUP BY key
         """, (ip, ams_cutoff)).fetchall()
         ams_counts = {r["key"]: r["cnt"] for r in ams}
 
         # State readings for max temps
         state_rows = conn.execute("""
             SELECT max_temp_board, max_temp_chip FROM miner_state_readings
-            WHERE miner_id=? ORDER BY id DESC LIMIT 3
+            WHERE miner_id=%s ORDER BY id DESC LIMIT 3
         """, (miner_id,)).fetchall()
 
-        # HVAC context — is facility stressed?
+        # HVAC context — is facility stressed%s
         # Use the correct HVAC system based on miner model
         hvac_system = 's19jpro' if model and model.startswith('S19JPro') else 'warehouse'
         hvac = conn.execute("""
-            SELECT supply_temp_f FROM hvac_readings WHERE system_id = ? ORDER BY recorded_at DESC LIMIT 1
+            SELECT supply_temp_f FROM hvac_readings WHERE system_id = %s ORDER BY recorded_at DESC LIMIT 1
         """, (hvac_system,)).fetchone()
         supply_temp = float(hvac["supply_temp_f"] or 0) if hvac else 0
 
@@ -389,7 +434,7 @@ def _check_pattern_match(miner_id: str, recent_hrs: List[float]) -> Tuple[float,
     try:
         failures = conn.execute("""
             SELECT restarted_at FROM miner_restarts
-            WHERE miner_id=? AND outcome='FAILURE' ORDER BY restarted_at DESC LIMIT 5
+            WHERE miner_id=%s AND outcome='FAILURE' ORDER BY restarted_at DESC LIMIT 5
         """, (miner_id,)).fetchall()
         if not failures:
             return 0.0, None
@@ -398,7 +443,7 @@ def _check_pattern_match(miner_id: str, recent_hrs: List[float]) -> Tuple[float,
             pre = conn.execute("""
                 SELECT mr.hashrate_pct FROM miner_readings mr
                 JOIN scans s ON mr.scan_id=s.id
-                WHERE mr.miner_id=? AND s.scanned_at<? AND mr.hashrate_pct IS NOT NULL
+                WHERE mr.miner_id=%s AND s.scanned_at<%s AND mr.hashrate_pct IS NOT NULL
                 ORDER BY s.scanned_at DESC LIMIT 5
             """, (miner_id, f["restarted_at"])).fetchall()
             if len(pre) >= 3:
@@ -498,7 +543,7 @@ def _check_chain_events(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
         rows = conn.execute("""
             SELECT text_value as event, board_index, COUNT(*) as cnt
             FROM log_metrics
-            WHERE ip=? AND metric_type='chain_event' AND recorded_at>=?
+            WHERE ip=%s AND metric_type='chain_event' AND recorded_at>=%s
             GROUP BY text_value, board_index
             ORDER BY cnt DESC
         """, (ip, cutoff)).fetchall()
@@ -536,7 +581,7 @@ def _check_chip_degradation(miner_id: str, ip: str) -> Tuple[float, Optional[str
         rows = conn.execute("""
             SELECT board_index, numeric_value
             FROM log_metrics
-            WHERE ip=? AND metric_type='chip_hashrate'
+            WHERE ip=%s AND metric_type='chip_hashrate'
               AND recorded_at >= datetime('now', '-6 hours')
               AND numeric_value IS NOT NULL AND numeric_value > 0
             ORDER BY recorded_at DESC
@@ -588,7 +633,7 @@ def _check_asic_ok_ratio(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
         rows = conn.execute("""
             SELECT board_index, asic_count, asic_ok_count, recorded_at
             FROM miner_ams_extended
-            WHERE ip=? AND asic_count IS NOT NULL AND asic_count > 0
+            WHERE ip=%s AND asic_count IS NOT NULL AND asic_count > 0
             ORDER BY recorded_at DESC
             LIMIT 30
         """, (ip,)).fetchall()
@@ -681,7 +726,7 @@ def _check_psu_voltage_degradation(miner_id: str, ip: str) -> Tuple[float, Optio
         rows = conn.execute("""
             SELECT board_index, voltage, scanned_at
             FROM chain_readings
-            WHERE miner_id=? AND voltage IS NOT NULL AND voltage > 0
+            WHERE miner_id=%s AND voltage IS NOT NULL AND voltage > 0
             ORDER BY scanned_at DESC
             LIMIT 100
         """, (miner_id,)).fetchall()
@@ -796,7 +841,7 @@ def _check_high_offline_frequency(miner_id: str, ip: str) -> Tuple[float, Option
         # These are handled by the ticket system, not the predictor
         suppressed = conn.execute("""
             SELECT 1 FROM known_dead_boards 
-            WHERE miner_id=? AND ticket_created=1
+            WHERE miner_id=%s AND ticket_created=1
             LIMIT 1
         """, (miner_id,)).fetchone()
         
@@ -807,7 +852,7 @@ def _check_high_offline_frequency(miner_id: str, ip: str) -> Tuple[float, Option
         rows = conn.execute("""
             SELECT restarted_at, restart_type, outcome
             FROM miner_restarts
-            WHERE miner_id=?
+            WHERE miner_id=%s
             ORDER BY restarted_at DESC
             LIMIT 50
         """, (miner_id,)).fetchall()

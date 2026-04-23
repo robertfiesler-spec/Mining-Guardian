@@ -7,9 +7,9 @@ patterns that affect the whole fleet simultaneously, distinguishing
 facility problems from individual miner problems.
 
 Key questions answered:
-  - When supply water temp rises, how many miners flag within 2 scans?
-  - Is this miner flag caused by the facility or its own hardware?
-  - What HVAC thresholds historically precede fleet-wide hashrate drops?
+  - When supply water temp rises, how many miners flag within 2 scans%s
+  - Is this miner flag caused by the facility or its own hardware%s
+  - What HVAC thresholds historically precede fleet-wide hashrate drops%s
 
 Runs:
   - After every scan (lightweight check for active facility events)
@@ -21,10 +21,12 @@ Outputs:
   - Slack alerts distinguish "Facility Alert" from "Miner Alert"
 """
 
+import os
 import sys
 import json
 import logging
-import sqlite3
+import psycopg2
+from psycopg2.extras import DictCursor
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -36,7 +38,51 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
 
 logger = logging.getLogger("hvac_correlator")
 
-DB_PATH        = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style execute shortcut."""
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
 # ── Thresholds that indicate facility stress ───────────────────────────────────
@@ -65,9 +111,8 @@ def get_hvac_system_for_model(model: str) -> str:
                 return sys_id
     return 'warehouse'  # default
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
+def get_db() -> "_PgConnWrapper":
+    conn = _PgConnWrapper(_pg_dsn())
     return conn
 
 
@@ -95,7 +140,7 @@ def get_facility_stress_level(system_id: str = None, miner_model: str = None) ->
     conn = get_db()
     hvac = conn.execute("""
         SELECT * FROM hvac_readings 
-        WHERE system_id = ?
+        WHERE system_id = %s
         ORDER BY recorded_at DESC LIMIT 1
     """, (system_id,)).fetchone()
     conn.close()
@@ -162,7 +207,7 @@ def check_fleet_correlation(scan_id: int) -> Optional[Dict[str, Any]]:
     # Count flagged miners in this scan
     flagged = conn.execute("""
         SELECT COUNT(*) as cnt FROM miner_readings
-        WHERE scan_id = ? AND issue IS NOT NULL AND issue != ''
+        WHERE scan_id = %s AND issue IS NOT NULL AND issue != ''
     """, (scan_id,)).fetchone()["cnt"]
 
     if flagged < FLEET_FLAG_THRESHOLD:
@@ -171,12 +216,12 @@ def check_fleet_correlation(scan_id: int) -> Optional[Dict[str, Any]]:
 
     # Get HVAC reading closest to this scan
     scan_time = conn.execute(
-        "SELECT scanned_at FROM scans WHERE id = ?", (scan_id,)
+        "SELECT scanned_at FROM scans WHERE id = %s", (scan_id,)
     ).fetchone()["scanned_at"]
 
     hvac = conn.execute("""
         SELECT * FROM hvac_readings
-        WHERE recorded_at <= ?
+        WHERE recorded_at <= %s
         ORDER BY recorded_at DESC LIMIT 1
     """, (scan_time,)).fetchone()
 
@@ -193,13 +238,13 @@ def check_fleet_correlation(scan_id: int) -> Optional[Dict[str, Any]]:
 
     # Get previous scan's flagged count to see if this is new
     prev_scan = conn.execute(
-        "SELECT id FROM scans WHERE id < ? ORDER BY id DESC LIMIT 1", (scan_id,)
+        "SELECT id FROM scans WHERE id < %s ORDER BY id DESC LIMIT 1", (scan_id,)
     ).fetchone()
     prev_flagged = 0
     if prev_scan:
         prev_flagged = conn.execute("""
             SELECT COUNT(*) as cnt FROM miner_readings
-            WHERE scan_id = ? AND issue IS NOT NULL AND issue != ''
+            WHERE scan_id = %s AND issue IS NOT NULL AND issue != ''
         """, (prev_scan["id"],)).fetchone()["cnt"]
 
     conn.close()
@@ -272,7 +317,7 @@ def get_hvac_correlation_patterns(lookback_days: int = 30) -> Dict[str, Any]:
                 ORDER BY recorded_at DESC LIMIT 1
             )
         )
-        WHERE s.scanned_at >= ?
+        WHERE s.scanned_at >= %s
         ORDER BY s.scanned_at
     """, (cutoff,)).fetchall()
 
