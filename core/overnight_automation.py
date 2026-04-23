@@ -22,7 +22,8 @@ import os
 import json
 import time
 import logging
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -62,7 +63,14 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("overnight")
 
-DB_PATH          = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 APPROVAL_API     = "http://localhost:8686"
 OPENCLAW_WEBHOOK = os.getenv("OPENCLAW_WEBHOOK_URL", "http://localhost:18789/hooks")
 OPENCLAW_TOKEN   = os.getenv("OPENCLAW_TOKEN", "")
@@ -76,10 +84,52 @@ WINDOW_END_HOUR   = 24   # end of day — effectively always active
 MAX_AUTO_RESTARTS_PER_NIGHT = 2  # increased from 1 for full-day mode
 
 
+class _PgConnWrapper:
+    """Thin wrapper over a psycopg2 Connection that adds SQLite-style
+    conn.execute(sql, params).fetchone() / fetchall() shortcuts.
+
+    The underlying psycopg2 Connection has no .execute() method; all SQL
+    must go through a cursor. Rather than rewrite every call site in
+    overnight_automation.py, this wrapper provides the SQLite-like shortcut
+    while keeping commit(), close(), and the with-statement protocol
+    delegating to the real connection.
+    """
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur  # cursor has .fetchone(), .fetchall(), .rowcount, etc.
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Return a psycopg2-backed connection wrapper with SQLite-style .execute shortcut.
+
+    Callers can continue to write `conn.execute(sql, params).fetchone()`.
+    """
+    return _PgConnWrapper(_pg_dsn())
 
 
 def is_overnight_window() -> bool:
@@ -126,11 +176,11 @@ def get_restart_count_tonight(miner_id: str) -> int:
     # not 'APPROVED'. Match what execute_auto_action actually writes.
     row = conn.execute("""
         SELECT COUNT(*) as cnt FROM action_audit_log
-        WHERE miner_id=?
+        WHERE miner_id=%s
           AND approved_by='Mining Guardian (Overnight Auto)'
           AND decision='AUTO_OVERNIGHT'
           AND action_taken IN ('RESTART', 'PDU_CYCLE')
-          AND timestamp >= ?
+          AND timestamp >= %s
     """, (miner_id, window_start.isoformat())).fetchone()
     conn.close()
     return row["cnt"] if row else 0
@@ -149,7 +199,7 @@ def has_recent_failure(miner_id: str, hours: int = 6) -> bool:
     # Primary check: outcome-labeled failures from Feature 1
     failures = conn.execute("""
         SELECT COUNT(*) as cnt FROM miner_restarts
-        WHERE miner_id=? AND outcome='FAILURE'
+        WHERE miner_id=%s AND outcome='FAILURE'
     """, (miner_id,)).fetchone()
     failure_count = failures["cnt"] if failures else 0
 
@@ -166,7 +216,7 @@ def has_recent_failure(miner_id: str, hours: int = 6) -> bool:
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
     recent = conn.execute("""
         SELECT COUNT(*) as cnt FROM miner_restarts
-        WHERE miner_id=? AND outcome='FAILURE' AND restarted_at >= ?
+        WHERE miner_id=%s AND outcome='FAILURE' AND restarted_at >= %s
     """, (miner_id, cutoff)).fetchone()
     conn.close()
     return (recent["cnt"] if recent else 0) > 0
@@ -260,14 +310,14 @@ def execute_auto_action(action: dict) -> dict:
                 INSERT INTO action_audit_log
                 (timestamp, date, scan_id, miner_id, ip, model, problem,
                  action_taken, decision, approved_by, slack_user_id, notes)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (now.isoformat(), now.strftime("%Y-%m-%d"), action.get("scan_id"),
                   action["miner_id"], action["ip"], action.get("model"),
                   action.get("problem"), action["action_type"],
                   "AUTO_OVERNIGHT", "Mining Guardian (Overnight Auto)", "AUTO_OVERNIGHT",
                   f"Auto-executed during overnight window | Conf:{_calc_conf(action)}%"))
             conn.execute(
-                "UPDATE pending_approvals SET status='APPROVED', responded_at=? WHERE id=?",
+                "UPDATE pending_approvals SET status='APPROVED', responded_at=%s WHERE id=%s",
                 (now.isoformat(), action["id"])
             )
             conn.commit()
@@ -298,8 +348,8 @@ def log_skip(action: dict, reason: str) -> None:
 
     existing = conn.execute("""
         SELECT id FROM action_audit_log
-        WHERE miner_id=? AND decision='HELD_OVERNIGHT'
-          AND action_taken=? AND timestamp >= ?
+        WHERE miner_id=%s AND decision='HELD_OVERNIGHT'
+          AND action_taken=%s AND timestamp >= %s
         LIMIT 1
     """, (action["miner_id"], action["action_type"],
           window_start.isoformat())).fetchone()
@@ -312,7 +362,7 @@ def log_skip(action: dict, reason: str) -> None:
         INSERT INTO action_audit_log
         (timestamp, date, scan_id, miner_id, ip, model, problem,
          action_taken, decision, approved_by, slack_user_id, notes)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
     """, (now.isoformat(), now.strftime("%Y-%m-%d"), action.get("scan_id"),
           action["miner_id"], action.get("ip"), action.get("model"),
           action.get("problem"), action["action_type"],
@@ -367,8 +417,8 @@ def run_overnight_cycle() -> dict:
 
     for action in pending:
         risk = classify_risk(action)
-        ip   = action.get("ip", "?")
-        atype = action.get("action_type", "?")
+        ip   = action.get("ip", "%s")
+        atype = action.get("action_type", "%s")
 
         if risk == "AUTO":
             logger.info("AUTO: %s → %s for %s", risk, atype, ip)
