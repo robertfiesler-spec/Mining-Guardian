@@ -215,14 +215,24 @@ def query_qwen(prompt: str, label: str = "") -> Optional[str]:
 
 # ── Data gathering ───────────────────────────────────────────────────────
 
-def get_online_miners(conn: "_PgConnWrapper") -> List[Dict]:
-    """Return the online miner list from the latest scan."""
-    latest = conn.execute(
-        "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    if not latest:
-        return []
-    scan_id = latest["id"]
+def get_online_miners(conn: "_PgConnWrapper",
+                       scan_id_override: Optional[int] = None) -> List[Dict]:
+    """Return the online miner list from the latest scan, or from scan_id_override if given.
+
+    Override is intended for manual recovery when the most recent scan had an
+    AMS transient (all miners flagged offline). Pass a known-good scan ID and
+    the deep dive will analyze that snapshot of the fleet instead.
+    """
+    if scan_id_override is not None:
+        scan_id = scan_id_override
+        logger.info("get_online_miners: using scan_id_override=%d", scan_id)
+    else:
+        latest = conn.execute(
+            "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not latest:
+            return []
+        scan_id = latest["id"]
     rows = conn.execute("""
         SELECT miner_id, ip, model, hashrate_pct, temp_chip, current_profile,
                status, action, uptime, temp_board, consumption
@@ -825,7 +835,7 @@ def build_fleet_synthesis_prompt(
 
 # ── Main orchestration ──────────────────────────────────────────────────
 
-def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
+def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_override: Optional[int] = None) -> int:
     """Main entry point. Returns exit code (0 = success, nonzero = failure)."""
     start_time = time.time()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -863,8 +873,12 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
 
     # Connect to DB and get the online fleet
     conn = _PgConnWrapper(DB_PATH)
-    online_miners = get_online_miners(conn)
-    logger.info("Online miners in latest scan: %d", len(online_miners))
+    online_miners = get_online_miners(conn, scan_id_override=scan_id_override)
+    if scan_id_override is not None:
+        logger.info("Online miners in scan %d (override): %d",
+                    scan_id_override, len(online_miners))
+    else:
+        logger.info("Online miners in latest scan: %d", len(online_miners))
 
     if not online_miners:
         logger.error("No online miners found in latest scan — cannot run deep dive")
@@ -1114,10 +1128,15 @@ def main():
                         help="Manual run (identical behavior to scheduled, just logs it)")
     parser.add_argument("--dry-run", action="store_true",
                         help="List what would be analyzed without calling Qwen")
+    parser.add_argument("--scan-id", type=int, default=None,
+                        help="Override: use this specific scan ID for the online fleet "
+                             "snapshot instead of the latest scan. Useful when the latest "
+                             "scan had an AMS transient (all miners flagged offline).")
     args = parser.parse_args()
 
     try:
-        code = run_daily_deep_dive(dry_run=args.dry_run, manual=args.manual)
+        code = run_daily_deep_dive(dry_run=args.dry_run, manual=args.manual,
+                                    scan_id_override=args.scan_id)
         sys.exit(code)
     except KeyboardInterrupt:
         logger.error("Interrupted by user")
