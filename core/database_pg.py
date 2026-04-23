@@ -381,3 +381,107 @@ class GuardianPGDB:
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     rows,
                 )
+
+    # ── Phase 3: trivial methods (Postgres-translated from core/database.py) ─────
+
+    def _latest_scan_id(self) -> Optional[int]:
+        """Get the latest scan ID. Returns None if no scans exist."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1")
+                row = cur.fetchone()
+        return row["id"] if row else None
+
+    def has_known_dead_boards(self, miner_id: str) -> bool:
+        """Check if this miner has unresolved known dead boards (already attempted restart)."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM known_dead_boards "
+                    "WHERE miner_id = %s AND resolved_at IS NULL AND restart_attempted IS NOT NULL",
+                    (miner_id,),
+                )
+                row = cur.fetchone()
+        return row is not None
+
+    def mark_ticket_created(self, miner_id: str, ticket_id: str = None) -> None:
+        """Record that an AMS ticket has been created for this dead board miner."""
+        now = datetime.now().isoformat()
+        value = ticket_id or now
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE known_dead_boards SET ticket_created=%s "
+                    "WHERE miner_id=%s AND resolved_at IS NULL",
+                    (value, miner_id),
+                )
+        logger.info("[%s] AMS ticket recorded: %s", miner_id, value)
+
+    def mark_ticket_noticed(self, miner_ids: list) -> None:
+        """Mark tickets as noticed in Slack — won't appear in future reports."""
+        if not miner_ids:
+            return
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                for miner_id in miner_ids:
+                    cur.execute(
+                        "UPDATE known_dead_boards SET ticket_noticed_at=%s "
+                        "WHERE miner_id=%s AND resolved_at IS NULL",
+                        (now, miner_id),
+                    )
+
+    def get_newly_ticketed(self) -> list:
+        """Return dead board miners whose ticket was created but not yet noticed in Slack.
+
+        Matches the SQLite implementation — only rows where ticket_noticed_at IS NULL
+        are returned. Marking them noticed happens immediately after posting via
+        mark_ticket_noticed().
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT miner_id, ip, model, board_indices, ticket_created "
+                    "FROM known_dead_boards "
+                    "WHERE resolved_at IS NULL AND ticket_created IS NOT NULL "
+                    "AND ticket_noticed_at IS NULL"
+                )
+                rows = cur.fetchall()
+        return [dict(r) for r in rows]
+
+    def is_elevated_monitoring(self, miner_id: str) -> bool:
+        """Return True if this miner is within its post-restart elevated monitoring window."""
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT elevated_until FROM miner_restarts "
+                    "WHERE miner_id=%s AND elevated_until > %s "
+                    "ORDER BY id DESC LIMIT 1",
+                    (miner_id, now),
+                )
+                row = cur.fetchone()
+        return row is not None
+
+    def get_failed_restart_count(self, miner_id: str, days: int = 7) -> int:
+        """Count restarts in the last N days. Matches SQLite semantics — this is a
+        total-restart counter, not filtered by outcome (despite the name).
+        """
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS cnt FROM miner_restarts "
+                    "WHERE miner_id=%s AND restarted_at >= %s",
+                    (miner_id, cutoff),
+                )
+                row = cur.fetchone()
+        return row["cnt"] if row else 0
+
+    def close(self, force: bool = False) -> None:
+        """No-op for Postgres — connections are per-call and auto-close on context exit.
+
+        Kept for API compatibility with the SQLite backend which maintained persistent
+        connections.
+        """
+        pass
