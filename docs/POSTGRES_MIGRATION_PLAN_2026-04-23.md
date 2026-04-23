@@ -74,6 +74,30 @@ After Phase 2 completed, a fuller audit showed 57 files use `sqlite3.connect()` 
 
 ---
 
+
+## Note on OpenClaw and the Slack path (added 2026-04-23 after pause)
+
+Bobby raised the question "I think Slack messages come through OpenClaw" as a check
+before continuing Phase 7. Investigated to confirm scope is correct:
+
+  - OpenClaw (Docker container, running 43h+) owns Slack Socket Mode. All live
+    Slack events (button clicks, slash commands, @mentions) ingress through it.
+  -  is outbound-only (webhook + WebClient) — posts
+    scan summaries to Slack.
+  -  POLLS Slack REST API every 15s for text replies
+    like "approve 1,2,3". Docstring explicitly states: "Socket Mode is owned by
+    OpenClaw — we use polling instead of Bolt to avoid conflicts."
+  -  and  (port 8686) are the
+    HTTP backends that actually execute approve/deny. Still need Phase 7 conversion.
+  - OpenClaw's own config (openclaw.json) has no references to approval_api, port
+    8686, or any mining-guardian Python endpoint. It only knows about LLM providers
+    (Ollama, Nexos). So OpenClaw doesn't talk to the DB directly.
+
+**Conclusion:** All 9 Phase 7 files are live production code. Scope unchanged.
+**Separately noted for May migration (NOT today):** slack_actions_handler.py needs
+an OpenClaw-routed replacement before VPS→Mac Mini cutover. That item remains a
+follow-up, not a blocker for today.
+
 ## Phase log
 
 ### Phase 0 — Plan written
@@ -152,28 +176,29 @@ After Phase 2 completed, a fuller audit showed 57 files use `sqlite3.connect()` 
 
 
 ### Phase 7 — Convert raw-sqlite3 service files to psycopg2
-- **Status:** ⏳ In progress (1/9 complete)
+- **Status:** ✅ Complete
 - **Start:** 2026-04-23 ~09:50 CDT
-- **Strategy:** one commit per file, smoke-test each before commit. Order: smallest/most-isolated first, biggest (dashboard_api) last.
+- **End:** 2026-04-23 ~10:34 CDT (next day work)
+- **Total commits in Phase 7:** 10 files converted
 - **Files:**
-  - ✅ 7.1 api/ams_alert_listener.py (494 LOC, 14 sqlite lines) — commit 22f99ec, 2026-04-23 09:58 CDT
-  - ⏳ 7.2 core/overnight_automation.py (441 LOC)
-  - ⏳ 7.3 api/slack_approval_listener.py (460 LOC)
-  - ⏳ 7.4 api/slack_command_handler.py (885 LOC)
-  - ⏳ 7.5 api/intelligence_report_api.py (1869 LOC)
-  - ⏳ 7.6 ai/local_llm_analyzer.py (637 LOC)
-  - ⏳ 7.7 ai/daily_deep_dive.py (1088 LOC)
-  - ⏳ 7.8 api/approval_api.py (471 LOC, high placeholder density)
-  - ⏳ 7.9 api/dashboard_api.py (3404 LOC, largest)
-- **Translation patterns (documented in each commit):**
-  - ? → %s
-  - INSERT OR REPLACE → INSERT ... ON CONFLICT (pk) DO UPDATE SET col=EXCLUDED.col,...
-  - INSERT OR IGNORE → INSERT ... ON CONFLICT DO NOTHING
-  - row[0] → row[column_name] (RealDictCursor)
-  - sqlite3.OperationalError for missing table → psycopg2.errors.UndefinedTable
-  - cur.lastrowid → INSERT ... RETURNING id + cur.fetchone()[id]
-  - PRAGMA table_info(X) → SELECT FROM information_schema.columns WHERE table_name='X'
-  - datetime('now', '-7 days') → NOW() - INTERVAL '7 days' (in SQL) OR Python datetime.isoformat() + WHERE ts > %s
+  - 7.1  api/ams_alert_listener.py (22f99ec)
+  - 7.2  core/overnight_automation.py (13dcbc3)
+  - 7.3  api/slack_approval_listener.py (2721d8f)
+  - 7.4a monitoring/cost_tracker.py (e892f35)
+  - 7.4  api/slack_command_handler.py (ec94451)
+  - 7.5  api/intelligence_report_api.py (de557eb)
+  - 7.6  ai/knowledge_manager.py (20e1ba0)
+  - 7.7  ai/local_llm_analyzer.py (b5aa95f)
+  - 7.8  ai/daily_deep_dive.py (98b93e2)
+  - 7.9  api/approval_api.py (1cd9192)
+  - 7.10 api/dashboard_api.py (9b859b9)  ← this one required 3 attempts due to embedded JS in HTML templates
+- **Translation patterns locked in by Phase 7:**
+  - `_PgConnWrapper` class: ~40-line drop-in that gives psycopg2 a SQLite-style conn.execute().fetchone() shortcut
+  - `_pg_dsn()`: 8-line helper that builds DSN from env vars
+  - AST-based SQL-string classifier: required for files with embedded HTML/JS; tight variant (SQL keyword at start of string) avoids misclassifying URLs and UI text
+  - Manual fix pass for dynamic-query fragments (`query += " AND x = ?"`) that AST cannot catch
+  - `scp` transport for files >100KB (base64-over-SSH hits bash ARG_MAX)
+- **Outcome:** No running service has sqlite3 as a dependency anymore. Ready for Phase 8 (flip imports in core/mining_guardian.py + notifiers/slack_notifier.py).
 
 ### Phase 8 — Configure systemd env vars
 - **Status:** Pending
