@@ -48,8 +48,8 @@ CREATE TABLE IF NOT EXISTS miner_readings (
     error_codes           TEXT
 );
 
-CREATE INDEX idx_readings_miner ON miner_readings(miner_id, scanned_at);
-CREATE INDEX idx_mr_scanned_at ON miner_readings(scanned_at);
+CREATE INDEX IF NOT EXISTS idx_readings_miner ON miner_readings(miner_id, scanned_at);
+CREATE INDEX IF NOT EXISTS idx_mr_scanned_at ON miner_readings(scanned_at);
 
 CREATE TABLE IF NOT EXISTS miner_logs (
     id            SERIAL PRIMARY KEY,
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS miner_logs (
     content       TEXT NOT NULL
 );
 
-CREATE INDEX idx_logs_miner ON miner_logs(miner_id, collected_at);
+CREATE INDEX IF NOT EXISTS idx_logs_miner ON miner_logs(miner_id, collected_at);
 
 CREATE TABLE IF NOT EXISTS miner_restarts (
     id                  SERIAL PRIMARY KEY,
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS miner_restarts (
     recovery_time_scans INTEGER
 );
 
-CREATE INDEX idx_restarts_miner ON miner_restarts(miner_id, restarted_at);
+CREATE INDEX IF NOT EXISTS idx_restarts_miner ON miner_restarts(miner_id, restarted_at);
 
 CREATE TABLE IF NOT EXISTS weather_readings (
     id           SERIAL PRIMARY KEY,
@@ -120,8 +120,8 @@ CREATE TABLE IF NOT EXISTS action_audit_log (
     notes         TEXT
 );
 
-CREATE INDEX idx_audit_date ON action_audit_log(date);
-CREATE INDEX idx_audit_miner ON action_audit_log(miner_id);
+CREATE INDEX IF NOT EXISTS idx_audit_date ON action_audit_log(date);
+CREATE INDEX IF NOT EXISTS idx_audit_miner ON action_audit_log(miner_id);
 
 CREATE TABLE IF NOT EXISTS pending_approvals (
     id               SERIAL PRIMARY KEY,
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     confidence_gate  TEXT
 );
 
-CREATE INDEX idx_pending_thread ON pending_approvals(thread_ts, status);
+CREATE INDEX IF NOT EXISTS idx_pending_thread ON pending_approvals(thread_ts, status);
 
 CREATE TABLE IF NOT EXISTS miner_baselines (
     miner_id              TEXT PRIMARY KEY,
@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS known_dead_boards (
     ticket_noticed_at TEXT
 );
 
-CREATE UNIQUE INDEX idx_dead_boards_miner ON known_dead_boards(miner_id) WHERE resolved_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dead_boards_miner ON known_dead_boards(miner_id) WHERE resolved_at IS NULL;
 
 -- ============================================
 -- DETAILED READING TABLES
@@ -228,8 +228,8 @@ CREATE TABLE IF NOT EXISTS chain_readings (
     temp_chip     REAL
 );
 
-CREATE INDEX idx_chain_miner ON chain_readings(miner_id, scanned_at);
-CREATE INDEX idx_cr_miner ON chain_readings(miner_id, board_index);
+CREATE INDEX IF NOT EXISTS idx_chain_miner ON chain_readings(miner_id, scanned_at);
+CREATE INDEX IF NOT EXISTS idx_cr_miner ON chain_readings(miner_id, board_index);
 
 CREATE TABLE IF NOT EXISTS pool_readings (
     id            SERIAL PRIMARY KEY,
@@ -249,7 +249,7 @@ CREATE TABLE IF NOT EXISTS pool_readings (
     difficulty    TEXT
 );
 
-CREATE INDEX idx_pool_miner ON pool_readings(miner_id, scanned_at);
+CREATE INDEX IF NOT EXISTS idx_pool_miner ON pool_readings(miner_id, scanned_at);
 
 CREATE TABLE IF NOT EXISTS chip_readings (
     id          SERIAL PRIMARY KEY,
@@ -265,7 +265,7 @@ CREATE TABLE IF NOT EXISTS chip_readings (
     source      TEXT DEFAULT 'direct_api'
 );
 
-CREATE INDEX idx_chip_miner ON chip_readings(miner_id, scanned_at);
+CREATE INDEX IF NOT EXISTS idx_chip_miner ON chip_readings(miner_id, scanned_at);
 
 CREATE TABLE IF NOT EXISTS miner_state_readings (
     id               SERIAL PRIMARY KEY,
@@ -287,7 +287,7 @@ CREATE TABLE IF NOT EXISTS miner_state_readings (
     active_pool_user TEXT
 );
 
-CREATE INDEX idx_state_miner ON miner_state_readings(miner_id, scanned_at);
+CREATE INDEX IF NOT EXISTS idx_state_miner ON miner_state_readings(miner_id, scanned_at);
 
 CREATE TABLE IF NOT EXISTS miner_hardware (
     id               SERIAL PRIMARY KEY,
@@ -334,7 +334,7 @@ CREATE TABLE IF NOT EXISTS miner_ams_extended (
     favorite        INTEGER DEFAULT 0
 );
 
-CREATE INDEX idx_ams_ext_miner ON miner_ams_extended(miner_id, scanned_at);
+CREATE INDEX IF NOT EXISTS idx_ams_ext_miner ON miner_ams_extended(miner_id, scanned_at);
 
 CREATE TABLE IF NOT EXISTS log_metrics (
     id            SERIAL PRIMARY KEY,
@@ -353,10 +353,10 @@ CREATE TABLE IF NOT EXISTS log_metrics (
     recorded_at   TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
-CREATE INDEX idx_log_metrics_miner ON log_metrics(miner_id, log_timestamp);
-CREATE INDEX idx_lm_miner_type ON log_metrics(miner_id, metric_type);
-CREATE INDEX idx_lm_recorded ON log_metrics(recorded_at);
-CREATE INDEX idx_lm_type_miner ON log_metrics(metric_type, miner_id);
+CREATE INDEX IF NOT EXISTS idx_log_metrics_miner ON log_metrics(miner_id, log_timestamp);
+CREATE INDEX IF NOT EXISTS idx_lm_miner_type ON log_metrics(miner_id, metric_type);
+CREATE INDEX IF NOT EXISTS idx_lm_recorded ON log_metrics(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_lm_type_miner ON log_metrics(metric_type, miner_id);
 
 -- ============================================
 -- ALERT LISTENER TABLES
@@ -374,7 +374,7 @@ CREATE TABLE IF NOT EXISTS alert_listener_seen (
     outcome         TEXT
 );
 
-CREATE INDEX idx_seen_miner ON alert_listener_seen(miner_id);
+CREATE INDEX IF NOT EXISTS idx_seen_miner ON alert_listener_seen(miner_id);
 
 CREATE TABLE IF NOT EXISTS alert_listener_cooldown (
     miner_id       TEXT PRIMARY KEY,
@@ -398,8 +398,8 @@ CREATE TABLE IF NOT EXISTS log_collection_failures (
     created_at            TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_log_failures_miner ON log_collection_failures(miner_id);
-CREATE INDEX idx_log_failures_date ON log_collection_failures(failure_date);
+CREATE INDEX IF NOT EXISTS idx_log_failures_miner ON log_collection_failures(miner_id);
+CREATE INDEX IF NOT EXISTS idx_log_failures_date ON log_collection_failures(failure_date);
 
 CREATE TABLE IF NOT EXISTS s19jpro_overheat_tracking (
     id                   SERIAL PRIMARY KEY,
@@ -434,8 +434,8 @@ CREATE TABLE IF NOT EXISTS discovery_log (
     notes            TEXT
 );
 
-CREATE INDEX idx_discovery_type_name ON discovery_log(discovery_type, normalized_name);
-CREATE INDEX idx_discovery_ack ON discovery_log(acknowledged);
+CREATE INDEX IF NOT EXISTS idx_discovery_type_name ON discovery_log(discovery_type, normalized_name);
+CREATE INDEX IF NOT EXISTS idx_discovery_ack ON discovery_log(acknowledged);
 
 -- ============================================
 -- PARTITIONING (for large tables)
