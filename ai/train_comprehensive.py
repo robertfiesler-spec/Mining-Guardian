@@ -65,36 +65,36 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
 
     # Scan history summary
     scan = conn.execute("""
-        SELECT model, ip,
+        SELECT MIN(model) as model, MIN(ip) as ip,
                COUNT(*) as scan_count,
-               ROUND(AVG(hashrate_pct), 1) as avg_hr,
-               ROUND(MIN(hashrate_pct), 1) as min_hr,
-               ROUND(MAX(hashrate_pct), 1) as max_hr,
-               ROUND(AVG(CASE WHEN temp_chip > 0 THEN temp_chip END), 1) as avg_temp,
+               ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
+               ROUND((MIN(hashrate_pct))::numeric, 1) as min_hr,
+               ROUND((MAX(hashrate_pct))::numeric, 1) as max_hr,
+               ROUND((AVG(CASE WHEN temp_chip > 0 THEN temp_chip END))::numeric, 1) as avg_temp,
                MAX(temp_chip) as max_temp,
-               ROUND(AVG(pdu_power), 3) as avg_pdu_kw,
+               ROUND((AVG(pdu_power))::numeric, 3) as avg_pdu_kw,
                SUM(CASE WHEN action NOT IN ('MONITOR','') AND action IS NOT NULL
                    THEN 1 ELSE 0 END) as times_flagged,
-               GROUP_CONCAT(DISTINCT action) as action_types,
+               string_agg(DISTINCT action::text, ',') as action_types,
                MAX(scanned_at) as last_seen,
-               GROUP_CONCAT(DISTINCT current_profile) as profiles_seen,
-               GROUP_CONCAT(DISTINCT map_location) as locations
-        FROM miner_readings WHERE miner_id = ?
+               string_agg(DISTINCT current_profile::text, ',') as profiles_seen,
+               string_agg(DISTINCT map_location::text, ',') as locations
+        FROM miner_readings WHERE miner_id = %s
     """, (miner_id,)).fetchone()
 
     # Per-board chain summary
     chains = conn.execute("""
         SELECT board_index,
-               ROUND(AVG(rate_mhs), 0) as avg_rate_mhs,
-               ROUND(AVG(voltage), 3) as avg_voltage,
-               ROUND(AVG(freq_mhz), 0) as avg_freq_mhz,
-               ROUND(AVG(consumption_w), 0) as avg_power_w,
+               ROUND((AVG(rate_mhs))::numeric, 0) as avg_rate_mhs,
+               ROUND((AVG(voltage))::numeric, 3) as avg_voltage,
+               ROUND((AVG(freq_mhz))::numeric, 0) as avg_freq_mhz,
+               ROUND((AVG(consumption_w))::numeric, 0) as avg_power_w,
                SUM(hw_errors) as total_hw_errors,
-               ROUND(AVG(temp_board), 1) as avg_board_temp,
-               ROUND(AVG(temp_chip), 1) as avg_chip_temp,
+               ROUND((AVG(temp_board))::numeric, 1) as avg_board_temp,
+               ROUND((AVG(temp_chip))::numeric, 1) as avg_chip_temp,
                SUM(CASE WHEN rate_mhs < 1000 THEN 1 ELSE 0 END) as dead_readings,
                COUNT(*) as total_readings
-        FROM chain_readings WHERE miner_id = ?
+        FROM chain_readings WHERE miner_id = %s
         GROUP BY board_index ORDER BY board_index
     """, (miner_id,)).fetchall()
 
@@ -103,9 +103,9 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
         SELECT pool_url,
                MAX(accepted) as total_accepted,
                MAX(rejected) as total_rejected,
-               ROUND(MAX(rejected)*100.0/NULLIF(MAX(accepted)+MAX(rejected),0), 3) as reject_rate,
-               GROUP_CONCAT(DISTINCT status) as statuses
-        FROM pool_readings WHERE miner_id = ?
+               ROUND((MAX(rejected)*100.0/NULLIF(MAX(accepted)+MAX(rejected),0))::numeric, 3) as reject_rate,
+               string_agg(DISTINCT status::text, ',') as statuses
+        FROM pool_readings WHERE miner_id = %s
         GROUP BY pool_url
     """, (miner_id,)).fetchall()
 
@@ -115,53 +115,53 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
                chip_technology, pcb_version, bom_version, chip_bin, chip_ft_ver,
                ideal_hashrate, control_board, psu_version, bixminer_version,
                topol_machine, device_name, asic_count, bad_chips_count, pic_version
-        FROM miner_hardware WHERE miner_id = ?
+        FROM miner_hardware WHERE miner_id = %s
         ORDER BY board_index
     """, (miner_id,)).fetchall()
 
     # Log metrics — chip hashrate summary (avg actual vs target per chip position)
     chip_summary = conn.execute("""
         SELECT chip_index,
-               ROUND(AVG(value_1), 2) as avg_actual_ths,
-               ROUND(AVG(value_2), 2) as avg_target_ths,
-               ROUND(AVG(value_1)/NULLIF(AVG(value_2),0)*100, 1) as pct_of_target,
+               ROUND((AVG(value_1))::numeric, 2) as avg_actual_ths,
+               ROUND((AVG(value_2))::numeric, 2) as avg_target_ths,
+               ROUND((AVG(value_1)/NULLIF(AVG(value_2),0)*100)::numeric, 1) as pct_of_target,
                COUNT(*) as samples
         FROM log_metrics
-        WHERE miner_id = ? AND metric_type = 'chip_hashrate'
+        WHERE miner_id = %s AND metric_type = 'chip_hashrate'
         GROUP BY chip_index ORDER BY chip_index
     """, (miner_id,)).fetchall()
 
     # Log metrics — PSU voltage trend
     psu = conn.execute("""
-        SELECT ROUND(AVG(value_1), 3) as avg_voltage,
-               ROUND(MIN(value_1), 3) as min_voltage,
-               ROUND(MAX(value_1), 3) as max_voltage,
-               ROUND(AVG(value_3), 0) as avg_power_w,
+        SELECT ROUND((AVG(value_1))::numeric, 3) as avg_voltage,
+               ROUND((MIN(value_1))::numeric, 3) as min_voltage,
+               ROUND((MAX(value_1))::numeric, 3) as max_voltage,
+               ROUND((AVG(value_3))::numeric, 0) as avg_power_w,
                COUNT(*) as samples
-        FROM log_metrics WHERE miner_id = ? AND metric_type = 'psu_voltage'
+        FROM log_metrics WHERE miner_id = %s AND metric_type = 'psu_voltage'
     """, (miner_id,)).fetchone()
 
     # Log metrics — system health
     health = conn.execute("""
-        SELECT ROUND(AVG(value_1), 1) as avg_total_cpu,
-               ROUND(AVG(value_2), 1) as avg_miner_cpu,
-               ROUND(AVG(value_3), 0) as avg_free_mem_mb,
+        SELECT ROUND((AVG(value_1))::numeric, 1) as avg_total_cpu,
+               ROUND((AVG(value_2))::numeric, 1) as avg_miner_cpu,
+               ROUND((AVG(value_3))::numeric, 0) as avg_free_mem_mb,
                COUNT(*) as samples
-        FROM log_metrics WHERE miner_id = ? AND metric_type = 'system_health'
+        FROM log_metrics WHERE miner_id = %s AND metric_type = 'system_health'
     """, (miner_id,)).fetchone()
 
     # Chain events (attach/detach)
     chain_events = conn.execute("""
         SELECT board_index, text_value as event, COUNT(*) as count,
                MIN(log_timestamp) as first, MAX(log_timestamp) as last
-        FROM log_metrics WHERE miner_id = ? AND metric_type = 'chain_event'
+        FROM log_metrics WHERE miner_id = %s AND metric_type = 'chain_event'
         GROUP BY board_index, text_value ORDER BY board_index
     """, (miner_id,)).fetchall()
 
     # Audit history — what was tried
     audit = conn.execute("""
         SELECT timestamp, problem, action_taken, decision, approved_by, notes
-        FROM action_audit_log WHERE miner_id = ?
+        FROM action_audit_log WHERE miner_id = %s
         ORDER BY timestamp DESC LIMIT 20
     """, (miner_id,)).fetchall()
 
@@ -171,15 +171,15 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
     # Claude needs the full picture to compare before/after restarts.
     logs = conn.execute("""
         SELECT collected_at, log_file, health_status, content
-        FROM miner_logs WHERE miner_id = ?
-          AND collected_at >= datetime('now', '-7 days')
+        FROM miner_logs WHERE miner_id = %s
+          AND collected_at::timestamp >= (NOW() - INTERVAL '7 days')
         ORDER BY collected_at DESC
     """, (miner_id,)).fetchall()
 
     # AMS notifications
     ams = conn.execute("""
         SELECT key, alert_level, COUNT(*) as cnt, MAX(recorded_at) as last_seen
-        FROM ams_notifications WHERE device_id = ?
+        FROM ams_notifications WHERE device_id = %s
         GROUP BY key, alert_level ORDER BY cnt DESC
     """, (miner_id,)).fetchall()
 
@@ -197,7 +197,7 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
                issue,
                action
         FROM miner_readings
-        WHERE miner_id = ?
+        WHERE miner_id = %s
         ORDER BY id DESC LIMIT 50
     """, (miner_id,)).fetchall()
 
@@ -227,7 +227,7 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
     audit_rows = conn.execute("""
         SELECT timestamp, action_taken, decision, problem
         FROM action_audit_log
-        WHERE miner_id = ? AND action_taken IN ('RESTART','PDU_CYCLE','RESTART_CHECK_BOARDS')
+        WHERE miner_id = %s AND action_taken IN ('RESTART','PDU_CYCLE','RESTART_CHECK_BOARDS')
         AND decision = 'APPROVED'
         ORDER BY timestamp DESC LIMIT 10
     """, (miner_id,)).fetchall()
@@ -237,14 +237,14 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
         # Reading just before restart
         before = conn.execute("""
             SELECT hashrate_pct, temp_chip, issue, scanned_at
-            FROM miner_readings WHERE miner_id = ? AND scanned_at <= ?
+            FROM miner_readings WHERE miner_id = %s AND scanned_at <= %s
             ORDER BY scanned_at DESC LIMIT 1
         """, (miner_id, ts)).fetchone()
         # Reading 30 minutes after restart
         after_ts = datetime.fromisoformat(ts) + timedelta(minutes=30)
         after = conn.execute("""
             SELECT hashrate_pct, temp_chip, issue, scanned_at
-            FROM miner_readings WHERE miner_id = ? AND scanned_at >= ?
+            FROM miner_readings WHERE miner_id = %s AND scanned_at >= %s
             ORDER BY scanned_at ASC LIMIT 1
         """, (miner_id, after_ts.isoformat())).fetchone()
 
@@ -464,13 +464,13 @@ def get_cross_miner_correlations(conn) -> str:
     chip_bin_perf = conn.execute("""
         SELECT h.chip_bin,
                COUNT(DISTINCT h.miner_id) as miner_count,
-               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct,
-               ROUND(AVG(CASE WHEN mr.temp_chip > 0 THEN mr.temp_chip END), 1) as avg_temp,
+               ROUND((AVG(mr.hashrate_pct))::numeric, 1) as avg_hr_pct,
+               ROUND((AVG(CASE WHEN mr.temp_chip > 0 THEN mr.temp_chip END))::numeric, 1) as avg_temp,
                SUM(CASE WHEN mr.action NOT IN ('MONITOR','') AND mr.action IS NOT NULL
                    THEN 1 ELSE 0 END) as total_flags
         FROM miner_hardware h
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.chip_bin IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
+        WHERE h.chip_bin IS NOT NULL AND mr.scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
         GROUP BY h.chip_bin
         ORDER BY avg_hr_pct ASC
     """).fetchall()
@@ -488,12 +488,12 @@ def get_cross_miner_correlations(conn) -> str:
     chip_die_perf = conn.execute("""
         SELECT h.chip_die, h.chip_technology,
                COUNT(DISTINCT h.miner_id) as miner_count,
-               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct,
+               ROUND((AVG(mr.hashrate_pct))::numeric, 1) as avg_hr_pct,
                SUM(CASE WHEN mr.action NOT IN ('MONITOR','') AND mr.action IS NOT NULL
                    THEN 1 ELSE 0 END) as total_flags
         FROM miner_hardware h
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.chip_die IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
+        WHERE h.chip_die IS NOT NULL AND mr.scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
         GROUP BY h.chip_die, h.chip_technology
         ORDER BY avg_hr_pct ASC
     """).fetchall()
@@ -513,15 +513,15 @@ def get_cross_miner_correlations(conn) -> str:
                h.board_name,
                COUNT(DISTINCT h.miner_id) as miner_count,
                COUNT(*) as board_count,
-               ROUND(AVG(cr.rate_mhs), 0) as avg_rate_mhs,
+               ROUND((AVG(cr.rate_mhs))::numeric, 0) as avg_rate_mhs,
                SUM(cr.hw_errors) as total_hw_errors,
                SUM(CASE WHEN cr.rate_mhs < 1000 THEN 1 ELSE 0 END) as dead_readings
         FROM miner_hardware h
         LEFT JOIN chain_readings cr ON h.miner_id = cr.miner_id
-            AND h.board_index = cr.board_index AND cr.scanned_at >= datetime("now", "-7 days")
+            AND h.board_index = cr.board_index AND cr.scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
         WHERE h.serial_number IS NOT NULL
         GROUP BY sn_batch, h.board_name
-        HAVING board_count > 1
+        HAVING COUNT(*) > 1
         ORDER BY total_hw_errors DESC, dead_readings DESC
     """).fetchall()
     if serial_batch_perf:
@@ -539,12 +539,12 @@ def get_cross_miner_correlations(conn) -> str:
     pcb_perf = conn.execute("""
         SELECT h.pcb_version, h.bom_version,
                COUNT(DISTINCT h.miner_id) as miner_count,
-               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct,
+               ROUND((AVG(mr.hashrate_pct))::numeric, 1) as avg_hr_pct,
                SUM(CASE WHEN mr.action NOT IN ('MONITOR','') AND mr.action IS NOT NULL
                    THEN 1 ELSE 0 END) as total_flags
         FROM miner_hardware h
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.pcb_version IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
+        WHERE h.pcb_version IS NOT NULL AND mr.scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
         GROUP BY h.pcb_version, h.bom_version
         ORDER BY avg_hr_pct ASC
     """).fetchall()
@@ -561,14 +561,14 @@ def get_cross_miner_correlations(conn) -> str:
     psu_perf = conn.execute("""
         SELECT h.psu_version,
                COUNT(DISTINCT h.miner_id) as miner_count,
-               ROUND(AVG(cr.voltage), 3) as avg_voltage,
-               ROUND(MIN(cr.voltage), 3) as min_voltage,
-               ROUND(AVG(mr.hashrate_pct), 1) as avg_hr_pct
+               ROUND((AVG(cr.voltage))::numeric, 3) as avg_voltage,
+               ROUND((MIN(cr.voltage))::numeric, 3) as min_voltage,
+               ROUND((AVG(mr.hashrate_pct))::numeric, 1) as avg_hr_pct
         FROM miner_hardware h
         LEFT JOIN chain_readings cr ON h.miner_id = cr.miner_id
-            AND cr.scanned_at >= datetime('now', '-7 days')
+            AND cr.scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
         JOIN miner_readings mr ON h.miner_id = mr.miner_id
-        WHERE h.psu_version IS NOT NULL AND mr.scanned_at >= datetime("now", "-7 days")
+        WHERE h.psu_version IS NOT NULL AND mr.scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
         GROUP BY h.psu_version
         ORDER BY avg_voltage ASC
     """).fetchall()
@@ -583,15 +583,16 @@ def get_cross_miner_correlations(conn) -> str:
 
     # Top flagged miners — the chronic problem cases
     chronic = conn.execute("""
-        SELECT miner_id, ip, model,
+        SELECT miner_id, MIN(ip) as ip, MIN(model) as model,
                COUNT(*) as scan_count,
                SUM(CASE WHEN action NOT IN ('MONITOR','') AND action IS NOT NULL
                    THEN 1 ELSE 0 END) as times_flagged,
-               ROUND(AVG(hashrate_pct), 1) as avg_hr,
-               GROUP_CONCAT(DISTINCT action) as actions
+               ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
+               string_agg(DISTINCT action::text, ',') as actions
         FROM miner_readings
         GROUP BY miner_id
-        HAVING times_flagged > 5
+        HAVING SUM(CASE WHEN action NOT IN ('MONITOR','') AND action IS NOT NULL
+                   THEN 1 ELSE 0 END) > 5
         ORDER BY times_flagged DESC LIMIT 15
     """).fetchall()
     if chronic:
@@ -627,8 +628,8 @@ def get_cross_miner_correlations(conn) -> str:
         SELECT timestamp, ip, model, action_taken, notes
         FROM action_audit_log
         WHERE decision = 'DENIED'
-          AND notes LIKE '%DENIAL_REASON%'
-          AND timestamp >= datetime('now', '-30 days')
+          AND notes LIKE '%%DENIAL_REASON%%'
+          AND timestamp::timestamp >= (NOW() - INTERVAL '30 days')
         ORDER BY timestamp DESC
         LIMIT 20
     """).fetchall()
@@ -655,8 +656,8 @@ def get_cross_miner_correlations(conn) -> str:
         SELECT ml.miner_id, ml.health_status, ml.collected_at,
                LENGTH(ml.content) as content_len
         FROM miner_logs ml
-        WHERE ml.health_status LIKE '%restart%'
-          AND ml.collected_at >= datetime('now', '-7 days')
+        WHERE ml.health_status LIKE '%%restart%%'
+          AND ml.collected_at::timestamp >= (NOW() - INTERVAL '7 days')
         ORDER BY ml.miner_id, ml.collected_at DESC
         LIMIT 40
     """).fetchall()
@@ -687,7 +688,7 @@ def get_cross_miner_correlations(conn) -> str:
                recovery_time_scans, restarted_at, restart_type
         FROM miner_restarts
         WHERE outcome IS NOT NULL
-          AND restarted_at >= datetime('now', '-7 days')
+          AND restarted_at::timestamp >= (NOW() - INTERVAL '7 days')
         ORDER BY restarted_at DESC LIMIT 20
     """).fetchall()
 
@@ -761,23 +762,23 @@ def get_cross_miner_correlations(conn) -> str:
 def get_hvac_weather_context(conn) -> str:
     """Build HVAC and weather context for fleet-level correlation."""
     hvac = conn.execute("""
-        SELECT ROUND(AVG(supply_temp_f),1) as avg_supply,
-               ROUND(AVG(return_temp_f),1) as avg_return,
-               ROUND(AVG(delta_t_f),1) as avg_delta_t,
-               ROUND(AVG(diff_pressure),1) as avg_pressure,
+        SELECT ROUND((AVG(supply_temp_f))::numeric, 1) as avg_supply,
+               ROUND((AVG(return_temp_f))::numeric, 1) as avg_return,
+               ROUND((AVG(delta_t_f))::numeric, 1) as avg_delta_t,
+               ROUND((AVG(diff_pressure))::numeric, 1) as avg_pressure,
                SUM(spray_pump_on) as pump_on_count,
                COUNT(*) as total_readings
         FROM hvac_readings
-        WHERE recorded_at > datetime('now', '-30 days')
+        WHERE recorded_at::timestamp > (NOW() - INTERVAL '30 days')
     """).fetchone()
 
     wx = conn.execute("""
-        SELECT ROUND(AVG(temp_f),1) as avg_temp,
-               ROUND(MIN(temp_f),1) as min_temp,
-               ROUND(MAX(temp_f),1) as max_temp,
-               ROUND(AVG(humidity_pct),1) as avg_humidity
+        SELECT ROUND((AVG(temp_f))::numeric, 1) as avg_temp,
+               ROUND((MIN(temp_f))::numeric, 1) as min_temp,
+               ROUND((MAX(temp_f))::numeric, 1) as max_temp,
+               ROUND((AVG(humidity_pct))::numeric, 1) as avg_humidity
         FROM weather_readings
-        WHERE recorded_at > datetime('now', '-30 days')
+        WHERE recorded_at::timestamp > (NOW() - INTERVAL '30 days')
     """).fetchone()
 
     lines = ["--- FACILITY ENVIRONMENT (last 30 days) ---"]
