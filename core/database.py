@@ -223,6 +223,23 @@ class GuardianDB:
                     conn.execute(
                         f"ALTER TABLE miner_restarts ADD COLUMN {col} {typedef}")
                     logger.info("Migration: added miner_restarts.%s", col)
+
+            # ── Schema migration: add confidence columns to pending_approvals
+            # These columns were added to the live DB via ad-hoc ALTER TABLE at some
+            # point and save_pending_approvals() writes to them, but the CREATE TABLE
+            # above doesn't include them. Without this migration a fresh install
+            # crashes on first pending-approval save. Discovered by the scratch-router
+            # test on 2026-04-23.
+            existing = [r[1] for r in conn.execute(
+                "PRAGMA table_info(pending_approvals)").fetchall()]
+            for col, typedef in [
+                ("confidence_score", "INTEGER"),
+                ("confidence_gate",  "TEXT"),
+            ]:
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE pending_approvals ADD COLUMN {col} {typedef}")
+                    logger.info("Migration: added pending_approvals.%s", col)
             conn.commit()
 
         # ── timeseries.db: miner_readings + chain_readings + pool_readings +
