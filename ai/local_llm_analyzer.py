@@ -19,7 +19,8 @@ On Mac Mini deployment, it runs locally via Ollama.
 import json
 import logging
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import time
 import requests
 from datetime import datetime, timedelta
@@ -29,7 +30,53 @@ from typing import Optional, Dict, List
 from ai.knowledge_manager import KnowledgeManager
 from ai.catalog_context import get_catalog_context
 _ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """psycopg2 Connection wrapper with SQLite-style conn.execute() shortcut.
+    See core/overnight_automation.py for rationale (Phase 7.2).
+    """
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
+# DB_PATH kept as a module-level symbol for any callers that reference it.
+# Now holds a DSN string, not a filesystem path.
+DB_PATH = _pg_dsn()
 KNOWLEDGE_PATH = _ROOT / "knowledge.json"
 
 logger = logging.getLogger("mining_guardian")
@@ -84,12 +131,11 @@ class LocalLLMAnalyzer:
 
     def _get_scan_context(self, scan_id: int) -> Dict:
         """Build context from the latest scan data."""
-        conn = sqlite3.connect(DB_PATH, timeout=30)
-        conn.row_factory = sqlite3.Row
+        conn = _PgConnWrapper(DB_PATH)
 
         # Current scan summary
         scan = conn.execute(
-            "SELECT * FROM scans WHERE id=?", (scan_id,)
+            "SELECT * FROM scans WHERE id=%s", (scan_id,)
         ).fetchone()
 
         # Miners with issues this scan
@@ -97,7 +143,7 @@ class LocalLLMAnalyzer:
             SELECT ip, model, hashrate_pct, temp_chip, current_profile,
                    status, action, issue, uptime
             FROM miner_readings
-            WHERE scan_id=? AND action IS NOT NULL AND action != 'MONITOR'
+            WHERE scan_id=%s AND action IS NOT NULL AND action != 'MONITOR'
             ORDER BY hashrate_pct ASC
         """, (scan_id,)).fetchall()
 
@@ -216,14 +262,13 @@ class LocalLLMAnalyzer:
         # Miner baselines for flagged miners
         baselines = {}
         try:
-            conn2 = sqlite3.connect(DB_PATH, timeout=10)
-            conn2.row_factory = sqlite3.Row
+            conn2 = _PgConnWrapper(DB_PATH)
             for r in flagged:
                 ip = r.get("ip", "")
                 if not ip:
                     continue
                 bl = conn2.execute(
-                    "SELECT baseline_hashrate_ths, model FROM miner_baselines WHERE ip=? AND learning_complete=1 LIMIT 1",
+                    "SELECT baseline_hashrate_ths, model FROM miner_baselines WHERE ip=%s AND learning_complete=1 LIMIT 1",
                     (ip,)
                 ).fetchone()
                 if bl and bl["baseline_hashrate_ths"]:
@@ -265,10 +310,10 @@ class LocalLLMAnalyzer:
             "You are Mining Guardian's AI analyst for a Bitcoin mining fleet.",
             "Analyze this scan data and provide actionable intelligence.",
             "",
-            f"=== SCAN #{scan.get('id', '?')} — {scan.get('scanned_at', '?')} ===",
-            f"Fleet: {scan.get('total_miners', '?')} miners | "
-            f"{scan.get('online', '?')} online | {scan.get('offline', '?')} offline | "
-            f"{scan.get('issues', '?')} issues",
+            f"=== SCAN #{scan.get('id', '%s')} — {scan.get('scanned_at', '%s')} ===",
+            f"Fleet: {scan.get('total_miners', '%s')} miners | "
+            f"{scan.get('online', '%s')} online | {scan.get('offline', '%s')} offline | "
+            f"{scan.get('issues', '%s')} issues",
         ]
 
         # Weather/HVAC
@@ -276,21 +321,21 @@ class LocalLLMAnalyzer:
         hvac_wh = ctx.get("hvac_warehouse", {})
         hvac_s19 = ctx.get("hvac_s19jpro", {})
         if wx:
-            lines.append(f"Weather: {wx.get('temp_f', '?')}°F, {wx.get('humidity_pct', '?')}% humidity")
+            lines.append(f"Weather: {wx.get('temp_f', '%s')}°F, {wx.get('humidity_pct', '%s')}% humidity")
         
         # Show BOTH HVAC systems - S19J Pros use different cooling than Warehouse
         if hvac_wh:
             lines.append(
-                f"HVAC WAREHOUSE (Hydros/S21 Imm): Supply {hvac_wh.get('supply_temp_f', '?')}°F | "
-                f"Return {hvac_wh.get('return_temp_f', '?')}°F | "
-                f"ΔT {hvac_wh.get('delta_t_f', '?')}°F"
+                f"HVAC WAREHOUSE (Hydros/S21 Imm): Supply {hvac_wh.get('supply_temp_f', '%s')}°F | "
+                f"Return {hvac_wh.get('return_temp_f', '%s')}°F | "
+                f"ΔT {hvac_wh.get('delta_t_f', '%s')}°F"
             )
         if hvac_s19:
             lines.append(
-                f"HVAC S19J PRO CONTAINER: Supply {hvac_s19.get('supply_temp_f', '?')}°F | "
-                f"Return {hvac_s19.get('return_temp_f', '?')}°F | "
-                f"ΔT {hvac_s19.get('delta_t_f', '?')}°F | "
-                f"Container {hvac_s19.get('container_temp_f', '?')}°F"
+                f"HVAC S19J PRO CONTAINER: Supply {hvac_s19.get('supply_temp_f', '%s')}°F | "
+                f"Return {hvac_s19.get('return_temp_f', '%s')}°F | "
+                f"ΔT {hvac_s19.get('delta_t_f', '%s')}°F | "
+                f"Container {hvac_s19.get('container_temp_f', '%s')}°F"
             )
         lines.append("  NOTE: Compare miners to THEIR cooling system. S19JPros -> S19J Pro HVAC. Others -> Warehouse.")
         lines.append("  NOTE: S19J Pro CT fans are manually at 100% - no VFD feedback shown. This is intentional, NOT a fault.")
@@ -310,9 +355,9 @@ class LocalLLMAnalyzer:
             lines.append(f"\n--- FLAGGED MINERS ({len(ctx['flagged'])}) ---")
             for m in ctx["flagged"][:15]:
                 lines.append(
-                    f"  {m['ip']} ({m['model'] or '?'}) "
+                    f"  {m['ip']} ({m['model'] or '%s'}) "
                     f"HR: {m['hashrate_pct']}% | Temp: {m['temp_chip']}°C | "
-                    f"Action: {m['action']} | Profile: {m['current_profile'] or '?'}"
+                    f"Action: {m['action']} | Profile: {m['current_profile'] or '%s'}"
                 )
                 if m.get("issue"):
                     lines.append(f"    Issue: {str(m['issue'])[:120]}")
@@ -323,8 +368,8 @@ class LocalLLMAnalyzer:
             for o in ctx["outcomes"]:
                 lines.append(
                     f"  {o['ip']} {o['outcome']} | "
-                    f"HR: {o['hashrate_before'] or '?'}% → {o['hashrate_after'] or '?'}% | "
-                    f"Type: {o['restart_type'] or '?'}"
+                    f"HR: {o['hashrate_before'] or '%s'}% → {o['hashrate_after'] or '%s'}% | "
+                    f"Type: {o['restart_type'] or '%s'}"
                 )
 
         # Denial reasons
@@ -376,7 +421,7 @@ class LocalLLMAnalyzer:
             lines.append("Focus on what's CHANGED or NEW since then:")
             for p in prev:
                 if isinstance(p, dict):
-                    ts = p.get("timestamp", "?")[:16]
+                    ts = p.get("timestamp", "%s")[:16]
                     txt = p.get("analysis", "")[:150]
                     lines.append(f"  [{ts}] {txt}...")
         
@@ -391,9 +436,9 @@ class LocalLLMAnalyzer:
             lines.append(f"\n--- PRE-FAILURE PREDICTIONS ({len(preds)}) ---")
             lines.append("These flagged miners show early warning signs:")
             for p in preds[:8]:
-                ip = p.get("ip", "?")
+                ip = p.get("ip", "%s")
                 signals = p.get("signals", [])
-                conf = p.get("confidence", "?")
+                conf = p.get("confidence", "%s")
                 sig_str = ", ".join(signals[:3]) if signals else "unknown"
                 lines.append(f"  {ip}: {sig_str} (confidence: {conf})")
 
@@ -403,7 +448,7 @@ class LocalLLMAnalyzer:
             lines.append(f"\n--- MINER BEHAVIORAL HISTORY ({len(fps)}) ---")
             for mid, fp in list(fps.items())[:8]:
                 ip = fp.get("ip", mid)
-                success = fp.get("restart_success_rate", "?")
+                success = fp.get("restart_success_rate", "%s")
                 total = fp.get("total_restarts", 0)
                 issues = fp.get("known_issues", [])
                 issue_str = ", ".join(issues[:2]) if issues else "none"
@@ -462,7 +507,7 @@ class LocalLLMAnalyzer:
             for key, ins in operational_insights[:8]:
                 topic = ins.get("topic", key)
                 insight_text = ins.get("insight", "")[:120]
-                confidence = ins.get("confidence", "?")
+                confidence = ins.get("confidence", "%s")
                 lines.append(f"  [{confidence}] {topic}: {insight_text}")
 
         # Intelligence Catalog context (manufacturer specs, known issues)
@@ -496,15 +541,15 @@ class LocalLLMAnalyzer:
 Based on this scan data, provide:
 
 ### SUMMARY
-(2-3 sentences): What CHANGED since the last scan?
+(2-3 sentences): What CHANGED since the last scan%s
 
 ### CONCERNS
-(bullet list with confidence): Which miners need immediate attention?
+(bullet list with confidence): Which miners need immediate attention%s
 Format each as: - **[IP]** (XX% confidence): [issue and reason]
 Confidence based on: data quality, pattern match strength, historical accuracy.
 
 ### LOG ANALYSIS
-(only if restart logs present): What changed pre vs post restart?
+(only if restart logs present): What changed pre vs post restart%s
 
 ### RECOMMENDATION
 (1-2 sentences): Specific next action for the operator.
@@ -522,7 +567,7 @@ Confidence based on: data quality, pattern match strength, historical accuracy.
                                     post_log: str, miner_info: Dict) -> str:
         """Build prompt for comparing pre/post restart logs."""
         return f"""You are a Bitcoin miner diagnostic expert. Compare these pre-restart and post-restart logs
-for miner {miner_info.get('ip', miner_id)} ({miner_info.get('model', '?')}).
+for miner {miner_info.get('ip', miner_id)} ({miner_info.get('model', '%s')}).
 
 === PRE-RESTART LOG ===
 {pre_log[:3000]}
@@ -531,11 +576,11 @@ for miner {miner_info.get('ip', miner_id)} ({miner_info.get('model', '?')}).
 {post_log[:3000]}
 
 === YOUR ANALYSIS ===
-1. What errors/faults were present BEFORE the restart?
-2. Which errors CLEARED after the restart? Which PERSISTED?
-3. Did any NEW errors appear after restart?
+1. What errors/faults were present BEFORE the restart%s
+2. Which errors CLEARED after the restart%s Which PERSISTED%s
+3. Did any NEW errors appear after restart%s
 4. Board health: compare voltage, frequency, chip counts, ASIC status
-5. VERDICT: Did the restart fix the root cause, or is this a hardware issue that needs physical repair?
+5. VERDICT: Did the restart fix the root cause, or is this a hardware issue that needs physical repair%s
 
 Keep response under 10 lines. Be specific — cite board numbers, voltages, error codes."""
 
