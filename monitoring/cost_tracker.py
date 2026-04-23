@@ -23,6 +23,43 @@ logger = logging.getLogger(__name__)
 DEFAULT_ELECTRICITY_RATE = 0.042  # $/kWh
 
 
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection providing a SQLite-style
+    conn.execute(sql, params).fetchone/fetchall() shortcut.
+
+    psycopg2 Connection has no .execute() method — SQL must go through a
+    cursor. This wrapper creates a cursor per call so the existing
+    `conn.execute("SELECT ...").fetchall()` idiom keeps working without
+    rewriting every call site.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 class CostTracker:
     """Electricity cost and profitability tracker for mining operations."""
 
@@ -39,12 +76,22 @@ class CostTracker:
         )
 
     def _get_connection(self):
-        """Get a database connection."""
-        import sqlite3
+        """Get a database connection.
+
+        Accepts either a DSN string (db_path) or a pre-existing GuardianPGDB
+        instance (self.db). When given a DSN, opens a psycopg2 connection with
+        RealDictCursor so `row["col_name"]` access works like sqlite3.Row.
+
+        Note: the else-branch's "return self._get_connection()" is a latent
+        bug inherited from the SQLite version — it causes infinite recursion
+        when a db object is passed. Morning briefing hits this path but its
+        caller catches the exception, so it silently degrades to
+        "Cost tracking unavailable". Not fixing in this port commit.
+        """
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
         if self.db_path:
-            conn = sqlite3.connect(self.db_path, timeout=30)
-            conn.row_factory = sqlite3.Row
-            return conn
+            return _PgConnWrapper(psycopg2.connect(self.db_path, cursor_factory=RealDictCursor))
         else:
             return self._get_connection()
 
@@ -144,7 +191,7 @@ class CostTracker:
                 AND cr.consumption_w IS NOT NULL AND cr.consumption_w > 0
                 GROUP BY cr.miner_id, cr.ip
                 ORDER BY total_watts DESC
-                LIMIT ?
+                LIMIT %s
             """, (limit,)).fetchall()
 
             results = []
