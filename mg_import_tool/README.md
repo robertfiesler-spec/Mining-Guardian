@@ -41,13 +41,27 @@ The tool will report a clear error if `unrar` is missing when a `.rar` file is u
 
 ### 3. Apply the database migrations (v3 new step)
 
+Apply in **strict numerical order**. Each migration is idempotent (all statements use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`), so re-running is safe.
+
 ```bash
-psql -U guardian_admin -d mining_guardian -f sql/migrations/001_initial_schema.sql
+# 1. Bootstrap the field_log_* tables and mg.import_runs (extracted from
+#    mg_import.py's runtime bootstrap block)
+psql -U guardian_admin -d mining_guardian -f sql/migrations/000_bootstrap_field_log_tables.sql
+
+# 2. Apply the Layer 2 resolver schema (hardware.model_aliases,
+#    mg.model_family_aliases, mg.unresolved_models, partitioned raw_json, etc.)
 psql -U guardian_admin -d mining_guardian -f sql/migrations/002_layer2_and_learning_foundation.sql
-psql -U guardian_admin -d mining_guardian -f sql/seed/001_model_aliases_seed.sql
+
+# 3. Seed the Tier-1 alias table (12,852 rows — canonical slugs + V-code variants)
+psql -U guardian_admin -d mining_guardian -f sql/seed/001_hardware_model_aliases_tier1.sql
+
+# 4. Seed the Tier-2 family alias table (1,494 rows — ambiguous aliases resolved by hashrate)
+psql -U guardian_admin -d mining_guardian -f sql/seed/002_mg_family_aliases_tier2.sql
 ```
 
-Migration 002 is **idempotent** — safe to run multiple times (all statements use `IF NOT EXISTS` / `IF NOT EXISTS` guards). The seed file populates `mg.model_aliases` with 5,724 rows covering 243 WhatsMiner models including all M30S/M30S+/M30S++/M31S/M31S+ V-code variants.
+**Ordering matters:** 000 must run before 002 because 002 expects `knowledge.field_log_miner_identity` to exist so it can add resolver-stamp columns. If you skip 000, `mg_import.py`'s own runtime bootstrap block will create the tables anyway on first connection — but the formal migration path is what a fresh environment should use.
+
+**Note:** there is no `001_initial_schema.sql` in this tool. The repo-level `migrations/001_initial_schema.sql` at the project root is the VPS Mining Guardian Postgres schema (monolithic `public.*` tables) and is unrelated to the catalog.
 
 ### 4. Run the tool
 
@@ -589,8 +603,8 @@ mg_import_tool/
 ├── logs/                             ← Per-run structured log files (v3)
 ├── sql/
 │   ├── migrations/
-│   │   ├── 001_initial_schema.sql    ← Base knowledge schema (if applicable)
-│   │   └── 002_layer2_and_learning_foundation.sql  ← v3 Layer 2 tables [v3]
+│   │   ├── 000_bootstrap_field_log_tables.sql  ← knowledge.field_log_* + mg.import_runs (v2 shape) [v3.3]
+│   │   └── 002_layer2_and_learning_foundation.sql  ← Layer 2 resolver tables [v3]
 │   └── seed/
 │       ├── 001_hardware_model_aliases_tier1.sql  ← 12,852-row Tier-1 alias table [v3.1]
 │       └── 002_mg_family_aliases_tier2.sql       ← 1,494-row Tier-2 family table [v3.1]
