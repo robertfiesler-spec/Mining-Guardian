@@ -409,6 +409,28 @@ class GuardianDB:
                 );
             """)
 
+            # ── Schema migration: add dual-system HVAC columns to hvac_readings.
+            # When the s19jpro container HVAC came online, api/dashboard_api.py
+            # started writing a 17-column form of hvac_readings including
+            # system_id, outside_air_f, container_temp_f. The live DB got these
+            # via ad-hoc ALTER TABLE but _init_db didn't. Without this migration,
+            # a fresh install would crash the dashboard API HVAC POST and every
+            # AI pipeline query that references those columns (deep_dive,
+            # local_llm_analyzer, predictor, action_diversity, hvac_correlator).
+            # Discovered by the column-drift audit on 2026-04-23.
+            existing = [r[1] for r in conn.execute(
+                "PRAGMA table_info(hvac_readings)").fetchall()]
+            for col, typedef in [
+                ("system_id",        "TEXT DEFAULT 'warehouse'"),
+                ("outside_air_f",    "REAL"),
+                ("container_temp_f", "REAL"),
+            ]:
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE hvac_readings ADD COLUMN {col} {typedef}")
+                    logger.info("Migration: added hvac_readings.%s", col)
+            conn.commit()
+
         # ── audit.db: action_audit_log + ams_notifications + miner_logs ──
         with self._connect('action_audit_log') as conn:
             conn.executescript("""
