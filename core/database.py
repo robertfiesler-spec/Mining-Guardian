@@ -1551,7 +1551,7 @@ class GuardianDB:
 
     def count_outcome_failures(self, miner_id: str) -> int:
         """Count restarts labeled FAILURE by the outcome feedback loop (Feature 1)."""
-        with self._connect('action_audit_log') as conn:
+        with self._connect('miner_restarts') as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM miner_restarts
                 WHERE miner_id=? AND outcome='FAILURE'
