@@ -992,7 +992,10 @@ class GuardianDB:
         for filename, content in log_files.items():
             if "miner.log" in filename and content:
                 try:
-                    with self._connect('miner_logs') as conn:
+                    # miner_readings lives in timeseries.db, not audit.db where
+                    # miner_logs lives — open a connection to the right split DB
+                    # so this lookup doesn't crash under an active router.
+                    with self._connect('miner_readings') as conn:
                         row = conn.execute(
                             "SELECT ip, mac FROM miner_readings WHERE miner_id=? ORDER BY id DESC LIMIT 1",
                             (miner_id,)
