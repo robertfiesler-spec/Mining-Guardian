@@ -737,7 +737,11 @@ class GuardianDB:
                 ).fetchall()
                 for row in rows:
                     known.add(row["firmware_version"])
-                # Also load firmware from existing miner_readings to bootstrap
+            # Also load firmware from existing miner_readings to bootstrap.
+            # Separate connection because miner_readings lives in timeseries.db
+            # while discovery_log lives in operational.db — SQLite cannot span
+            # two databases on one connection.
+            with self._connect('miner_readings') as conn:
                 rows2 = conn.execute(
                     "SELECT DISTINCT firmware_version FROM miner_readings "
                     "WHERE firmware_version IS NOT NULL AND firmware_version != ''"
