@@ -57,7 +57,8 @@ import argparse
 import json
 import logging
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import sys
 import time
 import traceback
@@ -69,7 +70,51 @@ from typing import Dict, List, Optional, Tuple
 
 # ── Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """psycopg2 Connection wrapper with SQLite-style conn.execute shortcut.
+    See core/overnight_automation.py for rationale (Phase 7.2).
+    """
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
+DB_PATH = _pg_dsn()
 KNOWLEDGE_PATH = _ROOT / "knowledge.json"
 CONFIG_PATH = _ROOT / "config.json"
 WIP_ROOT = _ROOT / "daily_deep_dive_wip"
@@ -170,7 +215,7 @@ def query_qwen(prompt: str, label: str = "") -> Optional[str]:
 
 # ── Data gathering ───────────────────────────────────────────────────────
 
-def get_online_miners(conn: sqlite3.Connection) -> List[Dict]:
+def get_online_miners(conn: "_PgConnWrapper") -> List[Dict]:
     """Return the online miner list from the latest scan."""
     latest = conn.execute(
         "SELECT id FROM scans ORDER BY id DESC LIMIT 1"
@@ -182,21 +227,21 @@ def get_online_miners(conn: sqlite3.Connection) -> List[Dict]:
         SELECT miner_id, ip, model, hashrate_pct, temp_chip, current_profile,
                status, action, uptime, temp_board, consumption
         FROM miner_readings
-        WHERE scan_id = ? AND status = 'online'
+        WHERE scan_id = %s AND status = 'online'
         ORDER BY ip
     """, (scan_id,)).fetchall()
     return [dict(r) for r in rows]
 
 
-def get_miner_daily_log(conn: sqlite3.Connection, miner_id: str,
+def get_miner_daily_log(conn: "_PgConnWrapper", miner_id: str,
                          label: str = "daily_baseline") -> Optional[str]:
     """Get the most recent miner.log content for this miner (prefers today)."""
     # Look for any recent miner.log from last 12 hours first (today)
     row = conn.execute("""
         SELECT content, collected_at, health_status FROM miner_logs
-        WHERE miner_id = ?
+        WHERE miner_id = %s
           AND log_file LIKE '%miner.log'
-          AND collected_at >= datetime('now', '-12 hours')
+          AND collected_at >= TO_CHAR(NOW() - INTERVAL '12 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
     if row:
@@ -204,9 +249,9 @@ def get_miner_daily_log(conn: sqlite3.Connection, miner_id: str,
     # Fallback to 36 hours if nothing in last 12
     row = conn.execute("""
         SELECT content, collected_at, health_status FROM miner_logs
-        WHERE miner_id = ?
+        WHERE miner_id = %s
           AND log_file LIKE '%miner.log'
-          AND collected_at >= datetime('now', '-36 hours')
+          AND collected_at >= TO_CHAR(NOW() - INTERVAL '36 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
     if row:
@@ -216,20 +261,20 @@ def get_miner_daily_log(conn: sqlite3.Connection, miner_id: str,
     return None
 
 
-def get_miner_yesterday_log(conn: sqlite3.Connection, miner_id: str) -> Optional[str]:
+def get_miner_yesterday_log(conn: "_PgConnWrapper", miner_id: str) -> Optional[str]:
     """Get the most recent log from 24-72 hours ago for baseline comparison."""
     row = conn.execute("""
         SELECT content FROM miner_logs
-        WHERE miner_id = ?
+        WHERE miner_id = %s
           AND log_file LIKE '%miner.log'
-          AND collected_at < datetime('now', '-24 hours')
-          AND collected_at >= datetime('now', '-72 hours')
+          AND collected_at < TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+          AND collected_at >= TO_CHAR(NOW() - INTERVAL '72 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
     return row["content"] if row else None
 
 
-def get_miner_24h_trends(conn: sqlite3.Connection, miner_id: str) -> Dict:
+def get_miner_24h_trends(conn: "_PgConnWrapper", miner_id: str) -> Dict:
     """Get 24-hour per-board trends and summary stats for a miner."""
     trends = {}
 
@@ -238,7 +283,7 @@ def get_miner_24h_trends(conn: sqlite3.Connection, miner_id: str) -> Dict:
         SELECT scanned_at, board_index, rate_mhs, temp_chip, temp_board,
                voltage, freq_mhz, hw_errors
         FROM chain_readings
-        WHERE miner_id = ? AND scanned_at >= datetime('now', '-24 hours')
+        WHERE miner_id = %s AND scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY scanned_at ASC, board_index ASC
     """, (miner_id,)).fetchall()
     trends["chain_readings"] = [dict(r) for r in chains]
@@ -248,7 +293,7 @@ def get_miner_24h_trends(conn: sqlite3.Connection, miner_id: str) -> Dict:
         SELECT scanned_at, hashrate_pct, temp_chip, temp_board, current_profile,
                consumption
         FROM miner_readings
-        WHERE miner_id = ? AND scanned_at >= datetime('now', '-24 hours')
+        WHERE miner_id = %s AND scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY scanned_at ASC
     """, (miner_id,)).fetchall()
     trends["readings"] = [dict(r) for r in readings]
@@ -258,7 +303,7 @@ def get_miner_24h_trends(conn: sqlite3.Connection, miner_id: str) -> Dict:
         SELECT restarted_at, restart_type, outcome, hashrate_before, hashrate_after,
                recovery_time_scans
         FROM miner_restarts
-        WHERE miner_id = ? AND restarted_at >= datetime('now', '-24 hours')
+        WHERE miner_id = %s AND restarted_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY restarted_at ASC
     """, (miner_id,)).fetchall()
     trends["restarts"] = [dict(r) for r in restarts]
@@ -267,7 +312,7 @@ def get_miner_24h_trends(conn: sqlite3.Connection, miner_id: str) -> Dict:
     actions = conn.execute("""
         SELECT timestamp, action_taken, decision, approved_by, notes
         FROM action_audit_log
-        WHERE miner_id = ? AND timestamp >= datetime('now', '-24 hours')
+        WHERE miner_id = %s AND timestamp >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY timestamp ASC
     """, (miner_id,)).fetchall()
     trends["operator_actions"] = [dict(r) for r in actions]
@@ -276,7 +321,7 @@ def get_miner_24h_trends(conn: sqlite3.Connection, miner_id: str) -> Dict:
     pools = conn.execute("""
         SELECT scanned_at, pool_url, accepted, rejected, accepted_diff, rejected_diff, status
         FROM pool_readings
-        WHERE miner_id = ? AND scanned_at >= datetime('now', '-24 hours')
+        WHERE miner_id = %s AND scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY scanned_at ASC
     """, (miner_id,)).fetchall()
     trends["pool_readings"] = [dict(r) for r in pools]
@@ -284,10 +329,10 @@ def get_miner_24h_trends(conn: sqlite3.Connection, miner_id: str) -> Dict:
     return trends
 
 
-def get_miner_hardware(conn: sqlite3.Connection, miner_id: str) -> Optional[Dict]:
+def get_miner_hardware(conn: "_PgConnWrapper", miner_id: str) -> Optional[Dict]:
     """Get the permanent hardware identity for this miner."""
     row = conn.execute("""
-        SELECT * FROM miner_hardware WHERE miner_id = ? LIMIT 1
+        SELECT * FROM miner_hardware WHERE miner_id = %s LIMIT 1
     """, (miner_id,)).fetchone()
     return dict(row) if row else None
 
@@ -298,7 +343,7 @@ def get_miner_fingerprint(knowledge: Dict, miner_id: str) -> Optional[Dict]:
     return fingerprints.get(miner_id) or fingerprints.get(str(miner_id))
 
 
-def get_facility_24h(conn: sqlite3.Connection) -> Dict:
+def get_facility_24h(conn: "_PgConnWrapper") -> Dict:
     """Get 24-hour facility state: HVAC by system, weather, fleet-level stats."""
     facility = {}
 
@@ -309,7 +354,7 @@ def get_facility_24h(conn: sqlite3.Connection) -> Dict:
                    diff_pressure, spray_pump_on, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
                    outside_air_f, container_temp_f
             FROM hvac_readings
-            WHERE system_id = ? AND recorded_at >= datetime('now', '-24 hours')
+            WHERE system_id = %s AND recorded_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
             ORDER BY recorded_at ASC
         """, (system_id,)).fetchall()
         facility[f"hvac_{system_id}"] = [dict(r) for r in hvac]
@@ -321,7 +366,7 @@ def get_facility_24h(conn: sqlite3.Connection) -> Dict:
         SELECT recorded_at, temp_f, humidity_pct, feels_like_f,
                temp_high_f, temp_low_f
         FROM weather_readings
-        WHERE recorded_at >= datetime('now', '-24 hours')
+        WHERE recorded_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY recorded_at ASC
     """).fetchall()
     facility["weather"] = [dict(r) for r in weather]
@@ -329,7 +374,7 @@ def get_facility_24h(conn: sqlite3.Connection) -> Dict:
     scans = conn.execute("""
         SELECT id, scanned_at, total_miners, online, offline, issues
         FROM scans
-        WHERE scanned_at >= datetime('now', '-24 hours')
+        WHERE scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY scanned_at ASC
     """).fetchall()
     facility["scans"] = [dict(r) for r in scans]
@@ -379,7 +424,7 @@ def compress_chain_trend(chains: List[Dict]) -> str:
 
         def mm(vals):
             if not vals:
-                return "?"
+                return "%s"
             return f"{min(vals):.0f}/{max(vals):.0f}/{sum(vals)/len(vals):.0f}"
 
         lines.append(
@@ -425,7 +470,7 @@ def build_per_miner_prompt(
         "",
         f"=== MINER {miner.get('miner_id')} ({miner.get('ip')}) — {miner.get('model') or 'unknown model'} ===",
         f"Current state: status={miner.get('status')} action={miner.get('action') or 'none'} "
-        f"profile={miner.get('current_profile') or '?'} uptime={miner.get('uptime') or '?'}",
+        f"profile={miner.get('current_profile') or '%s'} uptime={miner.get('uptime') or '%s'}",
         "",
     ]
 
@@ -471,9 +516,9 @@ def build_per_miner_prompt(
         lines.append(f"--- RESTARTS IN LAST 24H ({len(restarts)}) ---")
         for r in restarts:
             lines.append(
-                f"  [{r.get('restarted_at', '?')[:16]}] {r.get('restart_type') or '?'} "
-                f"outcome={r.get('outcome') or '?'} "
-                f"HR: {r.get('hashrate_before', '?')}% → {r.get('hashrate_after', '?')}%"
+                f"  [{r.get('restarted_at', '%s')[:16]}] {r.get('restart_type') or '%s'} "
+                f"outcome={r.get('outcome') or '%s'} "
+                f"HR: {r.get('hashrate_before', '%s')}% → {r.get('hashrate_after', '%s')}%"
             )
             # miner_restarts has no notes column; recovery_time_scans captured above
         lines.append("")
@@ -484,8 +529,8 @@ def build_per_miner_prompt(
         lines.append(f"--- OPERATOR ACTIONS IN LAST 24H ({len(actions)}) ---")
         for a in actions:
             lines.append(
-                f"  [{a.get('timestamp', '?')[:16]}] {a.get('action_taken') or '?'} "
-                f"decision={a.get('decision') or '?'} by={a.get('approved_by') or '?'}"
+                f"  [{a.get('timestamp', '%s')[:16]}] {a.get('action_taken') or '%s'} "
+                f"decision={a.get('decision') or '%s'} by={a.get('approved_by') or '%s'}"
             )
             if a.get("notes"):
                 lines.append(f"    notes: {str(a['notes'])[:300]}")
@@ -511,8 +556,8 @@ def build_per_miner_prompt(
         lines.append("\n--- PAST AI ANALYSES (last 7 days) ---")
         lines.append("What AI previously said about this miner (do NOT repeat, focus on what changed):")
         for pa in past_analyses:
-            ts = pa["analyzed_at"][:16] if pa["analyzed_at"] else "?"
-            model = pa["model_used"] or "?"
+            ts = pa["analyzed_at"][:16] if pa["analyzed_at"] else "%s"
+            model = pa["model_used"] or "%s"
             text = (pa["response"] or "")[:300]
             lines.append(f"  [{ts}] ({model}): {text}...")
         lines.append("")
@@ -574,29 +619,29 @@ def build_per_miner_prompt(
         "",
         "Produce a thorough analysis of THIS miner covering:",
         "",
-        "1. CURRENT STATE: Is this miner healthy, degraded, or failing? What does the",
-        "   current hashrate, temp, and profile tell you?",
+        "1. CURRENT STATE: Is this miner healthy, degraded, or failing%s What does the",
+        "   current hashrate, temp, and profile tell you%s",
         "",
         "2. 24-HOUR STABILITY: Has performance been stable, trending down, spiking,",
-        "   or flapping? Cite specific board numbers and metrics from the trends above.",
+        "   or flapping%s Cite specific board numbers and metrics from the trends above.",
         "",
         "3. LOG ANALYSIS (today vs yesterday): What changed between yesterday's log",
-        "   and today's? Any new errors, warnings, board detachments, voltage faults,",
-        "   chip count changes, firmware messages, power events? If today looks identical",
+        "   and today's%s Any new errors, warnings, board detachments, voltage faults,",
+        "   chip count changes, firmware messages, power events%s If today looks identical",
         "   to yesterday, say so — that's also valuable information.",
         "",
         "4. RESTART HISTORY (if any in last 24h): Did restarts fix the root cause or",
-        "   just mask the symptom? Was the 'after' state materially better than 'before'?",
+        "   just mask the symptom%s Was the 'after' state materially better than 'before'%s",
         "",
         "5. CROSS-CORRELATION: Is this miner's behavior consistent with neighboring",
-        "   miners in the same cooling zone, same model, same firmware version? Or is",
-        "   it an outlier? (You'll see the full fleet in the synthesis pass — for now",
+        "   miners in the same cooling zone, same model, same firmware version%s Or is",
+        "   it an outlier%s (You'll see the full fleet in the synthesis pass — for now",
         "   just note anything that looks distinctive about this one miner.)",
         "",
         "6. PREDICTION: Based on the 24h trend, what do you expect from this miner in",
-        "   the next 24h? Stable? Degrading? At risk of failure? Needs physical attention?",
+        "   the next 24h%s Stable%s Degrading%s At risk of failure%s Needs physical attention%s",
         "",
-        "7. RECOMMENDATION: What, if anything, should the operator do about this miner?",
+        "7. RECOMMENDATION: What, if anything, should the operator do about this miner%s",
         "   If the answer is 'nothing, it's fine,' say that clearly — a no-action",
         "   analysis is just as valuable as a flagged one.",
         "",
@@ -633,7 +678,7 @@ def build_fleet_synthesis_prompt(
     # Previous day's synthesis for continuity
     if yesterday_deep_dive and yesterday_deep_dive.get("fleet_synthesis"):
         prev_synth = yesterday_deep_dive.get("fleet_synthesis", "")[:4000]
-        prev_date = yesterday_deep_dive.get("date", "?")
+        prev_date = yesterday_deep_dive.get("date", "%s")
         lines.append(f"--- PREVIOUS DAILY SYNTHESIS ({prev_date}) — for continuity ---")
         lines.append(prev_synth)
         lines.append("")
@@ -740,31 +785,31 @@ def build_fleet_synthesis_prompt(
         "",
         "Produce a structured fleet-wide report covering:",
         "",
-        "1. EXECUTIVE SUMMARY (3-5 sentences): What is the headline of today? What",
-        "   single thing should the operator know first thing tomorrow morning?",
+        "1. EXECUTIVE SUMMARY (3-5 sentences): What is the headline of today%s What",
+        "   single thing should the operator know first thing tomorrow morning%s",
         "",
-        "2. FLEET HEALTH: Overall fleet state. How many miners are genuinely healthy?",
-        "   How many have mild concerns? How many need real attention?",
+        "2. FLEET HEALTH: Overall fleet state. How many miners are genuinely healthy%s",
+        "   How many have mild concerns%s How many need real attention%s",
         "",
         "3. COHORT PATTERNS: Group findings by model / firmware / cooling zone.",
-        "   Are the S19JPros behaving as a group? Are the S21 EXP Hydros? The",
-        "   Auradine AH3880s? Any model-wide issues?",
+        "   Are the S19JPros behaving as a group%s Are the S21 EXP Hydros%s The",
+        "   Auradine AH3880s%s Any model-wide issues%s",
         "",
         "4. OUTLIERS: Which miners stand out (positively or negatively) from their",
-        "   cohort? Cite specific miners by ID and explain why.",
+        "   cohort%s Cite specific miners by ID and explain why.",
         "",
         "5. DAY-OVER-DAY CHANGES: Comparing to yesterday's synthesis above, what is",
-        "   materially different today? New issues? Resolved issues? Drift?",
+        "   materially different today%s New issues%s Resolved issues%s Drift%s",
         "",
         "6. ENVIRONMENTAL CORRELATION: Does the day's performance track with HVAC",
-        "   or weather? (Remember: HVAC is fine — only call this out if there's a",
+        "   or weather%s (Remember: HVAC is fine — only call this out if there's a",
         "   REAL correlation worth noting, not a default assumption.)",
         "",
         "7. OPERATOR LEARNING: What rules has the operator been reinforcing today",
-        "   via denials, approvals, or manual actions? What should the system learn?",
+        "   via denials, approvals, or manual actions%s What should the system learn%s",
         "",
         "8. TOMORROW'S FOCUS: Specific things to watch tomorrow. Which miners",
-        "   should get extra attention? Which patterns need confirmation?",
+        "   should get extra attention%s Which patterns need confirmation%s",
         "",
         "9. RECOMMENDATIONS: Concrete actions the operator should take, ranked by",
         "   priority. If there's nothing to do, say that clearly.",
@@ -817,8 +862,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
                     len(completed_ids))
 
     # Connect to DB and get the online fleet
-    conn = sqlite3.connect(DB_PATH, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = _PgConnWrapper(DB_PATH)
     online_miners = get_online_miners(conn)
     logger.info("Online miners in latest scan: %d", len(online_miners))
 
@@ -873,7 +917,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
                 prev = json.loads(wip_file.read_text())
                 per_miner_analyses[mid] = prev.get("analysis", "")
                 logger.info("[%d/%d] miner %s: using cached analysis from %s",
-                            idx, len(online_miners), mid, prev.get("timestamp", "?"))
+                            idx, len(online_miners), mid, prev.get("timestamp", "%s"))
                 continue
             except Exception:
                 pass  # fall through and re-analyze
@@ -894,8 +938,8 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
             past_analyses = conn.execute("""
                 SELECT analyzed_at, response, model_used
                 FROM llm_analysis
-                WHERE (miner_id=? OR ip=?)
-                  AND analyzed_at >= datetime('now', '-7 days')
+                WHERE (miner_id=%s OR ip=%s)
+                  AND analyzed_at >= TO_CHAR(NOW() - INTERVAL '7 days', 'YYYY-MM-DD"T"HH24:MI:SS.US')
                   AND response IS NOT NULL AND response != ''
                 ORDER BY analyzed_at DESC LIMIT 3
             """, (mid, miner_ip)).fetchall()
@@ -970,7 +1014,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False) -> int:
             SELECT DATE(analyzed_at) as day, COUNT(*) as cnt,
                    COUNT(DISTINCT miner_id) as miners_analyzed
             FROM llm_analysis
-            WHERE analyzed_at >= datetime('now', '-7 days')
+            WHERE analyzed_at >= TO_CHAR(NOW() - INTERVAL '7 days', 'YYYY-MM-DD"T"HH24:MI:SS.US')
               AND response IS NOT NULL AND response != ''
             GROUP BY DATE(analyzed_at)
             ORDER BY day DESC
