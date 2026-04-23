@@ -819,3 +819,92 @@ class GuardianPGDB:
         if deleted:
             logger.info("Purged %s log entries older than %s days", deleted, days)
         return deleted
+
+    # ── Phase 5: complex methods (Postgres-translated from core/database.py) ─────
+
+    def record_restart(self, miner_id: str, ip: str, model: str,
+                       restart_type: str, elevated_hours: int = 3,
+                       hashrate_before: float = None) -> None:
+        """Record a restart event, set elevated monitoring window, mark outcome PENDING.
+
+        hashrate_before captures the miner's hashrate_pct at time of restart so the
+        outcome checker can compare 'before' and 'after' without a separate lookup.
+        """
+        now = datetime.now()
+        elevated_until = (now + timedelta(hours=elevated_hours)).isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO miner_restarts "
+                    "(restarted_at, miner_id, ip, model, restart_type, elevated_until, "
+                    " outcome, hashrate_before) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (now.isoformat(), miner_id, ip, model, restart_type,
+                     elevated_until, "PENDING", hashrate_before),
+                )
+        logger.info("Restart recorded for miner %s (%s) — elevated monitoring for %sh",
+                    miner_id, restart_type, elevated_hours)
+
+    def register_dead_boards(self, miner_id: str, ip: str, model: str,
+                             board_indices: list, restart_result: str = None) -> None:
+        """Register or update known dead boards for a miner.
+
+        Sets ticket_created=NULL on new rows so the next scan knows to create
+        an AMS ticket. SELECT-then-UPDATE-or-INSERT pattern on one connection.
+        Note: RealDictCursor returns dicts, not tuples — use existing["id"]
+        not existing[0] (different from the SQLite Row version).
+        """
+        now = datetime.now().isoformat()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM known_dead_boards "
+                    "WHERE miner_id = %s AND resolved_at IS NULL",
+                    (miner_id,),
+                )
+                existing = cur.fetchone()
+
+            with conn.cursor() as cur:
+                if existing:
+                    cur.execute(
+                        "UPDATE known_dead_boards "
+                        "SET board_indices=%s, restart_attempted=%s, restart_result=%s "
+                        "WHERE id=%s",
+                        (str(board_indices), now, restart_result, existing["id"]),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO known_dead_boards "
+                        "(miner_id, ip, model, board_indices, first_seen, "
+                        " restart_attempted, restart_result, ticket_created) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,NULL)",
+                        (miner_id, ip, model, str(board_indices), now,
+                         now if restart_result else None, restart_result),
+                    )
+        logger.info("[%s] Registered known dead boards %s — result: %s",
+                    miner_id, board_indices, restart_result)
+
+    def parse_log_metrics(self, miner_id: str, ip: str,
+                           log_timestamp: str, log_content: str,
+                           log_source: str = None) -> int:
+        """Port stub — parse-and-save log metrics not yet implemented on Postgres.
+
+        The SQLite version of this method is 147 lines of regex parsing that
+        extracts PSU readings, chip temperature histograms, per-board hashrate
+        samples, etc. from raw CGMiner/BixMiner log content, and writes them
+        to the log_metrics table.
+
+        For Phase 5 today, we're not porting the full parser. save_logs() still
+        saves the raw log content to miner_logs — we just don't extract metrics
+        from it. Rebuilding from the raw logs later is possible if metrics
+        become needed.
+
+        If anything crashes because of this stub (no known callers outside
+        save_logs), port the full parser. Planned as a follow-up.
+        """
+        logger.debug(
+            "parse_log_metrics stubbed on Postgres backend — log for miner %s "
+            "at %s saved as raw but not metric-parsed. (Source: %s)",
+            miner_id, log_timestamp, log_source or "unknown",
+        )
+        return 0
