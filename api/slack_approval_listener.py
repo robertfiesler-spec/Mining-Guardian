@@ -14,7 +14,8 @@ import os
 import time
 import json
 import logging
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import requests
 import threading
 from collections import OrderedDict
@@ -37,7 +38,14 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID      = "C0AQ8SE1448"
 APPROVAL_API    = "http://localhost:8686"
-DB_PATH         = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 POLL_INTERVAL   = 15
 
 # Authorized Slack user IDs — only these users can approve/deny actions.
@@ -49,10 +57,44 @@ AUTHORIZED_USER_IDS = set(
 )
 
 
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection that provides SQLite-style
+    conn.execute(sql, params).fetchone() shortcut. See core/overnight_automation.py
+    for the rationale — psycopg2 Connection has no .execute() method.
+    """
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Return a psycopg2-backed connection wrapper with SQLite-style shortcut."""
+    return _PgConnWrapper(_pg_dsn())
 
 
 def get_user_name(client, user_id: str) -> str:
@@ -74,21 +116,21 @@ def build_miner_context(miner_ids: list) -> str:
                 SELECT COUNT(*) as cnt, AVG(temp_chip) as avg_temp,
                        AVG(hashrate_pct) as avg_hr
                 FROM miner_readings
-                WHERE miner_id=? AND action IS NOT NULL AND action!='MONITOR'
+                WHERE miner_id=%s AND action IS NOT NULL AND action!='MONITOR'
                   AND scanned_at >= datetime('now','-7 days')
             """, (mid,)).fetchone()
             last = conn.execute("""
                 SELECT action_taken, decision, timestamp
-                FROM action_audit_log WHERE miner_id=?
+                FROM action_audit_log WHERE miner_id=%s
                 ORDER BY timestamp DESC LIMIT 1
             """, (mid,)).fetchone()
             cur = conn.execute("""
-                SELECT ip, model FROM miner_readings WHERE miner_id=?
+                SELECT ip, model FROM miner_readings WHERE miner_id=%s
                 ORDER BY id DESC LIMIT 1
             """, (mid,)).fetchone()
             if cur:
                 cnt  = flags["cnt"] if flags else 0
-                line = f"  • `{cur['ip']}` ({cur['model'] or '?'}) — flagged *{cnt}x* in 7 days"
+                line = f"  • `{cur['ip']}` ({cur['model'] or '%s'}) — flagged *{cnt}x* in 7 days"
                 if flags and flags["avg_hr"]:
                     line += f" | avg HR: {flags['avg_hr']:.0f}%"
                 if last:
@@ -107,7 +149,7 @@ def cleanup_stale_pending():
         conn = get_db()
         try:
             cur  = conn.execute(
-                "UPDATE pending_approvals SET status='EXPIRED' WHERE status='PENDING' AND created_at < ?",
+                "UPDATE pending_approvals SET status='EXPIRED' WHERE status='PENDING' AND created_at < %s",
                 (cutoff,)
             )
             if cur.rowcount:
@@ -201,7 +243,7 @@ class ApprovalListener:
         """Turn '1,2,3' or '.36,.46' into miner_ids from pending approvals."""
         conn     = get_db()
         pending  = conn.execute(
-            "SELECT miner_id, ip FROM pending_approvals WHERE thread_ts=? AND status='PENDING'",
+            "SELECT miner_id, ip FROM pending_approvals WHERE thread_ts=%s AND status='PENDING'",
             (thread_ts,)
         ).fetchall()
         conn.close()
@@ -294,7 +336,7 @@ class ApprovalListener:
             prompt_resp = self.client.chat_postMessage(
                 channel=CHANNEL_ID,
                 thread_ts=thread_ts,
-                text="💬 _Why did you deny? (optional — reply here within 5 min to help the AI learn)_"
+                text="💬 _Why did you deny%s (optional — reply here within 5 min to help the AI learn)_"
             )
             prompt_ts = prompt_resp["ts"]
 
@@ -336,9 +378,9 @@ class ApprovalListener:
                 try:
                     conn.execute("""
                         UPDATE action_audit_log
-                        SET notes = COALESCE(notes || ' | ', '') || 'DENIAL_REASON: ' || ?
+                        SET notes = COALESCE(notes || ' | ', '') || 'DENIAL_REASON: ' || %s
                         WHERE decision = 'DENIED'
-                          AND approved_by = ?
+                          AND approved_by = %s
                           AND date = date('now')
                           AND (notes IS NULL OR notes NOT LIKE '%DENIAL_REASON%')
                         ORDER BY timestamp DESC
@@ -366,7 +408,7 @@ class ApprovalListener:
                     # Get miner IP from the pending approval
                     conn_d = get_db()
                     denied_miner = conn_d.execute(
-                        "SELECT ip, action_type FROM pending_approvals WHERE thread_ts=? LIMIT 1",
+                        "SELECT ip, action_type FROM pending_approvals WHERE thread_ts=%s LIMIT 1",
                         (thread_ts,)
                     ).fetchone()
                     conn_d.close()
@@ -400,7 +442,7 @@ class ApprovalListener:
                 "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL AND ticket_created IS NOT NULL"
             ).fetchall()}
 
-            ph = ",".join("?" * len(scan_ids))
+            ph = ",".join("%s" * len(scan_ids))
             persistent = conn.execute(f"""
                 SELECT miner_id, ip, model,
                        COUNT(DISTINCT scan_id) as consecutive,
