@@ -250,7 +250,7 @@ def get_miner_daily_log(conn: "_PgConnWrapper", miner_id: str,
     row = conn.execute("""
         SELECT content, collected_at, health_status FROM miner_logs
         WHERE miner_id = %s
-          AND log_file LIKE '%miner.log'
+          AND log_file LIKE '%%miner.log'
           AND collected_at >= TO_CHAR(NOW() - INTERVAL '12 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
@@ -260,7 +260,7 @@ def get_miner_daily_log(conn: "_PgConnWrapper", miner_id: str,
     row = conn.execute("""
         SELECT content, collected_at, health_status FROM miner_logs
         WHERE miner_id = %s
-          AND log_file LIKE '%miner.log'
+          AND log_file LIKE '%%miner.log'
           AND collected_at >= TO_CHAR(NOW() - INTERVAL '36 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
@@ -276,7 +276,7 @@ def get_miner_yesterday_log(conn: "_PgConnWrapper", miner_id: str) -> Optional[s
     row = conn.execute("""
         SELECT content FROM miner_logs
         WHERE miner_id = %s
-          AND log_file LIKE '%miner.log'
+          AND log_file LIKE '%%miner.log'
           AND collected_at < TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
           AND collected_at >= TO_CHAR(NOW() - INTERVAL '72 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
         ORDER BY collected_at DESC LIMIT 1
