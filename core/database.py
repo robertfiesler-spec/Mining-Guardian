@@ -1561,7 +1561,7 @@ class GuardianDB:
     def _count_pdu_cycles(self, miner_id: str, days: int = 1) -> int:
         """Count PDU power cycles attempted for this miner in the last N days."""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        with self._connect('miner_restarts') as conn:
+        with self._connect('action_audit_log') as conn:
             row = conn.execute("""
                 SELECT COUNT(*) as cnt FROM action_audit_log
                 WHERE miner_id=? AND action_taken='PDU_CYCLE'
