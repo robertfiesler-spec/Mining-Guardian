@@ -2,7 +2,9 @@
 """
 Direct Miner Log Collection — bypasses AMS entirely.
 """
-import sys, os, json, sqlite3, tarfile, io, logging, time, requests, re
+import sys, os, json, tarfile, io, logging, time, requests, re
+import psycopg2
+from psycopg2.extras import DictCursor
 from requests.auth import HTTPDigestAuth
 from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -15,7 +17,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH = '/root/Mining-Gaurdian/guardian.db'
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 TIMEOUT = 60
 MAX_WORKERS = 5
 # Stock firmware miners - skip these (they return 404 on log backup endpoint)
@@ -77,8 +86,7 @@ def filter_log_content(raw_log: str, target_date=None) -> str:
     return '\n'.join(filtered)
 
 def get_online_miners() -> List[Dict]:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(_pg_dsn(), cursor_factory=DictCursor)
     cur = conn.cursor()
     cur.execute('SELECT id FROM scans ORDER BY id DESC LIMIT 1')
     row = cur.fetchone()
@@ -89,7 +97,7 @@ def get_online_miners() -> List[Dict]:
     cur.execute('''
         SELECT DISTINCT miner_id, ip
         FROM miner_state_readings
-        WHERE scan_id = ? AND ip IS NOT NULL AND hashrate_medium > 0
+        WHERE scan_id = %s AND ip IS NOT NULL AND hashrate_medium > 0
     ''', (scan_id,))
     miners = [dict(row) for row in cur.fetchall()]
     conn.close()
@@ -146,11 +154,11 @@ def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date:
             if not miner_log:
                 return False
         
-        conn = sqlite3.connect(DB_PATH)
+        conn = psycopg2.connect(_pg_dsn(), cursor_factory=DictCursor)
         cur = conn.cursor()
         
         # Check if we have this log already today
-        cur.execute("SELECT id FROM miner_logs WHERE miner_id = ? AND DATE(collected_at) = ? AND log_file LIKE '%miner.log'",
+        cur.execute("SELECT id FROM miner_logs WHERE miner_id = %s AND collected_at::date = %s::date AND log_file LIKE '%miner.log'",
                     (miner_id, target_date.isoformat()))
         existing = cur.fetchone()
         
@@ -158,11 +166,11 @@ def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date:
         miner_log = filter_log_content(miner_log, target_date)
 
         if existing:
-            cur.execute('UPDATE miner_logs SET content = ?, collected_at = ? WHERE id = ?',
+            cur.execute('UPDATE miner_logs SET content = %s, collected_at = %s WHERE id = %s',
                         (miner_log, datetime.now().isoformat(), existing[0]))
         else:
             cur.execute('''INSERT INTO miner_logs (collected_at, miner_id, model, health_status, log_file, content)
-                           VALUES (?, ?, ?, ?, ?, ?)''',
+                           VALUES (%s, %s, %s, %s, %s, %s)''',
                         (datetime.now().isoformat(), miner_id, 'direct', 'daily_baseline', log_file or 'miner.log', miner_log))
         
         conn.commit()
