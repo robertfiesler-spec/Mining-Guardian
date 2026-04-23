@@ -52,7 +52,8 @@ Reads the same config.json as the main daemon. New optional keys:
 import json
 import logging
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import sys
 import time
 from datetime import datetime, timezone
@@ -71,7 +72,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger('alert_listener')
 
-DB_PATH = str(_ROOT / 'guardian.db')
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables.
+
+    Defaults match the standard mining_guardian install — override via env:
+      GUARDIAN_PG_HOST, GUARDIAN_PG_PORT, GUARDIAN_PG_DBNAME,
+      GUARDIAN_PG_USER, GUARDIAN_PG_PASSWORD
+    """
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 CONFIG_PATH = str(_ROOT / 'config.json')
 
 # Notifications we treat as urgent and what to do about each
@@ -93,40 +106,24 @@ class AlertListenerDB:
         self._ensure_tables()
 
     def _ensure_tables(self):
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        try:
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS alert_listener_seen (
-                    notification_id INTEGER PRIMARY KEY,
-                    key TEXT,
-                    alert_level TEXT,
-                    miner_id TEXT,
-                    ip TEXT,
-                    action_taken TEXT,
-                    seen_at TEXT,
-                    acted_at TEXT,
-                    outcome TEXT
-                )
-            ''')
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS alert_listener_cooldown (
-                    miner_id TEXT PRIMARY KEY,
-                    last_action TEXT,
-                    last_action_at TEXT
-                )
-            ''')
-            conn.execute('CREATE INDEX IF NOT EXISTS idx_seen_miner ON alert_listener_seen(miner_id)')
-            conn.commit()
-        finally:
-            conn.close()
+        """No-op on Postgres backend.
+
+        The alert_listener_seen and alert_listener_cooldown tables are created
+        by migrations/001_initial_schema.sql, loaded once by GuardianPGDB._init_db().
+        This method is kept for API compatibility with any code that still calls it,
+        but does nothing on Postgres.
+        """
+        pass
 
     def has_seen(self, notification_id: int) -> bool:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
         try:
-            r = conn.execute(
-                'SELECT 1 FROM alert_listener_seen WHERE notification_id=?',
-                (notification_id,)
-            ).fetchone()
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT 1 FROM alert_listener_seen WHERE notification_id=%s',
+                    (notification_id,)
+                )
+                r = cur.fetchone()
             return r is not None
         finally:
             conn.close()
@@ -134,43 +131,59 @@ class AlertListenerDB:
     def record_seen(self, notification_id: int, key: str, alert_level: str,
                     miner_id: Optional[str], ip: Optional[str],
                     action: str, outcome: str = 'pending'):
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
         try:
-            conn.execute('''
-                INSERT OR REPLACE INTO alert_listener_seen
-                (notification_id, key, alert_level, miner_id, ip, action_taken, seen_at, acted_at, outcome)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (notification_id, key, alert_level, miner_id, ip, action,
-                  datetime.now(timezone.utc).isoformat(),
-                  datetime.now(timezone.utc).isoformat(),
-                  outcome))
+            with conn.cursor() as cur:
+                cur.execute('''
+                    INSERT INTO alert_listener_seen
+                    (notification_id, key, alert_level, miner_id, ip, action_taken, seen_at, acted_at, outcome)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (notification_id) DO UPDATE SET
+                        key = EXCLUDED.key,
+                        alert_level = EXCLUDED.alert_level,
+                        miner_id = EXCLUDED.miner_id,
+                        ip = EXCLUDED.ip,
+                        action_taken = EXCLUDED.action_taken,
+                        seen_at = EXCLUDED.seen_at,
+                        acted_at = EXCLUDED.acted_at,
+                        outcome = EXCLUDED.outcome
+                ''', (notification_id, key, alert_level, miner_id, ip, action,
+                      datetime.now(timezone.utc).isoformat(),
+                      datetime.now(timezone.utc).isoformat(),
+                      outcome))
             conn.commit()
         finally:
             conn.close()
 
     def in_cooldown(self, miner_id: str, cooldown_seconds: int) -> bool:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
         try:
-            r = conn.execute(
-                'SELECT last_action_at FROM alert_listener_cooldown WHERE miner_id=?',
-                (miner_id,)
-            ).fetchone()
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT last_action_at FROM alert_listener_cooldown WHERE miner_id=%s',
+                    (miner_id,)
+                )
+                r = cur.fetchone()
             if not r:
                 return False
-            last = datetime.fromisoformat(r[0])
+            last = datetime.fromisoformat(r['last_action_at'])
             elapsed = (datetime.now(timezone.utc) - last).total_seconds()
             return elapsed < cooldown_seconds
         finally:
             conn.close()
 
     def set_cooldown(self, miner_id: str, action: str):
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
         try:
-            conn.execute('''
-                INSERT OR REPLACE INTO alert_listener_cooldown
-                (miner_id, last_action, last_action_at)
-                VALUES (?, ?, ?)
-            ''', (miner_id, action, datetime.now(timezone.utc).isoformat()))
+            with conn.cursor() as cur:
+                cur.execute('''
+                    INSERT INTO alert_listener_cooldown
+                    (miner_id, last_action, last_action_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (miner_id) DO UPDATE SET
+                        last_action = EXCLUDED.last_action,
+                        last_action_at = EXCLUDED.last_action_at
+                ''', (miner_id, action, datetime.now(timezone.utc).isoformat()))
             conn.commit()
         finally:
             conn.close()
@@ -185,7 +198,7 @@ class AlertListener:
 
         self.config = GuardianConfig.from_file(CONFIG_PATH)
         self.ams = AMSClient(self.config)
-        self.db = AlertListenerDB(DB_PATH)
+        self.db = AlertListenerDB(_pg_dsn())
 
         # Read listener-specific config with safe defaults
         with open(CONFIG_PATH) as f:
@@ -206,11 +219,16 @@ class AlertListener:
 
     def _load_known_dead_boards(self) -> Set[str]:
         """Load miners with known dead boards — don't try to remediate them."""
-        conn = sqlite3.connect(DB_PATH, timeout=30)
         try:
-            r = conn.execute('SELECT miner_id FROM known_dead_boards').fetchall()
-            return {row[0] for row in r}
-        except sqlite3.OperationalError:
+            conn = psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor)
+        except psycopg2.OperationalError:
+            return set()
+        try:
+            with conn.cursor() as cur:
+                cur.execute('SELECT miner_id FROM known_dead_boards')
+                rows = cur.fetchall()
+            return {row['miner_id'] for row in rows}
+        except psycopg2.errors.UndefinedTable:
             # Table might not exist yet
             return set()
         finally:
