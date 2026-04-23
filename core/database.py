@@ -68,7 +68,20 @@ class GuardianDB:
             return row["id"] if row else None
 
     def _init_db(self) -> None:
-        """Create tables if they don't exist."""
+        """Create tables if they don't exist.
+
+        Schemas are partitioned across four split SQLite DBs via the router
+        (see core/database_router.TABLE_ROUTING). Each partition runs in its
+        own _connect() block because SQLite executescript cannot cross DBs.
+
+        Note on foreign keys: several tables declare REFERENCES scans(id) or
+        similar. Under the split-DB architecture these references cross
+        databases and are therefore NOT enforced by SQLite — they remain as
+        informational schema documentation only. This was true before this
+        method was split as well; the split doesn't change enforcement.
+        """
+        # ── operational.db: scans + pending_approvals + miner_restarts +
+        #    known_dead_boards + miner_hardware + discovery_log ──
         with self._connect('scans') as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS scans (
@@ -80,6 +93,143 @@ class GuardianDB:
                     issues        INTEGER NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS pending_approvals (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at    TEXT    NOT NULL,
+                    scan_id       INTEGER,
+                    thread_ts     TEXT    NOT NULL,
+                    miner_id      TEXT    NOT NULL,
+                    ip            TEXT    NOT NULL,
+                    model         TEXT,
+                    action_type   TEXT    NOT NULL,
+                    problem       TEXT,
+                    pdu_id        INTEGER,
+                    outlet        INTEGER,
+                    status        TEXT    DEFAULT 'PENDING',
+                    responded_at  TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pending_thread
+                    ON pending_approvals(thread_ts, status);
+
+                CREATE TABLE IF NOT EXISTS miner_restarts (
+                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    restarted_at          TEXT    NOT NULL,
+                    miner_id              TEXT    NOT NULL,
+                    ip                    TEXT,
+                    model                 TEXT,
+                    restart_type          TEXT,
+                    elevated_until        TEXT,
+                    outcome               TEXT,
+                    outcome_checked_at    TEXT,
+                    hashrate_before       REAL,
+                    hashrate_after        REAL,
+                    recovery_time_scans   INTEGER
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_restarts_miner
+                    ON miner_restarts(miner_id, restarted_at);
+
+                CREATE TABLE IF NOT EXISTS known_dead_boards (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    model           TEXT,
+                    board_indices   TEXT    NOT NULL,
+                    first_seen      TEXT    NOT NULL,
+                    restart_attempted TEXT,
+                    restart_result  TEXT,
+                    ticket_created  TEXT,
+                    ticket_noticed_at TEXT,
+                    resolved_at     TEXT,
+                    notes           TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_dead_boards_miner
+                    ON known_dead_boards(miner_id)
+                    WHERE resolved_at IS NULL;
+
+                CREATE TABLE IF NOT EXISTS miner_hardware (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    miner_id            TEXT    NOT NULL,
+                    ip                  TEXT,
+                    mac                 TEXT,
+                    board_index         INTEGER NOT NULL,
+                    board_name          TEXT,
+                    serial_number       TEXT,
+                    chip_die            TEXT,
+                    chip_marking        TEXT,
+                    chip_technology     TEXT,
+                    pcb_version         TEXT,
+                    bom_version         TEXT,
+                    chip_bin            TEXT,
+                    chip_ft_ver         TEXT,
+                    ideal_hashrate      INTEGER,
+                    control_board       TEXT,
+                    psu_version         TEXT,
+                    bixminer_version    TEXT,
+                    topol_machine       TEXT,
+                    device_name         TEXT,
+                    asic_count          INTEGER,
+                    bad_chips_count     INTEGER,
+                    pic_version         TEXT,
+                    first_seen          TEXT    NOT NULL,
+                    last_updated        TEXT    NOT NULL,
+                    log_source          TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_hardware_miner_board
+                    ON miner_hardware(miner_id, board_index);
+
+                CREATE TABLE IF NOT EXISTS discovery_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    discovery_type TEXT NOT NULL,
+                    device_name TEXT,
+                    normalized_name TEXT,
+                    firmware_version TEXT,
+                    miner_id TEXT,
+                    ip TEXT,
+                    hashrate REAL,
+                    temp_chip REAL,
+                    consumption REAL,
+                    board_count INTEGER,
+                    chip_count INTEGER,
+                    raw_data TEXT,
+                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    acknowledged INTEGER DEFAULT 0,
+                    notes TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_discovery_type_name
+                    ON discovery_log(discovery_type, normalized_name);
+
+                CREATE INDEX IF NOT EXISTS idx_discovery_ack
+                    ON discovery_log(acknowledged);
+            """)
+
+            # ── Schema migration: add outcome feedback columns to miner_restarts
+            # (miner_restarts lives in operational.db, so this stays in this block)
+            existing = [r[1] for r in conn.execute(
+                "PRAGMA table_info(miner_restarts)").fetchall()]
+            for col, typedef in [
+                ("outcome",             "TEXT"),
+                ("outcome_checked_at",  "TEXT"),
+                ("hashrate_before",     "REAL"),
+                ("hashrate_after",      "REAL"),
+                ("recovery_time_scans", "INTEGER"),
+            ]:
+                if col not in existing:
+                    conn.execute(
+                        f"ALTER TABLE miner_restarts ADD COLUMN {col} {typedef}")
+                    logger.info("Migration: added miner_restarts.%s", col)
+            conn.commit()
+
+        # ── timeseries.db: miner_readings + chain_readings + pool_readings +
+        #    chip_readings + miner_state_readings + miner_ams_extended +
+        #    hvac_readings + weather_readings ──
+        with self._connect('miner_readings') as conn:
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS miner_readings (
                     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                     scan_id             INTEGER NOT NULL REFERENCES scans(id),
@@ -113,25 +263,138 @@ class GuardianDB:
                 CREATE INDEX IF NOT EXISTS idx_readings_miner
                     ON miner_readings(miner_id, scanned_at);
 
-                CREATE TABLE IF NOT EXISTS pending_approvals (
-                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created_at    TEXT    NOT NULL,
-                    scan_id       INTEGER,
-                    thread_ts     TEXT    NOT NULL,
-                    miner_id      TEXT    NOT NULL,
-                    ip            TEXT    NOT NULL,
-                    model         TEXT,
-                    action_type   TEXT    NOT NULL,
-                    problem       TEXT,
-                    pdu_id        INTEGER,
-                    outlet        INTEGER,
-                    status        TEXT    DEFAULT 'PENDING',
-                    responded_at  TEXT
+                CREATE TABLE IF NOT EXISTS chain_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    board_index     INTEGER NOT NULL,
+                    rate_mhs        REAL,
+                    voltage         REAL,
+                    freq_mhz        REAL,
+                    consumption_w   REAL,
+                    hw_errors       INTEGER,
+                    temp_board      REAL,
+                    temp_chip       REAL
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_pending_thread
-                    ON pending_approvals(thread_ts, status);
+                CREATE INDEX IF NOT EXISTS idx_chain_miner
+                    ON chain_readings(miner_id, scanned_at);
 
+                CREATE TABLE IF NOT EXISTS pool_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    pool_priority   INTEGER,
+                    pool_url        TEXT,
+                    pool_user       TEXT,
+                    pool_type       TEXT,
+                    status          TEXT,
+                    accepted        INTEGER,
+                    rejected        INTEGER,
+                    accepted_diff   REAL,
+                    rejected_diff   REAL,
+                    difficulty      TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_pool_miner
+                    ON pool_readings(miner_id, scanned_at);
+
+                CREATE TABLE IF NOT EXISTS chip_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    board_index     INTEGER NOT NULL,
+                    chip_index      INTEGER NOT NULL,
+                    freq_mhz        REAL,
+                    voltage_mv      REAL,
+                    temp_c          REAL,
+                    source          TEXT    DEFAULT 'direct_api'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chip_miner
+                    ON chip_readings(miner_id, scanned_at);
+
+                CREATE TABLE IF NOT EXISTS miner_state_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at      TEXT    NOT NULL,
+                    miner_id        TEXT    NOT NULL,
+                    ip              TEXT,
+                    hashrate_medium REAL,
+                    hashrate_low    REAL,
+                    max_hashrate    REAL,
+                    max_consumption REAL,
+                    max_temp_board  REAL,
+                    max_temp_chip   REAL,
+                    temp_chip_low   REAL,
+                    temp_chip_medium REAL,
+                    miner_status    INTEGER,
+                    cooling_mode    INTEGER,
+                    worker_version  TEXT,
+                    active_pool_user TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_state_miner
+                    ON miner_state_readings(miner_id, scanned_at);
+
+                CREATE TABLE IF NOT EXISTS miner_ams_extended (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scan_id             INTEGER NOT NULL REFERENCES scans(id),
+                    scanned_at          TEXT    NOT NULL,
+                    miner_id            TEXT    NOT NULL,
+                    ip                  TEXT,
+                    ams_timestamp       TEXT,
+                    map_location_id     INTEGER,
+                    map_x               REAL,
+                    map_y               REAL,
+                    pdu_counter         REAL,
+                    stratum_url         TEXT,
+                    favorite            INTEGER DEFAULT 0
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_ams_ext_miner
+                    ON miner_ams_extended(miner_id, scanned_at);
+
+                CREATE TABLE IF NOT EXISTS hvac_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorded_at     TEXT    NOT NULL,
+                    supply_temp_f   REAL,
+                    return_temp_f   REAL,
+                    delta_t_f       REAL,
+                    diff_pressure   REAL,
+                    spray_pump_on   INTEGER,
+                    cwp1_vfd_pct    REAL,
+                    cwp2_vfd_pct    REAL,
+                    ct1_vfd_pct     REAL,
+                    ct2_vfd_pct     REAL,
+                    leak_alarm      INTEGER DEFAULT 0,
+                    ct1_fault       INTEGER DEFAULT 0,
+                    ct2_fault       INTEGER DEFAULT 0,
+                    pump_fault      INTEGER DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS weather_readings (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    recorded_at     TEXT    NOT NULL,
+                    temp_f          REAL,
+                    humidity_pct    REAL,
+                    feels_like_f    REAL,
+                    temp_high_f     REAL,
+                    temp_low_f      REAL,
+                    humidity_max    REAL,
+                    humidity_min    REAL
+                );
+            """)
+
+        # ── audit.db: action_audit_log + ams_notifications + miner_logs ──
+        with self._connect('action_audit_log') as conn:
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS action_audit_log (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp     TEXT    NOT NULL,
@@ -166,36 +429,6 @@ class GuardianDB:
                     raw             TEXT
                 );
 
-                CREATE TABLE IF NOT EXISTS weather_readings (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    recorded_at     TEXT    NOT NULL,
-                    temp_f          REAL,
-                    humidity_pct    REAL,
-                    feels_like_f    REAL,
-                    temp_high_f     REAL,
-                    temp_low_f      REAL,
-                    humidity_max    REAL,
-                    humidity_min    REAL
-                );
-
-                CREATE TABLE IF NOT EXISTS hvac_readings (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    recorded_at     TEXT    NOT NULL,
-                    supply_temp_f   REAL,
-                    return_temp_f   REAL,
-                    delta_t_f       REAL,
-                    diff_pressure   REAL,
-                    spray_pump_on   INTEGER,
-                    cwp1_vfd_pct    REAL,
-                    cwp2_vfd_pct    REAL,
-                    ct1_vfd_pct     REAL,
-                    ct2_vfd_pct     REAL,
-                    leak_alarm      INTEGER DEFAULT 0,
-                    ct1_fault       INTEGER DEFAULT 0,
-                    ct2_fault       INTEGER DEFAULT 0,
-                    pump_fault      INTEGER DEFAULT 0
-                );
-
                 CREATE TABLE IF NOT EXISTS miner_logs (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     collected_at  TEXT    NOT NULL,
@@ -208,248 +441,7 @@ class GuardianDB:
 
                 CREATE INDEX IF NOT EXISTS idx_logs_miner
                     ON miner_logs(miner_id, collected_at);
-
-                CREATE TABLE IF NOT EXISTS miner_restarts (
-                    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-                    restarted_at          TEXT    NOT NULL,
-                    miner_id              TEXT    NOT NULL,
-                    ip                    TEXT,
-                    model                 TEXT,
-                    restart_type          TEXT,
-                    elevated_until        TEXT,
-                    -- Outcome feedback columns (Feature 1)
-                    outcome               TEXT,    -- SUCCESS / FAILURE / PARTIAL / PENDING
-                    outcome_checked_at    TEXT,    -- when outcome was evaluated
-                    hashrate_before       REAL,    -- hashrate_pct at time of restart
-                    hashrate_after        REAL,    -- hashrate_pct 2-3 scans after restart
-                    recovery_time_scans   INTEGER  -- how many scans until recovery
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_restarts_miner
-                    ON miner_restarts(miner_id, restarted_at);
-
-                CREATE TABLE IF NOT EXISTS known_dead_boards (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    miner_id        TEXT    NOT NULL,
-                    ip              TEXT,
-                    model           TEXT,
-                    board_indices   TEXT    NOT NULL,
-                    first_seen      TEXT    NOT NULL,
-                    restart_attempted TEXT,
-                    restart_result  TEXT,
-                    ticket_created  TEXT,
-                    ticket_noticed_at TEXT,
-                    resolved_at     TEXT,
-                    notes           TEXT
-                );
-
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_dead_boards_miner
-                    ON known_dead_boards(miner_id)
-                    WHERE resolved_at IS NULL;
-
-                -- ── Per-board chain readings (one row per board per miner per scan) ──
-                -- Captures every field AMS exposes at the board level:
-                -- HW errors, voltage, frequency, per-board consumption, per-board temps
-                CREATE TABLE IF NOT EXISTS chain_readings (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
-                    scanned_at      TEXT    NOT NULL,
-                    miner_id        TEXT    NOT NULL,
-                    ip              TEXT,
-                    board_index     INTEGER NOT NULL,
-                    rate_mhs        REAL,
-                    voltage         REAL,
-                    freq_mhz        REAL,
-                    consumption_w   REAL,
-                    hw_errors       INTEGER,
-                    temp_board      REAL,
-                    temp_chip       REAL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_chain_miner
-                    ON chain_readings(miner_id, scanned_at);
-
-                -- ── Per-pool readings (one row per pool per miner per scan) ──
-                -- Captures accepted/rejected shares, difficulty, pool status
-                -- This is the data that drives profitability and pool health analysis
-                CREATE TABLE IF NOT EXISTS pool_readings (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
-                    scanned_at      TEXT    NOT NULL,
-                    miner_id        TEXT    NOT NULL,
-                    ip              TEXT,
-                    pool_priority   INTEGER,
-                    pool_url        TEXT,
-                    pool_user       TEXT,
-                    pool_type       TEXT,
-                    status          TEXT,
-                    accepted        INTEGER,
-                    rejected        INTEGER,
-                    accepted_diff   REAL,
-                    rejected_diff   REAL,
-                    difficulty      TEXT
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_pool_miner
-                    ON pool_readings(miner_id, scanned_at);
-
-                -- ── Per-chip readings stub (for future direct miner API integration) ──
-                -- chips_ws from AMS returns all zeros for hydro/immersion (no per-chip sensors)
-                -- Future: populated via direct miner API (port 4028/4029 on BiXBiT firmware)
-                -- Structure ready — data collection requires direct device access
-                CREATE TABLE IF NOT EXISTS chip_readings (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
-                    scanned_at      TEXT    NOT NULL,
-                    miner_id        TEXT    NOT NULL,
-                    ip              TEXT,
-                    board_index     INTEGER NOT NULL,
-                    chip_index      INTEGER NOT NULL,
-                    freq_mhz        REAL,
-                    voltage_mv      REAL,
-                    temp_c          REAL,
-                    source          TEXT    DEFAULT 'direct_api'
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_chip_miner
-                    ON chip_readings(miner_id, scanned_at);
-
-                -- ── Extended miner state per scan ──
-                -- Fields available in AMS miner list that we weren't storing
-                CREATE TABLE IF NOT EXISTS miner_state_readings (
-                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scan_id         INTEGER NOT NULL REFERENCES scans(id),
-                    scanned_at      TEXT    NOT NULL,
-                    miner_id        TEXT    NOT NULL,
-                    ip              TEXT,
-                    hashrate_medium REAL,
-                    hashrate_low    REAL,
-                    max_hashrate    REAL,
-                    max_consumption REAL,
-                    max_temp_board  REAL,
-                    max_temp_chip   REAL,
-                    temp_chip_low   REAL,
-                    temp_chip_medium REAL,
-                    miner_status    INTEGER,
-                    cooling_mode    INTEGER,
-                    worker_version  TEXT,
-                    active_pool_user TEXT
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_state_miner
-                    ON miner_state_readings(miner_id, scanned_at);
-
-                -- ── Miner hardware identity table ──────────────────────────────────
-                -- Populated by parsing CGMiner/BixMiner logs at boot or log collection time.
-                -- One row per board per miner — updated when new data is found.
-                -- This is the permanent hardware identity record for the fleet.
-                -- Fields sourced from miner.log EEPROM lines:
-                --   board_name, serial_number, chip_die, chip_marking, chip_technology
-                --   pcb_version, bom_version, chip_bin, chip_ft_ver
-                -- Fields sourced from miner.log device detection:
-                --   control_board, psu_version, bixminer_version, topol_machine
-                --   device_name, asic_count, bad_chips_count
-                -- This data never changes unless a board is physically replaced.
-                -- When repair shop data arrives, cross-reference by board serial number.
-                CREATE TABLE IF NOT EXISTS miner_hardware (
-                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                    miner_id            TEXT    NOT NULL,
-                    ip                  TEXT,
-                    mac                 TEXT,
-                    board_index         INTEGER NOT NULL,
-                    board_name          TEXT,
-                    serial_number       TEXT,
-                    chip_die            TEXT,
-                    chip_marking        TEXT,
-                    chip_technology     TEXT,
-                    pcb_version         TEXT,
-                    bom_version         TEXT,
-                    chip_bin            TEXT,
-                    chip_ft_ver         TEXT,
-                    ideal_hashrate      INTEGER,
-                    control_board       TEXT,
-                    psu_version         TEXT,
-                    bixminer_version    TEXT,
-                    topol_machine       TEXT,
-                    device_name         TEXT,
-                    asic_count          INTEGER,
-                    bad_chips_count     INTEGER,
-                    pic_version         TEXT,
-                    first_seen          TEXT    NOT NULL,
-                    last_updated        TEXT    NOT NULL,
-                    log_source          TEXT
-                );
-
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_hardware_miner_board
-                    ON miner_hardware(miner_id, board_index);
-
-                -- ── AMS miner_readings extended fields ─────────────────────────────
-                -- Stores fields from AMS that belong in miner_readings but weren't there:
-                -- timestamp (AMS reading time), map coordinates, stratum URL, pdu counter
-                CREATE TABLE IF NOT EXISTS miner_ams_extended (
-                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                    scan_id             INTEGER NOT NULL REFERENCES scans(id),
-                    scanned_at          TEXT    NOT NULL,
-                    miner_id            TEXT    NOT NULL,
-                    ip                  TEXT,
-                    ams_timestamp       TEXT,
-                    map_location_id     INTEGER,
-                    map_x               REAL,
-                    map_y               REAL,
-                    pdu_counter         REAL,
-                    stratum_url         TEXT,
-                    favorite            INTEGER DEFAULT 0
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_ams_ext_miner
-                    ON miner_ams_extended(miner_id, scanned_at);
-
-                -- ── Auto-discovery log ────────────────────────────────────────
-                -- Tracks unknown models and firmware versions encountered during scans.
-                -- Bobby's rule: never skip a new data point — always register it.
-                CREATE TABLE IF NOT EXISTS discovery_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    discovery_type TEXT NOT NULL,
-                    device_name TEXT,
-                    normalized_name TEXT,
-                    firmware_version TEXT,
-                    miner_id TEXT,
-                    ip TEXT,
-                    hashrate REAL,
-                    temp_chip REAL,
-                    consumption REAL,
-                    board_count INTEGER,
-                    chip_count INTEGER,
-                    raw_data TEXT,
-                    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    acknowledged INTEGER DEFAULT 0,
-                    notes TEXT
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_discovery_type_name
-                    ON discovery_log(discovery_type, normalized_name);
-
-                CREATE INDEX IF NOT EXISTS idx_discovery_ack
-                    ON discovery_log(acknowledged);
             """)
-
-            # ── Schema migrations for existing databases ──────────────────────
-            # Add outcome feedback columns to miner_restarts if not present
-            existing = [r[1] for r in conn.execute(
-                "PRAGMA table_info(miner_restarts)").fetchall()]
-            for col, typedef in [
-                ("outcome",             "TEXT"),
-                ("outcome_checked_at",  "TEXT"),
-                ("hashrate_before",     "REAL"),
-                ("hashrate_after",      "REAL"),
-                ("recovery_time_scans", "INTEGER"),
-            ]:
-                if col not in existing:
-                    conn.execute(
-                        f"ALTER TABLE miner_restarts ADD COLUMN {col} {typedef}")
-                    logger.info("Migration: added miner_restarts.%s", col)
-            conn.commit()
 
         logger.info("Database ready at %s", self.db_path)
 
