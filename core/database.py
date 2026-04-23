@@ -527,6 +527,7 @@ class GuardianDB:
         This prevents the queue from growing unboundedly across scans.
         """
         cutoff = (datetime.now() - timedelta(minutes=max_age_minutes)).isoformat()
+        # First block: read + update pending_approvals (operational.db).
         with self._connect('pending_approvals') as conn:
             expired = conn.execute(
                 "SELECT id, miner_id, ip, action_type FROM pending_approvals "
@@ -541,7 +542,15 @@ class GuardianDB:
                     WHERE status='PENDING' AND created_at < ?
                 """, (datetime.now().isoformat(), cutoff))
 
-                # Log each expiry to audit trail
+        # Second block: write one audit-log row per expiry (audit.db).
+        # Separate connection because action_audit_log lives in audit.db
+        # while pending_approvals lives in operational.db — SQLite cannot
+        # span two databases on one connection. Note: the UPDATE above has
+        # already committed by the time we get here, so if this audit
+        # write fails the denials remain in place with no audit entry.
+        # That is an acceptable tradeoff of the split-DB architecture.
+        if expired:
+            with self._connect('action_audit_log') as conn:
                 for row in expired:
                     conn.execute("""
                         INSERT INTO action_audit_log
@@ -555,8 +564,8 @@ class GuardianDB:
                           "Mining Guardian (Auto-Expired)",
                           f"No response within {max_age_minutes} minutes — auto-denied"))
 
-                logger.info("Auto-expired %d pending approvals older than %d min",
-                            len(expired), max_age_minutes)
+            logger.info("Auto-expired %d pending approvals older than %d min",
+                        len(expired), max_age_minutes)
         return len(expired) if expired else 0
 
     def log_action(self, miner_id: str, ip: str, model: str,
