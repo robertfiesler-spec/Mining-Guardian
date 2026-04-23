@@ -908,3 +908,23 @@ class GuardianPGDB:
             miner_id, log_timestamp, log_source or "unknown",
         )
         return 0
+
+    @staticmethod
+    def _normalize_model_name(name: str) -> str:
+        """Normalize a model name for comparison.
+
+        Lowercase, strip manufacturer prefixes, remove spaces and hyphens.
+        Preserves plus signs and 's' suffixes so m63/m63s/m63+/m63s+ stay distinct.
+
+        Exact copy of core.database.GuardianDB._normalize_model_name so that
+        core/mining_guardian.py can call GuardianDB._normalize_model_name(...)
+        identically whether the alias points to SQLite or Postgres backend.
+        """
+        n = name.lower().strip()
+        for prefix in ("antminer", "whatsminer", "avalon", "canaan", "bitmain",
+                       "microbt", "innosilicon", "ebang", "strongu", "goldshell",
+                       "iceriver", "jasminer", "bombax", "bixbit"):
+            if n.startswith(prefix):
+                n = n[len(prefix):]
+        n = n.replace(" ", "").replace("-", "").replace("_", "")
+        return n

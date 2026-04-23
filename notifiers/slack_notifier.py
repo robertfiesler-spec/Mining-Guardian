@@ -12,6 +12,12 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+# GuardianDB is used in two try/except blocks below for known_dead_boards
+# lookup and newly_ticketed notification. Historically this import was
+# missing — the NameError was silently swallowed by except Exception: pass,
+# so the code never actually ran. Added 2026-04-23 during Postgres flip.
+from core.database_pg import GuardianPGDB as GuardianDB
+
 logger = logging.getLogger(__name__)
 
 class SlackNotifier:

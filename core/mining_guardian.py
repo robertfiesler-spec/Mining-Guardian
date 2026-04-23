@@ -30,7 +30,7 @@ from miner_verify import verify_miner_online
 from facility_monitor import FacilityMonitor
 
 # Database layer extracted to separate module
-from database import GuardianDB
+from database_pg import GuardianPGDB as GuardianDB
 from clients.ams_client import AMSClient
 from notifiers.slack_notifier import SlackNotifier
 
@@ -97,7 +97,9 @@ class MiningGuardian:
         # ── Three-tier hashrate evaluation ───────────────────────────────
         self.specs    = MinerSpecsLoader("miner_specs.json")
         self.baseline = BaselineManager(
-            db_path              = self.db.db_path,
+            # db_path omitted — BaselineManager now reads GUARDIAN_PG_* env
+            # vars and builds its own Postgres DSN. Previously read
+            # self.db.db_path which was the SQLite file path.
             learning_window_hours= self.specs.learning_window_hours,
             minimum_samples      = self.specs.minimum_samples,
             tolerance_pct        = self.specs.baseline_tolerance_pct,

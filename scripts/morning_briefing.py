@@ -15,7 +15,8 @@ Run via cron: 0 7 * * * cd /root/Mining-Gaurdian && venv/bin/python morning_brie
 
 import os
 import json
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import logging
 import requests
 from datetime import datetime, timedelta
@@ -28,16 +29,59 @@ logger = logging.getLogger("morning_briefing")
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID      = "C0AQ8SE1448"
-DB_PATH         = "guardian.db"
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 OLLAMA_URL      = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
 
 
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style conn.execute() shortcut.
+
+    Same wrapper used in Phase 7 files — reused here for consistency so the
+    existing conn.execute(sql, params).fetchone() calls in this script work
+    without rewriting each one.
+    """
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Return a psycopg2-backed connection wrapper with SQLite-style shortcut."""
+    return _PgConnWrapper(_pg_dsn())
 
 
 def get_btc_price() -> tuple:
@@ -67,7 +111,7 @@ def get_overnight_summary() -> dict:
     actions = conn.execute("""
         SELECT miner_id, ip, model, action_taken, decision, approved_by, timestamp
         FROM action_audit_log
-        WHERE timestamp >= ?
+        WHERE timestamp >= %s
         ORDER BY timestamp
     """, (yesterday,)).fetchall()
 
@@ -80,14 +124,14 @@ def get_overnight_summary() -> dict:
     dead = conn.execute("""
         SELECT miner_id, ip, model, board_indices, first_seen
         FROM known_dead_boards
-        WHERE first_seen >= ? AND resolved_at IS NULL
+        WHERE first_seen >= %s AND resolved_at IS NULL
     """, (yesterday,)).fetchall()
 
     # Resolved dead boards overnight
     resolved = conn.execute("""
         SELECT miner_id, ip, model, board_indices, resolved_at
         FROM known_dead_boards
-        WHERE resolved_at >= ?
+        WHERE resolved_at >= %s
     """, (yesterday,)).fetchall()
 
     # Top flagged miners in last 24h
@@ -95,7 +139,7 @@ def get_overnight_summary() -> dict:
         SELECT miner_id, ip, model, COUNT(*) as flags,
                AVG(temp_chip) as avg_temp, AVG(hashrate_pct) as avg_hr
         FROM miner_readings
-        WHERE scanned_at >= ? AND action IS NOT NULL AND action != 'MONITOR'
+        WHERE scanned_at >= %s AND action IS NOT NULL AND action != 'MONITOR'
         GROUP BY miner_id
         ORDER BY flags DESC
         LIMIT 5
@@ -106,7 +150,7 @@ def get_overnight_summary() -> dict:
         SELECT AVG(supply_temp_f) as avg_supply, AVG(return_temp_f) as avg_return,
                AVG(delta_t_f) as avg_dt, MAX(return_temp_f) as max_return
         FROM hvac_readings
-        WHERE recorded_at >= ?
+        WHERE recorded_at >= %s
     """, (yesterday,)).fetchone()
 
     # Weather overnight
@@ -114,7 +158,7 @@ def get_overnight_summary() -> dict:
         SELECT AVG(temp_f) as avg_temp, MAX(temp_f) as max_temp,
                AVG(humidity_pct) as avg_hum
         FROM weather_readings
-        WHERE recorded_at >= ?
+        WHERE recorded_at >= %s
     """, (yesterday,)).fetchone()
 
     conn.close()
@@ -203,8 +247,8 @@ def build_briefing(data: dict, btc_price: float) -> str:
     # Cost & Profitability (Apr 22 2026)
     try:
         from monitoring.cost_tracker import CostTracker
-        from core.database import GuardianDB
-        db = GuardianDB(os.path.join(os.path.dirname(__file__), "..", "guardian.db"))
+        from core.database_pg import GuardianPGDB as GuardianDB
+        db = GuardianDB()  # reads GUARDIAN_PG_* env vars
         tracker = CostTracker(db)
         profit_data = tracker.get_profitability_analysis()
         if "error" not in profit_data:

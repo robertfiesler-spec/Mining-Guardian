@@ -20,7 +20,8 @@ Tier 3 — Unknown model or model not in specs:
 
 import json
 import re
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import logging
 import statistics
 from datetime import datetime, timezone, timedelta
@@ -34,6 +35,43 @@ logger = logging.getLogger("mining_guardian")
 # ---------------------------------------------------------------------------
 # MinerSpecsLoader — Tier 2 lookup table
 # ---------------------------------------------------------------------------
+
+class _PgConnWrapper:
+    """Thin wrapper over psycopg2 Connection with SQLite-style conn.execute() shortcut.
+
+    Same wrapper pattern used across Phase 7 files. Supports with-statement,
+    commit/rollback. Wraps a per-connection RealDictCursor so rows behave
+    like dicts (parallel to SQLite Row factory).
+    """
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
 
 class MinerSpecsLoader:
     """Loads miner_specs.json and resolves rated TH/s for known models."""
@@ -120,7 +158,7 @@ def parse_bixbit_profile(profile_str: str) -> Optional[float]:
     if not profile_str:
         return None
     # Match leading number before " TH/s"
-    match = re.match(r"^\s*(\d+(?:\.\d+)?)\s*TH/s", profile_str, re.IGNORECASE)
+    match = re.match(r"^\s*(\d+(%s:\.\d+)%s)\s*TH/s", profile_str, re.IGNORECASE)
     if match:
         return float(match.group(1))
     return None
@@ -194,19 +232,26 @@ class HashrateTierResolver:
         # BiXBiT firmware. Check the DB for the last non-empty profile.
         if firmware.upper() == "BIXBIT" and not profile:
             try:
-                import sqlite3
-                from pathlib import Path
-                _db = str(Path(__file__).resolve().parent.parent / "guardian.db")
-                conn = sqlite3.connect(_db, timeout=30)
-                row = conn.execute(
-                    "SELECT current_profile FROM miner_readings "
-                    "WHERE miner_id=? AND current_profile IS NOT NULL AND current_profile != '' "
-                    "ORDER BY id DESC LIMIT 1",
-                    (miner_id,)
-                ).fetchone()
+                import os
+                _dsn = (
+                    f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
+                    f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
+                    f"dbname={os.environ.get('GUARDIAN_PG_DBNAME', 'mining_guardian')} "
+                    f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
+                    f"password={os.environ.get('GUARDIAN_PG_PASSWORD', '')}"
+                )
+                conn = psycopg2.connect(_dsn, cursor_factory=RealDictCursor)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT current_profile FROM miner_readings "
+                        "WHERE miner_id=%s AND current_profile IS NOT NULL AND current_profile != '' "
+                        "ORDER BY id DESC LIMIT 1",
+                        (miner_id,)
+                    )
+                    row = cur.fetchone()
                 conn.close()
-                if row and row[0]:
-                    rated = parse_bixbit_profile(row[0])
+                if row and row.get("current_profile"):
+                    rated = parse_bixbit_profile(row["current_profile"])
                     if rated:
                         return (
                             rated,
@@ -295,22 +340,41 @@ class BaselineManager:
       last_updated        TEXT
     """
 
-    def __init__(self, db_path: str = "guardian.db",
+    def __init__(self, db_path: Optional[str] = None,
                  learning_window_hours: int = 72,
                  minimum_samples: int = 36,
                  tolerance_pct: float = 10.0,
                  notify_callback=None):
-        self.db_path             = db_path
+        """Initialize BaselineManager.
+
+        db_path is retained for API compatibility but now holds a Postgres DSN
+        (not a file path). External callers that read self.db_path (like
+        mining_guardian.py line 100) get the DSN string. If caller passes a
+        legacy path like "guardian.db", we ignore it and build DSN from env.
+        """
+        import os
+        def _build_dsn() -> str:
+            host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+            port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+            dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+            user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+            password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+            return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+        if db_path is None or db_path.endswith(".db") or db_path.startswith("/"):
+            self.db_path = _build_dsn()
+        else:
+            self.db_path = db_path
+
         self.learning_window_hrs = learning_window_hours
         self.minimum_samples     = minimum_samples
         self.tolerance_pct       = tolerance_pct
-        self.notify_callback     = notify_callback  # called when baseline locks
+        self.notify_callback     = notify_callback
         self._ensure_table()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self) -> "_PgConnWrapper":
+        """Return a psycopg2-backed connection wrapper with SQLite-style .execute() shortcut."""
+        return _PgConnWrapper(self.db_path)
 
     def _ensure_table(self) -> None:
         with self._connect() as conn:
@@ -336,7 +400,7 @@ class BaselineManager:
         """Return baseline state dict or None if miner never seen."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT * FROM miner_baselines WHERE miner_id = ?", (miner_id,)
+                "SELECT * FROM miner_baselines WHERE miner_id = %s", (miner_id,)
             ).fetchone()
         if row:
             return dict(row)
@@ -348,10 +412,11 @@ class BaselineManager:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             conn.execute("""
-                INSERT OR IGNORE INTO miner_baselines
+                INSERT INTO miner_baselines
                     (miner_id, ip, model, firmware, learning_start,
                      learning_complete, samples_collected, last_updated)
-                VALUES (?, ?, ?, ?, ?, 0, 0, ?)
+                VALUES (%s, %s, %s, %s, %s, 0, 0, %s)
+                ON CONFLICT (miner_id) DO NOTHING
             """, (miner_id, ip, model, firmware, now, now))
             conn.commit()
         logger.info("BaselineManager: started learning for miner %s (%s)", miner_id, model)
@@ -380,10 +445,10 @@ class BaselineManager:
         with self._connect() as conn:
             conn.execute("""
                 UPDATE miner_baselines
-                SET samples_collected = ?,
-                    hours_observed    = ?,
-                    last_updated      = ?
-                WHERE miner_id = ?
+                SET samples_collected = %s,
+                    hours_observed    = %s,
+                    last_updated      = %s
+                WHERE miner_id = %s
             """, (new_samples, elapsed_hrs, now.isoformat(), miner_id))
             conn.commit()
 
@@ -412,8 +477,8 @@ class BaselineManager:
             rows = conn.execute("""
                 SELECT hashrate, pdu_power
                 FROM miner_readings
-                WHERE miner_id = ?
-                  AND scanned_at >= ?
+                WHERE miner_id = %s
+                  AND scanned_at >= %s
                   AND hashrate > 0
                   AND status = 'online'
                 ORDER BY scanned_at
@@ -436,11 +501,11 @@ class BaselineManager:
             conn.execute("""
                 UPDATE miner_baselines
                 SET learning_complete     = 1,
-                    baseline_hashrate_ths = ?,
-                    baseline_power_kw     = ?,
-                    locked_at             = ?,
-                    last_updated          = ?
-                WHERE miner_id = ?
+                    baseline_hashrate_ths = %s,
+                    baseline_power_kw     = %s,
+                    locked_at             = %s,
+                    last_updated          = %s
+                WHERE miner_id = %s
             """, (round(median_ths, 2), avg_power_kw, now.isoformat(),
                   now.isoformat(), miner_id))
             conn.commit()
