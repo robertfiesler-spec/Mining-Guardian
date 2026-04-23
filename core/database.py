@@ -457,7 +457,7 @@ class GuardianDB:
                     ON action_audit_log(miner_id);
 
                 CREATE TABLE IF NOT EXISTS ams_notifications (
-                    row_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
                     recorded_at     TEXT    NOT NULL,
                     notification_id INTEGER,
                     device_id       TEXT,
