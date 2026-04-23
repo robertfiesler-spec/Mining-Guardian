@@ -444,14 +444,17 @@ class ApprovalListener:
 
             ph = ",".join(["%s"] * len(scan_ids))
             persistent = conn.execute(f"""
-                SELECT miner_id, ip, model,
+                SELECT miner_id,
+                       MIN(ip) as ip,
+                       MIN(model) as model,
                        COUNT(DISTINCT scan_id) as consecutive,
                        AVG(hashrate_pct) as avg_hr,
                        AVG(temp_chip) as avg_temp,
                        string_agg(DISTINCT action, ',') as actions
                 FROM miner_readings
                 WHERE scan_id IN ({ph}) AND action IS NOT NULL AND action!='MONITOR'
-                GROUP BY miner_id HAVING consecutive=3
+                GROUP BY miner_id
+                HAVING COUNT(DISTINCT scan_id)=3
             """, scan_ids).fetchall()
             conn.close()
             for m in persistent:
