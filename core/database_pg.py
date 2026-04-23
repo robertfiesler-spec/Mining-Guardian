@@ -227,9 +227,9 @@ class GuardianPGDB:
         return scan_id
 
     # ── save_logs (Bug 5) ──────────────────────────────────────────────
-    def save_logs(self, miner_id: str, model: str, health_status: str, logs: Dict[str, str]) -> None:
+    def save_logs(self, miner_id: str, model: str, health_status: str, log_files: Dict[str, str]) -> None:
         """Store log snapshots for a miner. Looks up IP from miner_readings."""
-        if not logs:
+        if not log_files:
             return
         now = datetime.now().isoformat()
 
@@ -250,7 +250,7 @@ class GuardianPGDB:
 
             rows = [
                 (now, miner_id, model, health_status, filename, content)
-                for filename, content in logs.items()
+                for filename, content in log_files.items()
             ]
             with conn.cursor() as cur:
                 execute_batch(
@@ -340,9 +340,13 @@ class GuardianPGDB:
         return row["cnt"] if row else 0
 
     # ── _count_pdu_cycles (Bug 7) ──────────────────────────────────────
-    def _count_pdu_cycles(self, miner_id: str, since_hours: int = 24) -> int:
-        """Count PDU cycles performed on a miner in the last N hours."""
-        since = (datetime.now() - timedelta(hours=since_hours)).isoformat()
+    def _count_pdu_cycles(self, miner_id: str, days: int = 1) -> int:
+        """Count PDU cycles performed on a miner in the last N days.
+
+        Signature matches core.database.GuardianDB._count_pdu_cycles exactly
+        (days: int = 1) so callers work on either backend.
+        """
+        since = (datetime.now() - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -885,8 +889,7 @@ class GuardianPGDB:
                     miner_id, board_indices, restart_result)
 
     def parse_log_metrics(self, miner_id: str, ip: str,
-                           log_timestamp: str, log_content: str,
-                           log_source: str = None) -> int:
+                          log_content: str, log_source: str = None) -> int:
         """Port stub — parse-and-save log metrics not yet implemented on Postgres.
 
         The SQLite version of this method is 147 lines of regex parsing that
@@ -904,8 +907,8 @@ class GuardianPGDB:
         """
         logger.debug(
             "parse_log_metrics stubbed on Postgres backend — log for miner %s "
-            "at %s saved as raw but not metric-parsed. (Source: %s)",
-            miner_id, log_timestamp, log_source or "unknown",
+            "from source %s saved as raw but not metric-parsed.",
+            miner_id, log_source or "unknown",
         )
         return 0
 
