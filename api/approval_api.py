@@ -10,7 +10,8 @@ Runs on: http://localhost:8686
 """
 
 import sys
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import json
 import logging
 import hashlib
@@ -32,7 +33,56 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"
 logger = logging.getLogger("approval_api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-DB_PATH = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+
+
+class _PgConnWrapper:
+    """psycopg2 Connection wrapper with SQLite-style conn.execute shortcut.
+
+    See core/overnight_automation.py for rationale (Phase 7.2).
+
+    Important: the __exit__ method commits on clean exit, matching the
+    SQLite `with sqlite3.connect(...) as conn:` semantics used throughout
+    this file.
+    """
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
+DB_PATH = _pg_dsn()
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 INTERNAL_API_SECRET  = os.environ.get("INTERNAL_API_SECRET", "")
 
@@ -85,8 +135,7 @@ app.add_middleware(CORSMiddleware,
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
+    conn = _PgConnWrapper(DB_PATH)
     return conn
 
 
@@ -119,10 +168,9 @@ async def approve_actions(request: Request):
     if not thread_ts:
         return {"error": "thread_ts required"}
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.row_factory = sqlite3.Row
+    with _PgConnWrapper(DB_PATH) as conn:
         pending = conn.execute(
-            "SELECT * FROM pending_approvals WHERE thread_ts = ? AND status = 'PENDING'",
+            "SELECT * FROM pending_approvals WHERE thread_ts = %s AND status = 'PENDING'",
             (thread_ts,)
         ).fetchall()
 
@@ -139,7 +187,7 @@ async def approve_actions(request: Request):
 
             # Mark as approved in DB
             conn.execute(
-                "UPDATE pending_approvals SET status = 'APPROVED', responded_at = ? WHERE id = ?",
+                "UPDATE pending_approvals SET status = 'APPROVED', responded_at = %s WHERE id = %s",
                 (now, action["id"])
             )
 
@@ -147,7 +195,7 @@ async def approve_actions(request: Request):
             conn.execute("""
                 INSERT INTO action_audit_log
                 (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken, decision, approved_by, slack_user_id, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (now, now[:10], action["scan_id"], miner_id, action["ip"],
                   action["model"], action["problem"], action_type,
                   "APPROVED", user, user_id, f"Approved via Slack thread {thread_ts}"))
@@ -196,25 +244,24 @@ async def deny_actions(request: Request):
     if not thread_ts:
         return {"error": "thread_ts required"}
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.row_factory = sqlite3.Row
+    with _PgConnWrapper(DB_PATH) as conn:
         now = datetime.now().isoformat()
 
         pending = conn.execute(
-            "SELECT * FROM pending_approvals WHERE thread_ts = ? AND status = 'PENDING'",
+            "SELECT * FROM pending_approvals WHERE thread_ts = %s AND status = 'PENDING'",
             (thread_ts,)
         ).fetchall()
 
         for row in pending:
             action = dict(row)
             conn.execute(
-                "UPDATE pending_approvals SET status = 'DENIED', responded_at = ? WHERE id = ?",
+                "UPDATE pending_approvals SET status = 'DENIED', responded_at = %s WHERE id = %s",
                 (now, action["id"])
             )
             conn.execute("""
                 INSERT INTO action_audit_log
                 (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken, decision, approved_by, slack_user_id, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (now, now[:10], action["scan_id"], action["miner_id"], action["ip"],
                   action["model"], action["problem"], action["action_type"],
                   "DENIED", user, user_id, f"Denied via Slack thread {thread_ts}: {denial_reason}" if denial_reason else f"Denied via Slack thread {thread_ts}"))
@@ -263,10 +310,9 @@ async def approve_selected_actions(request: Request):
     if not thread_ts:
         return {"error": "thread_ts required"}
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.row_factory = sqlite3.Row
+    with _PgConnWrapper(DB_PATH) as conn:
         all_pending = conn.execute(
-            "SELECT * FROM pending_approvals WHERE thread_ts = ? AND status = 'PENDING'",
+            "SELECT * FROM pending_approvals WHERE thread_ts = %s AND status = 'PENDING'",
             (thread_ts,)
         ).fetchall()
 
@@ -277,14 +323,14 @@ async def approve_selected_actions(request: Request):
             action = dict(row)
             if str(action["miner_id"]) in miner_ids:
                 conn.execute(
-                    "UPDATE pending_approvals SET status='APPROVED', responded_at=? WHERE id=?",
+                    "UPDATE pending_approvals SET status='APPROVED', responded_at=%s WHERE id=%s",
                     (now, action["id"])
                 )
                 conn.execute("""
                     INSERT INTO action_audit_log
                     (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken,
                      decision, approved_by, slack_user_id, notes)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (now, now[:10], action["scan_id"], action["miner_id"], action["ip"],
                       action["model"], action["problem"], action["action_type"],
                       "APPROVED", user, user_id, f"Selectively approved via Slack thread {thread_ts}"))
@@ -293,14 +339,14 @@ async def approve_selected_actions(request: Request):
             else:
                 # Not selected — mark as denied
                 conn.execute(
-                    "UPDATE pending_approvals SET status='DENIED', responded_at=? WHERE id=?",
+                    "UPDATE pending_approvals SET status='DENIED', responded_at=%s WHERE id=%s",
                     (now, action["id"])
                 )
                 conn.execute("""
                     INSERT INTO action_audit_log
                     (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken,
                      decision, approved_by, slack_user_id, notes)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """, (now, now[:10], action["scan_id"], action["miner_id"], action["ip"],
                       action["model"], action["problem"], action["action_type"],
                       "DENIED", user, user_id, f"Skipped in selective approval for thread {thread_ts}"))
@@ -362,11 +408,10 @@ async def urgent_action(request: Request):
     if action not in ALLOWED:
         return {"status": "error", "reason": f"action must be one of {ALLOWED}"}
 
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.row_factory = sqlite3.Row
+    with _PgConnWrapper(DB_PATH) as conn:
         try:
             existing = conn.execute(
-                "SELECT id FROM pending_approvals WHERE miner_id=? AND status='PENDING'",
+                "SELECT id FROM pending_approvals WHERE miner_id=%s AND status='PENDING'",
                 (miner_id,)
             ).fetchone()
             if existing:
@@ -381,14 +426,14 @@ async def urgent_action(request: Request):
             # thread_ts is set by the main daemon when it posts to Slack — use placeholder for now
             conn.execute(
                 "INSERT INTO pending_approvals (created_at, thread_ts, miner_id, ip, action_type, problem, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'PENDING')",
+                "VALUES (%s, %s, %s, %s, %s, %s, 'PENDING')",
                 (now_iso, '', miner_id, ip, action, problem_text)
             )
             conn.commit()
 
             conn.execute(
                 "INSERT INTO action_audit_log (timestamp, date, miner_id, ip, problem, action_taken, decision, approved_by, notes) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'PENDING_URGENT', 'system', ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, 'PENDING_URGENT', 'system', %s)",
                 (now_iso, today, miner_id, ip, problem_text, action,
                  f"Urgent action queued by {source}, notification_id={notif_id}")
             )
@@ -458,8 +503,7 @@ async def list_pending(request: Request):
     """List all pending approvals."""
     if not verify_internal(request):
         return Response(status_code=403, content="Forbidden")
-    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-        conn.row_factory = sqlite3.Row
+    with _PgConnWrapper(DB_PATH) as conn:
         rows = conn.execute(
             "SELECT * FROM pending_approvals WHERE status = 'PENDING' ORDER BY created_at DESC"
         ).fetchall()
