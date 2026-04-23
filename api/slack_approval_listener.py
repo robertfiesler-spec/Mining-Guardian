@@ -15,7 +15,7 @@ import time
 import json
 import logging
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 import requests
 import threading
 from collections import OrderedDict
@@ -64,7 +64,7 @@ class _PgConnWrapper:
     """
 
     def __init__(self, dsn: str):
-        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
 
     def execute(self, sql, params=()):
         cur = self._conn.cursor()

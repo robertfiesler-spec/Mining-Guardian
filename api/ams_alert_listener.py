@@ -53,7 +53,7 @@ import json
 import logging
 import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 import sys
 import time
 from datetime import datetime, timezone
@@ -116,7 +116,7 @@ class AlertListenerDB:
         pass
 
     def has_seen(self, notification_id: int) -> bool:
-        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(self.db_path, cursor_factory=DictCursor)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -131,7 +131,7 @@ class AlertListenerDB:
     def record_seen(self, notification_id: int, key: str, alert_level: str,
                     miner_id: Optional[str], ip: Optional[str],
                     action: str, outcome: str = 'pending'):
-        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(self.db_path, cursor_factory=DictCursor)
         try:
             with conn.cursor() as cur:
                 cur.execute('''
@@ -156,7 +156,7 @@ class AlertListenerDB:
             conn.close()
 
     def in_cooldown(self, miner_id: str, cooldown_seconds: int) -> bool:
-        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(self.db_path, cursor_factory=DictCursor)
         try:
             with conn.cursor() as cur:
                 cur.execute(
@@ -173,7 +173,7 @@ class AlertListenerDB:
             conn.close()
 
     def set_cooldown(self, miner_id: str, action: str):
-        conn = psycopg2.connect(self.db_path, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(self.db_path, cursor_factory=DictCursor)
         try:
             with conn.cursor() as cur:
                 cur.execute('''
@@ -220,7 +220,7 @@ class AlertListener:
     def _load_known_dead_boards(self) -> Set[str]:
         """Load miners with known dead boards — don't try to remediate them."""
         try:
-            conn = psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor)
+            conn = psycopg2.connect(_pg_dsn(), cursor_factory=DictCursor)
         except psycopg2.OperationalError:
             return set()
         try:

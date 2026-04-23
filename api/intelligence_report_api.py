@@ -24,7 +24,7 @@ Version: 2.2.0 — Real fleet data from guardian.db + all prior fixes (April 16 
 
 import json, csv, os, re, math, time, threading
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 from pathlib import Path as FilePath
 from datetime import datetime
 from typing import Optional
@@ -536,7 +536,7 @@ def get_fleet_data(model_name: str) -> dict:
         return {"deployed": False, "reason": f"Postgres unreachable: {e}"}
     
     try:
-        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
+        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=DictCursor))
         cur = conn.cursor()
         
         # First: find matching miner_ids from miner_hardware.device_name
@@ -948,7 +948,7 @@ class AcknowledgeRequest(BaseModel):
 def list_discoveries(acknowledged: Optional[int] = Query(None, description="Filter by acknowledged status (0=new, 1=reviewed, 2=added)")):
     """Return discovery_log entries. Defaults to unacknowledged (acknowledged=0)."""
     try:
-        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
+        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=DictCursor))
         if acknowledged is not None:
             rows = conn.execute(
                 "SELECT * FROM discovery_log WHERE acknowledged = %s ORDER BY last_seen DESC",
@@ -977,7 +977,7 @@ def acknowledge_discovery(
     if body.level not in (1, 2):
         return JSONResponse(status_code=400, content={"error": "level must be 1 (reviewed) or 2 (added to catalog)"})
     try:
-        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
+        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=DictCursor))
         params = [body.level]
         sql = "UPDATE discovery_log SET acknowledged = %s"
         if body.notes is not None:

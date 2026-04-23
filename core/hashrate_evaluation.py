@@ -21,7 +21,7 @@ Tier 3 — Unknown model or model not in specs:
 import json
 import re
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 import logging
 import statistics
 from datetime import datetime, timezone, timedelta
@@ -40,12 +40,12 @@ class _PgConnWrapper:
     """Thin wrapper over psycopg2 Connection with SQLite-style conn.execute() shortcut.
 
     Same wrapper pattern used across Phase 7 files. Supports with-statement,
-    commit/rollback. Wraps a per-connection RealDictCursor so rows behave
+    commit/rollback. Wraps a per-connection DictCursor so rows behave
     like dicts (parallel to SQLite Row factory).
     """
 
     def __init__(self, dsn: str):
-        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
 
     def execute(self, sql, params=()):
         cur = self._conn.cursor()
@@ -240,7 +240,7 @@ class HashrateTierResolver:
                     f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
                     f"password={os.environ.get('GUARDIAN_PG_PASSWORD', '')}"
                 )
-                conn = psycopg2.connect(_dsn, cursor_factory=RealDictCursor)
+                conn = psycopg2.connect(_dsn, cursor_factory=DictCursor)
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT current_profile FROM miner_readings "

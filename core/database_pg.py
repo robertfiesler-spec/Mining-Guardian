@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import psycopg2
-from psycopg2.extras import RealDictCursor, execute_batch
+from psycopg2.extras import DictCursor, execute_batch
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +97,10 @@ class GuardianPGDB:
         table_name is accepted for API compatibility with the SQLite backend's
         router hint, but it is ignored — all tables live in public.
 
-        Uses RealDictCursor so rows behave like dicts (parallel to SQLite
+        Uses DictCursor so rows behave like dicts (parallel to SQLite
         Row factory on the SQLite side).
         """
-        conn = psycopg2.connect(self._dsn, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(self._dsn, cursor_factory=DictCursor)
         try:
             yield conn
             conn.commit()
@@ -855,7 +855,7 @@ class GuardianPGDB:
 
         Sets ticket_created=NULL on new rows so the next scan knows to create
         an AMS ticket. SELECT-then-UPDATE-or-INSERT pattern on one connection.
-        Note: RealDictCursor returns dicts, not tuples — use existing["id"]
+        Note: DictCursor returns dicts, not tuples — use existing["id"]
         not existing[0] (different from the SQLite Row version).
         """
         now = datetime.now().isoformat()

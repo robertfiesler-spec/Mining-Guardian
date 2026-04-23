@@ -84,3 +84,4 @@ intelligence-catalog/data/*.bak_*
 
 # Generated reports (local outputs, regenerated on demand)
 reports/
+.env.backup*

@@ -26,7 +26,7 @@ import time
 import json
 import logging
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 import requests
 from collections import OrderedDict
 from datetime import datetime
@@ -138,7 +138,7 @@ class CommandHandler:
 
     def _get_db(self):
         """Return a psycopg2-backed connection with SQLite-style execute shortcut."""
-        return _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=RealDictCursor))
+        return _PgConnWrapper(psycopg2.connect(_pg_dsn(), cursor_factory=DictCursor))
 
     def _reply(self, channel, thread_ts, text):
         """Post a reply in the channel or thread."""

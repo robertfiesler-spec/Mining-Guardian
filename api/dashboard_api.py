@@ -16,7 +16,7 @@ Runs on: http://localhost:8585
 
 import sys
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 import os
 import json
 import html as html_lib
@@ -384,7 +384,7 @@ class _PgConnWrapper:
     """psycopg2 Connection with SQLite-style .execute() shortcut."""
 
     def __init__(self, dsn: str):
-        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
 
     def execute(self, sql, params=()):
         cur = self._conn.cursor()
@@ -464,7 +464,7 @@ def metrics(request: Request):
     scan_id_row = conn.execute("SELECT id FROM scans ORDER BY id DESC LIMIT 1").fetchone()
     if scan_id_row:
         miners = conn.execute("""
-            SELECT ip, model, hashrate_pct, ROUND(hashrate/1000.0, 2) AS hashrate_ths, temp_chip, pdu_power,
+            SELECT ip, model, hashrate_pct, ROUND((hashrate/1000.0)::numeric, 2) AS hashrate_ths, temp_chip, pdu_power,
                    consumption, map_location, issue, status
             FROM miner_readings
             WHERE scan_id = %s
@@ -2069,7 +2069,7 @@ def query_flagged_miners():
             return {"error": "no scans in database yet", "miners": []}
 
         rows = conn.execute(
-            "SELECT ip, model, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, ROUND(max_hashrate/1000.0, 2) AS max_hashrate_ths, hashrate_pct, "
+            "SELECT ip, model, status, ROUND((hashrate/1000.0)::numeric, 2) AS hashrate_ths, ROUND((max_hashrate/1000.0)::numeric, 2) AS max_hashrate_ths, hashrate_pct, "
             "       temp_chip, temp_board, issue, action, current_profile, "
             "       firmware_version, map_location, uptime "
             "FROM miner_readings "
@@ -2103,7 +2103,7 @@ def query_miner_history(ip: str, hours: int = 24):
 
     with db_conn() as conn:
         rows = conn.execute(
-            "SELECT scan_id, scanned_at, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, hashrate_pct, "
+            "SELECT scan_id, scanned_at, status, ROUND((hashrate/1000.0)::numeric, 2) AS hashrate_ths, hashrate_pct, "
             "       temp_chip, temp_board, issue, action, current_profile "
             "FROM miner_readings "
             "WHERE ip = %s "
@@ -2253,7 +2253,7 @@ def query_worst_performers(limit: int = 5):
             return {"error": "no scans in database yet", "miners": []}
 
         rows = conn.execute(
-            "SELECT ip, model, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, ROUND(max_hashrate/1000.0, 2) AS max_hashrate_ths, hashrate_pct, "
+            "SELECT ip, model, status, ROUND((hashrate/1000.0)::numeric, 2) AS hashrate_ths, ROUND((max_hashrate/1000.0)::numeric, 2) AS max_hashrate_ths, hashrate_pct, "
             "       temp_chip, issue, map_location "
             "FROM miner_readings "
             "WHERE scan_id = %s AND status != 'OFFLINE' "
@@ -2591,7 +2591,7 @@ def ask_query(q: str):
             if m:
                 hours = min(int(m.group(1)), 168)
             rows = conn.execute(
-                "SELECT scanned_at, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, hashrate_pct, temp_chip, issue, action "
+                "SELECT scanned_at, status, ROUND((hashrate/1000.0)::numeric, 2) AS hashrate_ths, hashrate_pct, temp_chip, issue, action "
                 "FROM miner_readings WHERE ip = %s "
                 "AND scanned_at >= datetime('now', %s || ' hours') "
                 "ORDER BY scanned_at DESC LIMIT 20",

@@ -11,7 +11,7 @@ Runs on: http://localhost:8686
 
 import sys
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 import json
 import logging
 import hashlib
@@ -54,7 +54,7 @@ class _PgConnWrapper:
     """
 
     def __init__(self, dsn: str):
-        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+        self._conn = psycopg2.connect(dsn, cursor_factory=DictCursor)
 
     def execute(self, sql, params=()):
         cur = self._conn.cursor()

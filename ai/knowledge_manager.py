@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -168,7 +168,7 @@ class KnowledgeManager:
 
         # Pull live board-level data — chronic HW errors, dead boards
         try:
-            conn = _PgConnWrapper(psycopg2.connect(self.db_path, cursor_factory=RealDictCursor))
+            conn = _PgConnWrapper(psycopg2.connect(self.db_path, cursor_factory=DictCursor))
 
             # Miners with hardware identity parsed
             hw_count = conn.execute("SELECT COUNT(DISTINCT miner_id) AS cnt FROM miner_hardware").fetchone()["cnt"]

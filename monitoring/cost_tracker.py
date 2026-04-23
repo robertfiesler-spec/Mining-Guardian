@@ -80,7 +80,7 @@ class CostTracker:
 
         Accepts either a DSN string (db_path) or a pre-existing GuardianPGDB
         instance (self.db). When given a DSN, opens a psycopg2 connection with
-        RealDictCursor so `row["col_name"]` access works like sqlite3.Row.
+        DictCursor so `row["col_name"]` access works like sqlite3.Row.
 
         Note: the else-branch's "return self._get_connection()" is a latent
         bug inherited from the SQLite version — it causes infinite recursion
@@ -89,9 +89,9 @@ class CostTracker:
         "Cost tracking unavailable". Not fixing in this port commit.
         """
         import psycopg2
-        from psycopg2.extras import RealDictCursor
+        from psycopg2.extras import DictCursor
         if self.db_path:
-            return _PgConnWrapper(psycopg2.connect(self.db_path, cursor_factory=RealDictCursor))
+            return _PgConnWrapper(psycopg2.connect(self.db_path, cursor_factory=DictCursor))
         else:
             return self._get_connection()
 
