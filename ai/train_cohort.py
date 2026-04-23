@@ -942,7 +942,7 @@ def run_cohort_training():
         try:
             cohort_ips = summary.get("all_member_ips", [])
             if cohort_ips:
-                placeholders = ",".join("%s" * len(cohort_ips))
+                placeholders = ",".join(["%s"] * len(cohort_ips))
                 cohort_past_analyses = [dict(r) for r in conn.execute(f"""
                     SELECT ip, analyzed_at, response, model_used
                     FROM llm_analysis

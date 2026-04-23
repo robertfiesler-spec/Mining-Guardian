@@ -442,13 +442,13 @@ class ApprovalListener:
                 "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL AND ticket_created IS NOT NULL"
             ).fetchall()}
 
-            ph = ",".join("%s" * len(scan_ids))
+            ph = ",".join(["%s"] * len(scan_ids))
             persistent = conn.execute(f"""
                 SELECT miner_id, ip, model,
                        COUNT(DISTINCT scan_id) as consecutive,
                        AVG(hashrate_pct) as avg_hr,
                        AVG(temp_chip) as avg_temp,
-                       GROUP_CONCAT(DISTINCT action) as actions
+                       string_agg(DISTINCT action, ',') as actions
                 FROM miner_readings
                 WHERE scan_id IN ({ph}) AND action IS NOT NULL AND action!='MONITOR'
                 GROUP BY miner_id HAVING consecutive=3
