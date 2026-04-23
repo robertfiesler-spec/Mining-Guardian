@@ -15,7 +15,8 @@ Runs on: http://localhost:8585
 """
 
 import sys
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import os
 import json
 import html as html_lib
@@ -131,7 +132,14 @@ g_ai_autonomy         = Gauge("mining_guardian_ai_autonomy",
 
 SITE = "usa_188"
 
-DB_PATH = str(_ROOT / "guardian.db")
+def _pg_dsn() -> str:
+    """Build Postgres DSN from environment variables."""
+    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
+    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
+    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
+    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 app = FastAPI(title="Mining Guardian API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -372,10 +380,45 @@ setInterval(load,300000);
 </script>
 </body></html>"""
 
+class _PgConnWrapper:
+    """psycopg2 Connection with SQLite-style .execute() shortcut."""
+
+    def __init__(self, dsn: str):
+        self._conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self._conn.commit()
+        else:
+            self._conn.rollback()
+        self._conn.close()
+        return False
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return _PgConnWrapper(_pg_dsn())
 
 
 from contextlib import contextmanager
@@ -383,8 +426,7 @@ from contextlib import contextmanager
 @contextmanager
 def db_conn():
     """Context manager for DB connections — guarantees close on exceptions."""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
+    conn = _PgConnWrapper(_pg_dsn())
     try:
         yield conn
     finally:
@@ -425,14 +467,14 @@ def metrics(request: Request):
             SELECT ip, model, hashrate_pct, ROUND(hashrate/1000.0, 2) AS hashrate_ths, temp_chip, pdu_power,
                    consumption, map_location, issue, status
             FROM miner_readings
-            WHERE scan_id = ?
+            WHERE scan_id = %s
         """, (scan_id_row["id"],)).fetchall()
 
         # HW errors per miner (sum across boards)
         hw_errors_by_ip = {}
         for row in conn.execute("""
             SELECT ip, SUM(hw_errors) as total_hw
-            FROM chain_readings WHERE scan_id=? GROUP BY ip
+            FROM chain_readings WHERE scan_id=%s GROUP BY ip
         """, (scan_id_row["id"],)).fetchall():
             hw_errors_by_ip[row["ip"]] = float(row["total_hw"] or 0)
 
@@ -443,7 +485,7 @@ def metrics(request: Request):
                    CASE WHEN SUM(accepted)+SUM(rejected) > 0
                         THEN CAST(SUM(rejected) AS FLOAT) / (SUM(accepted)+SUM(rejected))
                         ELSE 0 END as rej_rate
-            FROM pool_readings WHERE scan_id=? GROUP BY ip
+            FROM pool_readings WHERE scan_id=%s GROUP BY ip
         """, (scan_id_row["id"],)).fetchall():
             rejection_by_ip[row["ip"]] = float(row["rej_rate"] or 0)
 
@@ -543,7 +585,7 @@ def metrics(request: Request):
         chains = conn.execute("""
             SELECT ip, board_index, rate_mhs, voltage, freq_mhz,
                    consumption_w, hw_errors, temp_board, temp_chip
-            FROM chain_readings WHERE scan_id = ?
+            FROM chain_readings WHERE scan_id = %s
         """, (scan_id_row["id"],)).fetchall()
         for c in chains:
             ip    = c["ip"] or "unknown"
@@ -558,7 +600,7 @@ def metrics(request: Request):
         # Per-pool readings from latest scan
         pools = conn.execute("""
             SELECT ip, pool_url, accepted, rejected
-            FROM pool_readings WHERE scan_id = ?
+            FROM pool_readings WHERE scan_id = %s
         """, (scan_id_row["id"],)).fetchall()
         for p in pools:
             ip       = p["ip"] or "unknown"
@@ -697,9 +739,9 @@ def fleet_board_stats():
                         ELSE 0 END as rej_rate
             FROM pool_readings p
             LEFT JOIN (
-                SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
+                SELECT ip, model FROM miner_readings WHERE scan_id=%s GROUP BY ip
             ) m ON p.ip = m.ip
-            WHERE p.scan_id=? GROUP BY p.ip
+            WHERE p.scan_id=%s GROUP BY p.ip
             ORDER BY rej_rate DESC LIMIT 10
         """, (scan["id"], scan["id"])).fetchall()
 
@@ -709,9 +751,9 @@ def fleet_board_stats():
                    SUM(c.hw_errors) as total_hw
             FROM chain_readings c
             LEFT JOIN (
-                SELECT ip, model FROM miner_readings WHERE scan_id=? GROUP BY ip
+                SELECT ip, model FROM miner_readings WHERE scan_id=%s GROUP BY ip
             ) m ON c.ip = m.ip
-            WHERE c.scan_id=?
+            WHERE c.scan_id=%s
             GROUP BY c.ip HAVING total_hw > 0
             ORDER BY total_hw DESC LIMIT 10
         """, (scan["id"], scan["id"])).fetchall()
@@ -778,13 +820,13 @@ def mhs_panel():
         miners = conn.execute("""
             SELECT ip, model, hashrate_pct, pdu_power, status, issue
             FROM miner_readings
-            WHERE scan_id=? AND status='online' AND hashrate_pct > 0
+            WHERE scan_id=%s AND status='online' AND hashrate_pct > 0
             ORDER BY hashrate_pct DESC
         """, (scan_id_row["id"],)).fetchall()
 
         hw_errors_by_ip = {}
         for row in conn.execute("""
-            SELECT ip, SUM(hw_errors) as total_hw FROM chain_readings WHERE scan_id=? GROUP BY ip
+            SELECT ip, SUM(hw_errors) as total_hw FROM chain_readings WHERE scan_id=%s GROUP BY ip
         """, (scan_id_row["id"],)).fetchall():
             hw_errors_by_ip[row["ip"]] = float(row["total_hw"] or 0)
 
@@ -794,7 +836,7 @@ def mhs_panel():
                    CASE WHEN SUM(accepted)+SUM(rejected) > 0
                         THEN CAST(SUM(rejected) AS FLOAT)/(SUM(accepted)+SUM(rejected))
                         ELSE 0 END as rej_rate
-            FROM pool_readings WHERE scan_id=? GROUP BY ip
+            FROM pool_readings WHERE scan_id=%s GROUP BY ip
         """, (scan_id_row["id"],)).fetchall():
             rejection_by_ip[row["ip"]] = float(row["rej_rate"] or 0)
 
@@ -867,14 +909,14 @@ def miner_status(miner_ip: str):
                    mr.hashrate_pct, mr.temp_chip, mr.pdu_power, mr.status,
                    mr.current_profile, mr.map_location
             FROM miner_readings mr
-            WHERE mr.ip = ?
+            WHERE mr.ip = %s
             ORDER BY mr.id DESC LIMIT 1
         """, (miner_ip_clean,)).fetchone()
 
         history = conn.execute("""
             SELECT timestamp, problem, action_taken, decision, approved_by, notes
             FROM action_audit_log
-            WHERE ip = ?
+            WHERE ip = %s
             ORDER BY timestamp DESC LIMIT 20
         """, (miner_ip_clean,)).fetchall()
 
@@ -882,7 +924,7 @@ def miner_status(miner_ip: str):
             SELECT board_indices, first_seen, restart_attempted,
                    restart_result, ticket_created
             FROM known_dead_boards
-            WHERE ip = ? AND resolved_at IS NULL
+            WHERE ip = %s AND resolved_at IS NULL
         """, (miner_ip_clean,)).fetchone()
 
     finally:
@@ -908,20 +950,20 @@ def miner_status_html(miner_ip: str):
             SELECT ip, model, issue, action, scanned_at,
                    hashrate_pct, temp_chip, pdu_power, status,
                    current_profile, map_location
-            FROM miner_readings WHERE ip = ?
+            FROM miner_readings WHERE ip = %s
             ORDER BY id DESC LIMIT 1
         """, (miner_ip_clean,)).fetchone()
 
         history = conn.execute("""
             SELECT timestamp, problem, action_taken, decision, approved_by, notes
-            FROM action_audit_log WHERE ip = ?
+            FROM action_audit_log WHERE ip = %s
             ORDER BY timestamp DESC LIMIT 15
         """, (miner_ip_clean,)).fetchall()
 
         dead = conn.execute("""
             SELECT board_indices, first_seen, restart_attempted,
                    restart_result, ticket_created
-            FROM known_dead_boards WHERE ip = ? AND resolved_at IS NULL
+            FROM known_dead_boards WHERE ip = %s AND resolved_at IS NULL
         """, (miner_ip_clean,)).fetchone()
 
     finally:
@@ -1036,7 +1078,7 @@ def fleet_latest(request: Request):
         readings = conn.execute("""
             SELECT action, COUNT(*) as count
             FROM miner_readings
-            WHERE scan_id = ? AND action IS NOT NULL
+            WHERE scan_id = %s AND action IS NOT NULL
             GROUP BY action
         """, (scan["id"],)).fetchall()
 
@@ -1055,7 +1097,7 @@ def fleet_history(request: Request, days: int = 7):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM scans WHERE scanned_at > ? ORDER BY id DESC",
+            "SELECT * FROM scans WHERE scanned_at > %s ORDER BY id DESC",
             (cutoff,)
         ).fetchall()
     finally:
@@ -1078,7 +1120,7 @@ def miners_flagged(request: Request):
             SELECT miner_id, ip, model, status, hashrate_pct,
                    temp_chip, action, issue
             FROM miner_readings
-            WHERE scan_id = ? AND action IS NOT NULL
+            WHERE scan_id = %s AND action IS NOT NULL
             ORDER BY action, ip
         """, (scan["id"],)).fetchall()
     finally:
@@ -1100,7 +1142,7 @@ def miners_most_flagged(limit: int = 20):
             WHERE action IS NOT NULL
             GROUP BY miner_id
             ORDER BY times_flagged DESC
-            LIMIT ?
+            LIMIT %s
         """, (limit,)).fetchall()
     finally:
         conn.close()
@@ -1117,7 +1159,7 @@ def miner_history(miner_id: str, days: int = 7):
         rows = conn.execute("""
             SELECT scanned_at, hashrate_pct, temp_chip, status, action, issue
             FROM miner_readings
-            WHERE miner_id = ? AND scanned_at > ?
+            WHERE miner_id = %s AND scanned_at > %s
             ORDER BY scanned_at ASC
         """, (miner_id, cutoff)).fetchall()
     finally:
@@ -1133,9 +1175,9 @@ def miner_logs(miner_id: str, limit: int = 10):
         rows = conn.execute("""
             SELECT collected_at, health_status, log_file, content
             FROM miner_logs
-            WHERE miner_id = ?
+            WHERE miner_id = %s
             ORDER BY id DESC
-            LIMIT ?
+            LIMIT %s
         """, (miner_id, limit)).fetchall()
     finally:
         conn.close()
@@ -1155,7 +1197,7 @@ def temps_hot_miners():
         rows = conn.execute("""
             SELECT miner_id, ip, model, temp_chip, action
             FROM miner_readings
-            WHERE scan_id = ? AND temp_chip >= 76
+            WHERE scan_id = %s AND temp_chip >= 76
             ORDER BY temp_chip DESC
         """, (scan["id"],)).fetchall()
     finally:
@@ -1178,7 +1220,7 @@ def temps_history(request: Request, days: int = 7):
                    MIN(r.temp_chip) as min_temp
             FROM miner_readings r
             JOIN scans s ON r.scan_id = s.id
-            WHERE s.scanned_at > ? AND r.temp_chip > 0
+            WHERE s.scanned_at > %s AND r.temp_chip > 0
             GROUP BY s.id
             ORDER BY s.scanned_at ASC
         """, (cutoff,)).fetchall()
@@ -1197,7 +1239,7 @@ def weather_history(days: int = 7):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM weather_readings WHERE recorded_at > ? ORDER BY id ASC",
+            "SELECT * FROM weather_readings WHERE recorded_at > %s ORDER BY id ASC",
             (cutoff,)
         ).fetchall()
     finally:
@@ -1282,7 +1324,7 @@ def environment_history(days: int = 5):
                 AVG(temp_f) as outside_temp_f,
                 AVG(humidity_pct) as humidity_pct
             FROM weather_readings
-            WHERE recorded_at > ?
+            WHERE recorded_at > %s
             GROUP BY bucket
             ORDER BY bucket ASC
         """, (cutoff,)).fetchall()
@@ -1303,7 +1345,7 @@ def environment_history(days: int = 5):
                 AVG(return_temp_f) as return_temp_f,
                 AVG(delta_t_f) as delta_t_f
             FROM hvac_readings
-            WHERE recorded_at > ?
+            WHERE recorded_at > %s
             GROUP BY bucket
             ORDER BY bucket ASC
         """, (cutoff,)).fetchall()
@@ -1336,7 +1378,7 @@ def notifications_recent(request: Request, limit: int = 50):
             SELECT key, alert_level, miner_ip, recorded_at
             FROM ams_notifications
             ORDER BY id DESC
-            LIMIT ?
+            LIMIT %s
         """, (limit,)).fetchall()
     finally:
         conn.close()
@@ -1368,7 +1410,7 @@ def restarts_recent(limit: int = 20):
     try:
         rows = conn.execute("""
             SELECT * FROM miner_restarts
-            ORDER BY id DESC LIMIT ?
+            ORDER BY id DESC LIMIT %s
         """, (limit,)).fetchall()
     finally:
         conn.close()
@@ -1392,12 +1434,12 @@ def audit_log(request: Request, days: int = None, miner_id: str = None, limit: i
     if days:
         from datetime import timedelta
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-        query += " AND date >= ?"
+        query += " AND date >= %s"
         params.append(cutoff)
     if miner_id:
-        query += " AND miner_id = ?"
+        query += " AND miner_id = %s"
         params.append(miner_id)
-    query += " ORDER BY timestamp DESC LIMIT ?"
+    query += " ORDER BY timestamp DESC LIMIT %s"
     params.append(limit)
     rows = conn.execute(query, params).fetchall()
     conn.close()
@@ -1446,7 +1488,7 @@ def llm_history(limit: int = 10):
     try:
         try:
             rows = conn.execute(
-                "SELECT * FROM llm_analysis ORDER BY id DESC LIMIT ?", (limit,)
+                "SELECT * FROM llm_analysis ORDER BY id DESC LIMIT %s", (limit,)
             ).fetchall()
         except Exception:
             rows = []
@@ -1991,13 +2033,13 @@ def query_fleet_summary():
             "  COALESCE(SUM(max_hashrate), 0) AS total_max_hashrate, "
             "  COALESCE(AVG(hashrate_pct), 0) AS avg_pct, "
             "  COUNT(*) AS miner_count "
-            "FROM miner_readings WHERE scan_id = ?",
+            "FROM miner_readings WHERE scan_id = %s",
             (scan["id"],),
         ).fetchone()
 
         flagged = conn.execute(
             "SELECT COUNT(*) AS n FROM miner_readings "
-            "WHERE scan_id = ? AND issue IS NOT NULL AND issue != ''",
+            "WHERE scan_id = %s AND issue IS NOT NULL AND issue != ''",
             (scan["id"],),
         ).fetchone()["n"]
 
@@ -2031,7 +2073,7 @@ def query_flagged_miners():
             "       temp_chip, temp_board, issue, action, current_profile, "
             "       firmware_version, map_location, uptime "
             "FROM miner_readings "
-            "WHERE scan_id = ? AND issue IS NOT NULL AND issue != '' "
+            "WHERE scan_id = %s AND issue IS NOT NULL AND issue != '' "
             "ORDER BY "
             "  CASE WHEN status = 'OFFLINE' THEN 0 "
             "       WHEN temp_chip >= 84 THEN 1 "
@@ -2064,8 +2106,8 @@ def query_miner_history(ip: str, hours: int = 24):
             "SELECT scan_id, scanned_at, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, hashrate_pct, "
             "       temp_chip, temp_board, issue, action, current_profile "
             "FROM miner_readings "
-            "WHERE ip = ? "
-            "  AND scanned_at >= datetime('now', ? || ' hours') "
+            "WHERE ip = %s "
+            "  AND scanned_at >= datetime('now', %s || ' hours') "
             "ORDER BY scanned_at DESC "
             "LIMIT 500",
             (ip, f"-{hours}"),
@@ -2111,9 +2153,9 @@ def query_recent_actions(hours: int = 4, limit: int = 50):
             "SELECT timestamp, miner_id, ip, model, problem, action_taken, "
             "       decision, approved_by, notes "
             "FROM action_audit_log "
-            "WHERE timestamp >= datetime('now', ? || ' hours') "
+            "WHERE timestamp >= datetime('now', %s || ' hours') "
             "ORDER BY timestamp DESC "
-            "LIMIT ?",
+            "LIMIT %s",
             (f"-{hours}", limit),
         ).fetchall()
 
@@ -2140,9 +2182,9 @@ def query_miner_outcomes(ip: str, limit: int = 20):
             "SELECT restarted_at, restart_type, outcome, "
             "       hashrate_before, hashrate_after, recovery_time_scans "
             "FROM miner_restarts "
-            "WHERE ip = ? "
+            "WHERE ip = %s "
             "ORDER BY restarted_at DESC "
-            "LIMIT ?",
+            "LIMIT %s",
             (ip, limit),
         ).fetchall()
 
@@ -2178,7 +2220,7 @@ def query_board_health(ip: str):
             "SELECT board_index, rate_mhs, voltage, freq_mhz, consumption_w, "
             "       hw_errors, temp_board, temp_chip "
             "FROM chain_readings "
-            "WHERE ip = ? AND scan_id = ? "
+            "WHERE ip = %s AND scan_id = %s "
             "ORDER BY board_index",
             (ip, scan_id),
         ).fetchall()
@@ -2214,9 +2256,9 @@ def query_worst_performers(limit: int = 5):
             "SELECT ip, model, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, ROUND(max_hashrate/1000.0, 2) AS max_hashrate_ths, hashrate_pct, "
             "       temp_chip, issue, map_location "
             "FROM miner_readings "
-            "WHERE scan_id = ? AND status != 'OFFLINE' "
+            "WHERE scan_id = %s AND status != 'OFFLINE' "
             "ORDER BY hashrate_pct ASC "
-            "LIMIT ?",
+            "LIMIT %s",
             (scan_id, limit),
         ).fetchall()
 
@@ -2550,8 +2592,8 @@ def ask_query(q: str):
                 hours = min(int(m.group(1)), 168)
             rows = conn.execute(
                 "SELECT scanned_at, status, ROUND(hashrate/1000.0, 2) AS hashrate_ths, hashrate_pct, temp_chip, issue, action "
-                "FROM miner_readings WHERE ip = ? "
-                "AND scanned_at >= datetime('now', ? || ' hours') "
+                "FROM miner_readings WHERE ip = %s "
+                "AND scanned_at >= datetime('now', %s || ' hours') "
                 "ORDER BY scanned_at DESC LIMIT 20",
                 (ip, f"-{hours}"),
             ).fetchall()
@@ -2579,7 +2621,7 @@ def ask_query(q: str):
                 return {"error": "no scans in DB"}
             rows = conn.execute(
                 "SELECT board_index, rate_mhs, voltage, freq_mhz, hw_errors, temp_board, temp_chip "
-                "FROM chain_readings WHERE ip = ? AND scan_id = ? ORDER BY board_index",
+                "FROM chain_readings WHERE ip = %s AND scan_id = %s ORDER BY board_index",
                 (ip, scan["id"]),
             ).fetchall()
         if not rows:
@@ -2608,11 +2650,11 @@ def ask_query(q: str):
             if not scan:
                 return {"error": "no scans in DB"}
             flagged = conn.execute(
-                "SELECT COUNT(*) AS n FROM miner_readings WHERE scan_id = ? AND issue IS NOT NULL AND issue != ''",
+                "SELECT COUNT(*) AS n FROM miner_readings WHERE scan_id = %s AND issue IS NOT NULL AND issue != ''",
                 (scan["id"],),
             ).fetchone()["n"]
             avg = conn.execute(
-                "SELECT AVG(hashrate_pct) AS p FROM miner_readings WHERE scan_id = ? AND status != 'OFFLINE'",
+                "SELECT AVG(hashrate_pct) AS p FROM miner_readings WHERE scan_id = %s AND status != 'OFFLINE'",
                 (scan["id"],),
             ).fetchone()["p"] or 0
         html = "<h3>Fleet Summary</h3>"
@@ -2643,7 +2685,7 @@ def ask_query(q: str):
                 return {"error": "no scans in DB"}
             rows = conn.execute(
                 "SELECT ip, model, status, hashrate_pct, temp_chip, issue, action "
-                "FROM miner_readings WHERE scan_id = ? AND issue IS NOT NULL AND issue != '' "
+                "FROM miner_readings WHERE scan_id = %s AND issue IS NOT NULL AND issue != '' "
                 "ORDER BY CASE WHEN status='OFFLINE' THEN 0 WHEN temp_chip>=84 THEN 1 ELSE 2 END, ip",
                 (scan["id"],),
             ).fetchall()
@@ -2679,8 +2721,8 @@ def ask_query(q: str):
                 return {"error": "no scans in DB"}
             rows = conn.execute(
                 "SELECT ip, model, hashrate_pct, temp_chip, issue "
-                "FROM miner_readings WHERE scan_id = ? AND status != 'OFFLINE' "
-                "ORDER BY hashrate_pct ASC LIMIT ?",
+                "FROM miner_readings WHERE scan_id = %s AND status != 'OFFLINE' "
+                "ORDER BY hashrate_pct ASC LIMIT %s",
                 (scan["id"], limit),
             ).fetchall()
         if not rows:
@@ -2714,8 +2756,8 @@ def ask_query(q: str):
                 return {"error": "no scans in DB"}
             rows = conn.execute(
                 "SELECT ip, model, hashrate_pct, temp_chip "
-                "FROM miner_readings WHERE scan_id = ? AND status != 'OFFLINE' "
-                "ORDER BY hashrate_pct DESC LIMIT ?",
+                "FROM miner_readings WHERE scan_id = %s AND status != 'OFFLINE' "
+                "ORDER BY hashrate_pct DESC LIMIT %s",
                 (scan["id"], limit),
             ).fetchall()
         if not rows:
@@ -2745,7 +2787,7 @@ def ask_query(q: str):
         with db_conn() as conn:
             rows = conn.execute(
                 "SELECT timestamp, ip, action_taken, decision, approved_by, notes "
-                "FROM action_audit_log WHERE timestamp >= datetime('now', ? || ' hours') "
+                "FROM action_audit_log WHERE timestamp >= datetime('now', %s || ' hours') "
                 "ORDER BY timestamp DESC LIMIT 30",
                 (f"-{hours}",),
             ).fetchall()
@@ -2961,7 +3003,7 @@ async def ingest_hvac_data(request: Request):
             return {"error": "Missing system_id or readings"}
         
         # Store in hvac_readings table with system_id
-        with sqlite3.connect(DB_PATH) as conn:
+        with _PgConnWrapper(_pg_dsn()) as conn:
             conn.execute("""
                 INSERT INTO hvac_readings (
                     recorded_at, system_id,
@@ -2969,7 +3011,7 @@ async def ingest_hvac_data(request: Request):
                     outside_air_f, container_temp_f,
                     cwp1_vfd_pct, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
                     leak_alarm
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 timestamp or datetime.utcnow().isoformat(),
                 system_id,
@@ -2995,15 +3037,14 @@ async def ingest_hvac_data(request: Request):
 @app.get("/api/hvac/latest")
 async def get_latest_hvac():
     """Get latest HVAC readings for all systems."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = _PgConnWrapper(_pg_dsn())
     try:
-        conn.row_factory = sqlite3.Row
     
         results = {}
         for system_id in ["warehouse", "s19jpro"]:
             row = conn.execute("""
                 SELECT * FROM hvac_readings
-                WHERE system_id = ?
+                WHERE system_id = %s
                 ORDER BY recorded_at DESC LIMIT 1
             """, (system_id,)).fetchone()
             if row:
