@@ -39,7 +39,7 @@ def _pg_dsn() -> str:
         f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
         f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
         f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
-        f"dbname={os.environ.get('GUARDIAN_PG_DB', 'mining_guardian')}"
+        f"dbname={os.environ.get('GUARDIAN_PG_DBNAME', 'mining_guardian')}"
     )
 
 
