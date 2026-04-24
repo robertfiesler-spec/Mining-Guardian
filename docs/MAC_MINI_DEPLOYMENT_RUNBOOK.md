@@ -1,6 +1,6 @@
 # Mac Mini Deployment Runbook
 
-**Target date:** Monday 2026-04-28 (hardware ETA)
+**Target date:** Monday 2026-04-27 (hardware ETA)
 **Purpose:** step-by-step procedure for moving Mining Guardian from the Hostinger VPS (187.124.247.182) to a local Mac Mini on the Fort Worth facility LAN.
 **Status:** runbook documented, dry run not yet executed.
 
