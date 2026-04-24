@@ -140,7 +140,7 @@ def get_overnight_summary() -> dict:
                AVG(temp_chip) as avg_temp, AVG(hashrate_pct) as avg_hr
         FROM miner_readings
         WHERE scanned_at >= %s AND action IS NOT NULL AND action != 'MONITOR'
-        GROUP BY miner_id
+        GROUP BY miner_id, ip, model
         ORDER BY flags DESC
         LIMIT 5
     """, (yesterday,)).fetchall()
