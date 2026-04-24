@@ -254,17 +254,17 @@ def summarize_cohort(conn: "_PgConnWrapper", cohort_key: Tuple,
     agg = conn.execute(f'''
         SELECT
             COUNT(DISTINCT miner_id) as miner_count,
-            ROUND(AVG(hashrate_pct), 1) as avg_hr,
-            ROUND(MIN(hashrate_pct), 1) as min_hr,
-            ROUND(MAX(hashrate_pct), 1) as max_hr,
-            ROUND(AVG(CASE WHEN temp_chip > 0 THEN temp_chip END), 1) as avg_temp,
+            ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
+            ROUND((MIN(hashrate_pct))::numeric, 1) as min_hr,
+            ROUND((MAX(hashrate_pct))::numeric, 1) as max_hr,
+            ROUND((AVG(CASE WHEN temp_chip > 0 THEN temp_chip END))::numeric, 1) as avg_temp,
             MAX(temp_chip) as max_temp,
             COUNT(*) as total_readings,
             SUM(CASE WHEN status='offline' THEN 1 ELSE 0 END) as offline_count,
             SUM(CASE WHEN action NOT IN ('MONITOR','') AND action IS NOT NULL THEN 1 ELSE 0 END) as flag_count
         FROM miner_readings
         WHERE miner_id IN ({placeholders})
-          AND scanned_at >= datetime('now', '-7 days')
+          AND scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
     ''', miner_ids).fetchone()
 
     # Restart outcomes for this cohort over the week
@@ -272,7 +272,7 @@ def summarize_cohort(conn: "_PgConnWrapper", cohort_key: Tuple,
         SELECT outcome, COUNT(*) as cnt
         FROM miner_restarts
         WHERE miner_id IN ({placeholders})
-          AND restarted_at >= datetime('now', '-7 days')
+          AND restarted_at::timestamp >= (NOW() - INTERVAL '7 days')
           AND outcome IS NOT NULL
         GROUP BY outcome
     ''', miner_ids).fetchall()
@@ -282,7 +282,7 @@ def summarize_cohort(conn: "_PgConnWrapper", cohort_key: Tuple,
         SELECT problem, COUNT(*) as cnt
         FROM action_audit_log
         WHERE miner_id IN ({placeholders})
-          AND timestamp >= datetime('now', '-7 days')
+          AND timestamp::timestamp >= (NOW() - INTERVAL '7 days')
           AND problem IS NOT NULL AND problem != ''
         GROUP BY problem
         ORDER BY cnt DESC
@@ -296,16 +296,17 @@ def summarize_cohort(conn: "_PgConnWrapper", cohort_key: Tuple,
         # Compute per-miner average HR over the week
         hr_rows = conn.execute(f'''
             SELECT miner_id, ip,
-                   ROUND(AVG(hashrate_pct), 1) as avg_hr,
-                   ROUND(AVG(CASE WHEN temp_chip > 0 THEN temp_chip END), 1) as avg_temp
+                   ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
+                   ROUND((AVG(CASE WHEN temp_chip > 0 THEN temp_chip END))::numeric, 1) as avg_temp
             FROM miner_readings
             WHERE miner_id IN ({placeholders})
-              AND scanned_at >= datetime('now', '-7 days')
-            GROUP BY miner_id
+              AND scanned_at::timestamp >= (NOW() - INTERVAL '7 days')
+            GROUP BY miner_id, ip
         ''', miner_ids).fetchall()
 
-        hrs = [r['avg_hr'] for r in hr_rows if r['avg_hr'] is not None]
-        temps = [r['avg_temp'] for r in hr_rows if r['avg_temp'] is not None]
+        # Cast psycopg2 Decimal -> float so later **0.5 works (SQLite returned floats)
+        hrs = [float(r['avg_hr']) for r in hr_rows if r['avg_hr'] is not None]
+        temps = [float(r['avg_temp']) for r in hr_rows if r['avg_temp'] is not None]
         if hrs:
             mean_hr = sum(hrs) / len(hrs)
             var_hr = sum((h - mean_hr) ** 2 for h in hrs) / len(hrs)
@@ -947,7 +948,7 @@ def run_cohort_training():
                     SELECT ip, analyzed_at, response, model_used
                     FROM llm_analysis
                     WHERE ip IN ({placeholders})
-                      AND analyzed_at >= datetime('now', '-7 days')
+                      AND analyzed_at::timestamp >= (NOW() - INTERVAL '7 days')
                       AND response IS NOT NULL AND response != ''
                     ORDER BY analyzed_at DESC LIMIT 10
                 """, cohort_ips).fetchall()]
