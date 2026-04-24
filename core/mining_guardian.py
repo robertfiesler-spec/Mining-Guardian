@@ -578,65 +578,134 @@ class MiningGuardian:
             return None
 
     def _collect_logs_nonblocking(self, miner_id: str, model: str,
-                                   label: str) -> dict:
+                                   label: str, ip: str = "") -> dict:
         """
-        Attempt log collection with a hard timeout.
-        Returns log dict (possibly empty) — never raises, never hangs.
-        If miner is offline or logs unavailable, returns {} immediately.
+        Attempt log collection via direct HTTP to the miner.
 
-        Bug fix (Apr 8 2026): signal.SIGALRM only works on the main thread of
-        the main interpreter. When this function is called from a background
-        thread (e.g. the post-restart capture spawned by execute_restart),
-        signal.signal() raises ValueError immediately and we lose the entire
-        capture. Fix: detect whether we are on the main thread and only use
-        signal-based timeout in that case. Background threads rely on the
-        underlying HTTP timeouts and collect_fresh_miner_logs's own
-        max_wait_seconds parameter for bounded duration.
+        Changed 2026-04-24: the AMS /log/export path proved unreliable
+        (4-hour exports, 5-of-N success rates, stuck jobs). We now hit each
+        miner's /cgi-bin/create_log_backup.cgi endpoint directly with
+        HTTP Digest auth (root/root), same pattern used by the 1pm cron in
+        scripts/direct_collect_logs.py. No AMS dependency for logs.
+
+        Pre/post restart pairing is preserved by the label parameter —
+        save_logs writes (miner_id, model, label, content) so the AI can
+        learn from before/after pairs by matching labels.
+
+        Returns log dict {filename: content} — empty dict on any failure,
+        never raises. The DB save is best-effort.
+
+        Requires ip. If ip is empty/None the caller did not have it; we
+        look it up from miner_readings before giving up.
         """
-        import signal
-        import threading
+        import io
+        import tarfile
+        import requests
+        from requests.auth import HTTPDigestAuth
 
-        def _timeout_handler(signum, frame):
-            raise TimeoutError("log collection timed out")
+        # IP fallback — look up most recent IP from DB if caller did not pass it
+        if not ip:
+            try:
+                with self.db._connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT ip FROM miner_readings WHERE miner_id = %s "
+                            "AND ip IS NOT NULL ORDER BY id DESC LIMIT 1",
+                            (miner_id,),
+                        )
+                        row = cur.fetchone()
+                        ip = row["ip"] if row else ""
+            except Exception:
+                ip = ""
 
-        wants_fresh = label.startswith("pre-") or label.startswith("post-")
-        # Fresh-log path needs more time than cached collection
-        timeout = 120 if wants_fresh else self.LOG_COLLECT_TIMEOUT
+        if not ip:
+            logger.info("[%s] Log collection skipped (%s) — no IP available",
+                        miner_id, label)
+            return {}
 
-        on_main_thread = threading.current_thread() is threading.main_thread()
-        signal_armed = False
+        # Direct HTTP path — mirrors scripts/direct_collect_logs.py
+        auth = HTTPDigestAuth("root", "root")
+        from datetime import date
+        target_date = date.today()
+        date_path = f"/{target_date.strftime('%Y-%m')}/{target_date.strftime('%d')}"
 
         try:
-            if on_main_thread and not wants_fresh:
-                signal.signal(signal.SIGALRM, _timeout_handler)
-                signal.alarm(timeout)
-                signal_armed = True
+            logger.info("[%s] Direct log fetch at %s (%s)", miner_id, ip, label)
 
-            if wants_fresh:
-                logger.info("[%s] Triggering FRESH log export for %s", miner_id, label)
-                logs = self.ams.collect_fresh_miner_logs(int(miner_id))
-            else:
-                logs = self.ams.collect_miner_logs(int(miner_id))
+            # Step 1: request backup creation
+            resp = requests.post(
+                f"http://{ip}/cgi-bin/create_log_backup.cgi",
+                json=[date_path],
+                auth=auth,
+                timeout=60,
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code != 200:
+                logger.warning("[%s] Log backup create failed HTTP %s (%s) — continuing",
+                               miner_id, resp.status_code, label)
+                return {}
 
-            if signal_armed:
-                signal.alarm(0)  # cancel alarm
+            data = resp.json()
+            if data.get("stats") != "success":
+                logger.warning("[%s] Log backup create returned stats=%s (%s) — continuing",
+                               miner_id, data.get("stats"), label)
+                return {}
 
-            if logs:
-                self.db.save_logs(miner_id, model, label, logs)
-                logger.info("[%s] Logs collected (%s): %s files", miner_id, label, len(logs))
-            else:
-                logger.info("[%s] No logs available for %s — skipping", miner_id, label)
-            return logs or {}
-        except TimeoutError:
-            if signal_armed:
-                signal.alarm(0)
-            logger.warning("[%s] Log collection timed out after %ss (%s) — continuing",
-                           miner_id, timeout, label)
+            filename = data.get("msg")
+            if not filename:
+                logger.warning("[%s] Log backup create returned no filename (%s)",
+                               miner_id, label)
+                return {}
+
+            # Step 2: download the tar
+            resp = requests.get(
+                f"http://{ip}/log/{filename}",
+                auth=auth,
+                timeout=60,
+            )
+            if resp.status_code != 200:
+                logger.warning("[%s] Log download failed HTTP %s (%s) — continuing",
+                               miner_id, resp.status_code, label)
+                return {}
+            if len(resp.content) < 100:
+                logger.warning("[%s] Log download returned %d bytes (too small) (%s)",
+                               miner_id, len(resp.content), label)
+                return {}
+
+            # Step 3: extract miner.log from tar
+            logs: Dict[str, str] = {}
+            with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:*") as tar:
+                for member in tar.getmembers():
+                    if member.name.endswith("miner.log"):
+                        f = tar.extractfile(member)
+                        if f:
+                            content = f.read().decode("utf-8", errors="replace")
+                            logs[member.name] = content
+                            break
+
+            if not logs:
+                logger.info("[%s] No miner.log in tar (%s) — skipping save",
+                            miner_id, label)
+                return {}
+
+            # Step 4: persist via existing save_logs (label drives pairing)
+            self.db.save_logs(miner_id, model, label, logs)
+            logger.info("[%s] Logs collected (%s): %d files, %d bytes",
+                        miner_id, label,
+                        len(logs),
+                        sum(len(v) for v in logs.values()))
+            return logs
+
+        except requests.exceptions.Timeout:
+            logger.warning("[%s] Log fetch timed out (%s) — continuing", miner_id, label)
+            return {}
+        except requests.exceptions.ConnectionError:
+            logger.warning("[%s] Log fetch connection error (%s) — continuing",
+                           miner_id, label)
             return {}
         except Exception as e:
-            if signal_armed:
-                signal.alarm(0)
-            logger.warning("[%s] Log collection failed (%s): %s — continuing", miner_id, label, e)
+            logger.warning("[%s] Log collection failed (%s): %s — continuing",
+                           miner_id, label, e)
             return {}
 
     def _wait_for_stable(self, miner_id: str, ip: str) -> Optional[Dict]:
@@ -837,7 +906,7 @@ class MiningGuardian:
 
         # ── Step 1: Pre-restart logs (best-effort, never blocks) ─────────
         logger.info("[%s] Step 1 — pre-restart log collection (best-effort)", miner_id)
-        self._collect_logs_nonblocking(miner_id, model, "pre-restart-board-check")
+        self._collect_logs_nonblocking(miner_id, model, "pre-restart-board-check", ip)
 
         # ── Step 2: Restart via AMS ───────────────────────────────────────
         logger.info("[%s] Step 2 — sending restart via AMS", miner_id)
@@ -879,7 +948,7 @@ class MiningGuardian:
 
         # ── Step 5: Post-restart logs (best-effort) ───────────────────────
         logger.info("[%s] Step 5 — post-restart log collection (best-effort)", miner_id)
-        self._collect_logs_nonblocking(miner_id, model, "post-restart-board-check")
+        self._collect_logs_nonblocking(miner_id, model, "post-restart-board-check", ip)
 
         # ── Step 6: Compare board states ─────────────────────────────────
         logger.info("[%s] Step 6 — comparing board states", miner_id)
@@ -1212,7 +1281,7 @@ class MiningGuardian:
             return
 
         # Step 1 — collect FRESH pre-restart logs
-        self._collect_logs_nonblocking(miner_id, model, "pre-restart")
+        self._collect_logs_nonblocking(miner_id, model, "pre-restart", ip)
 
         # Step 2 — restart via AMS
         try:
@@ -1282,7 +1351,7 @@ class MiningGuardian:
                                         if is_settled:
                                             logger.info("[%s] Miner is fully mining with SETTLED hashrate after %.1f min — capturing post-restart logs",
                                                         miner_id, elapsed_min)
-                                            self._collect_logs_nonblocking(miner_id, model, "post-restart")
+                                            self._collect_logs_nonblocking(miner_id, model, "post-restart", ip)
                                             # Wire LLM pre/post comparison — runs against local Qwen,
                                             # stores result in knowledge.json, posts to Slack
                                             self._run_post_action_log_comparison(
@@ -1541,7 +1610,7 @@ class MiningGuardian:
             return
 
         # Step 1 — collect FRESH pre-pdu-cycle logs
-        self._collect_logs_nonblocking(miner_id, model, "pre-pdu-cycle")
+        self._collect_logs_nonblocking(miner_id, model, "pre-pdu-cycle", ip)
 
         # Step 2 — power cycle via AMS
         import time
@@ -1614,7 +1683,7 @@ class MiningGuardian:
                                             if is_settled:
                                                 logger.info("[%s] Miner is fully mining with SETTLED hashrate after %.1f min — capturing post-pdu-cycle logs",
                                                             miner_id, elapsed_min)
-                                                self._collect_logs_nonblocking(miner_id, model, "post-pdu-cycle")
+                                                self._collect_logs_nonblocking(miner_id, model, "post-pdu-cycle", ip)
                                                 # Wire LLM pre/post comparison
                                                 self._run_post_action_log_comparison(
                                                     miner_id, ip, model, "pdu-cycle"
@@ -1883,285 +1952,33 @@ class MiningGuardian:
     # ── Main entry ────────────────────────────────────────────
 
     def collect_logs(self, miners: List[Dict], issues: List[Dict]) -> None:
-        """Daily baseline log collection for every online miner.
+        """Daily baseline log collection — NOW A NO-OP at scan time.
 
-        Design (per operator spec):
-          * Every online miner gets ONE fresh log export per 24 hours.
-          * No flagged-vs-healthy split — everyone gets the same treatment.
-          * Uses collect_fresh_miner_logs (trigger + wait + download), not
-            the existing-only path, so miners whose AMS export queue is
-            empty still get a fresh log pulled.
-          * No time cap on the fresh export wait — logs are too important
-            to miss due to timing ("as long as it takes").
-          * Runs in a background thread so the scan loop never blocks
-            waiting for slow exports.
-          * Pre/post restart logs are collected separately by the
-            execute_board_restart() / execute_restart() flows — this
-            function only handles the daily baseline.
+        Changed 2026-04-24: the daily baseline AMS-based collection was
+        unreliable (4-hour stuck exports, 5-of-N success rates, parallel
+        retry logic that never actually recovered well). We removed the
+        entire AMS log-pull block from the hourly scan path.
 
-        Log content is kept for 30 days then purged. Hardware identity
-        parsed from miner.log is permanent and never purged.
+        Log collection now happens in exactly two places:
+
+        1. scripts/direct_collect_logs.py (1pm daily cron) — pulls every
+           online miner's log directly via HTTP Digest to the miner's
+           /cgi-bin/create_log_backup.cgi endpoint. Proven reliable.
+
+        2. Pre/post-restart pairs in execute_restart, execute_board_restart,
+           execute_pdu_cycle — via _collect_logs_nonblocking, also using
+           direct HTTP as of 2026-04-24.
+
+        This method is kept so run_once() does not have to change. It
+        just no-ops with a debug message.
         """
         if not self.config.collect_logs:
-            logger.debug("Log collection disabled — set collect_logs: true in config to enable")
             return
-
-        # Guard: if a previous background collection is still running, don't
-        # spawn another one on top of it. The per-miner dedup (24h interval
-        # check inside the thread) would handle it safely, but skipping the
-        # whole thread avoids log spam and double AMS sessions.
-        existing = getattr(self, '_daily_log_thread', None)
-        if existing is not None and existing.is_alive():
-            logger.info("Daily log collection: previous background thread still running, skipping this scan cycle")
-            return
-
-        # Snapshot the miner list — the thread runs in the background while
-        # the main scan loop continues, so we hand it a copy of the data
-        # it needs rather than sharing mutable state.
-        eligible = []
-        for miner in miners:
-            status = miner.get("status", "unknown")
-            if status == "offline":
-                continue
-            # Skip miners that aren't fully mining yet — don't download during
-            # initializing (6), starting, or auto-tuning (3). Wait for mining (0).
-            miner_status_val = miner.get("minerStatus")
-            if miner_status_val is not None and miner_status_val != 0:
-                continue
-
-            # Resolve display model name the same way the old code did —
-            # prefer shortModel, fall back to name, override with name if the
-            # currentProfile string contains TH/s (BiXBiT firmware convention).
-            model     = miner.get("shortModel", miner.get("name", "unknown"))
-            profile_s = miner.get("currentProfile", "")
-            if "TH/s" in profile_s and miner.get("name") and miner.get("name") != model:
-                model = miner["name"]
-
-            eligible.append({
-                "id":    str(miner.get("id", "")),
-                "model": model,
-            })
-
-        if not eligible:
-            logger.debug("Daily log collection: no eligible miners this scan")
-            return
-
-        logger.info("Daily log collection: spawning background thread for %d eligible miners", len(eligible))
-
-        def _daily_baseline_worker(miner_list):
-            """Background worker — pull one fresh log per miner, PARALLEL (15 workers).
-
-            Concurrency rationale (per operator April 9 2026):
-              - BiXBiT owns AMS so rate limiting is not a concern
-              - The constraint is the REST connection pool and socket capacity
-              - 15 concurrent is a conservative starting point, tune from there
-              - Each worker still has its own 10-minute per-miner cap inside
-                collect_fresh_miner_logs, so one stuck miner cannot starve
-                any other miner — it just burns its own 10 minutes while
-                everyone else finishes normally
-
-            Thread safety:
-              - AMS REST calls use requests.Session (thread-safe for concurrent POSTs)
-              - Database writes use per-call psycopg2 connections
-                (thread-safe; each thread gets its own connection via _connect)
-              - Token is refreshed ONCE before spawning the pool (below) to
-                avoid a potential race inside _ensure_token if the token
-                expires mid-run. After that all threads read the cached
-                token without mutation.
-            """
-            import concurrent.futures
-            # DAILY_INTERVAL_SECONDS removed — every miner gets fresh logs every day
-            DAILY_PARALLEL_WORKERS = 10
-
-            # Force a fresh token BEFORE spawning parallel workers to avoid
-            # a race on _ensure_token if the current token is near expiry.
-            try:
-                self.ams._ensure_token()
-                logger.info("Daily log: token refreshed before parallel sweep")
-            except Exception as e:
-                logger.warning("Daily log: pre-sweep token refresh failed: %s — workers will retry", e)
-
-            # Counters — mutated by worker callbacks, guarded by a lock
-            # because Python threading with CPython GIL is NOT guaranteed
-            # to make += on integers atomic in all interpreter versions.
-            counter_lock = _threading.Lock()
-            counters = {"collected": 0, "skipped_recent": 0, "failed": 0}
-            failed_miners = []  # Track failed miners for retry pass
-
-            def _collect_one(entry):
-                """Collect logs for one miner — runs inside a pool worker thread."""
-                miner_id = entry["id"]
-                model    = entry["model"]
-                if not miner_id:
-                    return
-
-                # OPERATOR RULE (April 11 2026): Every miner gets fresh logs EVERY day.
-                # No 24h dedup — fresh logs are critical for AI learning.
-                # Pre/post restart logs are separate; this is the daily baseline.
-
-                # Trigger a fresh export and wait
-                try:
-                    logger.info("Daily log: pulling fresh export for miner %s (%s)", miner_id, model)
-                    # 10-minute per-miner cap. Still applies in the parallel
-                    # path because even with parallelism, we do not want a
-                    # single truly-broken miner to hold any worker slot
-                    # open indefinitely.
-                    log_files = self.ams.collect_fresh_miner_logs(
-                        int(miner_id),
-                        max_wait_seconds=600,  # 10 minutes
-                    )
-                    if log_files:
-                        self.db.save_logs(miner_id, model, "daily_baseline", log_files)
-                        with counter_lock:
-                            counters["collected"] += 1
-                        logger.info("Daily log: miner %s collected, %d files saved",
-                                    miner_id, len(log_files))
-                    else:
-                        # Fresh export failed — mark for retry pass
-                        # OPERATOR RULE: No fallback to old logs — fresh exports only
-                        with counter_lock:
-                            counters["failed"] += 1
-                            failed_miners.append(entry)
-                        logger.warning("Daily log: miner %s fresh export failed — will retry", miner_id)
-                except Exception as e:
-                    with counter_lock:
-                        counters["failed"] += 1
-                        failed_miners.append(entry)
-                    logger.warning("Daily log: miner %s fresh export raised: %s", miner_id, e)
-
-            # Spawn the pool and wait for all miners to complete
-            logger.info("Daily log: starting %d-way parallel sweep across %d miners",
-                        DAILY_PARALLEL_WORKERS, len(miner_list))
-            sweep_start = time.time()
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=DAILY_PARALLEL_WORKERS,
-                thread_name_prefix="daily-log-baseline",
-            ) as executor:
-                futures = [executor.submit(_collect_one, entry) for entry in miner_list]
-                for fut in concurrent.futures.as_completed(futures):
-                    # as_completed just blocks until each future finishes.
-                    # Exceptions are already logged inside _collect_one so
-                    # we do not re-raise here.
-                    try:
-                        fut.result()
-                    except Exception as fe:
-                        logger.warning("Daily log: worker future raised: %s", fe)
-
-            sweep_elapsed = time.time() - sweep_start
-            logger.info(
-                "Daily log collection pass 1 complete: %d collected, %d skipped, %d failed, %.1fs",
-                counters["collected"], counters["skipped_recent"], counters["failed"], sweep_elapsed,
-            )
-
-            # ── RETRY PASS for failed miners ────────────────────────────────
-            # Miners that timed out or failed get a second chance with a longer
-            # timeout. These simple machines sometimes just need another try.
-            # Added April 10 2026 per operator request — log collection is THE
-            # most important step, we cannot afford to lose logs.
-            if failed_miners:
-                logger.info("Daily log RETRY: attempting %d failed miners with 20-min timeout",
-                            len(failed_miners))
-                retry_counters = {"collected": 0, "failed": 0}
-                retry_start = time.time()
-                
-                def _retry_one(entry):
-                    miner_id = entry["id"]
-                    model = entry["model"]
-                    try:
-                        logger.info("Daily log RETRY: pulling miner %s (%s)", miner_id, model)
-                        # Longer timeout on retry — 20 minutes instead of 10
-                        log_files = self.ams.collect_fresh_miner_logs(
-                            int(miner_id),
-                            max_wait_seconds=1200,  # 20 minutes
-                        )
-                        if log_files:
-                            self.db.save_logs(miner_id, model, "daily_baseline_retry", log_files)
-                            with counter_lock:
-                                retry_counters["collected"] += 1
-                            logger.info("Daily log RETRY: miner %s SUCCESS, %d files",
-                                        miner_id, len(log_files))
-                        else:
-                            with counter_lock:
-                                retry_counters["failed"] += 1
-                            logger.warning("Daily log RETRY: miner %s still no files", miner_id)
-                    except Exception as e:
-                        with counter_lock:
-                            retry_counters["failed"] += 1
-                        logger.warning("Daily log RETRY: miner %s failed: %s", miner_id, e)
-
-                # Track miners that still fail after retry
-                still_failed_miners = []
-                
-                def _retry_one_tracked(entry):
-                    miner_id = entry["id"]
-                    model = entry["model"]
-                    ip = entry.get("ip", "")
-                    try:
-                        logger.info("Daily log RETRY: pulling miner %s (%s)", miner_id, model)
-                        log_files = self.ams.collect_fresh_miner_logs(
-                            int(miner_id),
-                            max_wait_seconds=1200,
-                        )
-                        if log_files:
-                            self.db.save_logs(miner_id, model, "daily_baseline_retry", log_files)
-                            with counter_lock:
-                                retry_counters["collected"] += 1
-                            logger.info("Daily log RETRY: miner %s SUCCESS", miner_id)
-                            return True
-                        else:
-                            with counter_lock:
-                                retry_counters["failed"] += 1
-                            still_failed_miners.append({"id": miner_id, "ip": ip, "model": model})
-                            logger.warning("Daily log RETRY: miner %s still no files", miner_id)
-                            return False
-                    except Exception as e:
-                        with counter_lock:
-                            retry_counters["failed"] += 1
-                        still_failed_miners.append({"id": miner_id, "ip": ip, "model": model})
-                        logger.warning("Daily log RETRY: miner %s failed: %s", miner_id, e)
-                        return False
-
-                # Run retries with fewer workers
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=5,
-                    thread_name_prefix="daily-log-retry",
-                ) as executor:
-                    futures = [executor.submit(_retry_one_tracked, entry) for entry in failed_miners]
-                    for fut in concurrent.futures.as_completed(futures):
-                        try:
-                            fut.result()
-                        except Exception as fe:
-                            logger.warning("Daily log RETRY: worker raised: %s", fe)
-
-                retry_elapsed = time.time() - retry_start
-                logger.info(
-                    "Daily log RETRY complete: %d recovered, %d still failed, %.1fs",
-                    retry_counters["collected"], retry_counters["failed"], retry_elapsed,
-                )
-                
-                # Send Slack report if there are persistent failures
-                if still_failed_miners:
-                    self._send_log_failure_slack_report(still_failed_miners)
-                
-                # Update main counters
-                counters["collected"] += retry_counters["collected"]
-                counters["failed"] = retry_counters["failed"]
-
-            total_elapsed = time.time() - sweep_start
-            logger.info(
-                "Daily log collection FINAL: %d collected, %d skipped, %d failed, %.1fs total",
-                counters["collected"], counters["skipped_recent"], counters["failed"], total_elapsed,
-            )
-
-        import threading as _threading
-        t = _threading.Thread(
-            target=_daily_baseline_worker,
-            args=(eligible,),
-            name="daily-log-baseline",
-            daemon=False,
+        logger.debug(
+            "collect_logs: daily baseline is now handled by 1pm cron "
+            "(scripts/direct_collect_logs.py). Skipping in-scan collection."
         )
-        t.start()
-        self._daily_log_thread = t
+        return
 
     def run_once(self) -> Dict[str, Any]:
         # ── Poll facility infrastructure first ───────────────────────────
