@@ -2,6 +2,7 @@
 
 **Last updated:** 2026-04-24
 **Scope:** evergreen reference — does not become stale as commits land. Update only when physical systems, BAS endpoints, operator rules, or schema change.
+**See also:** `HVAC_SYSTEMS.md` (older doc, 2026-04-21, partial overlap — pending merge)
 
 ---
 
@@ -136,3 +137,12 @@ Do not confuse the two. Any 's19jpro HVAC' data currently flowing through the sc
 - core/database_pg.py::save_hvac — the 17-column INSERT (verified 2026-04-24)
 - core/mining_guardian.py::run_once — the two-system polling loop
 - migrations/001_initial_schema.sql — canonical schema for fresh installs
+
+---
+
+## Related gotcha: AMS staleness can make HVAC look broken
+
+**Documented 2026-04-24.** HVAC polling itself runs independently of AMS — it talks to the Distech Eclypse controllers at 192.168.188.235 and 192.168.189.235 directly. But Grafana panels that overlay miner temperature data on HVAC charts pull miner data from `miner_state_readings`, which is scan-derived and therefore AMS-dependent.
+
+If you see a Grafana panel showing "49 of 55 miners" when AMS UI shows "52 of 62," the HVAC side of the panel is fine; the miner side is drawing from a stale AMS session. Fix by restarting `mining-guardian`. See `AMS_INTEGRATION.md` section "Gotcha: AMS session staleness" for the full explanation.
+

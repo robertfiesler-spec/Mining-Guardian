@@ -129,10 +129,27 @@ Leaving them is safe (nothing imports them) but confusing for future readers. Re
 
 ---
 
+
+### 181acc1 — docs: fix Mac Mini deploy date to Monday 2026-04-27
+
+Runbook had 2026-04-28 (off by one). Parallel session's `SESSION_HANDOFF_2026-04-24.md` had the correct 04-27. Operator confirmed 04-27 is Monday. One-line sed fix.
+
+### 8191aa6 — refactor(logs): eliminate AMS log path, direct HTTP only
+
+Not strictly a Postgres migration commit but shipped in the same session and matters for context. The AMS-based log export path (which the scan loop called via `collect_fresh_miner_logs` on every hourly scan) was eliminated. Phase 1: `_collect_logs_nonblocking` (used for pre/post restart pairing) rewritten to use direct HTTP Digest auth, same pattern as `scripts/direct_collect_logs.py`. Phase 2: `collect_logs()` body (180 lines of parallel AMS retry logic) replaced with a no-op debug log. The 1pm cron is now the sole owner of daily baseline log collection. Net -183 lines from core/mining_guardian.py. Zero AMS log calls remain in the runtime path.
+
+See `docs/LOG_COLLECTION_ARCHITECTURE.md` for the full architecture and `docs/AMS_INTEGRATION.md` for the "what we use AMS for / what we don't" rule.
+
+---
+
 ## References
 
+- docs/SESSION_LOG_2026-04-24.md — full chronological session log with every commit, bug, fix, and verification
 - docs/HVAC_ARCHITECTURE.md — the two-system model (warehouse + s19jpro), low delta-T operator rule, Grafana dependency on system_id
+- docs/LOG_COLLECTION_ARCHITECTURE.md — the unified direct-HTTP log pipeline (post-8191aa6 state)
+- docs/AMS_INTEGRATION.md — what we use AMS for, what we explicitly do NOT use it for, and the session-staleness gotcha
 - docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md — step-by-step Monday install procedure
 - docs/POSTGRES_MIGRATION_PLAN_2026-04-23.md — the Phase 1-8 migration plan (historical)
 - docs/POSTGRES_MIGRATION_STATUS_2026-04-23.md — previous status doc, **this file supersedes it**
+- docs/SESSION_HANDOFF_2026-04-24.md — parallel Perplexity session handoff (Rob's 6-point plan)
 - migrations/001_initial_schema.sql — canonical Postgres schema
