@@ -10,7 +10,6 @@ This runs EVERY scan — the LLM sees everything, learns from everything.
 """
 
 import logging
-import sqlite3
 import json
 from pathlib import Path
 from typing import Optional, Dict

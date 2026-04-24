@@ -3,7 +3,6 @@ import sys
 import json
 import time
 import threading
-import sqlite3
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from dataclasses import dataclass, field
@@ -1963,8 +1962,8 @@ class MiningGuardian:
 
             Thread safety:
               - AMS REST calls use requests.Session (thread-safe for concurrent POSTs)
-              - Database writes use per-call sqlite3 connections with WAL mode
-                (thread-safe; see _connect at line 1396)
+              - Database writes use per-call psycopg2 connections
+                (thread-safe; each thread gets its own connection via _connect)
               - Token is refreshed ONCE before spawning the pool (below) to
                 avoid a potential race inside _ensure_token if the token
                 expires mid-run. After that all threads read the cached

@@ -11,7 +11,6 @@ Provides time-series data for trend visualization:
 
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-import sqlite3
 
 
 def get_fleet_trends(conn, hours: int = 24) -> Dict[str, Any]:
