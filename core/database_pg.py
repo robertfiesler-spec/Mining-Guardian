@@ -543,19 +543,29 @@ class GuardianPGDB:
                 )
 
     def save_hvac(self, hvac) -> None:
-        """Store an HVAC snapshot alongside scan data."""
+        """Store an HVAC snapshot alongside scan data.
+
+        Writes system_id (warehouse/s19jpro), plus S19J-Pro-specific fields
+        outside_air_f and container_temp_f. These were dropped during the
+        initial Postgres port; restored 2026-04-24 so Grafana panels can
+        distinguish the two HVAC systems.
+        """
         if hvac is None:
             return
         now = datetime.now().isoformat()
+        # Fall back to 'warehouse' if caller forgot to set system_id
+        sys_id = getattr(hvac, "system_id", None) or "warehouse"
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO hvac_readings "
-                    "(recorded_at, supply_temp_f, return_temp_f, delta_t_f, "
+                    "(recorded_at, system_id, supply_temp_f, return_temp_f, delta_t_f, "
                     " diff_pressure, spray_pump_on, cwp1_vfd_pct, cwp2_vfd_pct, "
-                    " ct1_vfd_pct, ct2_vfd_pct, leak_alarm, ct1_fault, ct2_fault, pump_fault) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    " ct1_vfd_pct, ct2_vfd_pct, leak_alarm, ct1_fault, ct2_fault, pump_fault, "
+                    " outside_air_f, container_temp_f) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (now,
+                     sys_id,
                      hvac.supply_temp_f,
                      hvac.return_temp_f,
                      hvac.delta_t_f,
@@ -568,7 +578,9 @@ class GuardianPGDB:
                      1 if hvac.leak_alarm else 0,
                      1 if hvac.ct1_fault else 0,
                      1 if hvac.ct2_fault else 0,
-                     1 if hvac.pump_fault else 0),
+                     1 if hvac.pump_fault else 0,
+                     hvac.outside_air_f,
+                     hvac.container_temp_f),
                 )
 
     def load_known_models(self, catalog_path: str) -> set:
