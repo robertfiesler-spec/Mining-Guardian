@@ -20,14 +20,52 @@ Every training session adds to Knowledge Depth.
 Every operator interaction adds to Actions Taken.
 """
 
-import sqlite3
+import os
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
 
+import psycopg2
+from psycopg2.extras import DictCursor
+
 _ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
+
+
+def _pg_dsn() -> str:
+    """Build a Postgres DSN from GUARDIAN_PG_* env vars."""
+    return (
+        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
+        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
+        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
+        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
+        f"dbname={os.environ.get('GUARDIAN_PG_DB', 'mining_guardian')}"
+    )
+
+
+class _PgConnWrapper:
+    """Adapter that mimics sqlite3.Connection's shortcuts while delegating
+    to a real psycopg2 connection using DictCursor."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        cur = self._conn.cursor(cursor_factory=DictCursor)
+        cur.execute(sql, params or ())
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 
 def calculate_score(conn=None, knowledge=None) -> dict:
@@ -37,8 +75,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
     """
     close_conn = False
     if conn is None:
-        conn = sqlite3.connect(DB_PATH, timeout=30)
-        conn.row_factory = sqlite3.Row
+        conn = _PgConnWrapper(psycopg2.connect(_pg_dsn()))
         close_conn = True
 
     if knowledge is None:
@@ -133,7 +170,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
         "escalated": ("SELECT COUNT(*) FROM action_audit_log WHERE decision='ESCALATED'", 200),
         "restarts": ("SELECT COUNT(*) FROM miner_restarts", 75),
         "tickets_created": ("SELECT COUNT(*) FROM known_dead_boards WHERE ticket_created IS NOT NULL", 500),
-        "predictions_fired": ("SELECT COUNT(*) FROM action_audit_log WHERE action_taken LIKE '%PREEMPTIVE%' OR action_taken LIKE '%POWER_PROFILE%'", 150),
+        "predictions_fired": ("SELECT COUNT(*) FROM action_audit_log WHERE action_taken LIKE '%%PREEMPTIVE%%' OR action_taken LIKE '%%POWER_PROFILE%%'", 150),
     }
     
     actions_score = 0
@@ -172,7 +209,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
         
         # Denial reasons — extremely valuable training signal
         dr = conn.execute(
-            "SELECT COUNT(*) FROM action_audit_log WHERE notes LIKE '%DENIAL_REASON%'"
+            "SELECT COUNT(*) FROM action_audit_log WHERE notes LIKE '%%DENIAL_REASON%%'"
         ).fetchone()[0] or 0
         outcome_detail["denial_reasons"] = dr
         outcomes_score += dr * 300  # each explained denial = 300 pts
@@ -205,7 +242,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
         try:
             signals = conn.execute("""
                 SELECT COUNT(*) FROM action_audit_log 
-                WHERE action_taken LIKE '%PREEMPTIVE%'
+                WHERE action_taken LIKE '%%PREEMPTIVE%%'
             """).fetchone()[0] or 0
             autonomy_detail["signals_detected"] = signals
             autonomy_score += signals * 200

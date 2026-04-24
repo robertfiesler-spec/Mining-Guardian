@@ -16,13 +16,16 @@ Confidence gates autonomy:
 This module is called by mining_guardian.py before any action is taken.
 """
 
+import os
 import sys
 import json
 import logging
-import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple
+
+import psycopg2
+from psycopg2.extras import DictCursor
 
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
@@ -30,6 +33,42 @@ for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
         sys.path.insert(0, _p)
 
 logger = logging.getLogger("confidence_scorer")
+
+
+def _pg_dsn() -> str:
+    """Build a Postgres DSN from GUARDIAN_PG_* env vars."""
+    return (
+        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
+        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
+        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
+        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
+        f"dbname={os.environ.get('GUARDIAN_PG_DB', 'mining_guardian')}"
+    )
+
+
+class _PgConnWrapper:
+    """Adapter that mimics sqlite3.Connection's shortcuts while delegating
+    to a real psycopg2 connection using DictCursor."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        cur = self._conn.cursor(cursor_factory=DictCursor)
+        cur.execute(sql, params or ())
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 # ── Confidence thresholds ─────────────────────────────────────────────────────
 THRESHOLD_AUTO    = 80   # >= this → execute without approval
@@ -47,14 +86,13 @@ MIN_OUTCOMES_FOR_MINER_SCORE = 3
 # Lookback window for recent outcomes
 HISTORY_DAYS = 30
 
-DB_PATH        = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_db():
+    """Return a wrapped Postgres connection that mimics sqlite3 interface."""
+    conn = psycopg2.connect(_pg_dsn())
+    return _PgConnWrapper(conn)
 
 
 def _get_prediction_penalty(ip: str) -> float:
@@ -177,7 +215,7 @@ def get_gate(confidence: int) -> str:
         return "HOLD"
 
 
-def _miner_success_rate(conn: sqlite3.Connection, miner_id: str,
+def _miner_success_rate(conn, miner_id: str,
                         action_type: str) -> Tuple[float, int]:
     """
     Per-miner success rate for a specific action type over HISTORY_DAYS.
@@ -191,10 +229,10 @@ def _miner_success_rate(conn: sqlite3.Connection, miner_id: str,
     rows = conn.execute("""
         SELECT outcome, COUNT(*) as cnt
         FROM miner_restarts
-        WHERE miner_id = ?
-          AND restarted_at >= ?
+        WHERE miner_id = %s
+          AND restarted_at >= %s
           AND outcome IN ('SUCCESS', 'FAILURE', 'PARTIAL')
-          AND (? IS NULL OR restart_type LIKE ?)
+          AND (%s::text IS NULL OR restart_type LIKE %s)
         GROUP BY outcome
     """, (miner_id, cutoff, type_filter, f"%{type_filter}%" if type_filter else None)
     ).fetchall()
@@ -202,7 +240,7 @@ def _miner_success_rate(conn: sqlite3.Connection, miner_id: str,
     return _calc_rate(rows)
 
 
-def _fleet_success_rate(conn: sqlite3.Connection,
+def _fleet_success_rate(conn,
                         action_type: str) -> Tuple[float, int]:
     """
     Fleet-wide success rate for this action type over HISTORY_DAYS.
@@ -214,9 +252,9 @@ def _fleet_success_rate(conn: sqlite3.Connection,
     rows = conn.execute("""
         SELECT outcome, COUNT(*) as cnt
         FROM miner_restarts
-        WHERE restarted_at >= ?
+        WHERE restarted_at >= %s
           AND outcome IN ('SUCCESS', 'FAILURE', 'PARTIAL')
-          AND (? IS NULL OR restart_type LIKE ?)
+          AND (%s::text IS NULL OR restart_type LIKE %s)
         GROUP BY outcome
     """, (cutoff, type_filter, f"%{type_filter}%" if type_filter else None)
     ).fetchall()
@@ -224,7 +262,7 @@ def _fleet_success_rate(conn: sqlite3.Connection,
     return _calc_rate(rows)
 
 
-def _stability_score(conn: sqlite3.Connection, miner_id: str) -> float:
+def _stability_score(conn, miner_id: str) -> float:
     """
     How stable has this miner been recently?
     Uses hashrate variance over the last 10 scans.
@@ -233,7 +271,7 @@ def _stability_score(conn: sqlite3.Connection, miner_id: str) -> float:
     """
     rows = conn.execute("""
         SELECT hashrate_pct FROM miner_readings
-        WHERE miner_id = ? AND hashrate_pct IS NOT NULL AND status = 'online'
+        WHERE miner_id = %s AND hashrate_pct IS NOT NULL AND status = 'online'
         ORDER BY id DESC LIMIT 10
     """, (miner_id,)).fetchall()
 
@@ -302,7 +340,7 @@ def get_fleet_confidence_summary() -> dict:
                COUNT(*) as total
         FROM miner_restarts
         WHERE outcome IN ('SUCCESS','FAILURE','PARTIAL')
-        GROUP BY miner_id
+        GROUP BY miner_id, ip, model
         ORDER BY total DESC
     """).fetchall()
     conn.close()

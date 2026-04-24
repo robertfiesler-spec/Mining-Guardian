@@ -9,21 +9,64 @@ score, actions, predictions, insights, features, data signals.
 Served as HTML at /ai/dashboard via dashboard_api.py
 """
 
+import os
 import sys
-import sqlite3
 import json
 import re
 import html as html_lib
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import psycopg2
+from psycopg2.extras import DictCursor
+
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "ai"), str(_ROOT / "core")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-DB_PATH = str(_ROOT / "guardian.db")
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
+
+
+def _pg_dsn() -> str:
+    """Build a Postgres DSN from GUARDIAN_PG_* env vars.
+
+    Required: GUARDIAN_PG_PASSWORD. Defaults: host=localhost, port=5432,
+    user=guardian_app, dbname=mining_guardian.
+    """
+    return (
+        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
+        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
+        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
+        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
+        f"dbname={os.environ.get('GUARDIAN_PG_DB', 'mining_guardian')}"
+    )
+
+
+class _PgConnWrapper:
+    """Adapter that mimics sqlite3.Connection's shortcuts (.execute returns
+    a cursor) while delegating to a real psycopg2 connection using DictCursor
+    (rows support both integer and name indexing, matching sqlite3.Row)."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        cur = self._conn.cursor(cursor_factory=DictCursor)
+        cur.execute(sql, params or ())
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 # Import insight manager for Fleet Intelligence panel
 try:
@@ -44,9 +87,9 @@ APPROVAL_API = "https://slack.fieslerfamily.com"
 
 
 def _db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Return a wrapped Postgres connection that mimics sqlite3 interface."""
+    conn = psycopg2.connect(_pg_dsn())
+    return _PgConnWrapper(conn)
 
 
 def _e(val):
@@ -79,10 +122,10 @@ def get_recent_auto_actions(limit=20):
                r.outcome, r.hashrate_before, r.hashrate_after, r.recovery_time_scans
         FROM action_audit_log a
         LEFT JOIN miner_restarts r ON a.miner_id = r.miner_id
-            AND r.restarted_at >= a.timestamp
-            AND r.restarted_at <= datetime(a.timestamp, '+5 minutes')
+            AND r.restarted_at::timestamp >= a.timestamp::timestamp
+            AND r.restarted_at::timestamp <= (a.timestamp::timestamp + INTERVAL '5 minutes')
         WHERE a.decision IN ('AUTO_OVERNIGHT', 'APPROVED')
-        ORDER BY a.timestamp DESC LIMIT ?
+        ORDER BY a.timestamp DESC LIMIT %s
     """, (limit,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
