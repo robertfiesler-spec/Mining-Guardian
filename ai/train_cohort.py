@@ -196,7 +196,7 @@ def build_cohorts(conn: "_PgConnWrapper") -> Dict[Tuple, List[Dict]]:
             mr.ip,
             mr.model,
             COALESCE(mr.firmware_manufacturer, '') as firmware,
-            COALESCE(mr.cooling_mode, '') as cooling,
+            COALESCE(mr.cooling_mode::text, '') as cooling,
             mr.hashrate_pct,
             mr.temp_chip,
             mr.status,
