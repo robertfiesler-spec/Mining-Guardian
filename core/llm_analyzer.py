@@ -9,12 +9,14 @@ for diagnosis and pattern detection. Stores analysis results in the database.
 import os
 import json
 import logging
-import sqlite3
 import requests
 from datetime import datetime
 from typing import Optional, Dict, List
 from pathlib import Path
 from dotenv import load_dotenv
+
+import psycopg2
+from psycopg2.extras import DictCursor
 
 load_dotenv()
 logger = logging.getLogger("llm_analyzer")
@@ -22,7 +24,21 @@ logger = logging.getLogger("llm_analyzer")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate")
 MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
 _ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = str(_ROOT / "guardian.db")
+
+# DB_PATH kept as legacy module constant for the constructor default.
+# Value is ignored — all DB access goes through _pg_dsn() + psycopg2.
+DB_PATH = "postgres"  # sentinel; constructor still accepts it for API compat
+
+
+def _pg_dsn() -> str:
+    """Build a Postgres DSN from GUARDIAN_PG_* env vars."""
+    return (
+        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
+        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
+        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
+        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
+        f"dbname={os.environ.get('GUARDIAN_PG_DB', 'mining_guardian')}"
+    )
 
 # Claude API for deep analysis (weekly training, knowledge merge)
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -88,22 +104,29 @@ class LLMAnalyzer:
         self._ensure_table()
 
     def _ensure_table(self):
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS llm_analysis (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                scan_id       INTEGER,
-                analyzed_at   TEXT NOT NULL,
-                miner_id      TEXT,
-                ip            TEXT,
-                prompt         TEXT,
-                response      TEXT,
-                model_used    TEXT,
-                duration_ms   INTEGER
-            )
-        """)
-        conn.commit()
-        conn.close()
+        """Ensure llm_analysis exists in Postgres. Idempotent — the table
+        is usually created by migrations/001_initial_schema.sql at boot,
+        but we keep this so LLMAnalyzer() stays self-contained for scripts
+        that instantiate it outside the normal app lifecycle."""
+        conn = psycopg2.connect(_pg_dsn())
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS llm_analysis (
+                        id          SERIAL PRIMARY KEY,
+                        scan_id     INTEGER,
+                        analyzed_at TEXT NOT NULL,
+                        miner_id    TEXT,
+                        ip          TEXT,
+                        prompt      TEXT,
+                        response    TEXT,
+                        model_used  TEXT,
+                        duration_ms INTEGER
+                    )
+                """)
+            conn.commit()
+        finally:
+            conn.close()
 
     def _query_llm(self, prompt: str) -> tuple:
         """Send prompt to Ollama and return (response_text, duration_ms)."""
@@ -203,15 +226,18 @@ class LLMAnalyzer:
         API key is set. If Claude fails, model_used reflects that correctly.
         """
         response, duration, model_used = self._query_claude(prompt)
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("""
-            INSERT INTO llm_analysis
-            (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (0, datetime.now().isoformat(), "deep_analysis", "all",
-              prompt[:2000], response, model_used, duration))
-        conn.commit()
-        conn.close()
+        conn = psycopg2.connect(_pg_dsn())
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO llm_analysis
+                    (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (0, datetime.now().isoformat(), "deep_analysis", "all",
+                      prompt[:2000], response, model_used, duration))
+            conn.commit()
+        finally:
+            conn.close()
         return response
 
     def analyze_issues(self, scan_id: int, issues: List[Dict],
@@ -261,15 +287,18 @@ class LLMAnalyzer:
         response, duration = self._query_llm(prompt)
 
         # Save to database
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("""
-            INSERT INTO llm_analysis
-            (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (scan_id, datetime.now().isoformat(), "fleet", "all",
-              prompt, response, self.model, duration))
-        conn.commit()
-        conn.close()
+        conn = psycopg2.connect(_pg_dsn())
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO llm_analysis
+                    (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (scan_id, datetime.now().isoformat(), "fleet", "all",
+                      prompt, response, self.model, duration))
+            conn.commit()
+        finally:
+            conn.close()
 
         logger.info("LLM analysis complete for scan %s (%dms, %d chars)",
                     scan_id, duration, len(response))
@@ -316,15 +345,18 @@ class LLMAnalyzer:
 
         response, duration = self._query_llm(prompt)
 
-        conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute("""
-            INSERT INTO llm_analysis
-            (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (scan_id, datetime.now().isoformat(), miner_id, ip,
-              prompt[:5000], response, self.model, duration))
-        conn.commit()
-        conn.close()
+        conn = psycopg2.connect(_pg_dsn())
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO llm_analysis
+                    (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (scan_id, datetime.now().isoformat(), miner_id, ip,
+                      prompt[:5000], response, self.model, duration))
+            conn.commit()
+        finally:
+            conn.close()
 
         logger.info("LLM single-miner analysis: %s (%dms)", miner_id, duration)
         return response
