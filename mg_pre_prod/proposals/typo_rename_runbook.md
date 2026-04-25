@@ -255,6 +255,33 @@ sed -i 's|/root/Mining-Gaurdian|/root/Mining-Guardian|g' Makefile
 echo "Tier 3 scripts + Makefile updated"
 ```
 
+### Step 7b \u2014 Update Tier 3b (ad-hoc audit/diagnostic scripts + tests) (~1 min)
+
+These aren't wired to cron, but they have hardcoded `/root/Mining-Gaurdian/`
+paths in runtime code (not just docstrings). They'd silently break the next
+time they run. Sweep them in the same pass.
+
+```bash
+sed -i 's|/root/Mining-Gaurdian|/root/Mining-Guardian|g' \
+    scripts/audit_ai_data.py \
+    scripts/full_ai_audit.py \
+    scripts/diagnostics/diagnose_ah3880_v2.py \
+    tests/s21_imm_benchmark.py
+
+# Optional cleanup of ai/ docstring mentions (cosmetic \u2014 runtime not affected)
+# These are inside triple-quoted module docstrings showing cron-entry hints.
+# Doesn't change behavior; just keeps the file consistent. Skip if you want
+# the smallest possible diff.
+sed -i 's|/root/Mining-Gaurdian|/root/Mining-Guardian|g' \
+    ai/backup_knowledge.py \
+    ai/daily_deep_dive.py \
+    ai/refinement_chain.py \
+    ai/train_comprehensive.py \
+    ai/weekly_train.py
+
+echo "Tier 3b ad-hoc scripts + tests updated"
+```
+
 ### Step 8 \u2014 Reload systemd + restart services (~1 min)
 
 ```bash
@@ -404,12 +431,20 @@ git push -u origin fix/typo-rename-mining-guardian-2026-04-26
 | 5 | Update crontab | 0:10 |
 | 6 | Update Tier 2 runtime code (4 files) | 0:12 |
 | 7 | Update Tier 3 scripts + Makefile (15 files) | 0:13 |
-| 8 | daemon-reload + start (downtime ends) | 0:14 |
-| 9 | Verification | 0:24 |
+| 7b | Update Tier 3b ad-hoc scripts + tests (4 + optional 5) | 0:14 |
+| 8 | daemon-reload + start (downtime ends) | 0:15 |
+| 9 | Verification | 0:25 |
 | 10 | Final sweep | 0:30 |
 | 11 | Commit + push to fix branch | 0:40 |
 
-**Effective downtime: Step 1 \u2192 Step 8, roughly 7 minutes.**
+**Effective downtime: Step 1 \u2192 Step 8, roughly 8 minutes.**
+
+**Dry-run validation (2026-04-25 bonus sprint):** All sed commands in
+Steps 3, 6, 7, and 7b have been tested against a fresh clone of
+`origin/main` (commit b28c8a7). Every file listed has the expected typo
+references and is cleaned to zero by its sed command. AST parses for
+all Python files post-rename. Tier 5 leftovers (archive/, fixes/,
+docs/, top-level .md) confirmed cosmetic-only \u2014 no runtime paths.
 
 ## What we still need from Rob in the morning
 
