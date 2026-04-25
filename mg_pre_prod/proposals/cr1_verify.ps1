@@ -113,44 +113,32 @@ if ($broad) {
     Tee-Both "    (nothing to show — no broad matches)"
 }
 
-# ---- E. VPS daemon AttributeError traces ----
+# ---- E. VPS-side commands (run separately on the VPS) ----
 Tee-Both ""
-Tee-Both "[E] Recent VPS daemon AttributeError traces"
+Tee-Both "[E] VPS-side commands (run separately on the VPS terminal)"
 Tee-Both "------------------------------------------------------------"
-Tee-Both "    Attempting SSH to VPS to grep recent journalctl/log for AttributeError..."
-Tee-Both "    (If SSH host alias differs, edit the ssh line below.)"
-
-# Adjust this hostname/alias if needed — Rob may have a host entry like 'mg-vps'
-$VpsHost = "mg-vps"   # <-- EDIT IF YOUR SSH ALIAS IS DIFFERENT
-
-# command to run on VPS — last 7 days of journal for guardian.service, grepped for AttributeError
-$RemoteCmd = @'
-echo "--- journalctl guardian.service last 7d ---"
-journalctl -u guardian.service --since "7 days ago" --no-pager 2>/dev/null | \
-    grep -i -A 20 "AttributeError" | head -200 || echo "(no AttributeError in journal)"
-echo "--- end ---"
-echo ""
-echo "--- /var/log/guardian/*.log if present ---"
-ls -la /var/log/guardian/ 2>/dev/null || echo "(no /var/log/guardian dir)"
-grep -i -A 20 "AttributeError" /var/log/guardian/*.log 2>/dev/null | tail -200 || echo "(no AttributeError in /var/log/guardian)"
-'@
-
-$sshOk = $false
-try {
-    $sshTest = ssh -o BatchMode=yes -o ConnectTimeout=5 $VpsHost "echo OK" 2>&1
-    if ($LASTEXITCODE -eq 0 -and $sshTest -match "OK") { $sshOk = $true }
-} catch { $sshOk = $false }
-
-if ($sshOk) {
-    Tee-Both ("    SSH to '" + $VpsHost + "' OK — pulling logs...")
-    $remote = ssh $VpsHost $RemoteCmd 2>&1
-    $remote -split "`n" | ForEach-Object { Tee-Both ("    " + $_) }
-} else {
-    Tee-Both ("    SSH to '" + $VpsHost + "' failed (alias not found, host unreachable, or BatchMode auth refused).")
-    Tee-Both "    To run manually, paste this on the VPS:"
-    Tee-Both ""
-    $RemoteCmd -split "`n" | ForEach-Object { Tee-Both ("        " + $_) }
-}
+Tee-Both "    This script is local-only by design. To complete CR-1 verification,"
+Tee-Both "    SSH to the Mining Guardian VPS in your usual terminal and paste"
+Tee-Both "    the block below. Send Rob/agent the output to merge into Section [F]."
+Tee-Both ""
+Tee-Both "    --- BEGIN VPS BLOCK (paste on VPS) ---"
+Tee-Both ""
+Tee-Both "    echo '=== journalctl guardian.service last 7d ==='"
+Tee-Both "    journalctl -u guardian.service --since '7 days ago' --no-pager 2>/dev/null \\"
+Tee-Both "        | grep -i -B 2 -A 20 'AttributeError' | head -200 \\"
+Tee-Both "        || echo '(no AttributeError in journal)'"
+Tee-Both "    echo"
+Tee-Both "    echo '=== /var/log/guardian/*.log if present ==='"
+Tee-Both "    ls -la /var/log/guardian/ 2>/dev/null || echo '(no /var/log/guardian dir)'"
+Tee-Both "    grep -i -B 2 -A 20 'AttributeError' /var/log/guardian/*.log 2>/dev/null \\"
+Tee-Both "        | tail -200 || echo '(no AttributeError in /var/log/guardian)'"
+Tee-Both "    echo"
+Tee-Both "    echo '=== narrow grep for the suspect token ==='"
+Tee-Both "    journalctl -u guardian.service --since '30 days ago' --no-pager 2>/dev/null \\"
+Tee-Both "        | grep -i 'auto_approve_enabled' \\"
+Tee-Both "        || echo '(no auto_approve_enabled in journal)'"
+Tee-Both ""
+Tee-Both "    --- END VPS BLOCK ---"
 
 # ---- F. Summary verdict ----
 Tee-Both ""
