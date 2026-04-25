@@ -6,7 +6,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.slack_client import SlackClient
+import os
+from notifiers.slack_notifier import SlackNotifier
+from dotenv import load_dotenv
+load_dotenv()
 
 KNOWLEDGE_PATH = Path(__file__).parent.parent / "knowledge.json"
 PENDING_PATH = Path(__file__).parent.parent / "pending_operator_reviews.json"
@@ -55,16 +58,27 @@ def get_proposals(knowledge):
                     })
             except: pass
 
-    # Patterns not approved
-    for p in knowledge.get("patterns", []):
-        if not p.get("operator_approved"):
+    # Patterns not approved.
+    # Note: knowledge['patterns'] is a list of strings (descriptions only) in the
+    # current schema. We tolerate dicts too in case the schema evolves later.
+    for idx, p in enumerate(knowledge.get("patterns", [])):
+        if isinstance(p, str):
             proposals.append({
                 "type": "PATTERN",
-                "id": p.get("id", "pattern"),
-                "content": p.get("description", ""),
-                "confidence": p.get("confidence", "MEDIUM"),
-                "source": "pattern_detection"
+                "id": f"pattern_{idx}",
+                "content": p,
+                "confidence": "MEDIUM",
+                "source": "pattern_detection",
             })
+        elif isinstance(p, dict):
+            if not p.get("operator_approved"):
+                proposals.append({
+                    "type": "PATTERN",
+                    "id": p.get("id", f"pattern_{idx}"),
+                    "content": p.get("description", ""),
+                    "confidence": p.get("confidence", "MEDIUM"),
+                    "source": "pattern_detection",
+                })
 
     return proposals
 
@@ -117,8 +131,11 @@ def main():
 
     msg = format_message(proposals)
     if msg:
-        slack = SlackClient()
-        slack.send_message("U07AGTT8CLD", msg)
+        slack = SlackNotifier(
+            webhook_url=os.environ.get("SLACK_WEBHOOK_URL"),
+            bot_token=os.environ.get("SLACK_BOT_TOKEN"),
+        )
+        slack.post_to_channel(msg, channel_id="U07AGTT8CLD")
         print("Sent to Slack")
 
 if __name__ == "__main__":
