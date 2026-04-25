@@ -9,6 +9,20 @@
 # Just the interesting lines go to: $env:TEMP\mg_diag_summary.log
 
 $ErrorActionPreference = 'Continue'
+
+# ---------------------------------------------------------------
+# CRIT-1: refuse to run without MG_DB_PASSWORD env var
+# ---------------------------------------------------------------
+if (-not $env:MG_DB_PASSWORD) {
+    Write-Host ""
+    Write-Host "ERROR: MG_DB_PASSWORD environment variable is not set." -ForegroundColor Red
+    Write-Host "This script requires the rotated guardian_admin password." -ForegroundColor Red
+    Write-Host "Set it for the current session:" -ForegroundColor Yellow
+    Write-Host '  $env:MG_DB_PASSWORD = [Environment]::GetEnvironmentVariable("MG_DB_PASSWORD","User")' -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+
 $MGTool   = 'C:\Users\User\Mining-Guardian\mg_import_tool'
 $Archive  = 'C:\Users\User\Downloads\Telegram Desktop\Antminer_S19_2024-06-27_2024-06-29.tar'
 $PyFile   = Join-Path $env:TEMP 'mg_debug.py'
@@ -32,7 +46,6 @@ cp = {
     'port':     5432,
     'database': 'mining_guardian',
     'user':     'guardian_admin',
-    'password': 'MiningGuardian2026!',
 }
 try:
     m.process_archive(r"__ARCHIVE__", cp)
@@ -62,7 +75,7 @@ Write-Host ''
 Write-Host '================================================================'
 Write-Host '  Step 1/4 — Cleaning slate (preserves field_log_miner_identity)'
 Write-Host '================================================================'
-$cleanSql | docker exec -i -e "PGPASSWORD=MiningGuardian2026!" mining-guardian-db psql -U guardian_admin -d mining_guardian
+$cleanSql | docker exec -i -e "PGPASSWORD=$env:MG_DB_PASSWORD" mining-guardian-db psql -U guardian_admin -d mining_guardian
 
 # ---------------------------------------------------------------
 # 3. Run the import with DEBUG logging
@@ -108,7 +121,7 @@ UNION ALL SELECT 'autotune',    COUNT(*) FROM knowledge.field_log_antminer_autot
 UNION ALL SELECT 'events',      COUNT(*) FROM knowledge.field_log_events
 UNION ALL SELECT 'import_runs', COUNT(*) FROM mg.import_runs;
 '@
-$countSql | docker exec -i -e "PGPASSWORD=MiningGuardian2026!" mining-guardian-db psql -U guardian_admin -d mining_guardian
+$countSql | docker exec -i -e "PGPASSWORD=$env:MG_DB_PASSWORD" mining-guardian-db psql -U guardian_admin -d mining_guardian
 
 Write-Host ''
 Write-Host '================================================================'
