@@ -285,7 +285,7 @@ class MiningGuardian:
                     with self.db._connect() as conn:
                         rows = conn.execute("""
                             SELECT issue FROM miner_readings
-                            WHERE miner_id=? ORDER BY id DESC LIMIT 20
+                            WHERE miner_id=%s ORDER BY id DESC LIMIT 20
                         """, (miner_id,)).fetchall()
                         for row in rows:
                             if row["issue"] and "AMS SYNC" in str(row["issue"]):
@@ -1041,20 +1041,20 @@ class MiningGuardian:
                        COUNT(*) as failure_count, 'failure_outcomes' as reason
                 FROM miner_restarts
                 WHERE outcome = 'FAILURE'
-                  AND restarted_at < datetime('now', '-30 minutes')
+                  AND restarted_at < NOW() - INTERVAL '30 minutes'
                 GROUP BY miner_id
-                HAVING failure_count >= ?
+                HAVING COUNT(*) >= %s
             """, (FAILURE_THRESHOLD,)).fetchall()
 
             candidates_escalated = conn.execute("""
                 SELECT miner_id, ip, model,
                        COUNT(*) as failure_count, 'escalated_restarts' as reason
                 FROM miner_restarts
-                WHERE restart_type LIKE '%Dead board%'
-                   OR restart_type LIKE '%board%'
+                WHERE restart_type LIKE %s
+                   OR restart_type LIKE %s
                 GROUP BY miner_id
-                HAVING failure_count >= ?
-            """, (ESCALATION_THRESHOLD,)).fetchall()
+                HAVING COUNT(*) >= %s
+            """, ('%Dead board%', '%board%', ESCALATION_THRESHOLD)).fetchall()
 
             # Path 3: miners currently pending RESTART_CHECK_BOARDS approval
             candidates_pending = conn.execute("""
@@ -1102,7 +1102,7 @@ class MiningGuardian:
             with self.db._connect() as conn:
                 existing = conn.execute("""
                     SELECT ticket_created FROM known_dead_boards
-                    WHERE miner_id=? AND resolved_at IS NULL
+                    WHERE miner_id=%s AND resolved_at IS NULL
                 """, (miner_id,)).fetchone()
 
             if existing and existing["ticket_created"]:
@@ -1417,14 +1417,14 @@ class MiningGuardian:
             # autotune.log are usually empty in our captures anyway.
             with self.db._connect() as conn:
                 pre_row = conn.execute(
-                    "SELECT content, datetime(collected_at) FROM miner_logs "
-                    "WHERE miner_id=? AND health_status=? AND log_file LIKE ?"
+                    "SELECT content, collected_at FROM miner_logs "
+                    "WHERE miner_id=%s AND health_status=%s AND log_file LIKE %s"
                     " ORDER BY collected_at DESC LIMIT 1",
                     (miner_id, pre_label, '%miner.log')
                 ).fetchone()
                 post_row = conn.execute(
-                    "SELECT content, datetime(collected_at) FROM miner_logs "
-                    "WHERE miner_id=? AND health_status=? AND log_file LIKE ?"
+                    "SELECT content, collected_at FROM miner_logs "
+                    "WHERE miner_id=%s AND health_status=%s AND log_file LIKE %s"
                     " ORDER BY collected_at DESC LIMIT 1",
                     (miner_id, post_label, '%miner.log')
                 ).fetchone()
@@ -1911,7 +1911,7 @@ class MiningGuardian:
                 for m in failed_miners:
                     miner_id = m.get("id", "")
                     row = conn.execute(
-                        "SELECT MAX(collected_at) FROM miner_logs WHERE miner_id = ?",
+                        "SELECT MAX(collected_at) FROM miner_logs WHERE miner_id = %s",
                         (miner_id,)
                     ).fetchone()
                     last_log = row[0][:10] if row and row[0] else "never"
@@ -2068,10 +2068,10 @@ class MiningGuardian:
                     "SELECT miner_id FROM known_dead_boards WHERE resolved_at IS NULL"
                 ).fetchall()]
                 if ticketed_ids:
-                    placeholders = ",".join("?" for _ in ticketed_ids)
+                    placeholders = ",".join("%s" for _ in ticketed_ids)
                     cancelled = conn.execute(f"""
                         UPDATE pending_approvals
-                        SET status='CANCELLED', responded_at=datetime('now')
+                        SET status='CANCELLED', responded_at=NOW()
                         WHERE miner_id IN ({placeholders}) AND status='PENDING'
                     """, ticketed_ids).rowcount
                     if cancelled:
@@ -2285,7 +2285,7 @@ class MiningGuardian:
                                 with self.db._connect() as _c:
                                     _fw = _c.execute(
                                         "SELECT firmware_manufacturer FROM miner_readings "
-                                        "WHERE miner_id=? ORDER BY id DESC LIMIT 1", (pred["miner_id"],)
+                                        "WHERE miner_id=%s ORDER BY id DESC LIMIT 1", (pred["miner_id"],)
                                     ).fetchone()
                                     firmware = (_fw["firmware_manufacturer"] or "").upper() if _fw else ""
                             except Exception:
