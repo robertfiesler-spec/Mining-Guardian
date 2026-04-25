@@ -49,6 +49,36 @@ def _setup_logging() -> logging.Logger:
 logger = _setup_logging()
 
 
+def _parse_hashrate_pct(val) -> float:
+    """Convert hashrate_pct display string to float, safely.
+
+    The hashrate_pct field can be:
+      "80.5%"       -> 80.5
+      "N/A"         -> 0.0  (AMS-SYNC miners — see line 3548 of this file)
+      "0%"          -> 0.0
+      ""  / None    -> 0.0
+      80.5  / 80    -> 80.5  (numeric passthrough)
+
+    Why this helper exists (CR-2):
+      Three call sites used the unsafe pattern float(<dict>.get(...) or 0)
+      which crashes with ValueError on "N/A" and "80.5%" because both are
+      truthy strings that float() cannot parse. The crash happened AFTER
+      the AMS reboot command was sent but BEFORE record_restart wrote --
+      leaving no audit trail of the action.
+    """
+    if val is None or val == "":
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip().rstrip("%").strip()
+    if not s or s.upper() in ("N/A", "NA", "NONE", "NULL", "UNKNOWN"):
+        return 0.0
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
+
+
 # ------------------------------------------------------------
 # Configuration
 # ------------------------------------------------------------
@@ -4078,7 +4108,7 @@ class MiningGuardian:
             self.db.record_restart(
                 miner_id, ip, model,
                 f"Dead board restart — boards {dead_idx} offline before restart",
-                hashrate_before=float(issue.get("hashrate_pct") or 0)
+                hashrate_before=_parse_hashrate_pct(issue.get("hashrate_pct"))
             )
             logger.info("[%s] Restart command sent", miner_id)
         except Exception as e:
@@ -4383,7 +4413,7 @@ class MiningGuardian:
 
         # Enable elevated monitoring so next scans watch it closely
         self.db.record_restart(miner_id, ip, model, reason,
-                               hashrate_before=float(issue.get("hashrate_pct") or 0))
+                               hashrate_before=_parse_hashrate_pct(issue.get("hashrate_pct")))
 
         # Slack alert
         slack_msg = (
@@ -4445,7 +4475,7 @@ class MiningGuardian:
             self.ams.reboot_miner([miner_id])
             logger.info("[%s] Firmware restart sent via AMS", miner_id)
             self.db.record_restart(miner_id, ip, model, restart_type="MANUAL_APPROVED",
-                                   hashrate_before=float(issue.get("hashrate_pct") or 0))
+                                   hashrate_before=_parse_hashrate_pct(issue.get("hashrate_pct")))
         except Exception as e:
             logger.error("[%s] Firmware restart failed: %s", miner_id, e)
             return
