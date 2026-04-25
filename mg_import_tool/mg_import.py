@@ -54,6 +54,25 @@ except ImportError:
     _resolver = None  # type: ignore
     RESOLVER_AVAILABLE = False
 
+# ---------------------------------------------------------------------------
+# CRIT-1: DB password resolver - never use literal fallbacks
+# ---------------------------------------------------------------------------
+def _get_db_password() -> str:
+    """Return the DB password from MG_DB_PASSWORD env var. Raise if missing.
+
+    Replaces all hardcoded password literals. Server-side env var is the
+    SOLE source of DB credentials - request bodies and form submissions
+    cannot override this.
+    """
+    pw = os.environ.get("MG_DB_PASSWORD")
+    if not pw:
+        raise RuntimeError(
+            "MG_DB_PASSWORD environment variable is required. "
+            "This password was hardcoded in earlier versions and has been "
+            "removed for security. Set MG_DB_PASSWORD before running mg_import."
+        )
+    return pw
+
 try:
     import openpyxl
     OPENPYXL_AVAILABLE = True
@@ -347,7 +366,7 @@ def execute_sql_block(conn_params: dict, sql: str) -> dict:
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=10
         )
         conn.autocommit = False
@@ -535,7 +554,7 @@ def lookup_alias(conn_params: dict, raw_string: str, source_field: str):
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         cur = conn.cursor()
@@ -617,7 +636,7 @@ def record_unresolved_model(conn_params: dict, raw_string: str, source_field: st
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -659,7 +678,7 @@ def stamp_import_with_catalog(conn_params: dict, archive_id: int, catalog_slug: 
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -691,7 +710,7 @@ def get_archive_id_by_label(conn_params: dict, entity_label: str):
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         cur = conn.cursor()
@@ -746,7 +765,7 @@ def insert_raw_json(conn_params: dict, archive_filename: str,
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -799,7 +818,7 @@ def insert_miner_identity(conn_params: dict, identity_rows: list,
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -896,7 +915,7 @@ def record_unknown_fields(conn_params: dict, archive_id: int, source_file: str,
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -2704,7 +2723,7 @@ def _update_import_run_resolver_stats(conn_params: dict, archive_filename: str,
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -2785,7 +2804,7 @@ def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
                 port=int(conn_params.get('port', 5432)),
                 dbname=conn_params.get('database', 'mining_guardian'),
                 user=conn_params.get('user', 'guardian_admin'),
-                password=conn_params.get('password', 'MiningGuardian2026!'),
+                password=_get_db_password(),
                 connect_timeout=5
             )
             _conn.autocommit = True
@@ -2836,7 +2855,7 @@ def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
                 port=int(conn_params.get('port', 5432)),
                 dbname=conn_params.get('database', 'mining_guardian'),
                 user=conn_params.get('user', 'guardian_admin'),
-                password=conn_params.get('password', 'MiningGuardian2026!'),
+                password=_get_db_password(),
                 connect_timeout=5
             )
             _conn2.autocommit = True
@@ -2985,7 +3004,7 @@ def stamp_import_with_model_id(conn_params: dict, archive_id: int, model_id: str
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -3073,7 +3092,7 @@ def test_connection():
             port=int(data.get('port', 5432)),
             dbname=data.get('database', 'mining_guardian'),
             user=data.get('user', 'guardian_admin'),
-            password=data.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=8
         )
         cur = conn.cursor()
@@ -3429,7 +3448,7 @@ def write_import_run(conn_params: dict, started_at, finished_at, archive_count: 
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5
         )
         conn.autocommit = True
@@ -3477,7 +3496,7 @@ def detect_dormant_miners(conn_params: dict) -> int:
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=8
         )
         conn.autocommit = True
@@ -3701,7 +3720,7 @@ def _get_conn_params_from_args():
         'port':     request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user':     request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password', 'MiningGuardian2026!'),
+        'password': _get_db_password(),
     }
 
 
@@ -3733,7 +3752,7 @@ def rma_form():
                 try:
                     conn = psycopg2.connect(
                         host='localhost', port=5432, dbname='mining_guardian',
-                        user='guardian_admin', password='MiningGuardian2026!',
+                        user='guardian_admin', password=_get_db_password(),
                         connect_timeout=8
                     )
                     conn.autocommit = True
@@ -3806,7 +3825,7 @@ def rma_csv():
                     if PSYCOPG2_AVAILABLE:
                         conn = psycopg2.connect(
                             host='localhost', port=5432, dbname='mining_guardian',
-                            user='guardian_admin', password='MiningGuardian2026!',
+                            user='guardian_admin', password=_get_db_password(),
                             connect_timeout=8
                         )
                         conn.autocommit = True
@@ -3858,7 +3877,7 @@ def dormant_miners():
         try:
             conn = psycopg2.connect(
                 host='localhost', port=5432, dbname='mining_guardian',
-                user='guardian_admin', password='MiningGuardian2026!',
+                user='guardian_admin', password=_get_db_password(),
                 connect_timeout=8
             )
             cur = conn.cursor()
@@ -3895,7 +3914,7 @@ def dormant_resolve():
         try:
             conn = psycopg2.connect(
                 host='localhost', port=5432, dbname='mining_guardian',
-                user='guardian_admin', password='MiningGuardian2026!',
+                user='guardian_admin', password=_get_db_password(),
                 connect_timeout=8
             )
             conn.autocommit = True
@@ -4005,7 +4024,7 @@ def unresolved_sample():
         'port':     request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user':     request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password', 'MiningGuardian2026!'),
+        'password': _get_db_password(),
     }
     try:
         conn = psycopg2.connect(
@@ -4056,7 +4075,7 @@ def _check_archive_sha256_duplicate(conn_params: dict, sha256_hex: str) -> bool:
             port=int(conn_params.get('port', 5432)),
             dbname=conn_params.get('database', 'mining_guardian'),
             user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password', 'MiningGuardian2026!'),
+            password=_get_db_password(),
             connect_timeout=5,
         )
         conn.autocommit = True
@@ -4417,7 +4436,7 @@ def browse_tables():
         'port': request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user': request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password', 'MiningGuardian2026!')
+        'password': _get_db_password()
     }
     try:
         conn = psycopg2.connect(
@@ -4460,7 +4479,7 @@ def browse_rows():
         'port': request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user': request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password', 'MiningGuardian2026!')
+        'password': _get_db_password()
     }
     try:
         conn = psycopg2.connect(
@@ -5512,7 +5531,7 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
         </div>
         <div class="form-group">
           <label>Password</label>
-          <input type="password" id="dbPass" value="MiningGuardian2026!" placeholder="password">
+          <input type="password" id="dbPass" value="" placeholder="password">
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:10px; margin-top:12px; flex-wrap:wrap;">
@@ -5730,7 +5749,7 @@ function getConnParams() {
     port: document.getElementById('dbPort').value.trim() || '5432',
     database: document.getElementById('dbName').value.trim() || 'mining_guardian',
     user: document.getElementById('dbUser').value.trim() || 'guardian_admin',
-    password: document.getElementById('dbPass').value || 'MiningGuardian2026!'
+    password: document.getElementById('dbPass').value
   };
 }
 

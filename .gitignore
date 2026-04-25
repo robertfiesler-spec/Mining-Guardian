@@ -78,3 +78,7 @@ mg_sql_patch/
 # Compose interpolation file - holds MG_DB_PASSWORD for docker compose
 intelligence-catalog/.env
 
+
+# CRIT-1 in-flight backup (delete after audit)
+*.pre_crit1_backup
+
