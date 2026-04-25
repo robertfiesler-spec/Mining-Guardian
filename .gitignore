@@ -75,3 +75,6 @@ deploy/*_LIVE.json
 # Local SQL patch staging (canonical copies live under mg_import_tool/sql/)
 mg_sql_patch.zip
 mg_sql_patch/
+# Compose interpolation file - holds MG_DB_PASSWORD for docker compose
+intelligence-catalog/.env
+

@@ -1,5 +1,5 @@
 """
-Catalog API Service — FastAPI on port 8420
+Catalog API Service â€” FastAPI on port 8420
 Serves knowledge bundles from the Mining Intelligence Catalog for OpenClaw LLM injection.
 
 Phase 1: READ-only path. Queries PostgreSQL catalog tables, returns structured
@@ -30,7 +30,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    format="%(asctime)s [%(levelname)s] %(name)s â€” %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("catalog-api")
@@ -42,7 +42,13 @@ DB_HOST = os.getenv("DB_HOST", "mining-guardian-db")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "mining_guardian")
 DB_USER = os.getenv("DB_USER", "guardian_admin")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "MiningGuardian2026!")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+if not DB_PASSWORD:
+    raise RuntimeError(
+        "DB_PASSWORD environment variable is required. "
+        "Set it via .env file (catalog-api/.env) or process environment. "
+        "See catalog-api/.env.example for the expected format."
+    )
 API_KEY = os.getenv("CATALOG_API_KEY", "CHANGE_ME_TO_A_REAL_SECRET")
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8420"))
@@ -195,7 +201,7 @@ def _check_table_exists(table_name: str) -> bool:
 def _safe_query(table: str, sql: str, params: tuple = ()) -> list[dict]:
     """Query a table, returning empty list if the table doesn't exist."""
     if not _check_table_exists(table):
-        logger.warning("Table '%s' not found — skipping", table)
+        logger.warning("Table '%s' not found â€” skipping", table)
         return []
     return _query(sql, params)
 
@@ -261,7 +267,7 @@ def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> l
     results = []
 
     # Failure mode catalog
-    # ops.failure_patterns — operational failure data
+    # ops.failure_patterns â€” operational failure data
     if model_ids and _check_table_exists("ops.failure_patterns"):
         placeholders = ",".join(["%s"] * len(model_ids))
         rows = _query(
@@ -270,7 +276,7 @@ def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> l
         )
         results.extend(rows)
 
-    # ops.failure_symptoms — symptom descriptions
+    # ops.failure_symptoms â€” symptom descriptions
     if _check_table_exists("ops.failure_symptoms") and active_issues:
         for issue in active_issues:
             rows = _query(
@@ -279,7 +285,7 @@ def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> l
             )
             results.extend(rows)
 
-    # ops.miner_error_codes — error code reference
+    # ops.miner_error_codes â€” error code reference
     if _check_table_exists("ops.miner_error_codes") and active_issues:
         for issue in active_issues:
             rows = _query(
@@ -288,7 +294,7 @@ def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> l
             )
             results.extend(rows)
 
-    # hardware.model_known_issues — known hardware issues
+    # hardware.model_known_issues â€” known hardware issues
     if model_ids and _check_table_exists("hardware.model_known_issues"):
         placeholders = ",".join(["%s"] * len(model_ids))
         rows = _query(
@@ -562,7 +568,7 @@ def _build_cache_key(request: ScanBundleRequest) -> str:
 # ---------------------------------------------------------------------------
 @app.get("/api/v1/health")
 async def health():
-    """Health check — verifies service status and DB connectivity."""
+    """Health check â€” verifies service status and DB connectivity."""
     db_ok = False
     db_tables = 0
     schema_rows = []
@@ -595,7 +601,7 @@ async def health():
 @app.post("/api/v1/context/scan-bundle", response_model=ScanBundleResponse)
 async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_token)):
     """
-    Main endpoint — hot path. Given miner models and active issues from a scan,
+    Main endpoint â€” hot path. Given miner models and active issues from a scan,
     query the Intelligence Catalog and return a knowledge bundle with pre-formatted
     prompt text for LLM injection.
 
@@ -609,7 +615,7 @@ async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_t
         logger.info("Cache HIT for %s", cache_key)
         return bundle_cache[cache_key]
 
-    logger.info("Cache MISS — building bundle for models=%s issues=%s",
+    logger.info("Cache MISS â€” building bundle for models=%s issues=%s",
                 request.miner_models, request.active_issues)
 
     sources: list[str] = []
@@ -680,7 +686,7 @@ async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_t
     bundle = _sanitize(bundle)
 
     elapsed_ms = (time.monotonic() - start) * 1000
-    logger.info("Bundle built in %.1fms — %d sources, %d chars prompt",
+    logger.info("Bundle built in %.1fms â€” %d sources, %d chars prompt",
                 elapsed_ms, len(sources), len(prompt_text))
 
     response = ScanBundleResponse(
@@ -715,7 +721,7 @@ async def get_miner_knowledge(
         logger.info("Model cache HIT for %s", model_slug)
         return model_cache[cache_key]
 
-    logger.info("Model cache MISS — looking up '%s'", model_slug)
+    logger.info("Model cache MISS â€” looking up '%s'", model_slug)
 
     # Convert slug to search term (e.g., "antminer-s19j-pro" -> "antminer s19j pro")
     search_term = model_slug.replace("-", " ").replace("_", " ")
@@ -779,7 +785,7 @@ async def get_miner_knowledge(
 # ---------------------------------------------------------------------------
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Catch-all error handler — never crash, always return useful error."""
+    """Catch-all error handler â€” never crash, always return useful error."""
     logger.error("Unhandled exception: %s", exc, exc_info=True)
     return JSONResponse(
         status_code=500,
