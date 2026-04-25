@@ -1,10 +1,26 @@
 #!/usr/bin/env python3
 """
-Mining Guardian — Intelligence Catalog Importer
-================================================
+Mining Guardian — Intelligence Catalog Importer  v3.3
+=====================================================
 Single-file Flask application for importing research data into PostgreSQL.
 Run with: python mg_import.py
 Opens at: http://localhost:5050
+
+v3.1 additions (Layer 2 Two-Tier Resolver):
+  - resolver.py module: two-tier resolver (Tier-1 hardware.model_aliases,
+    Tier-2 mg.model_family_aliases with hashrate-bin selection)
+  - Normalizer: whitespace/uppercase/+/++ preservation, no V-code pre-strip
+  - Tier-1 V-code stripped fallback with hardware_revision capture
+  - Tier-2 bin selection by observed GH/s, tie-goes-lower
+  - Always checks BOTH miner_type AND control_board_version columns
+  - mg.unresolved_models: tier2_hit_no_hashrate + no_alias_match reasons
+  - knowledge.field_log_raw_json: idempotent bootstrap at startup
+  - mg.import_runs: per-run summary table (idempotent CREATE IF NOT EXISTS)
+  - Streaming autotune batch_size reduced to 500 (memory < 100 MB/archive)
+  - Structured logging to logs/import_YYYY-MM-DD_HHMMSS.log
+  - /rma  — RMA record form + CSV batch upload
+  - /dormant — dormant miner triage UI
+  - Background dormant-miner detector runs at end of each import
 """
 
 import os
@@ -15,10 +31,13 @@ import json
 import zipfile
 import tempfile
 import traceback
-from datetime import datetime
+import logging
+import time as _time_module
+from datetime import datetime, timezone
 from pathlib import Path
+from functools import lru_cache
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, render_template_string, redirect, url_for
 
 try:
     import psycopg2
@@ -26,6 +45,14 @@ try:
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     PSYCOPG2_AVAILABLE = False
+
+# Layer 2 two-tier resolver module (resolver.py lives alongside mg_import.py)
+try:
+    import resolver as _resolver
+    RESOLVER_AVAILABLE = True
+except ImportError:
+    _resolver = None  # type: ignore
+    RESOLVER_AVAILABLE = False
 
 try:
     import openpyxl
@@ -37,9 +64,104 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 512 * 1024 * 1024  # 512 MB
 
 # ---------------------------------------------------------------------------
+# v3: Structured logging
+# Creates logs/import_YYYY-MM-DD_HHMMSS.log at startup.
+# All archive-processing code uses get_run_logger() to write to this file.
+# ---------------------------------------------------------------------------
+
+_LOG_DIR = Path(__file__).parent / 'logs'
+_LOG_DIR.mkdir(exist_ok=True)
+
+_RUN_TS = datetime.now().strftime('%Y-%m-%d_%H%M%S')
+_LOG_FILE = _LOG_DIR / f'import_{_RUN_TS}.log'
+
+# Root logger for the run
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[
+        logging.FileHandler(str(_LOG_FILE), encoding='utf-8'),
+        logging.StreamHandler(),
+    ]
+)
+_run_logger = logging.getLogger('mg_import')
+_run_logger.info('mg_import_tool v3 started — log file: %s', _LOG_FILE)
+
+DEBUG_IMPORT = os.environ.get('MG_DEBUG', '').lower() in ('1', 'true', 'yes')
+if DEBUG_IMPORT:
+    logging.getLogger().setLevel(logging.DEBUG)
+    _run_logger.debug('DEBUG mode enabled')
+
+
+def get_run_logger(name: str = 'mg_import') -> logging.Logger:
+    """Return a child logger for a named subsystem."""
+    return logging.getLogger(name)
+
+
+# ---------------------------------------------------------------------------
+# v3: Layer 2 constants
+# Known field keys per source-file pattern. Any key NOT in this set for its
+# file pattern is recorded in mg.unknown_fields.
+# ---------------------------------------------------------------------------
+
+# WhatsMiner miner_overview.log — all keys we parse into typed columns
+KNOWN_MINER_OVERVIEW_KEYS = frozenset({
+    'miner_type', 'control_board_version', 'MAC', 'cool_mode',
+    'kernel_version', 'FIRMWARE_VERSION', 'BTMINER_MD5',
+    # eeprom slot keys
+    'pcb0', 'pcb1', 'pcb2', 'pcb3',
+    'chip_data0', 'chip_data1', 'chip_data2', 'chip_data3',
+    'hashrate0', 'hashrate1', 'hashrate2', 'hashrate3',
+    'pcb_version0', 'pcb_version1', 'pcb_version2', 'pcb_version3',
+    # common section extras
+    'frequency', 'pool_count', 'miner_count', 'sn',
+    'power_mode', 'power_version', 'driver_version',
+})
+
+# Antminer miner.log — we extract these structured fields
+KNOWN_MINER_LOG_KEYS = frozenset({
+    'event_timestamp', 'level', 'message', 'chain', 'frequency_mhz',
+    'voltage_v', 'temp_max_c', 'event_type', 'miner_model',
+    'firmware_version', 'boot_session',
+})
+
+# Antminer cgminer.conf
+KNOWN_CGMINER_CONF_KEYS = frozenset({
+    'pools', 'url', 'user', 'pass', 'api-listen', 'api-network',
+    'api-groups', 'api-allow', 'bitmain-use-vil', 'bitmain-freq',
+    'bitmain-voltage', 'fan-ctrl', 'fan-pwm', 'miner-mode',
+    'freq-level', 'no-pre-heat',
+})
+
+# Map source_file_pattern -> known keys set
+KNOWN_KEYS_BY_FILE: dict = {
+    'miner_overview.log': KNOWN_MINER_OVERVIEW_KEYS,
+    'miner.log':          KNOWN_MINER_LOG_KEYS,
+    'cgminer.conf':       KNOWN_CGMINER_CONF_KEYS,
+}
+
+# V-suffix strip regex: captures base model (group 1) and hardware revision (group 2)
+# Applied to WhatsMiner miner_type strings like "M31S+_V100" or "M56S++_VK10"
+V_SUFFIX_RE = re.compile(
+    r'^(?P<base>[A-Za-z][^_]*?)(?:_V(?P<rev>[A-Z]*\d+))?$'
+)
+
+# ---------------------------------------------------------------------------
 # In-memory import history (resets on restart)
 # ---------------------------------------------------------------------------
 import_history = []  # list of dicts: {timestamp, filenames, rows_imported, errors, duration_s}
+
+# ---------------------------------------------------------------------------
+# v3.3: Batch cancel flag — set via /api/cancel-batch
+# ---------------------------------------------------------------------------
+_BATCH_CANCEL_FLAG: bool = False
+
+# ---------------------------------------------------------------------------
+# v3.3: Per-archive resolver stats accumulator (populated by _do_layer2_postprocessing)
+# Maps archive filename -> {tier1, tier1_vcode, tier2, unresolved}
+# Cleared at the start of each import session.
+# ---------------------------------------------------------------------------
+_LAST_RESOLVER_STATS: dict = {}
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +494,2523 @@ def is_psql_runner(data: bytes) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# v3: Layer 2 — Model Identification helpers
+# ---------------------------------------------------------------------------
+
+def strip_v_suffix(raw_miner_type: str):
+    """
+    Strip WhatsMiner hardware-revision V-suffix from a miner_type string.
+
+    Examples:
+        "M31S+_V100"  -> ("M31S+", "V100")
+        "M56S++_VK10" -> ("M56S++", "VK10")
+        "M21S"        -> ("M21S", None)
+        "M50"         -> ("M50", None)
+
+    Returns (canonical_model: str, hardware_revision: str | None).
+    The canonical_model is what we look up in mg.model_aliases.
+    """
+    if not raw_miner_type:
+        return raw_miner_type, None
+    m = V_SUFFIX_RE.match(raw_miner_type.strip())
+    if m:
+        base = m.group('base')
+        rev  = m.group('rev')  # None if no suffix
+        return base, (f'V{rev}' if rev else None)
+    return raw_miner_type.strip(), None
+
+
+def lookup_alias(conn_params: dict, raw_string: str, source_field: str):
+    """
+    Query mg.model_aliases for a matching catalog_slug.
+    Returns dict {catalog_slug, confidence, match_type, hardware_revision} or None.
+    Falls back gracefully if the mg schema/table does not yet exist.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return None
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT catalog_slug, confidence, match_type, hardware_revision
+            FROM mg.model_aliases
+            WHERE raw_string = %s AND source_field = %s
+            LIMIT 1
+            """,
+            (raw_string, source_field)
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return {
+                'catalog_slug':      row[0],
+                'confidence':        float(row[1]),
+                'match_type':        row[2],
+                'hardware_revision': row[3],
+            }
+        return None
+    except Exception as exc:
+        get_run_logger('mg_layer2').debug('alias lookup error: %s', exc)
+        return None
+
+
+def resolve_model(conn_params: dict, raw_miner_type: str, source_field: str = 'miner_type'):
+    """
+    Full Layer 2 model resolution pipeline:
+    1. Try exact lookup of raw_miner_type in mg.model_aliases.
+    2. If not found, strip V-suffix and try the canonical base string.
+    3. Return {catalog_slug, confidence, match_type, hardware_revision, matched_raw}
+       or None if unresolvable.
+    """
+    if not raw_miner_type:
+        return None
+
+    log = get_run_logger('mg_layer2')
+
+    # Step 1: exact match
+    result = lookup_alias(conn_params, raw_miner_type, source_field)
+    if result:
+        log.debug('exact alias match: %r -> %s (conf=%.2f)',
+                  raw_miner_type, result['catalog_slug'], result['confidence'])
+        result['matched_raw'] = raw_miner_type
+        return result
+
+    # Step 2: strip V-suffix and try again
+    canonical, hw_rev = strip_v_suffix(raw_miner_type)
+    if canonical != raw_miner_type:
+        result = lookup_alias(conn_params, canonical, source_field)
+        if result:
+            # Override hardware_revision with the one we stripped
+            result['hardware_revision'] = hw_rev or result.get('hardware_revision')
+            result['matched_raw'] = canonical
+            log.debug('stripped alias match: %r -> base=%r -> %s (conf=%.2f, rev=%s)',
+                      raw_miner_type, canonical, result['catalog_slug'],
+                      result['confidence'], result['hardware_revision'])
+            return result
+
+    log.warning('UNRESOLVED miner_type: %r (source_field=%s)', raw_miner_type, source_field)
+    return None
+
+
+def record_unresolved_model(conn_params: dict, raw_string: str, source_field: str,
+                            archive_id: int):
+    """
+    INSERT or UPDATE mg.unresolved_models for a string that could not be
+    matched to any catalog slug. Increments occurrence_count and appends
+    archive_id to sample_archive_ids. Silently skips if mg schema missing.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO mg.unresolved_models
+                (raw_string, source_field, first_seen_at, occurrence_count,
+                 sample_archive_ids, status)
+            VALUES (%s, %s, NOW(), 1, %s, 'pending')
+            ON CONFLICT (raw_string, source_field) DO UPDATE SET
+                occurrence_count  = mg.unresolved_models.occurrence_count + 1,
+                sample_archive_ids = CASE
+                    WHEN array_length(mg.unresolved_models.sample_archive_ids, 1) < 20
+                    THEN mg.unresolved_models.sample_archive_ids || EXCLUDED.sample_archive_ids
+                    ELSE mg.unresolved_models.sample_archive_ids
+                END
+            """,
+            (raw_string, source_field, [archive_id] if archive_id else [])
+        )
+        cur.close()
+        conn.close()
+    except Exception as exc:
+        get_run_logger('mg_layer2').debug('record_unresolved error: %s', exc)
+
+
+def stamp_import_with_catalog(conn_params: dict, archive_id: int, catalog_slug: str,
+                              confidence: float, match_type: str, hardware_revision):
+    """
+    UPDATE knowledge.field_log_imports to stamp catalog_slug, confidence,
+    match_type, hardware_revision for the given archive_id.
+    Silently skips if columns don't exist yet (pre-migration state).
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params or not archive_id:
+        return
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE knowledge.field_log_imports
+            SET catalog_slug           = %s,
+                alias_match_confidence = %s,
+                alias_match_type       = %s,
+                hardware_revision      = %s
+            WHERE id = %s
+            """,
+            (catalog_slug, confidence, match_type, hardware_revision, archive_id)
+        )
+        cur.close()
+        conn.close()
+    except Exception as exc:
+        get_run_logger('mg_layer2').debug('stamp_import error: %s', exc)
+
+
+def get_archive_id_by_label(conn_params: dict, entity_label: str):
+    """Return the BIGINT id of a knowledge.field_log_imports row by entity_label."""
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return None
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT id FROM knowledge.field_log_imports WHERE entity_label = %s LIMIT 1',
+            (entity_label,)
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# v3: Raw JSON capture helpers
+# ---------------------------------------------------------------------------
+
+def insert_raw_json(conn_params: dict, archive_filename: str,
+                    source_file: str, payload: dict,
+                    entity_label: str = None, parser: str = 'mg_import'):
+    """
+    INSERT into knowledge.field_log_raw_json (Mac Claude's partitioned schema).
+
+    Actual DB schema (partitioned by RANGE(ingested_at), 4 partitions):
+        id BIGINT,
+        entity_label TEXT NOT NULL,
+        archive_filename TEXT NOT NULL,
+        source_file TEXT NOT NULL,
+        parser TEXT NOT NULL,
+        raw_payload JSONB NOT NULL,
+        sha256 TEXT NOT NULL,
+        ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+
+    Dedup: we compute sha256 of the payload and use a SELECT-then-INSERT check
+    (the partitioned table has no unique constraint we can ON CONFLICT against).
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params or not archive_filename:
+        return
+    import hashlib
+    try:
+        payload_json = json.dumps(payload, sort_keys=True)
+        row_sha = hashlib.sha256(payload_json.encode('utf-8')).hexdigest()
+        if not entity_label:
+            entity_label = archive_filename  # fallback
+        if not source_file:
+            source_file = ''
+
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        # Idempotency check: skip if same sha256 already written for this archive
+        cur.execute(
+            "SELECT 1 FROM knowledge.field_log_raw_json "
+            "WHERE archive_filename = %s AND sha256 = %s LIMIT 1",
+            (archive_filename, row_sha)
+        )
+        if cur.fetchone() is None:
+            cur.execute(
+                """
+                INSERT INTO knowledge.field_log_raw_json
+                    (entity_label, archive_filename, source_file, parser,
+                     raw_payload, sha256, ingested_at)
+                VALUES (%s, %s, %s, %s, %s::jsonb, %s, NOW())
+                """,
+                (entity_label, archive_filename, source_file, parser,
+                 payload_json, row_sha)
+            )
+        cur.close()
+        conn.close()
+    except Exception as exc:
+        get_run_logger('mg_raw_json').debug('insert_raw_json error: %s', exc)
+
+
+# ---------------------------------------------------------------------------
+# v3.2: Miner identity insertion with resolver stamping
+# ---------------------------------------------------------------------------
+
+def insert_miner_identity(conn_params: dict, identity_rows: list,
+                          resolver_results: list = None):
+    """
+    INSERT into knowledge.field_log_miner_identity, one row per boot session.
+
+    Idempotency: ON CONFLICT (archive_filename, entity_label) DO UPDATE SET
+    updates all mutable fields (firmware, mac, etc.) so re-runs stay current.
+
+    resolver_results (optional): list of ResolverResult objects parallel to
+    identity_rows.  When provided, hardware_revision / resolved_miner_model_id /
+    resolution_tier / resolution_alias are stamped onto each row.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params or not identity_rows:
+        return
+    log = get_run_logger('mg_identity')
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        for idx, r in enumerate(identity_rows):
+            res = resolver_results[idx] if resolver_results and idx < len(resolver_results) else None
+            hw_rev     = res.hardware_revision if res else None
+            model_id   = res.model_id if res else None
+            res_tier   = res.tier if res else None
+            res_alias  = None  # alias string not returned by resolver currently
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO knowledge.field_log_miner_identity
+                        (entity_label, archive_filename, miner_type, firmware_version,
+                         btminer_md5, mac_address, control_board_version, kernel_version,
+                         cool_mode, slot, pcb_serial, chip_data, hashrate_gh,
+                         hardware_revision, resolved_miner_model_id,
+                         resolution_tier, resolution_alias)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s::uuid, %s, %s)
+                    ON CONFLICT (archive_filename, entity_label) DO UPDATE SET
+                        miner_type            = EXCLUDED.miner_type,
+                        firmware_version      = EXCLUDED.firmware_version,
+                        mac_address           = EXCLUDED.mac_address,
+                        control_board_version = EXCLUDED.control_board_version,
+                        kernel_version        = EXCLUDED.kernel_version,
+                        cool_mode             = EXCLUDED.cool_mode,
+                        hashrate_gh           = EXCLUDED.hashrate_gh,
+                        hardware_revision     = EXCLUDED.hardware_revision,
+                        resolved_miner_model_id = EXCLUDED.resolved_miner_model_id,
+                        resolution_tier       = EXCLUDED.resolution_tier,
+                        resolution_alias      = EXCLUDED.resolution_alias,
+                        ingested_at           = EXCLUDED.ingested_at
+                    """,
+                    (
+                        r.get('entity_label'), r.get('archive_filename'),
+                        r.get('miner_type'), r.get('firmware_version'),
+                        r.get('btminer_md5'), r.get('mac_address'),
+                        r.get('control_board_version'), r.get('kernel_version'),
+                        r.get('cool_mode'),
+                        r.get('slot') if r.get('slot') is not None else None,
+                        r.get('pcb_serial'), r.get('chip_data'),
+                        r.get('hashrate_gh'),
+                        hw_rev, model_id, res_tier, res_alias,
+                    )
+                )
+            except Exception as row_exc:
+                log.debug('insert_miner_identity row error: %s', row_exc)
+        cur.close()
+        conn.close()
+        log.info('insert_miner_identity: %d rows upserted', len(identity_rows))
+    except Exception as exc:
+        log.debug('insert_miner_identity connection error: %s', exc)
+
+
+# ---------------------------------------------------------------------------
+# v3: Unknown field surveillance helpers
+# ---------------------------------------------------------------------------
+
+def _guess_value_type(value) -> str:
+    """Guess the SQL data type for a value."""
+    if value is None:
+        return 'string'
+    s = str(value).strip()
+    if re.match(r'^-?\d+$', s):
+        return 'int'
+    if re.match(r'^-?[\d.]+([eE][+-]?\d+)?$', s):
+        return 'float'
+    if re.match(r'^\d{4}[-/]\d{2}[-/]\d{2}', s):
+        return 'timestamp'
+    # enum guess: short string with no spaces that appears multiple times
+    if len(s) <= 20 and ' ' not in s:
+        return 'enum'
+    return 'string'
+
+
+def record_unknown_fields(conn_params: dict, archive_id: int, source_file: str,
+                          parsed_dict: dict, known_keys: frozenset):
+    """
+    For every key in parsed_dict that is NOT in known_keys, record it in
+    mg.unknown_fields. Increments occurrence_count; stores up to 5 sample values.
+    Silently skips if mg schema is missing.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return
+    unknown = {k: v for k, v in parsed_dict.items() if k not in known_keys}
+    if not unknown:
+        return
+    log = get_run_logger('mg_unknown_fields')
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        for field_key, field_val in unknown.items():
+            vtype = _guess_value_type(field_val)
+            sample_entry = json.dumps([str(field_val)])
+            cur.execute(
+                """
+                INSERT INTO mg.unknown_fields
+                    (field_key, source_file_pattern, first_seen_at, first_archive_id,
+                     occurrence_count, distinct_models_seen, sample_values,
+                     value_type_guess, status)
+                VALUES (%s, %s, NOW(), %s, 1, 1, %s::jsonb, %s, 'observed')
+                ON CONFLICT (field_key, source_file_pattern) DO UPDATE SET
+                    occurrence_count = mg.unknown_fields.occurrence_count + 1,
+                    sample_values = CASE
+                        WHEN jsonb_array_length(COALESCE(mg.unknown_fields.sample_values, '[]'::jsonb)) < 5
+                        THEN COALESCE(mg.unknown_fields.sample_values, '[]'::jsonb)
+                             || %s::jsonb
+                        ELSE mg.unknown_fields.sample_values
+                    END,
+                    status = CASE
+                        WHEN mg.unknown_fields.occurrence_count + 1 >= 5
+                             AND mg.unknown_fields.distinct_models_seen >= 2
+                        THEN 'proposed'
+                        WHEN mg.unknown_fields.occurrence_count + 1 >= 2
+                        THEN 'proposed'
+                        ELSE mg.unknown_fields.status
+                    END
+                """,
+                (field_key, source_file, archive_id, sample_entry, vtype,
+                 sample_entry)
+            )
+            log.debug('unknown field: %s in %s (value=%r)', field_key, source_file, field_val)
+        cur.close()
+        conn.close()
+    except Exception as exc:
+        log.debug('record_unknown_fields error: %s', exc)
+
+
+# ---------------------------------------------------------------------------
+# Archive Support (field log bundles: .tar / .tgz / .tar.gz / .rar)
+# ---------------------------------------------------------------------------
+# TRUST CONTEXT: Archives come from Bobby's own mining fleet. Lenient extraction
+# via standard tarfile.extractall / rarfile.RarFile.extractall is acceptable.
+# See spec: mg_importer_extension_spec.md §Context
+
+import logging as _logging
+import tarfile as _tarfile
+import struct as _struct
+
+try:
+    import rarfile as _rarfile
+    RARFILE_AVAILABLE = True
+except ImportError:
+    RARFILE_AVAILABLE = False
+
+_archive_logger = _logging.getLogger('mg_archive')
+
+# --- DDL for the 8 new field_log_* tables ---
+FIELD_LOG_DDL = """
+CREATE SCHEMA IF NOT EXISTS knowledge;
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_imports (
+    id BIGSERIAL PRIMARY KEY,
+    entity_label TEXT NOT NULL UNIQUE,
+    sha256 TEXT NOT NULL,
+    file_size_bytes BIGINT,
+    detected_shape TEXT NOT NULL,
+    miner_ip TEXT,
+    miner_model TEXT,
+    firmware_version TEXT,
+    mac_address TEXT,
+    control_board TEXT,
+    kernel_version TEXT,
+    archive_timestamp TIMESTAMP,
+    files_in_archive INTEGER,
+    parse_warnings TEXT,
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_miner_identity (
+    id BIGSERIAL PRIMARY KEY,
+    entity_label TEXT NOT NULL UNIQUE,
+    archive_filename TEXT NOT NULL,
+    miner_type TEXT,
+    firmware_version TEXT,
+    btminer_md5 TEXT,
+    mac_address TEXT,
+    control_board_version TEXT,
+    kernel_version TEXT,
+    cool_mode TEXT,
+    slot INTEGER,
+    pcb_serial TEXT,
+    chip_data TEXT,
+    hashrate_gh TEXT,
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_power_samples (
+    id BIGSERIAL PRIMARY KEY,
+    archive_filename TEXT NOT NULL,
+    sample_source TEXT NOT NULL,
+    sample_idx INTEGER,
+    en_eset TEXT,
+    iout_a NUMERIC,
+    vout_v NUMERIC,
+    vset_v NUMERIC,
+    iin0_a NUMERIC, iin1_a NUMERIC, iin2_a NUMERIC,
+    vin0_v NUMERIC, vin1_v NUMERIC, vin2_v NUMERIC,
+    pin_w NUMERIC,
+    t0_c NUMERIC, t1_c NUMERIC, t2_c NUMERIC,
+    stat_code TEXT,
+    raw_line TEXT,
+    UNIQUE (archive_filename, sample_source, sample_idx)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_temp_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    archive_filename TEXT NOT NULL,
+    snapshot_type TEXT NOT NULL,
+    slot INTEGER,
+    snapshot_temp_c NUMERIC,
+    board_serial TEXT,
+    raw_content TEXT,
+    UNIQUE (archive_filename, snapshot_type, slot, board_serial)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_pools (
+    id BIGSERIAL PRIMARY KEY,
+    archive_filename TEXT NOT NULL,
+    pool_idx INTEGER,
+    url TEXT,
+    user_name TEXT,
+    priority TEXT,
+    raw_block TEXT,
+    UNIQUE (archive_filename, pool_idx)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_api_stats (
+    id BIGSERIAL PRIMARY KEY,
+    archive_filename TEXT NOT NULL,
+    stats_section TEXT NOT NULL,
+    slot INTEGER,
+    elapsed_s BIGINT,
+    chip_num INTEGER,
+    freqs_avg NUMERIC,
+    temp_c NUMERIC,
+    chip_verify_diff TEXT,
+    work_count BIGINT,
+    nonce_count BIGINT,
+    nonce_before BIGINT,
+    nonce_err_count BIGINT,
+    raw_block TEXT,
+    UNIQUE (archive_filename, stats_section)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_antminer_boots (
+    id BIGSERIAL PRIMARY KEY,
+    entity_label TEXT NOT NULL UNIQUE,
+    archive_filename TEXT NOT NULL,
+    boot_timestamp TIMESTAMP,
+    session_folder TEXT NOT NULL,
+    files_present TEXT[],
+    ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_antminer_autotune (
+    id BIGSERIAL PRIMARY KEY,
+    archive_filename TEXT NOT NULL,
+    boot_session TEXT NOT NULL,
+    event_idx INTEGER,
+    event_timestamp TIMESTAMP,
+    event_type TEXT,
+    chain INTEGER,
+    frequency_mhz INTEGER,
+    voltage_v NUMERIC,
+    temp_max_c NUMERIC,
+    raw_line TEXT,
+    UNIQUE (archive_filename, boot_session, event_idx)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_events (
+    id BIGSERIAL PRIMARY KEY,
+    archive_filename TEXT NOT NULL,
+    source_file TEXT NOT NULL,
+    event_idx INTEGER,
+    event_timestamp TIMESTAMP,
+    severity TEXT,
+    message TEXT,
+    raw_line TEXT,
+    UNIQUE (archive_filename, source_file, event_idx)
+);
+
+
+
+CREATE SCHEMA IF NOT EXISTS mg;
+
+CREATE TABLE IF NOT EXISTS mg.import_runs (
+    id BIGSERIAL PRIMARY KEY,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    archive_count INTEGER,
+    row_counts JSONB,
+    errors TEXT[],
+    status TEXT
+);
+
+-- v3.2: idempotent unique indexes for identity and raw_json tables
+CREATE UNIQUE INDEX IF NOT EXISTS field_log_miner_identity_archive_entity_idx
+    ON knowledge.field_log_miner_identity (archive_filename, entity_label);
+
+
+
+-- v3.2: resolver columns on field_log_miner_identity (safe no-op if 002 migration ran)
+ALTER TABLE knowledge.field_log_miner_identity
+    ADD COLUMN IF NOT EXISTS hardware_revision TEXT;
+ALTER TABLE knowledge.field_log_miner_identity
+    ADD COLUMN IF NOT EXISTS resolved_miner_model_id UUID;
+ALTER TABLE knowledge.field_log_miner_identity
+    ADD COLUMN IF NOT EXISTS resolution_tier TEXT;
+ALTER TABLE knowledge.field_log_miner_identity
+    ADD COLUMN IF NOT EXISTS resolution_alias TEXT;
+"""
+
+
+def _dq(value):
+    """Dollar-quote a value for SQL. Uses tagged form to handle embedded $."""
+    if value is None:
+        return 'NULL'
+    value = str(value)
+    tag = '$val$'
+    if tag not in value:
+        return f'{tag}{value}{tag}'
+    n = 1
+    while True:
+        tag = f'$val{n}$'
+        if tag not in value:
+            return f'{tag}{value}{tag}'
+        n += 1
+
+
+def _num_or_null(s):
+    """Return a numeric SQL literal or NULL."""
+    if s is None or str(s).strip() in ('', '-', 'N/A'):
+        return 'NULL'
+    try:
+        float(str(s).strip())
+        return str(s).strip()
+    except (ValueError, TypeError):
+        return 'NULL'
+
+
+def _int_or_null(s):
+    """Return an integer SQL literal or NULL."""
+    if s is None or str(s).strip() in ('', '-', 'N/A'):
+        return 'NULL'
+    try:
+        return str(int(str(s).strip()))
+    except (ValueError, TypeError):
+        return 'NULL'
+
+
+def _sha256_hex(data: bytes) -> str:
+    import hashlib
+    return hashlib.sha256(data).hexdigest()
+
+
+def detect_archive_shape(namelist: list) -> str:
+    """
+    Detect archive shape from member names.
+    Returns 'whatsminer', 'antminer', or 'unknown'.
+    Detection is cheap — only looks at names, not content.
+    """
+    # Antminer: has nvdata/ containing cglog_init_ subfolders
+    has_nvdata = any('nvdata/' in n for n in namelist)
+    has_cglog = any('cglog_init_' in n for n in namelist)
+    if has_nvdata and has_cglog:
+        return 'antminer'
+
+    # WhatsMiner: *.logs/ folder containing miner_overview.log or miner-state.log
+    for n in namelist:
+        parts = n.split('/')
+        if len(parts) >= 2 and parts[0].endswith('.logs'):
+            leaf = parts[-1] if len(parts) > 1 else ''
+            if leaf in ('miner_overview.log', 'miner-state.log', 'miner.log'):
+                return 'whatsminer'
+
+    # Fallback: if any member has .logs in path
+    for n in namelist:
+        if '.logs/' in n:
+            return 'whatsminer'
+
+    return 'unknown'
+
+
+def _parse_archive_timestamp(filename: str):
+    """Try to extract a timestamp from archive filename. Returns isoformat string or None."""
+    # Pattern: _YYYYMMDDhhmmss  e.g. 10.0.14.57.20250313133403
+    m = re.search(r'[._](\d{14})', filename)
+    if m:
+        s = m.group(1)
+        try:
+            return datetime(int(s[0:4]), int(s[4:6]), int(s[6:8]),
+                            int(s[8:10]), int(s[10:12]), int(s[12:14])).isoformat()
+        except ValueError:
+            pass
+    # Pattern: _YYYY-MM-DD_HH-MM-SS  e.g. 2024-07-01_19-38-2
+    m = re.search(r'[_-](\d{4}-\d{2}-\d{2})[_-](\d{1,2}-\d{2}(?:-\d{1,2})?)', filename)
+    if m:
+        try:
+            date_part = m.group(1)
+            time_part = m.group(2).replace('-', ':')
+            # pad time components
+            tp = time_part.split(':')
+            while len(tp) < 3:
+                tp.append('0')
+            ts = f"{date_part} {tp[0].zfill(2)}:{tp[1].zfill(2)}:{tp[2].zfill(2)}"
+            return datetime.strptime(ts, '%Y-%m-%d %H:%M:%S').isoformat()
+        except ValueError:
+            pass
+    return None
+
+
+def _parse_miner_ip(filename: str, namelist: list) -> str:
+    """Extract miner IP from folder name (e.g. 10.0.14.57.logs) or filename prefix."""
+    # From namelist: first member that looks like <ip>.logs/
+    ip_re = re.compile(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\.logs')
+    for n in namelist:
+        m = ip_re.match(n)
+        if m:
+            return m.group(1)
+    # From filename prefix
+    m = ip_re.match(filename)
+    if m:
+        return m.group(1)
+    # General IP prefix in filename
+    m = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', filename)
+    if m:
+        return m.group(1)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# WhatsMiner Parser
+# ---------------------------------------------------------------------------
+
+def parse_whatsminer_bundle(extract_dir: str, archive_meta: dict) -> list:
+    """
+    Parse a WhatsMiner log bundle from extract_dir.
+    Returns list of SQL block strings.
+    archive_meta keys: filename, sha256, file_size_bytes, miner_ip, archive_timestamp
+    """
+    filename = archive_meta['filename']
+    warnings = []
+    sql_blocks = []
+
+    # Find the .logs subdirectory
+    logs_dir = None
+    for entry in os.listdir(extract_dir):
+        if entry.endswith('.logs') and os.path.isdir(os.path.join(extract_dir, entry)):
+            logs_dir = os.path.join(extract_dir, entry)
+            break
+    if logs_dir is None:
+        # Might be flat (no .logs subfolder) — use extract_dir directly
+        logs_dir = extract_dir
+
+    # Gather file list
+    try:
+        all_files = [f for f in os.listdir(logs_dir) if os.path.isfile(os.path.join(logs_dir, f))]
+    except Exception as e:
+        all_files = []
+        warnings.append(f'Cannot list logs_dir: {e}')
+
+    archive_meta['files_in_archive'] = len(all_files)
+
+    # --- miner_overview.log ---
+    identity_rows = []
+    miner_model = None
+    firmware_version = None
+    mac_address = None
+    control_board = None
+    kernel_version = None
+
+    overview_path = os.path.join(logs_dir, 'miner_overview.log')
+    if os.path.exists(overview_path):
+        try:
+            ov_rows, ov_meta = _parse_miner_overview(overview_path, filename)
+            identity_rows.extend(ov_rows)
+            miner_model = ov_meta.get('miner_type') or miner_model
+            firmware_version = ov_meta.get('firmware_version') or firmware_version
+            mac_address = ov_meta.get('mac_address') or mac_address
+            control_board = ov_meta.get('control_board_version') or control_board
+            kernel_version = ov_meta.get('kernel_version') or kernel_version
+        except Exception as e:
+            warnings.append(f'miner_overview.log parse error: {e}')
+
+    archive_meta['miner_model'] = miner_model
+    archive_meta['firmware_version'] = firmware_version
+    archive_meta['mac_address'] = mac_address
+    archive_meta['control_board'] = control_board
+    archive_meta['kernel_version'] = kernel_version
+
+    # --- power.log / power_error.log ---
+    power_rows = []
+    for plog in ('power.log', 'power_error.log'):
+        ppath = os.path.join(logs_dir, plog)
+        if os.path.exists(ppath):
+            try:
+                rows = _parse_power_log(ppath, filename, plog)
+                power_rows.extend(rows)
+            except Exception as e:
+                warnings.append(f'{plog} parse error: {e}')
+
+    # --- api.log ---
+    api_rows = []
+    api_path = os.path.join(logs_dir, 'api.log')
+    if os.path.exists(api_path):
+        try:
+            api_rows = _parse_api_log(api_path, filename)
+        except Exception as e:
+            warnings.append(f'api.log parse error: {e}')
+
+    # --- pools.log ---
+    pool_rows = []
+    pool_path = os.path.join(logs_dir, 'pools.log')
+    if os.path.exists(pool_path):
+        try:
+            pool_rows = _parse_pools_log(pool_path, filename)
+        except Exception as e:
+            warnings.append(f'pools.log parse error: {e}')
+
+    # --- temp files: temp{N}_{T}.xls and chip_temp_slot{N}_{serial} ---
+    temp_rows = []
+    for fname in all_files:
+        fpath = os.path.join(logs_dir, fname)
+        # board temp snapshot: temp0_52.0.xls
+        m = re.match(r'^temp(\d+)_([\d.]+)\.xls$', fname)
+        if m:
+            slot = int(m.group(1))
+            snap_temp = m.group(2)
+            try:
+                raw = open(fpath, 'r', errors='replace').read()
+            except Exception as e:
+                raw = f'[read error: {e}]'
+                warnings.append(f'{fname} read error: {e}')
+            temp_rows.append({
+                'archive_filename': filename,
+                'snapshot_type': 'board',
+                'slot': slot,
+                'snapshot_temp_c': snap_temp,
+                'board_serial': None,
+                'raw_content': raw,
+            })
+            continue
+
+        # chip temp map: chip_temp_slot{N}_{serial}
+        m = re.match(r'^chip_temp_slot(\d+)_(.+)$', fname)
+        if m:
+            slot = int(m.group(1))
+            serial = m.group(2)
+            try:
+                raw = open(fpath, 'r', errors='replace').read()
+            except Exception as e:
+                raw = f'[read error: {e}]'
+                warnings.append(f'{fname} read error: {e}')
+            temp_rows.append({
+                'archive_filename': filename,
+                'snapshot_type': 'chip_map',
+                'slot': slot,
+                'snapshot_temp_c': None,
+                'board_serial': serial,
+                'raw_content': raw,
+            })
+
+    # --- ams_bixbit.json ---
+    bixbit_path = os.path.join(logs_dir, 'ams_bixbit.json')
+    if os.path.exists(bixbit_path):
+        try:
+            bixbit_note = _process_ams_bixbit(bixbit_path)
+            warnings.append(bixbit_note)
+        except Exception as e:
+            warnings.append(f'ams_bixbit.json error: {e}')
+
+    # Emit summary
+    summary = (
+        f"{filename}: detected=whatsminer, model={miner_model}, firmware={firmware_version}, "
+        f"{len(power_rows)} power samples, {len(temp_rows)} temp snapshots, "
+        f"{len([r for r in temp_rows if r['snapshot_type']=='chip_map'])} chip maps, "
+        f"{len(api_rows)} api stats"
+    )
+    _archive_logger.info(summary)
+
+    # Build SQL blocks
+    archive_meta['parse_warnings'] = '; '.join(warnings) if warnings else None
+    sql_blocks.append(_build_imports_sql(archive_meta, 'whatsminer'))
+    if identity_rows:
+        sql_blocks.append(_build_identity_sql(identity_rows))
+    if power_rows:
+        sql_blocks.append(_build_power_sql(power_rows))
+    if temp_rows:
+        sql_blocks.append(_build_temp_sql(temp_rows))
+    if pool_rows:
+        sql_blocks.append(_build_pools_sql(pool_rows))
+    if api_rows:
+        sql_blocks.append(_build_api_stats_sql(api_rows))
+
+    return sql_blocks
+
+
+def _parse_miner_overview(path: str, archive_filename: str):
+    """
+    Parse miner_overview.log (INI-style with tolerance for header lines).
+    Returns (list_of_identity_rows, meta_dict).
+    """
+    rows = []
+    meta = {}
+    warnings = []
+
+    with open(path, 'r', errors='replace') as f:
+        lines = f.readlines()
+
+    # Extract pre-[common] header lines
+    header_vars = {}
+    current_section = None
+    section_data = {}
+    all_sections = {}
+
+    for line in lines:
+        line = line.rstrip('\n')
+        stripped = line.strip()
+
+        # Section header
+        m = re.match(r'^\[([^\]]+)\]', stripped)
+        if m:
+            if current_section and section_data:
+                if current_section not in all_sections:
+                    all_sections[current_section] = {}
+                all_sections[current_section].update(section_data)
+            current_section = m.group(1)
+            section_data = {}
+            continue
+
+        if current_section is None:
+            # Header lines: MINER_NAME='WhatsMiner' or KEY=VALUE
+            m = re.match(r"^(\w+)\s*=\s*'?([^']*)'?\s*$", stripped)
+            if m:
+                header_vars[m.group(1)] = m.group(2)
+        else:
+            # Section key-value: key = value (with spaces)
+            m = re.match(r'^(\w+)\s*=\s*(.*)', stripped)
+            if m:
+                section_data[m.group(1)] = m.group(2).strip()
+
+    # Save last section
+    if current_section and section_data:
+        if current_section not in all_sections:
+            all_sections[current_section] = {}
+        all_sections[current_section].update(section_data)
+
+    # Extract common section metadata
+    common = all_sections.get('common', {})
+    meta['miner_type'] = common.get('miner_type')
+    meta['control_board_version'] = common.get('control_board_version')
+    meta['mac_address'] = common.get('MAC')
+    meta['cool_mode'] = common.get('cool_mode')
+    meta['kernel_version'] = common.get('kernel_version', '')
+    # firmware_version and btminer_md5 come from header
+    meta['firmware_version'] = header_vars.get('FIRMWARE_VERSION')
+    meta['btminer_md5'] = header_vars.get('BTMINER_MD5')
+
+    # Build per-slot identity rows from [eeprom]
+    eeprom = all_sections.get('eeprom', {})
+
+    # Determine how many slots
+    slots = set()
+    for k in eeprom:
+        m = re.search(r'(\d+)$', k)
+        if m:
+            slots.add(int(m.group(1)))
+
+    if not slots:
+        # No eeprom slots — create one summary row
+        row = {
+            'archive_filename': archive_filename,
+            'entity_label': f'{archive_filename}::slot0',
+            'miner_type': meta.get('miner_type'),
+            'firmware_version': meta.get('firmware_version'),
+            'btminer_md5': meta.get('btminer_md5'),
+            'mac_address': meta.get('mac_address'),
+            'control_board_version': meta.get('control_board_version'),
+            'kernel_version': meta.get('kernel_version'),
+            'cool_mode': meta.get('cool_mode'),
+            'slot': 0,
+            'pcb_serial': None,
+            'chip_data': None,
+            'hashrate_gh': None,
+        }
+        rows.append(row)
+    else:
+        for slot in sorted(slots):
+            pcb_serial = eeprom.get(f'pcb{slot}') or eeprom.get(f'pcb_{slot}')
+            chip_data = eeprom.get(f'chip_data{slot}') or eeprom.get(f'chip_data_{slot}')
+            hashrate = eeprom.get(f'hashrate{slot}') or eeprom.get(f'hashrate_{slot}')
+
+            # Skip fully empty slots (pcb blank, chip blank, hashrate blank)
+            if not any([pcb_serial, chip_data, hashrate]):
+                continue
+
+            row = {
+                'archive_filename': archive_filename,
+                'entity_label': f'{archive_filename}::slot{slot}',
+                'miner_type': meta.get('miner_type'),
+                'firmware_version': meta.get('firmware_version'),
+                'btminer_md5': meta.get('btminer_md5'),
+                'mac_address': meta.get('mac_address'),
+                'control_board_version': meta.get('control_board_version'),
+                'kernel_version': meta.get('kernel_version'),
+                'cool_mode': meta.get('cool_mode'),
+                'slot': slot,
+                'pcb_serial': pcb_serial,
+                'chip_data': chip_data,
+                'hashrate_gh': hashrate,
+            }
+            rows.append(row)
+
+    return rows, meta
+
+
+def _parse_power_log(path: str, archive_filename: str, source_name: str) -> list:
+    """
+    Parse WhatsMiner power.log or power_error.log.
+    Format: idx en/eset iout vout/vset iin0/iin1/iin2 vin0/vin1/vin2 pin t0/t1/t2 stat
+    Returns list of row dicts.
+    """
+    rows = []
+    with open(path, 'r', errors='replace') as f:
+        for raw_line in f:
+            line = raw_line.rstrip('\n')
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Skip header/label lines (first token is non-numeric)
+            parts = stripped.split()
+            if not parts:
+                continue
+            # Try to parse idx from first token
+            try:
+                sample_idx = int(parts[0])
+            except (ValueError, TypeError):
+                continue  # header line — skip
+
+            try:
+                row = {
+                    'archive_filename': archive_filename,
+                    'sample_source': source_name,
+                    'sample_idx': sample_idx,
+                    'raw_line': line,
+                    'en_eset': None, 'iout_a': None,
+                    'vout_v': None, 'vset_v': None,
+                    'iin0_a': None, 'iin1_a': None, 'iin2_a': None,
+                    'vin0_v': None, 'vin1_v': None, 'vin2_v': None,
+                    'pin_w': None,
+                    't0_c': None, 't1_c': None, 't2_c': None,
+                    'stat_code': None,
+                }
+
+                # Rejoin remaining tokens after idx
+                rest = stripped[len(parts[0]):].strip()
+                # Tokenize (some fields have internal spaces)
+                tokens = rest.split()
+
+                if len(tokens) >= 1:
+                    row['en_eset'] = tokens[0]              # "1/1"
+                if len(tokens) >= 2:
+                    row['iout_a'] = tokens[1]               # "250.0"
+                if len(tokens) >= 3:
+                    vparts = tokens[2].split('/')
+                    row['vout_v'] = vparts[0] if vparts else None
+                    row['vset_v'] = vparts[1] if len(vparts) > 1 else None
+
+                # iin0/iin1/iin2 — may contain spaces around /
+                # Reassemble by looking for the //-separated triplets
+                # Strategy: scan tokens for N/N/N patterns or reconstruct
+                iin_str = None
+                vin_str = None
+                pin_val = None
+                temp_str = None
+                stat_val = None
+
+                # Build a slash-normalized string from remaining tokens
+                remaining_tokens = tokens[3:] if len(tokens) > 3 else []
+                # Rejoin and re-split on whitespace, collapsing / fragments
+                remaining = ' '.join(remaining_tokens)
+                # Attempt structured parse:
+                # iin triplet, vin triplet, pin, temp triplet, stat
+                slash_pattern = re.compile(
+                    r'([\d.]+)\s*/\s*([\d.]+)\s*/\s*([\d.]+)'
+                )
+                slash_matches = slash_pattern.findall(remaining)
+                if len(slash_matches) >= 2:
+                    row['iin0_a'], row['iin1_a'], row['iin2_a'] = slash_matches[0]
+                    row['vin0_v'], row['vin1_v'], row['vin2_v'] = slash_matches[1]
+                    # After the two triplets, remaining scalars are: pin, t0/t1/t2, stat
+                    # Remove them from remaining to isolate pin+temp+stat
+                    tail = slash_pattern.sub('__TRIPLE__', remaining, count=2)
+                    tail_parts = tail.split()
+                    non_triple = [p for p in tail_parts if p != '__TRIPLE__']
+                    if len(non_triple) >= 1:
+                        row['pin_w'] = non_triple[0]
+                    if len(non_triple) >= 2:
+                        # temp triplet may be already caught or still slash-separated
+                        t_match = slash_pattern.search(non_triple[1] if len(non_triple) > 1 else '')
+                        if t_match:
+                            row['t0_c'], row['t1_c'], row['t2_c'] = t_match.groups()
+                        else:
+                            # try to find last slash-sep in original remaining
+                            all_matches = slash_pattern.findall(remaining)
+                            if len(all_matches) >= 3:
+                                row['t0_c'], row['t1_c'], row['t2_c'] = all_matches[2]
+                    if len(non_triple) >= 3:
+                        row['stat_code'] = non_triple[-1]
+                    elif len(non_triple) == 2:
+                        row['stat_code'] = non_triple[-1]
+
+                    # Try to find temp from all triples
+                    if len(slash_matches) >= 3 and row['t0_c'] is None:
+                        row['t0_c'], row['t1_c'], row['t2_c'] = slash_matches[2]
+
+                rows.append(row)
+            except Exception:
+                # Malformed line — store raw only
+                rows.append({
+                    'archive_filename': archive_filename,
+                    'sample_source': source_name,
+                    'sample_idx': None,
+                    'raw_line': line,
+                    'en_eset': None, 'iout_a': None,
+                    'vout_v': None, 'vset_v': None,
+                    'iin0_a': None, 'iin1_a': None, 'iin2_a': None,
+                    'vin0_v': None, 'vin1_v': None, 'vin2_v': None,
+                    'pin_w': None,
+                    't0_c': None, 't1_c': None, 't2_c': None,
+                    'stat_code': None,
+                })
+
+    return rows
+
+
+def _parse_api_log(path: str, archive_filename: str) -> list:
+    """
+    Parse WhatsMiner api.log PHP-array-style dump.
+    Returns list of per-STATS-section row dicts.
+    """
+    rows = []
+    with open(path, 'r', errors='replace') as f:
+        content = f.read()
+
+    # Split on STATS section headers.
+    # Handles two known formats:
+    #   Format A (PHP-array style): [STATS0] =>
+    #   Format B (colon style):     STATS0:
+    stats_pattern_a = re.compile(r'^\[STATS(\d+)\]\s*=>', re.MULTILINE)
+    stats_pattern_b = re.compile(r'^STATS(\d+):', re.MULTILINE)
+
+    positions_a = list(stats_pattern_a.finditer(content))
+    positions_b = list(stats_pattern_b.finditer(content))
+
+    # Use whichever format found more sections
+    if len(positions_a) >= len(positions_b):
+        positions = positions_a
+        fmt = 'php'  # [KEY] => value
+    else:
+        positions = positions_b
+        fmt = 'colon'  # KEY: value
+
+    for i, match in enumerate(positions):
+        stats_num = int(match.group(1))
+        section_name = f'STATS{stats_num}'
+        start = match.start()
+        end = positions[i + 1].start() if i + 1 < len(positions) else len(content)
+        block_text = content[start:end]
+
+        def _extract_field(field_name, text, _fmt=fmt):
+            if _fmt == 'php':
+                # Match [field_name] => value
+                m = re.search(r'\[' + re.escape(field_name) + r'\]\s*=>\s*([^\n\r]+)', text)
+            else:
+                # Match field_name: value  (with optional leading whitespace)
+                m = re.search(r'^\s*' + re.escape(field_name) + r':\s*([^\n\r]+)', text, re.MULTILINE)
+            if m:
+                return m.group(1).strip()
+            return None
+
+        row = {
+            'archive_filename': archive_filename,
+            'stats_section': section_name,
+            'slot': _int_or_null(_extract_field('slot', block_text)),
+            'elapsed_s': _int_or_null(_extract_field('Elapsed', block_text)),
+            'chip_num': _int_or_null(_extract_field('chip_num', block_text)),
+            'freqs_avg': _num_or_null(_extract_field('freqs_avg', block_text)),
+            'temp_c': _num_or_null(
+                _extract_field('temp', block_text) or
+                _extract_field('temp_now_max', block_text)
+            ),
+            'chip_verify_diff': _extract_field('chip_verify_diff', block_text),
+            'work_count': _int_or_null(_extract_field('work_count', block_text)),
+            'nonce_count': _int_or_null(_extract_field('nonce_count', block_text)),
+            'nonce_before': _int_or_null(_extract_field('nonce_before', block_text)),
+            'nonce_err_count': _int_or_null(_extract_field('nonce_err_count', block_text)),
+            'raw_block': block_text[:2000],  # store up to 2k chars of raw
+        }
+        rows.append(row)
+
+    return rows
+
+
+def _parse_pools_log(path: str, archive_filename: str) -> list:
+    """
+    Parse WhatsMiner pools.log.
+    Format: timestamp|code|Pools Change|btminer|change pool[N] field from X to Y
+    Returns list of pool row dicts, one per detected pool index.
+    """
+    rows_by_idx = {}
+
+    with open(path, 'r', errors='replace') as f:
+        raw_content = f.read()
+
+    lines = raw_content.splitlines()
+
+    for line in lines:
+        # Match: ...change pool[N] url from ... to 'URL'
+        m = re.search(r"change pool\[(\d+)\]\s+url\s+from\s+.*?\s+to\s+'([^']*)'", line)
+        if m:
+            idx = int(m.group(1))
+            url = m.group(2)
+            if idx not in rows_by_idx:
+                rows_by_idx[idx] = {'archive_filename': archive_filename,
+                                    'pool_idx': idx, 'url': None, 'user_name': None,
+                                    'priority': None, 'raw_block': ''}
+            rows_by_idx[idx]['url'] = url
+            rows_by_idx[idx]['raw_block'] += line + '\n'
+            continue
+
+        m = re.search(r"change pool\[(\d+)\]\s+user\s+from\s+.*?\s+to\s+'([^']*)'", line)
+        if m:
+            idx = int(m.group(1))
+            user = m.group(2)
+            if idx not in rows_by_idx:
+                rows_by_idx[idx] = {'archive_filename': archive_filename,
+                                    'pool_idx': idx, 'url': None, 'user_name': None,
+                                    'priority': None, 'raw_block': ''}
+            rows_by_idx[idx]['user_name'] = user
+            rows_by_idx[idx]['raw_block'] += line + '\n'
+
+    if not rows_by_idx:
+        # Dump full raw content as single row
+        rows_by_idx[0] = {
+            'archive_filename': archive_filename,
+            'pool_idx': 0,
+            'url': None, 'user_name': None, 'priority': None,
+            'raw_block': raw_content[:4000],
+        }
+
+    return list(rows_by_idx.values())
+
+
+def _process_ams_bixbit(path: str) -> str:
+    """
+    Process ams_bixbit.json: redact api_key, preserve device_id.
+    Returns a note string for parse_warnings.
+    """
+    import hashlib
+    with open(path, 'r', errors='replace') as f:
+        data = json.load(f)
+
+    device_id = data.get('device_id', 'unknown')
+    api_key = data.get('api_key', '')
+    if api_key:
+        redacted = 'REDACTED_' + hashlib.sha256(api_key.encode()).hexdigest()[:8]
+    else:
+        redacted = 'REDACTED_unknown'
+
+    return f'AMS device_id={device_id}, api_key={redacted}'
+
+
+# ---------------------------------------------------------------------------
+# Antminer Parser
+# ---------------------------------------------------------------------------
+
+def parse_antminer_bundle(extract_dir: str, archive_meta: dict) -> list:
+    """
+    Parse an Antminer log bundle from extract_dir.
+    Returns list of SQL block strings.
+    """
+    filename = archive_meta['filename']
+    warnings = []
+    sql_blocks = []
+
+    # Find nvdata tree
+    nvdata_dir = None
+    for root, dirs, files in os.walk(extract_dir):
+        if os.path.basename(root) == 'nvdata':
+            nvdata_dir = root
+            break
+    if nvdata_dir is None:
+        # Try direct nvdata/ folder
+        candidate = os.path.join(extract_dir, 'nvdata')
+        if os.path.isdir(candidate):
+            nvdata_dir = candidate
+
+    boot_rows = []
+    identity_rows = []  # v3.2: one per boot session for field_log_miner_identity
+    autotune_rows = []
+    event_rows = []
+    power_rows = []
+    pool_rows = []
+    all_session_folders = []
+    miner_model = None
+    firmware_version = None
+
+    if nvdata_dir:
+        # Walk: nvdata/YYYY-MM/DD/cglog_init_*/
+        for year_month in sorted(os.listdir(nvdata_dir)):
+            ym_path = os.path.join(nvdata_dir, year_month)
+            if not os.path.isdir(ym_path):
+                continue
+            for day in sorted(os.listdir(ym_path)):
+                day_path = os.path.join(ym_path, day)
+                if not os.path.isdir(day_path):
+                    continue
+                for session in sorted(os.listdir(day_path)):
+                    if not session.startswith('cglog_init_'):
+                        continue
+                    session_path = os.path.join(day_path, session)
+                    if not os.path.isdir(session_path):
+                        continue
+                    all_session_folders.append(session_path)
+
+                    # Extract boot timestamp from folder name: cglog_init_YYYY-MM-DD_HH-MM-SS
+                    boot_ts = None
+                    m = re.search(r'cglog_init_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})', session)
+                    if m:
+                        try:
+                            ts_str = f"{m.group(1)} {m.group(2).replace('-', ':')}"
+                            boot_ts = datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S').isoformat()
+                        except ValueError:
+                            pass
+
+                    session_files = os.listdir(session_path)
+
+                    # Boot row
+                    boot_entity = f'{filename}::{session}'
+                    boot_rows.append({
+                        'entity_label': boot_entity,
+                        'archive_filename': filename,
+                        'boot_timestamp': boot_ts,
+                        'session_folder': session,
+                        'files_present': session_files,
+                    })
+
+                    # Parse miner.log — v3: streaming generator with timeout guard
+                    # v3.2: also accumulate per-session identity fields
+                    session_meta = {}  # per-session identity fields
+                    miner_log = os.path.join(session_path, 'miner.log')
+                    if os.path.exists(miner_log):
+                        try:
+                            _t0 = _time_module.monotonic()
+                            for item in _stream_antminer_miner_log(
+                                    miner_log, filename, session):
+                                kind = item['kind']
+                                if kind == 'meta':
+                                    if 'miner_model' in item and not miner_model:
+                                        miner_model = item['miner_model']
+                                    if 'firmware_version' in item and not firmware_version:
+                                        firmware_version = item['firmware_version']
+                                    # v3.2: collect identity fields per-session (first-seen wins)
+                                    for _fld in ('miner_model', 'firmware_version',
+                                                 'mac_address', 'kernel_version',
+                                                 'control_board_version', 'cool_mode',
+                                                 'hashrate_gh'):
+                                        if _fld in item and _fld not in session_meta:
+                                            session_meta[_fld] = item[_fld]
+                                elif kind == 'autotune':
+                                    autotune_rows.append(item)
+                                elif kind == 'event':
+                                    event_rows.append(item)
+                            _elapsed = _time_module.monotonic() - _t0
+                            get_run_logger('mg_antminer').info(
+                                '%s/%s miner.log: %d autotune, %d events in %.1fs',
+                                filename, session, len(autotune_rows),
+                                len(event_rows), _elapsed)
+                        except Exception as e:
+                            warnings.append(f'{session}/miner.log: {e}')
+
+                    # v3.2: build one identity row per boot session
+                    identity_rows.append({
+                        'entity_label':          boot_entity,
+                        'archive_filename':       filename,
+                        'miner_type':            session_meta.get('miner_model'),
+                        'firmware_version':      session_meta.get('firmware_version'),
+                        'btminer_md5':           None,  # not in Antminer logs
+                        'mac_address':           session_meta.get('mac_address'),
+                        'control_board_version': session_meta.get('control_board_version'),
+                        'kernel_version':        session_meta.get('kernel_version'),
+                        'cool_mode':             session_meta.get('cool_mode'),
+                        'slot':                  None,
+                        'pcb_serial':            None,
+                        'chip_data':             None,
+                        'hashrate_gh':           session_meta.get('hashrate_gh'),
+                    })
+
+                    # Parse autotune.log if present (supplemental)
+                    autotune_log = os.path.join(session_path, 'autotune.log')
+                    if os.path.exists(autotune_log) and os.path.getsize(autotune_log) > 0:
+                        try:
+                            # autotune.log often replicates miner.log — skip if already rich
+                            pass  # no separate parse needed based on sample inspection
+                        except Exception as e:
+                            warnings.append(f'{session}/autotune.log: {e}')
+
+    archive_meta['miner_model'] = miner_model
+    archive_meta['firmware_version'] = firmware_version
+    archive_meta['files_in_archive'] = sum(
+        len(os.listdir(s)) for s in all_session_folders
+    )
+
+    # v3.2: if this is an antminer archive but had zero parseable boot sessions,
+    # emit one archive-level synthetic identity row so Layer 2 has something to work on.
+    if not identity_rows:
+        identity_rows.append({
+            'entity_label':          f'{filename}::archive-level',
+            'archive_filename':      filename,
+            'miner_type':           miner_model,
+            'firmware_version':     firmware_version,
+            'btminer_md5':          None,
+            'mac_address':          None,
+            'control_board_version': None,
+            'kernel_version':       None,
+            'cool_mode':            None,
+            'slot':                 None,
+            'pcb_serial':           None,
+            'chip_data':            None,
+            'hashrate_gh':          None,
+        })
+
+    # Store identity rows in archive_meta so _do_layer2_postprocessing can resolve them
+    archive_meta['identity_rows'] = identity_rows
+
+    # Parse config/cgminer.conf → pool info
+    config_path = os.path.join(extract_dir, 'config', 'cgminer.conf')
+    if os.path.exists(config_path):
+        try:
+            pool_rows = _parse_cgminer_conf(config_path, filename)
+        except Exception as e:
+            warnings.append(f'config/cgminer.conf: {e}')
+
+    summary = (
+        f"{filename}: detected=antminer, model={miner_model}, firmware={firmware_version}, "
+        f"{len(boot_rows)} boot sessions, {len(autotune_rows)} autotune events, "
+        f"{len(event_rows)} log events, {len(pool_rows)} pool configs"
+    )
+    _archive_logger.info(summary)
+
+    archive_meta['parse_warnings'] = '; '.join(warnings) if warnings else None
+    sql_blocks.append(_build_imports_sql(archive_meta, 'antminer'))
+    if boot_rows:
+        sql_blocks.append(_build_antminer_boots_sql(boot_rows))
+    # v3.2: emit identity rows for field_log_miner_identity
+    if identity_rows:
+        sql_blocks.append(_build_identity_sql(identity_rows))
+    if autotune_rows:
+        # v3: use batched builder (1000 rows/stmt) instead of one giant string
+        sql_blocks.extend(_build_antminer_autotune_sql_batched(autotune_rows, batch_size=1000))
+    if event_rows:
+        sql_blocks.append(_build_events_sql(event_rows))
+    if pool_rows:
+        sql_blocks.append(_build_pools_sql(pool_rows))
+
+    log_antminer = get_run_logger('mg_antminer')
+    log_antminer.info(
+        '%s: antminer summary — %d boot sessions, %d autotune events, '
+        '%d log events, %d pool configs, %d identity rows',
+        filename, len(boot_rows), len(autotune_rows),
+        len(event_rows), len(pool_rows), len(identity_rows)
+    )
+
+    return sql_blocks
+
+
+def _stream_antminer_miner_log(path: str, archive_filename: str, session: str):
+    """
+    v3 STREAMING parser for Antminer miner.log.
+
+    CRITICAL FIX: The v2 version collected all autotune rows into a single list,
+    then built one giant SQL string.  For archives with 14,000+ events this
+    produced quadratic string-concatenation behaviour and could hang the whole
+    import process indefinitely.
+
+    This version is a GENERATOR that yields individual row dicts as it reads
+    the file line-by-line, keeping memory usage O(1) per line.  Callers use
+    _build_antminer_autotune_sql_batched() which flushes every 1,000 rows.
+
+    Timeout guard: if the file takes > 60 s we log a warning and stop
+    (raises StopIteration cleanly so the outer loop continues).
+
+    Yields dicts with key 'kind' in ('autotune', 'event', 'meta').
+    'meta' dicts carry miner_model / firmware_version discovered mid-stream.
+    """
+    _LOG_ANTMINER = get_run_logger('mg_antminer')
+
+    ts_pat              = re.compile(
+        r'^\[(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d+)\]\s+(\w+):\s+(.*)'
+    )
+    freq_set_pat        = re.compile(r'Set chain (\d+) freq (\d+)', re.IGNORECASE)
+    temp_max_pat        = re.compile(r'Temp max (\d+)C', re.IGNORECASE)
+    voltage_pat         = re.compile(r'[Pp]su current voltage ([\d.]+)V?', re.IGNORECASE)
+    autotune_profile_pat= re.compile(r'[Aa]utotune set profile.*freq max (\d+)', re.IGNORECASE)
+    device_complete_pat = re.compile(r'Detect device complete:\s*(.*)')
+    firmware_pat        = re.compile(r'[Ff]irmware version[: ]+([\d.]+)')
+    # v3.2: additional identity field extraction patterns
+    mac_hwaddr_pat      = re.compile(r'eth0\s+HWaddr\s+([0-9A-Fa-f:]{17})', re.IGNORECASE)
+    mac_colon_pat       = re.compile(r'MAC[:\s]+([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})', re.IGNORECASE)
+    kernel_pat          = re.compile(r'Linux\s+\S+\s+([\d.]+\S*)', re.IGNORECASE)
+    control_board_pat   = re.compile(r'control_board(?:_type|_version)?[=:\s]+([\w./-]+)', re.IGNORECASE)
+    cool_mode_pat       = re.compile(r'cool(?:_mode|ing)?[=:\s]+(air|oil|immersion|hydro|liquid)', re.IGNORECASE)
+    hashrate_pat        = re.compile(r'(?:avg|average)?\s*hash\s*rate[:\s]+([\d.]+)\s*(?:GH|GH/s)', re.IGNORECASE)
+
+    event_idx    = 0
+    autotune_idx = 0
+    t_start      = _time_module.monotonic()
+    TIMEOUT_S    = 60  # per-file safety cap
+
+    with open(path, 'r', errors='replace') as fh:
+        for raw_line in fh:
+            # Timeout guard
+            if _time_module.monotonic() - t_start > TIMEOUT_S:
+                _LOG_ANTMINER.warning(
+                    'TIMEOUT parsing %s / %s after %ds — stopping mid-file',
+                    archive_filename, session, TIMEOUT_S
+                )
+                return
+
+            line    = raw_line.rstrip('\n')
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            m = ts_pat.match(stripped)
+            if not m:
+                continue
+
+            ts_str, level, message = m.group(1), m.group(2), m.group(3)
+
+            # Parse timestamp
+            event_ts = None
+            try:
+                ts_clean = ts_str.split('.')[0]
+                dt = datetime.strptime(ts_clean, '%Y/%m/%d %H:%M:%S')
+                if dt.year > 1970:
+                    event_ts = dt.isoformat()
+            except ValueError:
+                pass
+
+            # Yield meta discoveries (model / firmware) — do NOT accumulate
+            dm = device_complete_pat.search(message)
+            if dm:
+                yield {'kind': 'meta', 'miner_model': dm.group(1).split(',')[0].strip()}
+
+            fm = firmware_pat.search(message)
+            if fm:
+                yield {'kind': 'meta', 'firmware_version': fm.group(1)}
+
+            # v3.2: yield additional identity meta fields
+            mac_m = mac_hwaddr_pat.search(message) or mac_colon_pat.search(message)
+            if mac_m:
+                yield {'kind': 'meta', 'mac_address': mac_m.group(1).upper()}
+
+            kern_m = kernel_pat.search(message)
+            if kern_m:
+                yield {'kind': 'meta', 'kernel_version': kern_m.group(1)}
+
+            cb_m = control_board_pat.search(message)
+            if cb_m:
+                yield {'kind': 'meta', 'control_board_version': cb_m.group(1)}
+
+            cm_m = cool_mode_pat.search(message)
+            if cm_m:
+                yield {'kind': 'meta', 'cool_mode': cm_m.group(1).lower()}
+
+            hr_m = hashrate_pat.search(message)
+            if hr_m:
+                yield {'kind': 'meta', 'hashrate_gh': hr_m.group(1)}
+
+            # Autotune events
+            autotune_event = None
+            chain = freq = voltage = temp_max = None
+
+            fset = freq_set_pat.search(message)
+            if fset:
+                autotune_event = 'freq_set'
+                chain = int(fset.group(1))
+                freq  = int(fset.group(2))
+
+            tmax = temp_max_pat.search(message)
+            if tmax:
+                autotune_event = 'temp_max'
+                temp_max = float(tmax.group(1))
+
+            vm = voltage_pat.search(message)
+            if vm:
+                autotune_event = 'voltage'
+                voltage = float(vm.group(1))
+
+            if re.search(r'[Ii]nit done', message):
+                autotune_event = 'init_done'
+
+            apm = autotune_profile_pat.search(message)
+            if apm:
+                autotune_event = 'autotune_profile'
+                freq = int(apm.group(1))
+
+            if autotune_event:
+                yield {
+                    'kind':             'autotune',
+                    'archive_filename': archive_filename,
+                    'boot_session':     session,
+                    'event_idx':        autotune_idx,
+                    'event_timestamp':  event_ts,
+                    'event_type':       autotune_event,
+                    'chain':            chain,
+                    'frequency_mhz':    freq,
+                    'voltage_v':        voltage,
+                    'temp_max_c':       temp_max,
+                    'raw_line':         line,
+                }
+                autotune_idx += 1
+
+            if level in ('ERROR', 'WARN', 'FATAL', 'ERR'):
+                sev = 'ERROR' if level in ('ERROR', 'ERR', 'FATAL') else 'WARN'
+                yield {
+                    'kind':             'event',
+                    'archive_filename': archive_filename,
+                    'source_file':      'miner.log',
+                    'event_idx':        event_idx,
+                    'event_timestamp':  event_ts,
+                    'severity':         sev,
+                    'message':          message,
+                    'raw_line':         line,
+                }
+                event_idx += 1
+
+
+def _parse_antminer_miner_log(path: str, archive_filename: str, session: str):
+    """
+    Backwards-compatible wrapper around the streaming generator.
+    Returns (autotune_rows, event_rows, miner_model, firmware_version)
+    but caps autotune_rows at 50,000 to prevent memory blow-up.
+    For large files use _stream_antminer_miner_log() directly.
+    """
+    autotune_rows = []
+    event_rows    = []
+    miner_model   = None
+    firmware_version = None
+    MAX_AUTOTUNE  = 50_000
+
+    for item in _stream_antminer_miner_log(path, archive_filename, session):
+        kind = item['kind']
+        if kind == 'meta':
+            if 'miner_model' in item and not miner_model:
+                miner_model = item['miner_model']
+            if 'firmware_version' in item and not firmware_version:
+                firmware_version = item['firmware_version']
+        elif kind == 'autotune' and len(autotune_rows) < MAX_AUTOTUNE:
+            autotune_rows.append(item)
+        elif kind == 'event':
+            event_rows.append(item)
+
+    return autotune_rows, event_rows, miner_model, firmware_version
+
+
+def _parse_cgminer_conf(path: str, archive_filename: str) -> list:
+    """
+    Parse Antminer config/cgminer.conf JSON → pool rows.
+    Returns list of pool row dicts.
+    """
+    rows = []
+    with open(path, 'r', errors='replace') as f:
+        raw = f.read()
+
+    try:
+        conf = json.loads(raw)
+    except json.JSONDecodeError:
+        # Store raw as single pool row
+        return [{
+            'archive_filename': archive_filename,
+            'pool_idx': 0,
+            'url': None, 'user_name': None, 'priority': None,
+            'raw_block': raw[:4000],
+        }]
+
+    pools = conf.get('pools', [])
+    for i, pool in enumerate(pools):
+        rows.append({
+            'archive_filename': archive_filename,
+            'pool_idx': i,
+            'url': pool.get('url'),
+            'user_name': pool.get('user'),
+            'priority': pool.get('pass'),
+            'raw_block': json.dumps(pool),
+        })
+
+    if not rows:
+        rows.append({
+            'archive_filename': archive_filename,
+            'pool_idx': 0,
+            'url': None, 'user_name': None, 'priority': None,
+            'raw_block': raw[:4000],
+        })
+
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# SQL Builders
+# ---------------------------------------------------------------------------
+
+def _build_imports_sql(meta: dict, shape: str) -> str:
+    """Build INSERT SQL for field_log_imports."""
+    fn = meta['filename']
+    ts = meta.get('archive_timestamp')
+    ts_sql = f"'{ts}'" if ts else 'NULL'
+    warnings_val = _dq(meta.get('parse_warnings', '')) if meta.get('parse_warnings') else 'NULL'
+
+    sql = f"""INSERT INTO knowledge.field_log_imports
+    (entity_label, sha256, file_size_bytes, detected_shape, miner_ip, miner_model,
+     firmware_version, mac_address, control_board, kernel_version,
+     archive_timestamp, files_in_archive, parse_warnings)
+VALUES (
+    {_dq(fn)},
+    {_dq(meta.get('sha256', ''))},
+    {_int_or_null(meta.get('file_size_bytes'))},
+    {_dq(shape)},
+    {_dq(meta['miner_ip']) if meta.get('miner_ip') else 'NULL'},
+    {_dq(meta['miner_model']) if meta.get('miner_model') else 'NULL'},
+    {_dq(meta['firmware_version']) if meta.get('firmware_version') else 'NULL'},
+    {_dq(meta['mac_address']) if meta.get('mac_address') else 'NULL'},
+    {_dq(meta['control_board']) if meta.get('control_board') else 'NULL'},
+    {_dq(meta['kernel_version']) if meta.get('kernel_version') else 'NULL'},
+    {ts_sql},
+    {_int_or_null(meta.get('files_in_archive'))},
+    {warnings_val}
+) ON CONFLICT (entity_label) DO NOTHING;"""
+    return sql
+
+
+def _build_identity_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_miner_identity."""
+    stmts = []
+    for r in rows:
+        stmts.append(f"""INSERT INTO knowledge.field_log_miner_identity
+    (entity_label, archive_filename, miner_type, firmware_version, btminer_md5,
+     mac_address, control_board_version, kernel_version, cool_mode, slot,
+     pcb_serial, chip_data, hashrate_gh)
+VALUES (
+    {_dq(r['entity_label'])},
+    {_dq(r['archive_filename'])},
+    {_dq(r['miner_type']) if r.get('miner_type') else 'NULL'},
+    {_dq(r['firmware_version']) if r.get('firmware_version') else 'NULL'},
+    {_dq(r['btminer_md5']) if r.get('btminer_md5') else 'NULL'},
+    {_dq(r['mac_address']) if r.get('mac_address') else 'NULL'},
+    {_dq(r['control_board_version']) if r.get('control_board_version') else 'NULL'},
+    {_dq(r['kernel_version']) if r.get('kernel_version') else 'NULL'},
+    {_dq(r['cool_mode']) if r.get('cool_mode') is not None else 'NULL'},
+    {_int_or_null(r.get('slot'))},
+    {_dq(r['pcb_serial']) if r.get('pcb_serial') else 'NULL'},
+    {_dq(r['chip_data']) if r.get('chip_data') else 'NULL'},
+    {_dq(r['hashrate_gh']) if r.get('hashrate_gh') else 'NULL'}
+) ON CONFLICT (entity_label) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+def _build_power_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_power_samples."""
+    stmts = []
+    for r in rows:
+        stmts.append(f"""INSERT INTO knowledge.field_log_power_samples
+    (archive_filename, sample_source, sample_idx, en_eset, iout_a, vout_v, vset_v,
+     iin0_a, iin1_a, iin2_a, vin0_v, vin1_v, vin2_v, pin_w, t0_c, t1_c, t2_c,
+     stat_code, raw_line)
+VALUES (
+    {_dq(r['archive_filename'])},
+    {_dq(r['sample_source'])},
+    {_int_or_null(r.get('sample_idx'))},
+    {_dq(r['en_eset']) if r.get('en_eset') else 'NULL'},
+    {_num_or_null(r.get('iout_a'))},
+    {_num_or_null(r.get('vout_v'))},
+    {_num_or_null(r.get('vset_v'))},
+    {_num_or_null(r.get('iin0_a'))},
+    {_num_or_null(r.get('iin1_a'))},
+    {_num_or_null(r.get('iin2_a'))},
+    {_num_or_null(r.get('vin0_v'))},
+    {_num_or_null(r.get('vin1_v'))},
+    {_num_or_null(r.get('vin2_v'))},
+    {_num_or_null(r.get('pin_w'))},
+    {_num_or_null(r.get('t0_c'))},
+    {_num_or_null(r.get('t1_c'))},
+    {_num_or_null(r.get('t2_c'))},
+    {_dq(r['stat_code']) if r.get('stat_code') else 'NULL'},
+    {_dq(r.get('raw_line', '')) if r.get('raw_line') else 'NULL'}
+) ON CONFLICT (archive_filename, sample_source, sample_idx) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+def _build_temp_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_temp_snapshots."""
+    stmts = []
+    for r in rows:
+        stmts.append(f"""INSERT INTO knowledge.field_log_temp_snapshots
+    (archive_filename, snapshot_type, slot, snapshot_temp_c, board_serial, raw_content)
+VALUES (
+    {_dq(r['archive_filename'])},
+    {_dq(r['snapshot_type'])},
+    {_int_or_null(r.get('slot'))},
+    {_num_or_null(r.get('snapshot_temp_c'))},
+    {_dq(r['board_serial']) if r.get('board_serial') else 'NULL'},
+    {_dq(r['raw_content']) if r.get('raw_content') else 'NULL'}
+) ON CONFLICT (archive_filename, snapshot_type, slot, board_serial) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+def _build_pools_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_pools."""
+    stmts = []
+    for r in rows:
+        stmts.append(f"""INSERT INTO knowledge.field_log_pools
+    (archive_filename, pool_idx, url, user_name, priority, raw_block)
+VALUES (
+    {_dq(r['archive_filename'])},
+    {_int_or_null(r.get('pool_idx'))},
+    {_dq(r['url']) if r.get('url') else 'NULL'},
+    {_dq(r['user_name']) if r.get('user_name') else 'NULL'},
+    {_dq(r['priority']) if r.get('priority') else 'NULL'},
+    {_dq(r['raw_block']) if r.get('raw_block') else 'NULL'}
+) ON CONFLICT (archive_filename, pool_idx) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+def _build_api_stats_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_api_stats."""
+    stmts = []
+    for r in rows:
+        stmts.append(f"""INSERT INTO knowledge.field_log_api_stats
+    (archive_filename, stats_section, slot, elapsed_s, chip_num, freqs_avg, temp_c,
+     chip_verify_diff, work_count, nonce_count, nonce_before, nonce_err_count, raw_block)
+VALUES (
+    {_dq(r['archive_filename'])},
+    {_dq(r['stats_section'])},
+    {r['slot']},
+    {r['elapsed_s']},
+    {r['chip_num']},
+    {r['freqs_avg']},
+    {r['temp_c']},
+    {_dq(r['chip_verify_diff']) if r.get('chip_verify_diff') else 'NULL'},
+    {r['work_count']},
+    {r['nonce_count']},
+    {r['nonce_before']},
+    {r['nonce_err_count']},
+    {_dq(r['raw_block']) if r.get('raw_block') else 'NULL'}
+) ON CONFLICT (archive_filename, stats_section) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+def _build_antminer_boots_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_antminer_boots."""
+    stmts = []
+    for r in rows:
+        files_arr = 'ARRAY[' + ','.join(_dq(f) for f in sorted(r['files_present'])) + ']' \
+            if r['files_present'] else 'ARRAY[]::TEXT[]'
+        boot_ts = f"'{r['boot_timestamp']}'" if r.get('boot_timestamp') else 'NULL'
+        stmts.append(f"""INSERT INTO knowledge.field_log_antminer_boots
+    (entity_label, archive_filename, boot_timestamp, session_folder, files_present)
+VALUES (
+    {_dq(r['entity_label'])},
+    {_dq(r['archive_filename'])},
+    {boot_ts},
+    {_dq(r['session_folder'])},
+    {files_arr}
+) ON CONFLICT (entity_label) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+def _build_antminer_autotune_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_antminer_autotune."""
+    stmts = []
+    for r in rows:
+        event_ts = f"'{r['event_timestamp']}'" if r.get('event_timestamp') else 'NULL'
+        stmts.append(f"""INSERT INTO knowledge.field_log_antminer_autotune
+    (archive_filename, boot_session, event_idx, event_timestamp, event_type,
+     chain, frequency_mhz, voltage_v, temp_max_c, raw_line)
+VALUES (
+    {_dq(r['archive_filename'])},
+    {_dq(r['boot_session'])},
+    {_int_or_null(r.get('event_idx'))},
+    {event_ts},
+    {_dq(r['event_type']) if r.get('event_type') else 'NULL'},
+    {_int_or_null(r.get('chain'))},
+    {_int_or_null(r.get('frequency_mhz'))},
+    {_num_or_null(r.get('voltage_v'))},
+    {_num_or_null(r.get('temp_max_c'))},
+    {_dq(r['raw_line']) if r.get('raw_line') else 'NULL'}
+) ON CONFLICT (archive_filename, boot_session, event_idx) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+def _build_antminer_autotune_sql_batched(rows: list, batch_size: int = 500) -> list:
+    """
+    v3.1: Build batched INSERT SQL blocks for field_log_antminer_autotune.
+    Splits rows into chunks of batch_size to avoid giant single statements.
+    Default batch_size=500 keeps memory footprint under 100 MB per archive
+    (reduced from 1000 in v3 to comply with the Layer 2 streaming memory spec).
+    Returns list of SQL strings (each a VALUES (...),(...),...  multi-row INSERT).
+    """
+    sql_blocks = []
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i:i + batch_size]
+        value_clauses = []
+        for r in batch:
+            event_ts = f"'{r['event_timestamp']}'" if r.get('event_timestamp') else 'NULL'
+            value_clauses.append(
+                f"({_dq(r['archive_filename'])}, {_dq(r['boot_session'])}, "
+                f"{_int_or_null(r.get('event_idx'))}, {event_ts}, "
+                f"{_dq(r['event_type']) if r.get('event_type') else 'NULL'}, "
+                f"{_int_or_null(r.get('chain'))}, "
+                f"{_int_or_null(r.get('frequency_mhz'))}, "
+                f"{_num_or_null(r.get('voltage_v'))}, "
+                f"{_num_or_null(r.get('temp_max_c'))}, "
+                f"{_dq(r['raw_line']) if r.get('raw_line') else 'NULL'})"
+            )
+        sql_blocks.append(
+            "INSERT INTO knowledge.field_log_antminer_autotune\n"
+            "    (archive_filename, boot_session, event_idx, event_timestamp, event_type,\n"
+            "     chain, frequency_mhz, voltage_v, temp_max_c, raw_line) VALUES\n"
+            + ",\n".join(value_clauses)
+            + "\nON CONFLICT (archive_filename, boot_session, event_idx) DO NOTHING;"
+        )
+    return sql_blocks
+
+
+def _build_events_sql(rows: list) -> str:
+    """Build INSERT SQL for field_log_events."""
+    stmts = []
+    for r in rows:
+        event_ts = f"'{r['event_timestamp']}'" if r.get('event_timestamp') else 'NULL'
+        stmts.append(f"""INSERT INTO knowledge.field_log_events
+    (archive_filename, source_file, event_idx, event_timestamp, severity, message, raw_line)
+VALUES (
+    {_dq(r['archive_filename'])},
+    {_dq(r['source_file'])},
+    {_int_or_null(r.get('event_idx'))},
+    {event_ts},
+    {_dq(r['severity']) if r.get('severity') else 'NULL'},
+    {_dq(r['message']) if r.get('message') else 'NULL'},
+    {_dq(r['raw_line']) if r.get('raw_line') else 'NULL'}
+) ON CONFLICT (archive_filename, source_file, event_idx) DO NOTHING;""")
+    return '\n'.join(stmts)
+
+
+# ---------------------------------------------------------------------------
+# Main archive dispatcher
+# ---------------------------------------------------------------------------
+
+def _cleanup_tmp_dir(tmp_dir: str) -> None:
+    """Safely remove an archive temp directory. Silent on errors."""
+    if tmp_dir and os.path.isdir(tmp_dir):
+        try:
+            import shutil
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
+
+
+def process_archive(file_bytes: bytes, filename: str,
+                    conn_params: dict = None,
+                    defer_cleanup: bool = False):
+    """
+    Main entry point for archive processing.  v3 adds Layer 2 integration.
+    v3.4: Layer 2 moved OUT of this function into the calling endpoint so it
+    runs AFTER execute_sql_block has committed the archive row.
+    Accepts .tar / .tgz / .tar.gz / .rar files.
+
+    Default return (defer_cleanup=False): list of SQL block strings.
+      tmp_dir is cleaned up before return. Backward compatible with preview
+      endpoints that only need generated SQL.
+
+    When defer_cleanup=True: returns tuple (sql_blocks, archive_meta, shape, tmp_dir).
+      tmp_dir is NOT cleaned up — caller MUST call _cleanup_tmp_dir(tmp_dir)
+      after Layer 2 post-processing completes.
+
+    conn_params: retained for signature compatibility. Layer 2 is NO LONGER
+      invoked from inside this function; callers must invoke
+      _do_layer2_postprocessing(conn_params, archive_meta, shape, tmp_dir)
+      after running execute_sql_block on the returned SQL blocks.
+    """
+    if not file_bytes:
+        return [f'-- ERROR: Empty archive file: {filename}']
+
+    # Minimum viable archive size: reject obviously truncated files
+    if len(file_bytes) < 100:
+        return [
+            f'-- ERROR: Archive {filename!r} appears truncated or empty '
+            f'({len(file_bytes)} bytes). Cannot parse.'
+        ]
+
+    ext_lower = filename.lower()
+    sha = _sha256_hex(file_bytes)
+    fsize = len(file_bytes)
+    ts = _parse_archive_timestamp(filename)
+    sql_blocks = []
+    _t_archive_start = _time_module.monotonic()
+    _log = get_run_logger('mg_archive')
+    _log.info('BEGIN archive: %s  (%.1f KB, sha256=%s...)', filename, fsize/1024, sha[:12])
+
+    tmp_dir = None
+    try:
+        tmp_dir = tempfile.mkdtemp(prefix='mg_archive_')
+
+        # Open archive and get namelist for shape detection
+        if ext_lower.endswith('.rar'):
+            if not RARFILE_AVAILABLE:
+                return [
+                    "-- ERROR: RAR support requires the 'unrar' binary and rarfile library. "
+                    "Install: pip install rarfile && apt-get install unrar (Linux), "
+                    "brew install unrar (macOS), or download from rarlab.com (Windows)."
+                ]
+            try:
+                rf = _rarfile.RarFile(io.BytesIO(file_bytes))
+                namelist = rf.namelist()
+            except Exception as e:
+                return [f'-- ERROR: Cannot open RAR archive {filename!r}: {e}']
+        else:
+            # .tar, .tgz, .tar.gz
+            try:
+                tf = _tarfile.open(fileobj=io.BytesIO(file_bytes))
+                namelist = [m.name for m in tf.getmembers()]
+            except Exception as e:
+                return [f'-- ERROR: Cannot open archive {filename!r}: {e}. '
+                        f'File may be truncated or corrupted ({fsize} bytes).']
+
+        shape = detect_archive_shape(namelist)
+
+        # Extract to temp dir
+        try:
+            if ext_lower.endswith('.rar'):
+                rf.extractall(tmp_dir)
+            else:
+                tf.extractall(tmp_dir)  # lenient extraction per trust context
+        except Exception as e:
+            return [f'-- ERROR: Extraction failed for {filename!r}: {e}']
+        finally:
+            if not ext_lower.endswith('.rar'):
+                tf.close()
+
+        ip = _parse_miner_ip(filename, namelist)
+
+        archive_meta = {
+            'filename': filename,
+            'sha256': sha,
+            'file_size_bytes': fsize,
+            'miner_ip': ip,
+            'miner_model': None,
+            'firmware_version': None,
+            'mac_address': None,
+            'control_board': None,
+            'kernel_version': None,
+            'archive_timestamp': ts,
+            'files_in_archive': len(namelist),
+            'parse_warnings': None,
+        }
+
+        # DDL block comes first
+        sql_blocks.append('BEGIN;\n' + FIELD_LOG_DDL + '\nCOMMIT;')
+
+        _log.info('  shape=%s  ip=%s', shape, archive_meta.get('miner_ip', 'none'))
+
+        if shape == 'whatsminer':
+            parsed = parse_whatsminer_bundle(tmp_dir, archive_meta)
+        elif shape == 'antminer':
+            parsed = parse_antminer_bundle(tmp_dir, archive_meta)
+        else:
+            # Unknown shape — store import record only
+            archive_meta['parse_warnings'] = 'Unknown archive shape — no parsers matched'
+            parsed = [_build_imports_sql(archive_meta, 'unknown')]
+
+        # Wrap all DML in a single transaction
+        sql_blocks.append('BEGIN;\n' + '\n'.join(parsed) + '\nCOMMIT;')
+
+        # -----------------------------------------------------------------
+        # v3.4: Layer 2 MOVED OUT of process_archive.
+        # Previously ran here — but SQL blocks haven't been executed yet,
+        # so get_archive_id_by_label() returned None and Layer 2 silently
+        # skipped raw_json + import_runs + resolver stamps.
+        # Callers must now invoke _do_layer2_postprocessing AFTER
+        # execute_sql_block has committed the archive row.
+        # -----------------------------------------------------------------
+
+        _elapsed = _time_module.monotonic() - _t_archive_start
+        _log.info('END archive: %s  elapsed=%.2fs  model=%s  shape=%s',
+                  filename, _elapsed,
+                  archive_meta.get('miner_model', 'unknown'), shape)
+
+    except Exception as e:
+        sql_blocks.append(f'-- ERROR: Unexpected failure processing {filename!r}: {e}\n'
+                          f'-- Traceback:\n' +
+                          '\n'.join(f'--   {ln}' for ln in traceback.format_exc().splitlines()))
+        _log.error('EXCEPTION processing %s: %s', filename, e)
+        # If caller deferred cleanup, still hand back the (possibly empty)
+        # archive_meta/shape/tmp_dir so the caller can clean up predictably.
+        if 'archive_meta' not in locals():
+            archive_meta = {'filename': filename}
+        if 'shape' not in locals():
+            shape = 'unknown'
+    finally:
+        if not defer_cleanup:
+            _cleanup_tmp_dir(tmp_dir)
+
+    if defer_cleanup:
+        return sql_blocks, archive_meta, shape, tmp_dir
+    return sql_blocks
+
+
+# ---------------------------------------------------------------------------
+# v3.2 Layer 2 helpers
+# ---------------------------------------------------------------------------
+
+def _insert_archive_raw_json_files(conn_params: dict, archive_filename: str,
+                                    tmp_dir: str):
+    """
+    Walk tmp_dir and call insert_raw_json for every *.json file found, plus
+    any *.log file whose content starts with '{' or '[' (best-effort JSON).
+    Uses ON CONFLICT DO NOTHING for idempotency.
+    Skips files larger than 50 MB to avoid JSONB bloat.
+    """
+    log = get_run_logger('mg_raw_json')
+    if not tmp_dir or not os.path.isdir(tmp_dir):
+        return
+    MAX_BYTES = 50 * 1024 * 1024  # 50 MB per file cap
+    inserted = 0
+    for root, _dirs, files in os.walk(tmp_dir):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            flower = fname.lower()
+            is_json_ext = flower.endswith('.json')
+            is_log_ext = flower.endswith('.log')
+            if not (is_json_ext or is_log_ext):
+                continue
+            try:
+                fsize = os.path.getsize(fpath)
+                if fsize == 0 or fsize > MAX_BYTES:
+                    continue
+                with open(fpath, 'r', errors='replace') as fh:
+                    raw_text = fh.read()
+                stripped = raw_text.lstrip()
+                if not stripped:
+                    continue
+                if is_log_ext and stripped[0] not in ('{', '['):
+                    continue  # not JSON-looking
+                try:
+                    payload = json.loads(raw_text)
+                except json.JSONDecodeError:
+                    continue  # not valid JSON — skip
+                # Compute relative path from tmp_dir for source_file
+                rel_path = os.path.relpath(fpath, tmp_dir).replace(os.sep, '/')
+                insert_raw_json(conn_params, archive_filename, rel_path,
+                                payload,
+                                entity_label=archive_filename,
+                                parser='mg_import_per_file')
+                inserted += 1
+            except Exception as exc:
+                log.debug('_insert_archive_raw_json_files: skip %s: %s', fname, exc)
+    log.info('_insert_archive_raw_json_files: %d files for %s', inserted, archive_filename)
+
+
+def _update_import_run_resolver_stats(conn_params: dict, archive_filename: str,
+                                       tier1_hits: int, tier1_vcode_hits: int,
+                                       tier2_hits: int, unresolved: int):
+    """
+    Append resolver stats to mg.import_runs.row_counts JSONB for the
+    most-recent run that imported archive_filename.
+    Silently skips if the table or row doesn't exist yet.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return
+    log = get_run_logger('mg_layer2')
+    stats = {
+        'tier1_hits':       tier1_hits,
+        'tier1_vcode_hits': tier1_vcode_hits,
+        'tier2_hits':       tier2_hits,
+        'unresolved':       unresolved,
+    }
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE mg.import_runs
+            SET row_counts = COALESCE(row_counts, '{}'::jsonb) || %s::jsonb
+            WHERE id = (
+                SELECT id FROM mg.import_runs
+                ORDER BY started_at DESC
+                LIMIT 1
+            )
+            """,
+            (json.dumps(stats),)
+        )
+        cur.close()
+        conn.close()
+        log.debug('_update_import_run_resolver_stats: %s', stats)
+    except Exception as exc:
+        log.debug('_update_import_run_resolver_stats error: %s', exc)
+
+
+def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
+                               shape: str, tmp_dir: str,
+                               progress_cb=None):
+    """
+    v3.2 Layer 2 post-import actions performed after SQL has been generated
+    and (if auto-import) executed.  Requires a live DB connection.
+
+    v3.4: Accepts optional progress_cb(phase: str, detail: dict) callback
+    so streaming endpoints can emit SSE events per phase without blocking.
+    Phases emitted: 'resolver', 'identity_rows', 'raw_json_files',
+    'archive_metadata', 'done'. All exceptions in progress_cb are swallowed.
+
+    Actions:
+      1. Fetch the archive row id from knowledge.field_log_imports
+      2. Resolve model via two-tier resolver (miner_type AND control_board_version)
+         Steps A-E per brief: normalise -> Tier-1 exact -> Tier-1 V-code stripped
+         -> Tier-2 hashrate-bin -> unresolved_models fallback
+      3. Stamp knowledge.field_log_imports with model_id / tier / hardware_revision
+      4. Populate field_log_miner_identity per boot session (identity_rows from archive_meta)
+         and stamp each row with resolver results
+      5. Insert raw JSON for every *.json file (and JSON-looking *.log) in tmp_dir
+      6. Record unknown fields to mg.unknown_fields
+    """
+    log = get_run_logger('mg_layer2')
+    filename = archive_meta.get('filename', '')
+
+    def _emit(phase, **detail):
+        """Safely invoke progress_cb; never let UI signal break Layer 2."""
+        if progress_cb is None:
+            return
+        try:
+            progress_cb(phase, detail)
+        except Exception as _cb_exc:
+            log.debug('progress_cb error in phase=%s: %s', phase, _cb_exc)
+
+    # 1. Fetch archive id
+    archive_id = get_archive_id_by_label(conn_params, filename)
+    if not archive_id:
+        log.debug('Layer2: no archive_id for %s (not yet committed?)', filename)
+        _emit('skipped', reason='no_archive_id')
+        return
+
+    # 2+3+4. Two-tier model resolution
+    # Brief: "always check BOTH miner_type AND control_board_version columns"
+    raw_miner_type      = archive_meta.get('miner_model')     # miner_type field
+    raw_control_board   = archive_meta.get('control_board')   # control_board_version
+    hashrate_gh         = archive_meta.get('hashrate_gh')     # for Tier-2 bin selection
+
+    # Use the new resolver module if available; fall back to legacy resolve_model
+    if RESOLVER_AVAILABLE and _resolver is not None and PSYCOPG2_AVAILABLE and conn_params:
+        try:
+            # Open a single connection for all resolver calls
+            _conn = psycopg2.connect(
+                host=conn_params.get('host', 'localhost'),
+                port=int(conn_params.get('port', 5432)),
+                dbname=conn_params.get('database', 'mining_guardian'),
+                user=conn_params.get('user', 'guardian_admin'),
+                password=conn_params.get('password', 'MiningGuardian2026!'),
+                connect_timeout=5
+            )
+            _conn.autocommit = True
+            try:
+                res = _resolver.resolve_identity_fields(
+                    _conn,
+                    raw_miner_type or '',
+                    raw_control_board or '',
+                    hashrate_gh=hashrate_gh,
+                    archive_filename=filename,
+                )
+            finally:
+                _conn.close()
+
+            if res.tier != 'unresolved' and res.model_id:
+                # Stamp the import row with model_id / tier / hardware_revision
+                stamp_import_with_model_id(
+                    conn_params, archive_id,
+                    res.model_id,
+                    res.tier,
+                    res.hardware_revision,
+                )
+                log.info('Layer2 MATCHED: %r -> model_id=%s tier=%s rev=%s',
+                         raw_miner_type, res.model_id, res.tier,
+                         res.hardware_revision)
+                _emit('resolver', status='matched', tier=res.tier,
+                      model_id=res.model_id,
+                      hardware_revision=res.hardware_revision)
+            else:
+                log.warning('Layer2 UNRESOLVED: %r reason=%s (archive_id=%s)',
+                            raw_miner_type, res.reason, archive_id)
+                _emit('resolver', status='unresolved', reason=res.reason)
+        except Exception as exc:
+            log.debug('Layer2 resolver error: %s', exc)
+            # Fall back to legacy resolver
+            _legacy_resolve(conn_params, archive_id, raw_miner_type, filename, log)
+    else:
+        _legacy_resolve(conn_params, archive_id, raw_miner_type, filename, log)
+
+    # ---------------------------------------------------------------
+    # v3.2 Fix 1+2: Populate field_log_miner_identity with resolver stamps
+    # ---------------------------------------------------------------
+    identity_rows = archive_meta.get('identity_rows', [])
+    if identity_rows and RESOLVER_AVAILABLE and _resolver is not None and PSYCOPG2_AVAILABLE:
+        try:
+            _conn2 = psycopg2.connect(
+                host=conn_params.get('host', 'localhost'),
+                port=int(conn_params.get('port', 5432)),
+                dbname=conn_params.get('database', 'mining_guardian'),
+                user=conn_params.get('user', 'guardian_admin'),
+                password=conn_params.get('password', 'MiningGuardian2026!'),
+                connect_timeout=5
+            )
+            _conn2.autocommit = True
+            try:
+                resolver_results = []
+                tier1_hits = tier1_vcode_hits = tier2_hits = unresolved_count = 0
+                for r in identity_rows:
+                    r_res = _resolver.resolve_identity_fields(
+                        _conn2,
+                        r.get('miner_type') or '',
+                        r.get('control_board_version') or '',
+                        hashrate_gh=r.get('hashrate_gh'),
+                        archive_filename=filename,
+                    )
+                    resolver_results.append(r_res)
+                    if r_res.tier == 'tier1':
+                        tier1_hits += 1
+                    elif r_res.tier == 'tier1_vcode_stripped':
+                        tier1_vcode_hits += 1
+                    elif r_res.tier == 'tier2':
+                        tier2_hits += 1
+                    else:
+                        unresolved_count += 1
+                log.info('identity resolver stats: tier1=%d vcode=%d tier2=%d unresolved=%d',
+                         tier1_hits, tier1_vcode_hits, tier2_hits, unresolved_count)
+            finally:
+                _conn2.close()
+
+            # Upsert identity rows with resolver stamps
+            insert_miner_identity(conn_params, identity_rows, resolver_results)
+            _emit('identity_rows', count=len(identity_rows),
+                  tier1=tier1_hits, tier1_vcode=tier1_vcode_hits,
+                  tier2=tier2_hits, unresolved=unresolved_count)
+
+            # Update import_runs row_counts with resolver stats
+            _update_import_run_resolver_stats(
+                conn_params, filename,
+                tier1_hits, tier1_vcode_hits, tier2_hits, unresolved_count
+            )
+
+            # v3.3: populate in-memory per-archive resolver stats
+            _LAST_RESOLVER_STATS[filename] = {
+                'tier1':        tier1_hits,
+                'tier1_vcode':  tier1_vcode_hits,
+                'tier2':        tier2_hits,
+                'unresolved':   unresolved_count,
+                'total':        tier1_hits + tier1_vcode_hits + tier2_hits + unresolved_count,
+            }
+        except Exception as exc:
+            log.debug('Layer2 identity-rows resolver error: %s', exc)
+            # Still insert identity rows without resolver stamps
+            insert_miner_identity(conn_params, identity_rows)
+    elif identity_rows:
+        # Resolver not available — insert without stamps
+        insert_miner_identity(conn_params, identity_rows)
+
+    # ---------------------------------------------------------------
+    # v3.2 Fix 3: Raw JSON capture — one row per JSON file in archive
+    # ---------------------------------------------------------------
+    _emit('raw_json_files', status='started')
+    try:
+        _insert_archive_raw_json_files(conn_params, filename, tmp_dir)
+        _emit('raw_json_files', status='done')
+    except Exception as exc:
+        log.debug('Layer2 per-file raw-json error: %s', exc)
+        _emit('raw_json_files', status='error', error=str(exc))
+
+    # Archive-level metadata blob (v3.1 behaviour kept)
+    try:
+        raw_payload = {
+            'archive_filename': filename,
+            'shape':            shape,
+            'miner_model':      archive_meta.get('miner_model'),
+            'firmware_version': archive_meta.get('firmware_version'),
+            'mac_address':      archive_meta.get('mac_address'),
+            'control_board':    archive_meta.get('control_board'),
+            'kernel_version':   archive_meta.get('kernel_version'),
+            'miner_ip':         archive_meta.get('miner_ip'),
+            'archive_timestamp':str(archive_meta.get('archive_timestamp')) if archive_meta.get('archive_timestamp') else None,
+            'files_in_archive': archive_meta.get('files_in_archive'),
+            'parse_warnings':   archive_meta.get('parse_warnings'),
+        }
+        source_file = ('miner_overview.log' if shape == 'whatsminer'
+                       else 'cgminer.conf+miner.log')
+        # v3.3-patched: Mac Claude partitioned schema requires entity_label + sha256.
+        # entity_label = filename (archive-level metadata); insert_raw_json computes sha256.
+        insert_raw_json(conn_params, filename, source_file, raw_payload,
+                        entity_label=filename,
+                        parser='mg_import_archive_meta')
+
+        # 6. Unknown fields: check archive_meta keys not in known set
+        _known_meta = frozenset(raw_payload.keys()) | frozenset(('identity_rows',))
+        all_meta_keys = frozenset(archive_meta.keys())
+        extra_keys = all_meta_keys - _known_meta
+        unknown_count = 0
+        if extra_keys:
+            extra_dict = {k: archive_meta[k] for k in extra_keys
+                         if not isinstance(archive_meta[k], (list, dict))}
+            if extra_dict:
+                record_unknown_fields(conn_params, archive_id, source_file,
+                                      extra_dict, _known_meta)
+                unknown_count = len(extra_dict)
+        _emit('archive_metadata', status='done', unknown_fields=unknown_count)
+    except Exception as exc:
+        log.debug('Layer2 raw-json/unknown-fields error: %s', exc)
+        _emit('archive_metadata', status='error', error=str(exc))
+
+    _emit('done', archive_id=archive_id)
+
+
+def _legacy_resolve(conn_params: dict, archive_id: int, raw_miner_type,
+                    filename: str, log):
+    """Fallback to legacy resolve_model when resolver module is unavailable."""
+    if raw_miner_type:
+        result = resolve_model(conn_params, raw_miner_type, 'miner_type')
+        if result:
+            stamp_import_with_catalog(
+                conn_params, archive_id,
+                result['catalog_slug'],
+                result['confidence'],
+                result['match_type'],
+                result.get('hardware_revision')
+            )
+            log.info('Layer2 MATCHED (legacy): %s -> %s (conf=%.2f)',
+                     raw_miner_type, result['catalog_slug'], result['confidence'])
+        else:
+            record_unresolved_model(conn_params, raw_miner_type, 'miner_type', archive_id)
+            log.warning('Layer2 UNRESOLVED (legacy): %s (archive_id=%s)',
+                        raw_miner_type, archive_id)
+    else:
+        log.debug('Layer2: no miner_model for %s', filename)
+
+
+def stamp_import_with_model_id(conn_params: dict, archive_id: int, model_id: str,
+                               tier: str, hardware_revision):
+    """
+    v3.1: UPDATE knowledge.field_log_imports to record model_id (UUID),
+    resolver tier, and hardware_revision from the new two-tier resolver.
+    Falls back gracefully if the columns haven’t been added yet.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params or not archive_id:
+        return
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        # Try the v3.1 column names first; fall back to legacy names
+        try:
+            cur.execute(
+                """
+                UPDATE knowledge.field_log_imports
+                SET miner_model_id    = %s::uuid,
+                    resolver_tier     = %s,
+                    hardware_revision = %s
+                WHERE id = %s
+                """,
+                (model_id, tier, hardware_revision, archive_id)
+            )
+        except Exception:
+            # Columns may not exist yet (pre-migration) — silently skip
+            conn.rollback()
+        cur.close()
+        conn.close()
+    except Exception as exc:
+        get_run_logger('mg_layer2').debug('stamp_import_with_model_id error: %s', exc)
+
+
 def process_zip(zip_bytes: bytes) -> list:
     """
     Extract a ZIP and return list of {filename, content_bytes, type} dicts.
@@ -556,6 +3195,17 @@ def generate_sql():
                     'master_file': master_name
                 })
 
+            elif ext in ('.tar', '.tgz', '.rar') or filename.lower().endswith('.tar.gz'):
+                archive_sql_blocks = process_archive(data, filename)
+                # Check for error blocks
+                all_sql = '\n\n'.join(archive_sql_blocks)
+                results.append({
+                    'filename': filename,
+                    'sql': all_sql,
+                    'type': 'archive',
+                    'error': None if not all_sql.startswith('-- ERROR') else all_sql
+                })
+
             else:
                 results.append({'filename': filename, 'sql': '',
                                  'type': ext, 'error': f'Unsupported file type: {ext}'})
@@ -583,13 +3233,18 @@ def run_sql():
 @app.route('/api/import-files', methods=['POST'])
 def import_files():
     """Generate SQL from files and immediately run against PostgreSQL (auto-import mode)."""
+    global _LAST_RESOLVER_STATS
     import time as _time
     conn_params = json.loads(request.form.get('conn_params', '{}'))
+
+    # v3.3: reset resolver stats accumulator for this session
+    _LAST_RESOLVER_STATS = {}
 
     all_messages = []
     total_statements = 0
     total_rows = 0
     total_errors = []
+    _per_archive_errors = []  # v3.3: structured error records for import_runs
     files_processed = 0
     session_filenames = []
     t_start = _time.monotonic()
@@ -637,6 +3292,39 @@ def import_files():
                     sql = generate_csv_sql(filename, fheaders, frows)
                 else:
                     raise ValueError('JSON must be an array of objects')
+
+            elif ext in ('.tar', '.tgz', '.rar') or filename.lower().endswith('.tar.gz'):
+                # v3.4: process_archive returns (sql_blocks, meta, shape, tmp_dir)
+                # with defer_cleanup=True so Layer 2 can run AFTER
+                # execute_sql_block commits the archive row.
+                archive_sql_blocks, _arch_meta, _arch_shape, _arch_tmp_dir = \
+                    process_archive(data, filename, conn_params, defer_cleanup=True)
+                try:
+                    all_messages.append({'type': 'header', 'text': f'\u25b6 {filename}', 'stmt': ''})
+                    for block in archive_sql_blocks:
+                        if block.startswith('-- ERROR'):
+                            total_errors.append(block)
+                            all_messages.append({'type': 'error', 'text': block, 'stmt': ''})
+                        else:
+                            res = execute_sql_block(conn_params, block)
+                            total_statements += res.get('statements_run', 0)
+                            total_rows += res.get('rows_affected', 0)
+                            total_errors.extend(res.get('errors', []))
+                            all_messages.extend(res.get('messages', []))
+                    # v3.4: Layer 2 post-processing — archive row is now committed
+                    if conn_params:
+                        try:
+                            _do_layer2_postprocessing(
+                                conn_params, _arch_meta, _arch_shape, _arch_tmp_dir
+                            )
+                        except Exception as _l2_exc:
+                            total_errors.append(f'Layer2 postprocess error: {_l2_exc}')
+                finally:
+                    _cleanup_tmp_dir(_arch_tmp_dir)
+                files_processed += 1
+                session_filenames.append(filename)
+                return  # already handled above
+
             else:
                 raise ValueError(f'Unsupported file type: {ext}')
 
@@ -667,6 +3355,8 @@ def import_files():
                     zf_entry['content_bytes'],
                     is_runner=zf_entry.get('is_runner', False)
                 )
+        elif ext in ('.tar', '.tgz', '.rar') or filename.lower().endswith('.tar.gz'):
+            process_and_run(filename, ext, data)
         else:
             process_and_run(filename, ext, data)
 
@@ -680,6 +3370,35 @@ def import_files():
         'duration_s': duration
     })
 
+    # v3: Background dormant miner detection (runs at end of each import)
+    try:
+        dormant_count = detect_dormant_miners(conn_params)
+        if dormant_count:
+            _run_logger.info('Dormant miner detector: surfaced %d new dormant miners',
+                             dormant_count)
+            all_messages.append({'type': 'info',
+                                  'text': f'Dormant miner detector: {dormant_count} miners surfaced to awaiting_review',
+                                  'stmt': ''})
+    except Exception as _dme:
+        _run_logger.debug('Dormant detection error: %s', _dme)
+
+    # v3.1: Write per-run summary to mg.import_runs
+    _run_started = datetime.utcnow()
+    try:
+        _finished_at = datetime.utcnow()
+        write_import_run(
+            conn_params,
+            started_at=_run_started,
+            finished_at=_finished_at,
+            archive_count=files_processed,
+            row_counts={'total_rows': total_rows, 'errors': len(total_errors),
+                        'resolver': _build_resolver_totals()},
+            errors=total_errors[:50] if total_errors else [],
+            status='ok' if not total_errors else 'partial_failure',
+        )
+    except Exception as _ire:
+        _run_logger.debug('import_runs write error: %s', _ire)
+
     return jsonify({
         'success': len(total_errors) == 0,
         'messages': all_messages,
@@ -688,6 +3407,524 @@ def import_files():
         'errors': total_errors,
         'files_processed': files_processed
     })
+
+
+# ---------------------------------------------------------------------------
+# v3.1: Import run summary logging
+# ---------------------------------------------------------------------------
+
+def write_import_run(conn_params: dict, started_at, finished_at, archive_count: int,
+                     row_counts: dict, errors: list, status: str):
+    """
+    INSERT a summary row into mg.import_runs after each import session.
+    Table is created idempotently by FIELD_LOG_DDL at process_archive startup.
+    Silently no-ops when psycopg2 or conn_params unavailable.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return
+    log = get_run_logger('mg_import_runs')
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO mg.import_runs
+                (started_at, finished_at, archive_count, row_counts, errors, status)
+            VALUES (%s, %s, %s, %s::jsonb, %s, %s)
+            """,
+            (
+                started_at,
+                finished_at,
+                archive_count,
+                json.dumps(row_counts),
+                list(str(e) for e in errors) if errors else [],
+                status,
+            )
+        )
+        cur.close()
+        conn.close()
+        log.debug('import_run written: archives=%d status=%s', archive_count, status)
+    except Exception as exc:
+        get_run_logger('mg_import_runs').debug('write_import_run error: %s', exc)
+
+
+# ---------------------------------------------------------------------------
+# v3: Dormant miner detection
+# ---------------------------------------------------------------------------
+
+def detect_dormant_miners(conn_params: dict) -> int:
+    """
+    Background job: find MAC addresses seen in >= 3 archives whose
+    last_seen_at > 30 days ago and not already in mg.dormant_miners.
+    INSERT them with status='awaiting_review'.
+    Returns count of newly surfaced dormant miners.
+    Silently returns 0 if mg.miners or mg.dormant_miners don't exist yet.
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return 0
+    log = get_run_logger('mg_dormant')
+    try:
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=8
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        # Find candidates: MACs in mg.miners with >= 3 archives, last seen > 30d ago,
+        # not yet in mg.dormant_miners with awaiting_review status
+        cur.execute("""
+            INSERT INTO mg.dormant_miners
+                (miner_mac, last_archive_id, last_seen_at, days_dormant,
+                 surfaced_at, status)
+            SELECT
+                m.mac_address,
+                (SELECT id FROM knowledge.field_log_imports fi
+                 WHERE fi.mac_address = m.mac_address
+                 ORDER BY fi.ingested_at DESC LIMIT 1),
+                m.last_seen_at,
+                EXTRACT(DAY FROM NOW() - m.last_seen_at)::INT,
+                NOW(),
+                'awaiting_review'
+            FROM mg.miners m
+            WHERE m.archive_count >= 3
+              AND m.last_seen_at < NOW() - INTERVAL '30 days'
+              AND NOT EXISTS (
+                  SELECT 1 FROM mg.dormant_miners dm
+                  WHERE dm.miner_mac = m.mac_address
+                    AND dm.status = 'awaiting_review'
+              )
+            ON CONFLICT DO NOTHING
+        """)
+        count = cur.rowcount
+        cur.close()
+        conn.close()
+        if count:
+            log.info('Dormant miner detector: inserted %d new dormant records', count)
+        return count
+    except Exception as exc:
+        log.debug('detect_dormant_miners error: %s', exc)
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# v3: RMA form HTML templates (inline)
+# ---------------------------------------------------------------------------
+
+_RMA_FORM_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mining Guardian — RMA Form</title>
+<style>
+body{background:#0d0e10;color:#e8eaf0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:2rem;}
+h1{color:#F7931A;margin-bottom:1.5rem;}
+.form-group{margin-bottom:1rem;}
+label{display:block;color:#8b919e;margin-bottom:.25rem;font-size:.875rem;}
+input,select,textarea{width:100%;max-width:500px;background:#1c1f24;border:1px solid #2e3440;
+  color:#e8eaf0;padding:.5rem .75rem;border-radius:4px;font-size:.875rem;}
+textarea{height:80px;resize:vertical;}
+button{background:#F7931A;color:#000;border:none;padding:.6rem 1.5rem;
+  border-radius:4px;cursor:pointer;font-weight:600;margin-top:.5rem;}
+button:hover{background:#ffaa42;}
+.success{background:#1a2e1a;border:1px solid #4ade80;border-radius:4px;padding:1rem;margin-top:1rem;}
+.error{background:#2e1a1a;border:1px solid #f87171;border-radius:4px;padding:1rem;margin-top:1rem;}
+a{color:#F7931A;text-decoration:none;}
+nav{margin-bottom:2rem;}
+nav a{margin-right:1.5rem;}
+</style>
+</head>
+<body>
+<nav><a href="/">Importer</a> <a href="/rma">RMA Form</a> <a href="/rma/csv">Batch CSV</a> <a href="/dormant">Dormant Miners</a></nav>
+<h1>RMA / Failure Record</h1>
+{% if message %}
+<div class="{{ 'success' if success else 'error' }}">{{ message }}</div>
+{% endif %}
+<form method="POST" action="/rma">
+  <div class="form-group">
+    <label>Miner MAC Address <small>(required if no serial)</small></label>
+    <input type="text" name="miner_mac" placeholder="AA:BB:CC:DD:EE:FF">
+  </div>
+  <div class="form-group">
+    <label>Miner Serial <small>(required if no MAC)</small></label>
+    <input type="text" name="miner_serial" placeholder="SN...">
+  </div>
+  <div class="form-group">
+    <label>Date Pulled *</label>
+    <input type="date" name="pulled_date" required>
+  </div>
+  <div class="form-group">
+    <label>Failure Reason *</label>
+    <select name="failure_reason" required>
+      <option value="">-- select --</option>
+      <option value="psu_failure">PSU Failure</option>
+      <option value="hashboard_failure">Hashboard Failure</option>
+      <option value="control_board">Control Board</option>
+      <option value="fan_failure">Fan Failure</option>
+      <option value="network">Network</option>
+      <option value="overheat">Overheat</option>
+      <option value="unknown">Unknown</option>
+      <option value="other">Other</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>Failure Detail</label>
+    <input type="text" name="failure_reason_detail" placeholder="Optional detail">
+  </div>
+  <div class="form-group">
+    <label>Replaced With MAC</label>
+    <input type="text" name="replaced_with_mac" placeholder="AA:BB:CC:DD:EE:FF">
+  </div>
+  <div class="form-group">
+    <label>Replaced With Serial</label>
+    <input type="text" name="replaced_with_serial">
+  </div>
+  <div class="form-group">
+    <label>Tech Notes</label>
+    <textarea name="tech_notes" placeholder="Any additional notes..."></textarea>
+  </div>
+  <button type="submit">Save RMA Record</button>
+</form>
+</body></html>"""
+
+_RMA_CSV_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Mining Guardian — Batch RMA CSV</title>
+<style>
+body{background:#0d0e10;color:#e8eaf0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:2rem;}
+h1{color:#F7931A;}
+.info{background:#1c1f24;border:1px solid #2e3440;border-radius:4px;padding:1rem;margin:1rem 0;font-size:.875rem;}
+pre{background:#14161a;border:1px solid #2e3440;padding:1rem;border-radius:4px;font-size:.75rem;overflow-x:auto;}
+button{background:#F7931A;color:#000;border:none;padding:.6rem 1.5rem;border-radius:4px;cursor:pointer;font-weight:600;}
+.success{background:#1a2e1a;border:1px solid #4ade80;border-radius:4px;padding:1rem;margin-top:1rem;}
+.error{background:#2e1a1a;border:1px solid #f87171;border-radius:4px;padding:1rem;margin-top:1rem;}
+a{color:#F7931A;text-decoration:none;}
+nav{margin-bottom:2rem;}
+nav a{margin-right:1.5rem;}
+input[type=file]{background:#1c1f24;border:1px solid #2e3440;color:#e8eaf0;padding:.5rem;border-radius:4px;}
+</style></head>
+<body>
+<nav><a href="/">Importer</a> <a href="/rma">RMA Form</a> <a href="/rma/csv">Batch CSV</a> <a href="/dormant">Dormant Miners</a></nav>
+<h1>Batch RMA CSV Upload</h1>
+{% if message %}
+<div class="{{ 'success' if success else 'error' }}">{{ message }}</div>
+{% endif %}
+<div class="info">Upload a CSV with these columns (order matters, all optional except pulled_date and failure_reason):</div>
+<pre>miner_mac,miner_serial,pulled_date,failure_reason,failure_reason_detail,replaced_with_mac,replaced_with_serial,tech_notes</pre>
+<form method="POST" action="/rma/csv" enctype="multipart/form-data">
+  <div style="margin-bottom:1rem;">
+    <label style="display:block;color:#8b919e;margin-bottom:.25rem;font-size:.875rem;">CSV File</label>
+    <input type="file" name="csv_file" accept=".csv" required>
+  </div>
+  <button type="submit">Import CSV</button>
+</form>
+</body></html>"""
+
+_DORMANT_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Mining Guardian — Dormant Miners</title>
+<style>
+body{background:#0d0e10;color:#e8eaf0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:2rem;}
+h1{color:#F7931A;}
+table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:.875rem;}
+th{background:#1c1f24;color:#8b919e;text-align:left;padding:.5rem .75rem;border-bottom:1px solid #2e3440;}
+td{padding:.5rem .75rem;border-bottom:1px solid #14161a;}
+tr:hover td{background:#14161a;}
+select{background:#1c1f24;border:1px solid #2e3440;color:#e8eaf0;padding:.25rem .5rem;border-radius:3px;}
+button{background:#F7931A;color:#000;border:none;padding:.3rem .8rem;border-radius:3px;cursor:pointer;font-size:.8rem;}
+.badge{padding:.2rem .5rem;border-radius:3px;font-size:.75rem;}
+.awaiting{background:rgba(251,191,36,.15);color:#fbbf24;}
+.resolved{background:rgba(74,222,128,.12);color:#4ade80;}
+a{color:#F7931A;text-decoration:none;}
+nav{margin-bottom:2rem;}
+nav a{margin-right:1.5rem;}
+.empty{color:#5a6070;padding:2rem;text-align:center;}
+</style></head>
+<body>
+<nav><a href="/">Importer</a> <a href="/rma">RMA Form</a> <a href="/rma/csv">Batch CSV</a> <a href="/dormant">Dormant Miners</a></nav>
+<h1>Dormant Miners — Awaiting Review</h1>
+{% if miners %}
+<table>
+<thead><tr><th>MAC</th><th>Last Seen</th><th>Days Dormant</th><th>Surfaced</th><th>Resolution</th></tr></thead>
+<tbody>
+{% for m in miners %}
+<tr>
+  <td>{{ m.miner_mac }}</td>
+  <td>{{ m.last_seen_at }}</td>
+  <td>{{ m.days_dormant }}</td>
+  <td>{{ m.surfaced_at }}</td>
+  <td>
+    <form method="POST" action="/dormant/resolve" style="display:flex;gap:.5rem;align-items:center;">
+      <input type="hidden" name="dormant_id" value="{{ m.id }}">
+      <input type="hidden" name="miner_mac" value="{{ m.miner_mac }}">
+      <select name="resolution">
+        <option value="pulled">Pulled</option>
+        <option value="failed">Failed</option>
+        <option value="sold">Sold</option>
+        <option value="moved">Moved</option>
+        <option value="unknown">Unknown</option>
+      </select>
+      <label style="font-size:.8rem;color:#8b919e;">
+        <input type="checkbox" name="create_rma" value="1"> Create RMA
+      </label>
+      <button type="submit">Resolve</button>
+    </form>
+  </td>
+</tr>
+{% endfor %}
+</tbody></table>
+{% else %}
+<div class="empty">No dormant miners awaiting review.</div>
+{% endif %}
+</body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# v3: Flask routes — RMA form, dormant miner triage
+# ---------------------------------------------------------------------------
+
+def _get_conn_params_from_args():
+    """Extract DB connection params from query args or use defaults."""
+    return {
+        'host':     request.args.get('host', 'localhost'),
+        'port':     request.args.get('port', '5432'),
+        'database': request.args.get('database', 'mining_guardian'),
+        'user':     request.args.get('user', 'guardian_admin'),
+        'password': request.args.get('password', 'MiningGuardian2026!'),
+    }
+
+
+@app.route('/rma', methods=['GET', 'POST'])
+def rma_form():
+    """GET: render RMA form. POST: validate + insert into mg.rma_records."""
+    message = None
+    success = False
+
+    if request.method == 'POST':
+        miner_mac    = request.form.get('miner_mac', '').strip() or None
+        miner_serial = request.form.get('miner_serial', '').strip() or None
+        pulled_date  = request.form.get('pulled_date', '').strip()
+        failure_reason = request.form.get('failure_reason', '').strip()
+        failure_reason_detail = request.form.get('failure_reason_detail', '').strip() or None
+        replaced_with_mac    = request.form.get('replaced_with_mac', '').strip() or None
+        replaced_with_serial = request.form.get('replaced_with_serial', '').strip() or None
+        tech_notes   = request.form.get('tech_notes', '').strip() or None
+
+        # Validate
+        if not miner_mac and not miner_serial:
+            message = 'Error: must provide either MAC address or serial number.'
+        elif not pulled_date:
+            message = 'Error: pulled_date is required.'
+        elif not failure_reason:
+            message = 'Error: failure_reason is required.'
+        else:
+            if PSYCOPG2_AVAILABLE:
+                try:
+                    conn = psycopg2.connect(
+                        host='localhost', port=5432, dbname='mining_guardian',
+                        user='guardian_admin', password='MiningGuardian2026!',
+                        connect_timeout=8
+                    )
+                    conn.autocommit = True
+                    cur = conn.cursor()
+                    # Try to look up catalog_slug via mg.miners
+                    catalog_slug = None
+                    if miner_mac:
+                        try:
+                            cur.execute(
+                                'SELECT catalog_slug FROM mg.miners WHERE mac_address=%s LIMIT 1',
+                                (miner_mac,)
+                            )
+                            row = cur.fetchone()
+                            if row:
+                                catalog_slug = row[0]
+                        except Exception:
+                            pass
+                    cur.execute(
+                        """INSERT INTO mg.rma_records
+                           (miner_mac, miner_serial, catalog_slug, pulled_date,
+                            failure_reason, failure_reason_detail,
+                            replaced_with_mac, replaced_with_serial,
+                            tech_notes, recorded_at)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+                           RETURNING id""",
+                        (miner_mac, miner_serial, catalog_slug, pulled_date,
+                         failure_reason, failure_reason_detail,
+                         replaced_with_mac, replaced_with_serial, tech_notes)
+                    )
+                    new_id = cur.fetchone()[0]
+                    cur.close()
+                    conn.close()
+                    message = f'RMA record saved — ID #{new_id}'
+                    success = True
+                except Exception as exc:
+                    message = f'Database error: {exc}'
+            else:
+                message = 'Error: psycopg2 not installed.'
+
+    return render_template_string(_RMA_FORM_HTML, message=message, success=success)
+
+
+@app.route('/rma/csv', methods=['GET', 'POST'])
+def rma_csv():
+    """GET: render batch CSV upload form. POST: process CSV and bulk-insert RMA records."""
+    message = None
+    success = False
+
+    if request.method == 'POST':
+        if 'csv_file' not in request.files:
+            message = 'No file uploaded.'
+        else:
+            f = request.files['csv_file']
+            try:
+                headers, rows = read_csv_bytes(f.read())
+                headers_lower = [h.strip().lower() for h in headers]
+                required = {'pulled_date', 'failure_reason'}
+                if not required.issubset(set(headers_lower)):
+                    message = f'CSV must have columns: pulled_date, failure_reason. Got: {headers_lower}'
+                else:
+                    def col(row, name):
+                        try:
+                            idx = headers_lower.index(name)
+                            return row[idx].strip() if idx < len(row) else None
+                        except ValueError:
+                            return None
+
+                    inserted = 0
+                    errors = []
+                    if PSYCOPG2_AVAILABLE:
+                        conn = psycopg2.connect(
+                            host='localhost', port=5432, dbname='mining_guardian',
+                            user='guardian_admin', password='MiningGuardian2026!',
+                            connect_timeout=8
+                        )
+                        conn.autocommit = True
+                        cur = conn.cursor()
+                        for row in rows:
+                            mac    = col(row, 'miner_mac') or None
+                            serial = col(row, 'miner_serial') or None
+                            if not mac and not serial:
+                                errors.append('Row skipped: no MAC or serial')
+                                continue
+                            try:
+                                cur.execute(
+                                    """INSERT INTO mg.rma_records
+                                       (miner_mac, miner_serial, pulled_date,
+                                        failure_reason, failure_reason_detail,
+                                        replaced_with_mac, replaced_with_serial,
+                                        tech_notes, recorded_at)
+                                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,NOW())""",
+                                    (mac, serial,
+                                     col(row, 'pulled_date'),
+                                     col(row, 'failure_reason'),
+                                     col(row, 'failure_reason_detail'),
+                                     col(row, 'replaced_with_mac'),
+                                     col(row, 'replaced_with_serial'),
+                                     col(row, 'tech_notes'))
+                                )
+                                inserted += 1
+                            except Exception as row_err:
+                                errors.append(str(row_err))
+                        cur.close()
+                        conn.close()
+                        message = f'Imported {inserted} RMA records.'
+                        if errors:
+                            message += f' Errors: {len(errors)} — {errors[:3]}'
+                        success = inserted > 0
+                    else:
+                        message = 'psycopg2 not installed.'
+            except Exception as exc:
+                message = f'CSV parse error: {exc}'
+
+    return render_template_string(_RMA_CSV_HTML, message=message, success=success)
+
+
+@app.route('/dormant', methods=['GET'])
+def dormant_miners():
+    """List all awaiting-review dormant miners."""
+    miners = []
+    if PSYCOPG2_AVAILABLE:
+        try:
+            conn = psycopg2.connect(
+                host='localhost', port=5432, dbname='mining_guardian',
+                user='guardian_admin', password='MiningGuardian2026!',
+                connect_timeout=8
+            )
+            cur = conn.cursor()
+            cur.execute(
+                """SELECT id, miner_mac, last_seen_at, days_dormant, surfaced_at
+                   FROM mg.dormant_miners
+                   WHERE status = 'awaiting_review'
+                   ORDER BY days_dormant DESC
+                   LIMIT 200"""
+            )
+            for row in cur.fetchall():
+                miners.append({
+                    'id': row[0], 'miner_mac': row[1],
+                    'last_seen_at': str(row[2])[:10],
+                    'days_dormant': row[3],
+                    'surfaced_at': str(row[4])[:10],
+                })
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+    return render_template_string(_DORMANT_HTML, miners=miners)
+
+
+@app.route('/dormant/resolve', methods=['POST'])
+def dormant_resolve():
+    """Resolve a dormant miner entry, optionally creating an RMA record."""
+    dormant_id  = request.form.get('dormant_id', '').strip()
+    resolution  = request.form.get('resolution', 'unknown')
+    miner_mac   = request.form.get('miner_mac', '').strip() or None
+    create_rma  = request.form.get('create_rma') == '1'
+
+    if PSYCOPG2_AVAILABLE and dormant_id:
+        try:
+            conn = psycopg2.connect(
+                host='localhost', port=5432, dbname='mining_guardian',
+                user='guardian_admin', password='MiningGuardian2026!',
+                connect_timeout=8
+            )
+            conn.autocommit = True
+            cur = conn.cursor()
+
+            rma_id = None
+            if create_rma and miner_mac:
+                cur.execute(
+                    """INSERT INTO mg.rma_records
+                       (miner_mac, pulled_date, failure_reason, recorded_at)
+                       VALUES (%s, CURRENT_DATE, %s, NOW()) RETURNING id""",
+                    (miner_mac, resolution)
+                )
+                rma_id = cur.fetchone()[0]
+
+            cur.execute(
+                """UPDATE mg.dormant_miners
+                   SET status='resolved', resolution=%s,
+                       resolved_at=NOW(), resolved_by='user',
+                       rma_record_id=%s
+                   WHERE id=%s""",
+                (resolution, rma_id, dormant_id)
+            )
+            cur.close()
+            conn.close()
+        except Exception:
+            pass
+    return redirect('/dormant')
+
 
 
 @app.route('/api/import-history', methods=['GET'])
@@ -701,6 +3938,473 @@ def clear_import_history():
     """Clear in-memory import history."""
     import_history.clear()
     return jsonify({'success': True})
+
+
+# ===========================================================================
+# v3.3 NEW ENDPOINTS
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# WI-6: Cancel batch
+# ---------------------------------------------------------------------------
+
+@app.route('/api/cancel-batch', methods=['POST'])
+def cancel_batch():
+    """Set the module-level cancel flag so the streaming import loop exits cleanly."""
+    global _BATCH_CANCEL_FLAG
+    _BATCH_CANCEL_FLAG = True
+    _run_logger.info('cancel-batch requested — flag set')
+    return jsonify({'success': True, 'message': 'Cancel flag set. Current batch will stop after the archive in progress.'})
+
+
+# ---------------------------------------------------------------------------
+# WI-3: Resolver summary
+# ---------------------------------------------------------------------------
+
+@app.route('/api/resolver-summary', methods=['GET'])
+def resolver_summary():
+    """
+    Return per-archive resolver tier breakdown from the in-memory accumulator
+    populated during the last import session.
+    Also computes batch totals and coverage %.
+    """
+    per_archive = dict(_LAST_RESOLVER_STATS)  # snapshot
+    totals = {'tier1': 0, 'tier1_vcode': 0, 'tier2': 0, 'unresolved': 0, 'total': 0}
+    for stats in per_archive.values():
+        for k in totals:
+            totals[k] += stats.get(k, 0)
+    resolved = totals['tier1'] + totals['tier1_vcode'] + totals['tier2']
+    coverage_pct = round(100.0 * resolved / totals['total'], 2) if totals['total'] else 0.0
+    return jsonify({
+        'success': True,
+        'per_archive': per_archive,
+        'totals': totals,
+        'coverage_pct': coverage_pct,
+    })
+
+
+# ---------------------------------------------------------------------------
+# WI-4: Unresolved sample preview
+# ---------------------------------------------------------------------------
+
+@app.route('/api/unresolved-sample', methods=['GET'])
+def unresolved_sample():
+    """
+    Return recent rows from mg.unresolved_models.
+    Query params:
+      limit (int, default 50, max 500)
+    """
+    if not PSYCOPG2_AVAILABLE:
+        return jsonify({'success': False, 'error': 'psycopg2 not installed', 'rows': []})
+    try:
+        limit = min(int(request.args.get('limit', 50)), 500)
+    except (ValueError, TypeError):
+        limit = 50
+    conn_params = {
+        'host':     request.args.get('host', 'localhost'),
+        'port':     request.args.get('port', '5432'),
+        'database': request.args.get('database', 'mining_guardian'),
+        'user':     request.args.get('user', 'guardian_admin'),
+        'password': request.args.get('password', 'MiningGuardian2026!'),
+    }
+    try:
+        conn = psycopg2.connect(
+            host=conn_params['host'],
+            port=int(conn_params['port']),
+            dbname=conn_params['database'],
+            user=conn_params['user'],
+            password=conn_params['password'],
+            connect_timeout=8,
+        )
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                raw_string,
+                source_field   AS archive_filename,
+                reason,
+                occurrence_count AS count,
+                first_seen_at    AS first_seen
+            FROM mg.unresolved_models
+            ORDER BY first_seen_at DESC
+            LIMIT %s
+        """, (limit,))
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, [str(v) if v is not None else None for v in row]))
+                for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return jsonify({'success': True, 'count': len(rows), 'rows': rows})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc), 'rows': []})
+
+
+# ---------------------------------------------------------------------------
+# WI-1: Streaming progress endpoint (SSE)
+# ---------------------------------------------------------------------------
+
+def _check_archive_sha256_duplicate(conn_params: dict, sha256_hex: str) -> bool:
+    """
+    Return True if this sha256 already exists in knowledge.field_log_imports.
+    Returns False when psycopg2 unavailable or any DB error (fail-open).
+    """
+    if not PSYCOPG2_AVAILABLE or not conn_params:
+        return False
+    try:
+        import hashlib  # noqa: F811 — already inline-imported elsewhere
+        conn = psycopg2.connect(
+            host=conn_params.get('host', 'localhost'),
+            port=int(conn_params.get('port', 5432)),
+            dbname=conn_params.get('database', 'mining_guardian'),
+            user=conn_params.get('user', 'guardian_admin'),
+            password=conn_params.get('password', 'MiningGuardian2026!'),
+            connect_timeout=5,
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT 1 FROM knowledge.field_log_imports WHERE sha256 = %s LIMIT 1',
+            (sha256_hex,)
+        )
+        found = cur.fetchone() is not None
+        cur.close()
+        conn.close()
+        return found
+    except Exception:
+        return False  # fail-open: unknown duplicate state, let it through
+
+
+def _sse_event(event_type: str, data: dict) -> str:
+    """Format a single SSE message."""
+    return f'event: {event_type}\ndata: {json.dumps(data)}\n\n'
+
+
+@app.route('/api/import-files-stream', methods=['POST'])
+def import_files_stream():
+    """
+    v3.3 streaming variant of /api/import-files.
+    Returns a Server-Sent Events (SSE) stream so the UI (or curl) can watch
+    progress archive-by-archive.
+
+    Events emitted:
+      batch_started        {archive_count, filenames[]}
+      archive_started      {archive, index, total, elapsed_s}
+      archive_skipped      {archive, index, total, reason, sha256}
+      archive_parsed       {archive, index, total, elapsed_s, rows_found}
+      archive_persisted    {archive, index, total, elapsed_s, rows_affected, statements_run}
+      resolver_stats_updated  {archive, tier1, tier1_vcode, tier2, unresolved, total}
+      archive_completed    {archive, index, total, elapsed_s, rows_affected, error}
+      batch_completed      {total_archives, archives_ok, archives_skipped, archives_error,
+                            total_rows, elapsed_s, status, resolver_totals}
+      error                {message}
+    """
+    global _BATCH_CANCEL_FLAG, _LAST_RESOLVER_STATS
+    import time as _time
+
+    conn_params = json.loads(request.form.get('conn_params', '{}'))
+
+    # Collect all archive files (same logic as import_files)
+    file_queue = []  # list of (filename, ext, data_bytes)
+    for key in request.files:
+        f = request.files[key]
+        filename = f.filename
+        ext = os.path.splitext(filename)[1].lower()
+        data = f.read()
+        if ext == '.zip':
+            for zf_entry in process_zip(data):
+                if not zf_entry.get('is_runner', False):
+                    file_queue.append((
+                        zf_entry['filename'],
+                        zf_entry['ext'],
+                        zf_entry['content_bytes'],
+                    ))
+        else:
+            file_queue.append((filename, ext, data))
+
+    # Filter to archive files only — non-archive types not streamed
+    archive_queue = [
+        (fn, ext, d) for fn, ext, d in file_queue
+        if ext in ('.tar', '.tgz', '.rar') or fn.lower().endswith('.tar.gz')
+    ]
+    total = len(archive_queue)
+    t_batch_start = _time.monotonic()
+
+    def generate():
+        global _BATCH_CANCEL_FLAG, _LAST_RESOLVER_STATS
+        nonlocal conn_params
+
+        # Reset state
+        _BATCH_CANCEL_FLAG = False
+        _LAST_RESOLVER_STATS = {}
+
+        archives_ok = 0
+        archives_skipped = 0
+        archives_error = 0
+        total_rows = 0
+        total_stmts = 0
+        import_errors = []  # per-archive error records
+
+        yield _sse_event('batch_started', {
+            'archive_count': total,
+            'filenames': [fn for fn, _, _ in archive_queue],
+        })
+
+        for idx, (filename, ext, data) in enumerate(archive_queue, start=1):
+            # --- Cancel check ---
+            if _BATCH_CANCEL_FLAG:
+                yield _sse_event('batch_completed', {
+                    'total_archives': total,
+                    'archives_ok': archives_ok,
+                    'archives_skipped': archives_skipped,
+                    'archives_error': archives_error,
+                    'total_rows': total_rows,
+                    'elapsed_s': round(_time.monotonic() - t_batch_start, 2),
+                    'status': 'cancelled',
+                    'resolver_totals': _build_resolver_totals(),
+                    'cancel_at_index': idx,
+                })
+                return
+
+            t_archive = _time.monotonic()
+            yield _sse_event('archive_started', {
+                'archive': filename,
+                'index': idx,
+                'total': total,
+                'elapsed_s': round(_time.monotonic() - t_batch_start, 2),
+            })
+
+            # --- Dedup check (WI-5) ---
+            import hashlib as _hl
+            sha256_hex = _hl.sha256(data).hexdigest()
+            if _check_archive_sha256_duplicate(conn_params, sha256_hex):
+                archives_skipped += 1
+                _run_logger.info('SKIP duplicate archive (sha256=%s...): %s', sha256_hex[:12], filename)
+                yield _sse_event('archive_skipped', {
+                    'archive': filename,
+                    'index': idx,
+                    'total': total,
+                    'reason': 'duplicate_sha256',
+                    'sha256': sha256_hex,
+                })
+                continue
+
+            # --- Per-archive error isolation (WI-2) ---
+            archive_rows = 0
+            archive_stmts = 0
+            archive_error_msg = None
+            _arch_tmp_dir = None  # v3.4: must be cleaned up even on failure
+            try:
+                # Parse — v3.4: defer_cleanup=True so Layer 2 can use tmp_dir
+                archive_sql_blocks, _arch_meta, _arch_shape, _arch_tmp_dir = \
+                    process_archive(data, filename, conn_params, defer_cleanup=True)
+                parse_elapsed = round(_time.monotonic() - t_archive, 2)
+
+                # Count rows in SQL (heuristic: count INSERT/UPDATE statements)
+                rows_found = sum(
+                    1 for blk in archive_sql_blocks
+                    if not blk.startswith('-- ERROR')
+                    for line in blk.splitlines()
+                    if line.strip().upper().startswith(('INSERT', 'UPDATE'))
+                )
+                yield _sse_event('archive_parsed', {
+                    'archive': filename,
+                    'index': idx,
+                    'total': total,
+                    'elapsed_s': parse_elapsed,
+                    'rows_found': rows_found,
+                })
+
+                # Execute SQL blocks
+                block_errors = []
+                for block in archive_sql_blocks:
+                    if block.startswith('-- ERROR'):
+                        block_errors.append(block)
+                    else:
+                        res = execute_sql_block(conn_params, block)
+                        archive_stmts += res.get('statements_run', 0)
+                        archive_rows  += res.get('rows_affected', 0)
+                        block_errors.extend(res.get('errors', []))
+
+                total_rows  += archive_rows
+                total_stmts += archive_stmts
+
+                # v3.4a: Layer 2 post-processing — archive row is now committed.
+                # CRITICAL: run Layer 2 BEFORE any yields so a blocked/disconnected
+                # client can never starve the generator and skip raw_json+resolver.
+                # All progress events are buffered via progress_cb, then yielded
+                # after Layer 2 completes.
+                _l2_events = []
+                if conn_params:
+                    def _l2_progress(phase, detail):
+                        _l2_events.append((phase, detail))
+                    try:
+                        _do_layer2_postprocessing(
+                            conn_params, _arch_meta, _arch_shape, _arch_tmp_dir,
+                            progress_cb=_l2_progress,
+                        )
+                    except Exception as _l2_exc:
+                        block_errors.append(f'Layer2 postprocess error: {_l2_exc}')
+                        _run_logger.error(
+                            'Layer2 postprocess failed for %s: %s', filename, _l2_exc
+                        )
+                        _l2_events.append(('error', {'error': str(_l2_exc)}))
+                # NOW yield buffered events — client may have disconnected,
+                # but Layer 2 already finished its DB work above.
+                if conn_params:
+                    yield _sse_event('archive_layer2_started', {
+                        'archive': filename,
+                        'index': idx,
+                        'total': total,
+                    })
+                    for _phase, _detail in _l2_events:
+                        _detail_copy = dict(_detail)
+                        _detail_copy.update({
+                            'archive': filename,
+                            'index': idx,
+                            'total': total,
+                            'phase': _phase,
+                        })
+                        yield _sse_event('archive_layer2_phase', _detail_copy)
+                    yield _sse_event('archive_layer2_completed', {
+                        'archive': filename,
+                        'index': idx,
+                        'total': total,
+                        'phases_emitted': len(_l2_events),
+                    })
+
+                persist_elapsed = round(_time.monotonic() - t_archive, 2)
+                yield _sse_event('archive_persisted', {
+                    'archive': filename,
+                    'index': idx,
+                    'total': total,
+                    'elapsed_s': persist_elapsed,
+                    'rows_affected': archive_rows,
+                    'statements_run': archive_stmts,
+                    'sql_errors': block_errors[:5],
+                })
+
+                # Emit resolver stats if populated for this archive
+                if filename in _LAST_RESOLVER_STATS:
+                    rs = _LAST_RESOLVER_STATS[filename]
+                    yield _sse_event('resolver_stats_updated', {
+                        'archive': filename,
+                        'tier1':       rs['tier1'],
+                        'tier1_vcode': rs['tier1_vcode'],
+                        'tier2':       rs['tier2'],
+                        'unresolved':  rs['unresolved'],
+                        'total':       rs['total'],
+                    })
+
+                if block_errors:
+                    archive_error_msg = f'{len(block_errors)} SQL error(s)'
+                    archives_error += 1
+                    import_errors.append({
+                        'archive': filename,
+                        'error': 'sql_errors',
+                        'message': archive_error_msg,
+                        'traceback': str(block_errors[:3]),
+                    })
+                else:
+                    archives_ok += 1
+
+            except (Exception, SystemExit, MemoryError) as exc:  # WI-2 full isolation
+                archive_error_msg = f'{type(exc).__name__}: {exc}'
+                tb_text = traceback.format_exc()
+                archives_error += 1
+                import_errors.append({
+                    'archive':   filename,
+                    'error':     type(exc).__name__,
+                    'message':   str(exc),
+                    'traceback': tb_text,
+                })
+                _run_logger.error('EXCEPTION (isolated) processing %s: %s', filename, exc)
+            finally:
+                # v3.4: always clean up the deferred tmp_dir — even on exception
+                _cleanup_tmp_dir(_arch_tmp_dir)
+
+            completed_elapsed = round(_time.monotonic() - t_archive, 2)
+            yield _sse_event('archive_completed', {
+                'archive': filename,
+                'index': idx,
+                'total': total,
+                'elapsed_s': completed_elapsed,
+                'rows_affected': archive_rows,
+                'error': archive_error_msg,
+            })
+
+        # --- Batch complete ---
+        batch_elapsed = round(_time.monotonic() - t_batch_start, 2)
+        batch_status = 'ok'
+        if archives_error > 0 and archives_ok == 0:
+            batch_status = 'failed'
+        elif archives_error > 0:
+            batch_status = 'partial_failure'
+
+        resolver_totals = _build_resolver_totals()
+        total_res = resolver_totals.get('total', 0)
+        resolved = resolver_totals.get('tier1', 0) + resolver_totals.get('tier1_vcode', 0) + resolver_totals.get('tier2', 0)
+        coverage_pct = round(100.0 * resolved / total_res, 2) if total_res else 0.0
+        _run_logger.info(
+            'Resolver: tier1=%d tier1_v=%d tier2=%d unresolved=%d (total=%d, coverage=%.1f%%)',
+            resolver_totals.get('tier1', 0),
+            resolver_totals.get('tier1_vcode', 0),
+            resolver_totals.get('tier2', 0),
+            resolver_totals.get('unresolved', 0),
+            total_res,
+            coverage_pct,
+        )
+
+        # Write import_runs summary
+        try:
+            _run_started = datetime.utcnow()
+            write_import_run(
+                conn_params,
+                started_at=_run_started,
+                finished_at=datetime.utcnow(),
+                archive_count=archives_ok + archives_error,
+                row_counts={'total_rows': total_rows, 'errors': archives_error,
+                            'resolver': resolver_totals},
+                errors=['{archive}:{message}'.format(**e) for e in import_errors[:50]],
+                status=batch_status,
+            )
+        except Exception as _ire:
+            _run_logger.debug('import_runs write error (stream): %s', _ire)
+
+        # Background dormant detection
+        try:
+            detect_dormant_miners(conn_params)
+        except Exception:
+            pass
+
+        yield _sse_event('batch_completed', {
+            'total_archives': total,
+            'archives_ok': archives_ok,
+            'archives_skipped': archives_skipped,
+            'archives_error': archives_error,
+            'total_rows': total_rows,
+            'elapsed_s': batch_elapsed,
+            'status': batch_status,
+            'resolver_totals': resolver_totals,
+            'coverage_pct': coverage_pct,
+            'import_errors': import_errors[:20],
+        })
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+        },
+    )
+
+
+def _build_resolver_totals() -> dict:
+    """Aggregate _LAST_RESOLVER_STATS into batch totals."""
+    totals = {'tier1': 0, 'tier1_vcode': 0, 'tier2': 0, 'unresolved': 0, 'total': 0}
+    for stats in _LAST_RESOLVER_STATS.values():
+        for k in totals:
+            totals[k] += stats.get(k, 0)
+    return totals
 
 
 @app.route('/api/browse-tables', methods=['GET'])
@@ -1863,6 +5567,10 @@ h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }
           <span class="type-badge">.json</span>
           <span class="type-badge">.tsv</span>
           <span class="type-badge">.txt</span>
+          <span class="type-badge">.tar</span>
+          <span class="type-badge">.tgz</span>
+          <span class="type-badge">.tar.gz</span>
+          <span class="type-badge">.rar</span>
         </div>
         <input type="file" id="fileInput" multiple accept="*"
                onchange="handleFileInput(event)">
@@ -2161,7 +5869,7 @@ function clearFiles() {
 
 function fileIcon(name) {
   const ext = name.split('.').pop().toLowerCase();
-  const icons = {csv:'📊', sql:'🗃️', zip:'📦', xlsx:'📗', json:'📄', txt:'📝', tsv:'📊'};
+  const icons = {csv:'📊', sql:'🗃️', zip:'📦', xlsx:'📗', json:'📄', txt:'📝', tsv:'📊', tar:'🗜️', tgz:'🗜️', rar:'🗜️', archive:'🗜️'};
   return icons[ext] || '📁';
 }
 
@@ -2308,11 +6016,17 @@ function copySQL() {
 }
 
 // ========== IMPORT ==========
+// v3.4: switched to streaming SSE endpoint for live per-archive progress.
+// Falls back to the blocking endpoint if the browser lacks ReadableStream.
 async function runImport() {
   if (state.files.length === 0) return;
 
-  showLoading('Importing files into PostgreSQL...');
+  // v3.4a: do NOT call showLoading() — the modal overlay blocks
+  // the browser from reading SSE frames, which starves the server
+  // generator and can prevent Layer 2 from running. The progress bar
+  // + live log already communicate state clearly without a modal.
   setProgressActive(true);
+  setProgressDeterminate(0);
   clearStats();
   clearLogEntries();
 
@@ -2320,15 +6034,142 @@ async function runImport() {
   fd.append('conn_params', JSON.stringify(getConnParams()));
   state.files.forEach((f, i) => fd.append(`file_${i}`, f, f.name));
 
+  // Feature detect streaming support
+  const supportsStream = typeof ReadableStream !== 'undefined' &&
+                         typeof TextDecoder !== 'undefined';
+  if (!supportsStream) {
+    // Legacy fallback — old blocking endpoint
+    try {
+      const res = await fetch('/api/import-files', { method: 'POST', body: fd });
+      const data = await res.json();
+      processImportResult(data, null);
+    } catch(e) {
+      logEntry('error', 'Import request failed: ' + e.message, '');
+    } finally {
+      hideLoading();
+      setProgressActive(false);
+    }
+    return;
+  }
+
+  // Streaming path — live progress via SSE
+  let totalStmts = 0, totalRows = 0, totalErrs = 0, filesProcessed = 0;
   try {
-    const res = await fetch('/api/import-files', { method: 'POST', body: fd });
-    const data = await res.json();
-    processImportResult(data, null);
+    const res = await fetch('/api/import-files-stream', { method: 'POST', body: fd });
+    if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // SSE frames are separated by blank lines
+      let sepIdx;
+      while ((sepIdx = buf.indexOf('\n\n')) !== -1) {
+        const frame = buf.slice(0, sepIdx);
+        buf = buf.slice(sepIdx + 2);
+        const evt = parseSseFrame(frame);
+        if (!evt) continue;
+        const s = handleSseEvent(evt.type, evt.data);
+        if (s) {
+          totalStmts += (s.stmts || 0);
+          totalRows  += (s.rows  || 0);
+          totalErrs  += (s.errs  || 0);
+          if (s.fileDone) filesProcessed += 1;
+        }
+      }
+    }
+    // Final stats refresh once stream closes
+    updateStats(totalStmts, totalRows, totalErrs);
+    setProgressDeterminate(1);
+    const summaryBar = document.getElementById('summaryBar');
+    summaryBar.className = 'summary-bar visible';
+    summaryBar.innerHTML = `
+      <div class="summary-item neutral"><span class="num">${totalStmts}</span> <span>statements executed</span></div>
+      <div class="summary-item ok"><span class="num">${totalRows}</span> <span>rows affected</span></div>
+      <div class="summary-item fail"><span class="num">${totalErrs}</span> <span>errors</span></div>
+      <div class="summary-item neutral"><span class="num">${filesProcessed}</span> <span>files processed</span></div>
+      <span style="margin-left:auto; font-weight:700; color:${totalErrs === 0 ? 'var(--success)' : 'var(--error)'}">
+        ${totalErrs === 0 ? '✓ Import Complete' : '⚠ Completed with errors'}
+      </span>
+    `;
+    if (totalErrs === 0) setHeaderStatus('connected', 'Import complete');
+    refreshHistory();
   } catch(e) {
-    logEntry('error', 'Import request failed: ' + e.message, '');
+    logEntry('error', 'Streaming import failed: ' + e.message, '');
   } finally {
+    // hideLoading() is a safety no-op — we never show it in streaming mode
     hideLoading();
     setProgressActive(false);
+  }
+}
+
+// Parse a single SSE frame: lines beginning with "event:" and "data:"
+
+function parseSseFrame(frame) {
+  let type = 'message', data = '';
+  frame.split('\n').forEach(line => {
+    if (line.startsWith('event:')) type = line.slice(6).trim();
+    else if (line.startsWith('data:')) data += line.slice(5).trim();
+  });
+  if (!data) return null;
+  try { return { type, data: JSON.parse(data) }; }
+  catch(e) { return { type, data: {} }; }
+}
+
+// Route SSE events to UI. Returns delta stats {stmts, rows, errs, fileDone}.
+function handleSseEvent(type, d) {
+  const name = d.archive || '';
+  const pos = (d.index && d.total) ? `[${d.index}/${d.total}]` : '';
+  switch (type) {
+    case 'batch_started':
+      logEntry('info', `Batch started — ${d.total || '?'} archive(s)`, '');
+      return null;
+    case 'archive_started':
+      logEntry('info', `${pos} ▶ ${name}`, '');
+      return null;
+    case 'archive_parsed':
+      logEntry('info', `${pos}   parsed in ${d.elapsed_s}s (${d.rows_found} rows found)`, '');
+      return null;
+    case 'archive_persisted':
+      logEntry('ok', `${pos}   persisted: ${d.rows_affected} rows, ${d.statements_run} stmts`, '');
+      return { stmts: d.statements_run || 0, rows: d.rows_affected || 0, errs: (d.sql_errors || []).length };
+    case 'archive_layer2_started':
+      logEntry('info', `${pos}   layer2: running (raw_json, resolver, import_runs)...`, '');
+      return null;
+    case 'archive_layer2_phase': {
+      const p = d.phase || '?';
+      let msg = `${pos}     · ${p}`;
+      if (p === 'resolver')       msg += ` ${d.status || ''} ${d.tier ? '('+d.tier+')' : ''}`;
+      else if (p === 'identity_rows') msg += ` ${d.count} row(s) (t1=${d.tier1} vcode=${d.tier1_vcode} t2=${d.tier2} unres=${d.unresolved})`;
+      else if (p === 'raw_json_files') msg += ` ${d.status || ''}`;
+      else if (p === 'archive_metadata') msg += ` ${d.status || ''}${d.unknown_fields ? ' unknown='+d.unknown_fields : ''}`;
+      else if (p === 'error') msg += ` ERROR: ${d.error || ''}`;
+      logEntry(p === 'error' ? 'error' : 'info', msg, '');
+      return null;
+    }
+    case 'archive_layer2_completed':
+      logEntry('info', `${pos}   layer2: done`, '');
+      return null;
+    case 'resolver_stats_updated':
+      logEntry('info', `${pos}   resolver: tier1=${d.tier1} vcode=${d.tier1_vcode} tier2=${d.tier2} unres=${d.unresolved}`, '');
+      return null;
+    case 'archive_completed':
+      if (d.error) logEntry('error', `${pos} ✕ ${name} failed: ${d.error}`, '');
+      else         logEntry('ok',    `${pos} ✓ ${name} done (${d.elapsed_s}s)`, '');
+      if (d.index && d.total) setProgressDeterminate(d.index / d.total);
+      return { fileDone: true };
+    case 'archive_skipped':
+      logEntry('warn', `${pos} ⊝ ${name} skipped (${d.reason})`, '');
+      if (d.index && d.total) setProgressDeterminate(d.index / d.total);
+      return null;
+    case 'batch_completed':
+      logEntry('ok', `Batch done in ${d.elapsed_s || '?'}s — ok=${d.archives_ok || 0} err=${d.archives_error || 0}`, '');
+      setProgressDeterminate(1);
+      return null;
+    default:
+      return null;
   }
 }
 
@@ -2418,6 +6259,24 @@ function hideLoading() {
 function setProgressActive(active) {
   const pb = document.getElementById('progressBar');
   pb.classList.toggle('active', active);
+  if (active) {
+    // Reset to indeterminate on each run until first event arrives
+    const fill = document.getElementById('progressFill');
+    if (fill) {
+      fill.classList.add('indeterminate');
+      fill.style.width = '';
+    }
+  }
+}
+
+// v3.4: set progress bar to a determinate fraction 0..1.
+// Switches from indeterminate animation to exact-width fill.
+function setProgressDeterminate(frac) {
+  const fill = document.getElementById('progressFill');
+  if (!fill) return;
+  fill.classList.remove('indeterminate');
+  const pct = Math.max(0, Math.min(1, frac)) * 100;
+  fill.style.width = pct.toFixed(1) + '%';
 }
 function escHtml(str) {
   if (!str) return '';
