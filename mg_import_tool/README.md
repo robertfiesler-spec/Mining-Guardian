@@ -89,9 +89,66 @@ MG_DEBUG=1 python mg_import.py
 | Port     | `5432`              |
 | Database | `mining_guardian`   |
 | User     | `guardian_admin`    |
-| Password | `MiningGuardian2026!` |
+| Password | *set via `MG_DB_PASSWORD` env var (no literal default)* |
 
 All connection settings are editable in the GUI — no config file needed.
+
+---
+
+## Configuration & Security
+
+### Required Environment Variable: `MG_DB_PASSWORD`
+
+mg_import refuses to start without `MG_DB_PASSWORD` set. This holds the
+rotated `guardian_admin` password and is consulted by every database
+connection in the tool. There is no literal fallback.
+
+**Set on Windows (User scope, persists across sessions):**
+
+```powershell
+[Environment]::SetEnvironmentVariable("MG_DB_PASSWORD", "<your_password>", "User")
+```
+
+A new top-level PowerShell window will pick it up automatically. To use it
+in the *current* session without opening a new window:
+
+```powershell
+$env:MG_DB_PASSWORD = [Environment]::GetEnvironmentVariable("MG_DB_PASSWORD", "User")
+```
+
+The web form's password field and any `password` value submitted via
+`/api/import-files`, `/api/import-files-stream`, or `/api/test-connection`
+are **ignored** server-side. The DB password always comes from the env var.
+
+### Postgres Authentication: pg_hba.conf
+
+The Docker image's default `pg_hba.conf` has `local`/`127.0.0.1`/`::1`
+in **trust mode**, which means the server skips password checks entirely
+for local connections. After the data volume is initialized, the four
+non-replication trust lines must be flipped to `scram-sha-256`:
+
+```bash
+docker exec mining-guardian-db sed -i \
+  -e 's|^local   all             all                                     trust|local   all             all                                     scram-sha-256|' \
+  -e 's|^host    all             all             127.0.0.1/32            trust|host    all             all             127.0.0.1/32            scram-sha-256|' \
+  -e 's|^host    all             all             ::1/128                 trust|host    all             all             ::1/128                 scram-sha-256|' \
+  /var/lib/postgresql/data/pg_hba.conf
+docker exec mining-guardian-db psql -U guardian_admin -d mining_guardian -c "SELECT pg_reload_conf();"
+```
+
+This change persists across `docker restart` and `docker compose up/down`
+because it lives in the data volume. **It will be wiped if the volume
+is ever destroyed and recreated** — re-run the snippet above after any
+fresh `docker volume rm mining-guardian-pgdata` + `docker compose up -d`.
+
+Verify after applying:
+
+```bash
+# wrong password must FAIL
+docker exec -e PGPASSWORD=wrong mining-guardian-db psql -U guardian_admin -c "select 1"
+# correct password must SUCCEED
+docker exec -e PGPASSWORD="$env:MG_DB_PASSWORD" mining-guardian-db psql -U guardian_admin -c "select 1"
+```
 
 ---
 
@@ -670,7 +727,7 @@ python tools/test_archive_parsers.py
 - Check host/port match your PostgreSQL configuration (`pg_hba.conf`, `postgresql.conf`)
 
 **"role does not exist"**
-- Create the user: `CREATE USER guardian_admin WITH PASSWORD 'MiningGuardian2026!';`
+- Create the user: `CREATE USER guardian_admin WITH PASSWORD '<your_rotated_password>';` (use the value of `MG_DB_PASSWORD`; never commit a real password)
 - Grant access: `GRANT ALL PRIVILEGES ON DATABASE mining_guardian TO guardian_admin;`
 
 **"psycopg2 not installed"**
@@ -729,14 +786,14 @@ Use this for all batch runs of 5+ archives. Emits real-time Server-Sent Events s
 **Watch in real time with curl:**
 ```bash
 curl -N -X POST http://localhost:5050/api/import-files-stream \
-  -F 'conn_params={"host":"localhost","port":5432,"database":"mining_guardian","user":"guardian_admin","password":"MiningGuardian2026!"}' \
+  -F 'conn_params={"host":"localhost","port":5432,"database":"mining_guardian","user":"guardian_admin"}' \
   -F 'file0=@/path/to/your/archive.tar.gz'
 ```
 
 **Batch recipe for 83 archives in a ZIP:**
 ```bash
 curl -N -X POST http://localhost:5050/api/import-files-stream \
-  -F 'conn_params={"host":"localhost","port":5432,"database":"mining_guardian","user":"guardian_admin","password":"MiningGuardian2026!"}' \
+  -F 'conn_params={"host":"localhost","port":5432,"database":"mining_guardian","user":"guardian_admin"}' \
   -F 'file0=@/path/to/all_83_archives.zip'
 ```
 
