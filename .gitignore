@@ -67,3 +67,11 @@ guardian.db-wal
 # Backups directory (local only)
 backups/
 deploy/*_LIVE.json
+
+# Pristine backups of in-flight files (e.g. mg_import.py.v33_pristine)
+*.v??_pristine
+*.v?_pristine
+
+# Local SQL patch staging (canonical copies live under mg_import_tool/sql/)
+mg_sql_patch.zip
+mg_sql_patch/
