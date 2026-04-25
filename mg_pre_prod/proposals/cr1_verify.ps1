@@ -1,5 +1,5 @@
 # =============================================================================
-# CR-1 VERIFICATION SCRIPT  (PowerShell — paste into ROBS-PC PowerShell window)
+# CR-1 VERIFICATION SCRIPT  (PowerShell -- paste into ROBS-PC PowerShell window)
 # =============================================================================
 # Purpose:
 #   CR-1 in the CRIT-5 manifest was downgraded after a snapshot grep showed
@@ -14,13 +14,13 @@
 #   3. Paste this entire script into the PowerShell window and press Enter.
 #      (Or save it as cr1_verify.ps1 and run: .\cr1_verify.ps1)
 #
-# What it does (read-only — no commits, no file edits):
-#   Section A — Repo state sanity check
-#   Section B — Grep working tree for auto_approve references
-#   Section C — Grep working tree for the SPECIFIC token auto_approve_enabled
-#   Section D — Show full context of every match
-#   Section E — Pull recent VPS daemon AttributeError traces (via SSH)
-#   Section F — Summary verdict
+# What it does (read-only -- no commits, no file edits):
+#   Section A -- Repo state sanity check
+#   Section B -- Grep working tree for auto_approve references
+#   Section C -- Grep working tree for the SPECIFIC token auto_approve_enabled
+#   Section D -- Show full context of every match
+#   Section E -- Pull recent VPS daemon AttributeError traces (via SSH)
+#   Section F -- Summary verdict
 #
 # Output: prints to console + writes a timestamped report under
 #         C:\Users\User\Mining-Guardian\cr1_verify_report_<UTC>.txt
@@ -32,14 +32,14 @@ $RepoRoot = "C:\Users\User\Mining-Guardian"
 $Stamp    = (Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmss")
 $Report   = Join-Path $RepoRoot ("cr1_verify_report_{0}.txt" -f $Stamp)
 
-# helper — write to both console and report file
+# helper -- write to both console and report file
 function Tee-Both([string]$line) {
     Write-Host  $line
     Add-Content -Path $Report -Value $line
 }
 
 # initialize report
-Set-Content -Path $Report -Value "CR-1 VERIFICATION REPORT — $Stamp UTC"
+Set-Content -Path $Report -Value "CR-1 VERIFICATION REPORT -- $Stamp UTC"
 Tee-Both "============================================================"
 
 # ---- A. Repo state sanity check ----
@@ -60,7 +60,7 @@ if ($dirty) {
     $dirty -split "`n" | ForEach-Object { Tee-Both ("        " + $_) }
 }
 
-# ---- B. Broad grep — anything matching 'auto_approve' ----
+# ---- B. Broad grep -- anything matching 'auto_approve' ----
 Tee-Both ""
 Tee-Both "[B] Broad grep: 'auto_approve' across .py files in working tree"
 Tee-Both "------------------------------------------------------------"
@@ -73,10 +73,10 @@ if ($broad) {
     }
     Tee-Both ("    --- " + $broad.Count + " matches total ---")
 } else {
-    Tee-Both "    (no matches — no auto_approve reference anywhere)"
+    Tee-Both "    (no matches -- no auto_approve reference anywhere)"
 }
 
-# ---- C. Narrow grep — the SPECIFIC token 'auto_approve_enabled' ----
+# ---- C. Narrow grep -- the SPECIFIC token 'auto_approve_enabled' ----
 Tee-Both ""
 Tee-Both "[C] Narrow grep: token 'auto_approve_enabled' (the CR-1 suspect)"
 Tee-Both "------------------------------------------------------------"
@@ -87,9 +87,9 @@ if ($narrow) {
         $rel = (Resolve-Path -Relative $_.Path)
         Tee-Both ("    " + $rel + ":" + $_.LineNumber + ":  " + $_.Line.Trim())
     }
-    Tee-Both ("    --- " + $narrow.Count + " matches — CR-1 IS REAL, do not downgrade ---")
+    Tee-Both ("    --- " + $narrow.Count + " matches -- CR-1 IS REAL, do not downgrade ---")
 } else {
-    Tee-Both "    (no matches — confirms CR-1 downgrade: token does not exist)"
+    Tee-Both "    (no matches -- confirms CR-1 downgrade: token does not exist)"
 }
 
 # ---- D. Full context of broad matches (3 lines before/after) ----
@@ -110,7 +110,7 @@ if ($broad) {
         }
     }
 } else {
-    Tee-Both "    (nothing to show — no broad matches)"
+    Tee-Both "    (nothing to show -- no broad matches)"
 }
 
 # ---- E. VPS-side commands (run separately on the VPS) ----
@@ -147,14 +147,14 @@ Tee-Both "------------------------------------------------------------"
 if (-not $narrow) {
     if ($broad) {
         Tee-Both "    auto_approve_enabled: NOT FOUND in working tree."
-        Tee-Both ("    auto_approve (broad): FOUND " + $broad.Count + " match(es) — these are env-var-driven, not attribute-driven.")
+        Tee-Both ("    auto_approve (broad): FOUND " + $broad.Count + " match(es) -- these are env-var-driven, not attribute-driven.")
         Tee-Both "    => CR-1 downgrade is CONFIRMED. The 'AttributeError on auto_approve_enabled'"
         Tee-Both "       hypothesis from the original CRIT-5 manifest does not match the code."
         Tee-Both "    => Action: keep CR-1 in the manifest as 'verified non-issue (no attribute, no AttributeError trace)'."
         Tee-Both "       If section [E] surfaces a real AttributeError on a DIFFERENT attribute, escalate that"
-        Tee-Both "       under a new ticket — it is not CR-1."
+        Tee-Both "       under a new ticket -- it is not CR-1."
     } else {
-        Tee-Both "    No auto_approve references at all — CR-1 is fully unfounded."
+        Tee-Both "    No auto_approve references at all -- CR-1 is fully unfounded."
     }
 } else {
     Tee-Both "    auto_approve_enabled: FOUND in working tree (see section [C])."
