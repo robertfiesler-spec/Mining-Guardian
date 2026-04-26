@@ -57,6 +57,54 @@ def _profile_parse_ths(profile_str: str) -> Optional[float]:
     return float(m.group(1)) if m else None
 
 
+
+class _PgConnShim:
+    """SQLite-compatible shim over a psycopg2 connection.
+
+    Added 2026-04-25 as part of CR-4 hotfix. The codebase contains a mix of
+    callers — some written for SQLite (conn.execute(...).fetchall()) and
+    some written for psycopg2 (with conn.cursor() as cur). Rather than
+    rewrite every caller, this shim exposes both surfaces.
+
+    .execute(sql, params=()) returns a cursor (so .fetchone/.fetchall/
+    .rowcount/iteration all work just like SQLite). .cursor() passes
+    through unchanged so existing psycopg2-style callers in database_pg.py
+    keep working without modification.
+    """
+
+    __slots__ = ("_conn",)
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    # SQLite-style shortcut used by mining_guardian.py
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    # Passthrough used by database_pg.py's own methods
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    # Some callers do `with self.db._connect() as conn: with conn:` — be safe.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Don't close here — outer @contextmanager owns the lifecycle.
+        return False
+
+
 class GuardianPGDB:
     """PostgreSQL-backed GuardianDB. API-compatible parallel implementation."""
 
@@ -92,23 +140,31 @@ class GuardianPGDB:
     # ── Connection management ──────────────────────────────────────────
     @contextmanager
     def _connect(self, table_name: str = None):
-        """Open a Postgres connection.
+        """Open a Postgres connection wrapped in a SQLite-compatible shim.
 
         table_name is accepted for API compatibility with the SQLite backend's
         router hint, but it is ignored — all tables live in public.
 
-        Uses DictCursor so rows behave like dicts (parallel to SQLite
-        Row factory on the SQLite side).
+        Returns a _PgConnShim that exposes BOTH:
+          - .execute(sql, params) -> cursor with .fetchone/.fetchall/.rowcount
+            (SQLite-style shortcut — used by mining_guardian.py callers)
+          - .cursor()             -> raw psycopg2 DictCursor
+            (used by database_pg.py's own internal methods)
+          - .commit() / .rollback() / context manager protocol
+
+        Wraps a per-connection DictCursor so rows behave like dicts (parallel
+        to SQLite Row factory on the SQLite side).
         """
-        conn = psycopg2.connect(self._dsn, cursor_factory=DictCursor)
+        raw = psycopg2.connect(self._dsn, cursor_factory=DictCursor)
+        shim = _PgConnShim(raw)
         try:
-            yield conn
-            conn.commit()
+            yield shim
+            raw.commit()
         except Exception:
-            conn.rollback()
+            raw.rollback()
             raise
         finally:
-            conn.close()
+            raw.close()
 
     # ── Schema bootstrap ───────────────────────────────────────────────
     def _init_db(self) -> None:
