@@ -1067,7 +1067,7 @@ class MiningGuardian:
                 FROM miner_restarts
                 WHERE outcome = 'FAILURE'
                   AND restarted_at < %s
-                GROUP BY miner_id
+                GROUP BY miner_id, ip, model
                 HAVING COUNT(*) >= %s
             """, (_stale_threshold, FAILURE_THRESHOLD)).fetchall()
 
@@ -1077,7 +1077,7 @@ class MiningGuardian:
                 FROM miner_restarts
                 WHERE restart_type LIKE %s
                    OR restart_type LIKE %s
-                GROUP BY miner_id
+                GROUP BY miner_id, ip, model
                 HAVING COUNT(*) >= %s
             """, ('%Dead board%', '%board%', ESCALATION_THRESHOLD)).fetchall()
 
@@ -1099,8 +1099,8 @@ class MiningGuardian:
                 WHERE action = 'PHYSICAL_CYCLE'
                   AND status = 'offline'
                   AND scan_id IN (SELECT id FROM scans ORDER BY id DESC LIMIT 10)
-                GROUP BY miner_id
-                HAVING failure_count >= 3
+                GROUP BY miner_id, ip, model
+                HAVING COUNT(*) >= 3
             """).fetchall()
 
             # Merge all paths, dedup by miner_id
