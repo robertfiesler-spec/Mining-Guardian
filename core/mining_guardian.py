@@ -1057,15 +1057,19 @@ class MiningGuardian:
             # 1. 3+ FAILURE outcomes (confirmed bad)
             # 2. 2+ total restarts escalated to RESTART_CHECK_BOARDS (oscillating pattern)
             # Don't count failures from restarts in the last 30 minutes (miner may still be booting)
+            # CR-5: restarted_at is stored as ISO 8601 text (not timestamptz),
+            # so the threshold must be a string parameter to avoid
+            # `operator does not exist: text < timestamp with time zone`.
+            _stale_threshold = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
             candidates_failures = conn.execute("""
                 SELECT miner_id, ip, model,
                        COUNT(*) as failure_count, 'failure_outcomes' as reason
                 FROM miner_restarts
                 WHERE outcome = 'FAILURE'
-                  AND restarted_at < NOW() - INTERVAL '30 minutes'
+                  AND restarted_at < %s
                 GROUP BY miner_id
                 HAVING COUNT(*) >= %s
-            """, (FAILURE_THRESHOLD,)).fetchall()
+            """, (_stale_threshold, FAILURE_THRESHOLD)).fetchall()
 
             candidates_escalated = conn.execute("""
                 SELECT miner_id, ip, model,
