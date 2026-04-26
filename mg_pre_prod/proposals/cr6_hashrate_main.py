@@ -36,8 +36,10 @@ import hashlib
 import sys
 from pathlib import Path
 
-# Pin: this is the sha256 of main b28c8a7's core/mining_guardian.py
-EXPECTED_SHA = "dbc873b9336773ef5052fa08a4aa3e6ac1eac82061d04b48626e393f9cb2fbea"
+# Pin: sha256 of core/mining_guardian.py on main @ 2e8a1e0 (post-CR-4)
+# Original pin was main b28c8a7 (dbc873b9...); CR-4 merge changed SQL syntax
+# but did NOT modify the lines this patch targets (L924, L1291).
+EXPECTED_SHA = "ad5d11a99b1e2c7fa6cb034906f969d037971a45ffac0d318b8249a7bc5319cb"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET = REPO_ROOT / "core" / "mining_guardian.py"
