@@ -10,6 +10,27 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+
+def _parse_hashrate_pct(val) -> float:
+    """Convert hashrate_pct to float, safely. Handles "80.5%", "N/A", "0%", None.
+
+    Without this, the unsafe `float(...)` pattern previously used at the call
+    sites raises ValueError on truthy non-numeric strings ("N/A", "80.5%")
+    AFTER AMS reboot is sent but BEFORE record_restart writes — leaving no
+    audit trail. CR-6 fix.
+    """
+    if val is None or val == "":
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip().rstrip("%")
+    if not s or s.upper() in ("N/A", "NA", "NONE"):
+        return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
 # ── Path setup — works whether run from repo root or core/ directory ──────────
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
@@ -921,7 +942,7 @@ class MiningGuardian:
             self.db.record_restart(
                 miner_id, ip, model,
                 f"Dead board restart — boards {dead_idx} offline before restart",
-                hashrate_before=float(issue.get("hashrate_pct") or 0)
+                hashrate_before=_parse_hashrate_pct(issue.get("hashrate_pct"))
             )
             logger.info("[%s] Restart command sent", miner_id)
         except Exception as e:
@@ -1288,7 +1309,7 @@ class MiningGuardian:
             self.ams.reboot_miner([miner_id])
             logger.info("[%s] Firmware restart sent via AMS", miner_id)
             self.db.record_restart(miner_id, ip, model, restart_type="MANUAL_APPROVED",
-                                   hashrate_before=float(issue.get("hashrate_pct") or 0))
+                                   hashrate_before=_parse_hashrate_pct(issue.get("hashrate_pct")))
         except Exception as e:
             logger.error("[%s] Firmware restart failed: %s", miner_id, e)
             return
