@@ -31,7 +31,7 @@ Design philosophy (per operator Bobby, April 9 2026):
 Scheduling:
     - TODAY (April 9 2026): MANUAL only — run via `python3 ai/daily_deep_dive.py --manual`
     - Starting April 10 2026: cron at 16:00 local (America/Chicago)
-      cron entry: `0 16 * * * cd /root/Mining-Gaurdian && venv/bin/python3 ai/daily_deep_dive.py >> /tmp/daily_deep_dive.log 2>&1`
+      cron entry: `0 16 * * * cd /root/Mining-Guardian && venv/bin/python3 ai/daily_deep_dive.py >> /tmp/daily_deep_dive.log 2>&1`
 
 What this does NOT do:
     - It does NOT call Claude. Claude weekly training stays on its own
@@ -49,7 +49,7 @@ What this does NOT do:
 Safety/resume:
     - Each per-miner analysis is written to working dir as it completes
       so a mid-run crash doesn't lose hours of work.
-    - Working dir: /root/Mining-Gaurdian/daily_deep_dive_wip/{YYYY-MM-DD}/
+    - Working dir: /root/Mining-Guardian/daily_deep_dive_wip/{YYYY-MM-DD}/
     - On restart, completed miners are skipped automatically.
 """
 

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 def get_db():
     """Get database connection."""
-    db_path = os.getenv("GUARDIAN_DB", "/root/Mining-Gaurdian/guardian.db")
+    db_path = os.getenv("GUARDIAN_DB", "/root/Mining-Guardian/guardian.db")
     conn = sqlite3.connect(db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn

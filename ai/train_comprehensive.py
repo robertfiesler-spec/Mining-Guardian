@@ -16,7 +16,7 @@ Feeds ALL available data to the LLM for deep learning:
 The goal: LLM builds a complete picture of every miner's hardware fingerprint,
 performance trends, failure patterns, and correlations with environment.
 
-Cron: 0 3 * * 0 cd /root/Mining-Gaurdian && venv/bin/python train_comprehensive.py
+Cron: 0 3 * * 0 cd /root/Mining-Guardian && venv/bin/python train_comprehensive.py
 """
 
 import sys

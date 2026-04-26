@@ -7,7 +7,7 @@ Runs once a week (Sunday 3am) to deep-analyze the full fleet
 with ALL accumulated data — logs, chain readings, pool stats,
 hardware identity, per-chip data, HVAC/weather correlation.
 
-Cron: 0 3 * * 0 cd /root/Mining-Gaurdian && venv/bin/python weekly_train.py >> /tmp/weekly_train.log 2>&1
+Cron: 0 3 * * 0 cd /root/Mining-Guardian && venv/bin/python weekly_train.py >> /tmp/weekly_train.log 2>&1
 """
 
 import sys

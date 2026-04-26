@@ -93,7 +93,7 @@ class LocalLLMAnalyzer:
     def __init__(self, llm_url: str = None, model: str = None, db_path: str = None):
         self.llm_url = llm_url or DEFAULT_LLM_URL
         self.model = model or DEFAULT_MODEL
-        self.db_path = db_path or "/root/Mining-Gaurdian/guardian.db"
+        self.db_path = db_path or "/root/Mining-Guardian/guardian.db"
         self.km = KnowledgeManager(self.db_path)
         self.api_url = f"{self.llm_url}/api/generate"
         self._last_full_analysis = 0  # timestamp of last full analysis

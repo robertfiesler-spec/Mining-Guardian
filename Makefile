@@ -18,13 +18,13 @@ help:
 
 # Testing
 test:
-	PYTHONPATH=/root/Mining-Gaurdian pytest tests/ -v
+	PYTHONPATH=/root/Mining-Guardian pytest tests/ -v
 
 test-cov:
-	PYTHONPATH=/root/Mining-Gaurdian pytest tests/ --cov=core --cov=clients --cov=notifiers --cov=monitoring --cov-report=term-missing
+	PYTHONPATH=/root/Mining-Guardian pytest tests/ --cov=core --cov=clients --cov=notifiers --cov=monitoring --cov-report=term-missing
 
 test-quick:
-	PYTHONPATH=/root/Mining-Gaurdian pytest tests/ -q
+	PYTHONPATH=/root/Mining-Guardian pytest tests/ -q
 
 # Linting (install ruff first: pip install ruff)
 lint:
@@ -38,7 +38,7 @@ clean:
 
 # Run
 run:
-	cd /root/Mining-Gaurdian && source venv/bin/activate && PYTHONPATH=/root/Mining-Gaurdian python core/mining_guardian.py
+	cd /root/Mining-Guardian && source venv/bin/activate && PYTHONPATH=/root/Mining-Guardian python core/mining_guardian.py
 
 scan: run
 
@@ -50,4 +50,4 @@ logs:
 	journalctl -u mining-guardian -n 50 --no-pager
 
 db-status:
-	sqlite3 /root/Mining-Gaurdian/guardian.db "SELECT COUNT(*) as scans FROM scans; SELECT COUNT(*) as actions FROM action_audit_log;"
+	sqlite3 /root/Mining-Guardian/guardian.db "SELECT COUNT(*) as scans FROM scans; SELECT COUNT(*) as actions FROM action_audit_log;"

@@ -20,9 +20,9 @@ the first time" example for the dual-model jump-start training data.
 import os, sys, sqlite3, time
 from datetime import datetime
 
-os.chdir('/root/Mining-Gaurdian')
-sys.path.insert(0, '/root/Mining-Gaurdian/core')
-sys.path.insert(0, '/root/Mining-Gaurdian/ai')
+os.chdir('/root/Mining-Guardian')
+sys.path.insert(0, '/root/Mining-Guardian/core')
+sys.path.insert(0, '/root/Mining-Guardian/ai')
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')

@@ -11,9 +11,9 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
-sys.path.insert(0, '/root/Mining-Gaurdian')
+sys.path.insert(0, '/root/Mining-Guardian')
 
-WIP_DIR = Path('/root/Mining-Gaurdian/daily_deep_dive_wip/2026-04-16')
+WIP_DIR = Path('/root/Mining-Guardian/daily_deep_dive_wip/2026-04-16')
 SYNTHESIS_FILE = WIP_DIR / 'fleet_synthesis.json'
 
 def log(msg):
@@ -23,7 +23,7 @@ def send_slack(msg):
     try:
         from slack_sdk import WebClient
         token = None
-        with open('/root/Mining-Gaurdian/.env') as f:
+        with open('/root/Mining-Guardian/.env') as f:
             for line in f:
                 if line.startswith('SLACK_BOT_TOKEN='):
                     token = line.strip().split('=', 1)[1]
@@ -41,7 +41,7 @@ def run_job(name, script_path):
     start = time.time()
     result = subprocess.run(
         ['python3', script_path],
-        cwd='/root/Mining-Gaurdian',
+        cwd='/root/Mining-Guardian',
         capture_output=True,
         text=True,
         timeout=7200  # 2 hour timeout
@@ -68,14 +68,14 @@ def main():
         time.sleep(60)
     
     # Run midnight jobs in order
-    os.chdir('/root/Mining-Gaurdian')
-    os.environ['PATH'] = '/root/Mining-Gaurdian/venv/bin:' + os.environ.get('PATH', '')
+    os.chdir('/root/Mining-Guardian')
+    os.environ['PATH'] = '/root/Mining-Guardian/venv/bin:' + os.environ.get('PATH', '')
     
     # 1. Weekly training
-    run_job('Weekly Training (Claude)', '/root/Mining-Gaurdian/ai/weekly_train.py')
+    run_job('Weekly Training (Claude)', '/root/Mining-Guardian/ai/weekly_train.py')
     
     # 2. Refinement chain
-    run_job('Refinement Chain', '/root/Mining-Gaurdian/ai/refinement_chain.py')
+    run_job('Refinement Chain', '/root/Mining-Guardian/ai/refinement_chain.py')
     
     send_slack('✅ *All midnight jobs complete!* Knowledge base updated.')
     log('All done!')

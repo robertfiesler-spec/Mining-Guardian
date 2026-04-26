@@ -10,7 +10,7 @@ Posts a 7am daily summary to #mining-guardian covering:
   - LLM-generated analysis of anything notable overnight
   - Top miners to watch today based on recent history
 
-Run via cron: 0 7 * * * cd /root/Mining-Gaurdian && venv/bin/python morning_briefing.py
+Run via cron: 0 7 * * * cd /root/Mining-Guardian && venv/bin/python morning_briefing.py
 """
 
 import os

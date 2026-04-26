@@ -11,11 +11,11 @@ from datetime import datetime
 from dotenv import load_dotenv
 from slack_sdk import WebClient
 
-load_dotenv('/root/Mining-Gaurdian/.env')
+load_dotenv('/root/Mining-Guardian/.env')
 SLACK_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 BOBBY_USER_ID = 'U07AGTT8CLD'
-WIP_DIR = Path('/root/Mining-Gaurdian/daily_deep_dive_wip/2026-04-16')
-KNOWLEDGE_FILE = Path('/root/Mining-Gaurdian/knowledge.json')
+WIP_DIR = Path('/root/Mining-Guardian/daily_deep_dive_wip/2026-04-16')
+KNOWLEDGE_FILE = Path('/root/Mining-Guardian/knowledge.json')
 
 def check_complete():
     """Check if fleet synthesis is done"""

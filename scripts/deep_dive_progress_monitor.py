@@ -11,11 +11,11 @@ from slack_sdk import WebClient
 # Force unbuffered output
 sys.stdout = sys.stderr = open('/tmp/progress_monitor.log', 'w', buffering=1)
 
-load_dotenv('/root/Mining-Gaurdian/.env')
+load_dotenv('/root/Mining-Guardian/.env')
 SLACK_TOKEN = os.getenv('SLACK_BOT_TOKEN')
 CHANNEL = '#mg-ai-reports'
 INTERVAL = 900
-WIP_BASE = Path('/root/Mining-Gaurdian/daily_deep_dive_wip')
+WIP_BASE = Path('/root/Mining-Guardian/daily_deep_dive_wip')
 
 def get_status():
     result = subprocess.run(['pgrep', '-f', 'daily_deep_dive.py'], capture_output=True, text=True)
