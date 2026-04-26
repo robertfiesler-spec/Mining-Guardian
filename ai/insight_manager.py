@@ -285,7 +285,7 @@ def migrate_legacy_insight():
     existing = knowledge.get('refined_insights', {})
     
     # Check if already migrated
-    if '0110_0020_boards_hydro' in existing:
+    if '0110_0020_boards_immersion' in existing or '0110_0020_boards_hydro' in existing:
         logger.info('Legacy insight already migrated')
         return False
     
@@ -296,10 +296,10 @@ def migrate_legacy_insight():
         'insight': 'PCB=0110/BOM=0020 boards averaging 13.6% hashrate while PCB=0130/BOM=0010 hit 73.5%. Reject all 0110/0020 combinations.',
         'action': 'REJECT',
         'confidence': 'HIGH',
-        'cooling_type': 'HYDRO',
+        'cooling_type': 'IMMERSION',
         'miner_type': 'Antminer S19J Pro',
         'data_source': '847 chip readings over 14 days',
-        'miners_affected': ['53482', '64407'],
+        'miners_affected': ['53482', '53493'],
         'data_points': 847,
         'site_id': 'R&D Home',
         'first_seen': '2026-04-06',
@@ -307,7 +307,10 @@ def migrate_legacy_insight():
         'update_history': [],
     }
     
-    existing['0110_0020_boards_hydro'] = legacy_insight
+    # Migration key changed from 0110_0020_boards_hydro to 0110_0020_boards_immersion
+    # to reflect the corrected cooling type. Old key kept here so the migration check
+    # below still detects already-migrated knowledge bases.
+    existing['0110_0020_boards_immersion'] = legacy_insight
     knowledge['refined_insights'] = existing
     
     if save_knowledge(knowledge):
@@ -344,14 +347,29 @@ After your narrative analysis, include a ```json block like this:
       "insight": "One crisp sentence with specific numbers. Example: PCB=0110/BOM=0020 boards averaging 13.6% hashrate vs 73.5% for 0130/0010.",
       "action": "REJECT",
       "confidence": "HIGH",
-      "cooling_type": "HYDRO",
+      "cooling_type": "IMMERSION",
       "miner_type": "Antminer S19J Pro",
       "data_source": "847 chip readings over 14 days",
-      "miners_affected": ["53482", "64407"],
+      "miners_affected": ["53482", "53493"],
       "data_points": 847
     }
   }
 }
+
+COOLING TYPE RULES — MUST FOLLOW:
+- Antminer S19J Pro at this facility = IMMERSION (operator converted from air to immersion)
+- Antminer S21Imm = IMMERSION (B100 Fog Hashing tank)
+- Antminer S21e XP Hyd = HYDRO (water-cooled by design)
+- Auradine AH3880 = HYDRO (water-cooled by design)
+- All container miners (non-S19) = IMMERSION (same container)
+- NO miner at this facility is air-cooled in operation
+- Never mix cooling types in a single insight. If a pattern spans multiple cooling
+  types, generate separate insights, one per cooling_type.
+
+MINERS_AFFECTED RULES — MUST FOLLOW:
+- Always a JSON array of MINER ID STRINGS, e.g. ["53476", "53477", "53480"]
+- Never a label, category name, or descriptive string like "cohort_bin_3_miners"
+- If you cannot enumerate the specific miner IDs, output an empty array []
 ```
 
 CATEGORIES TO CONSIDER:
