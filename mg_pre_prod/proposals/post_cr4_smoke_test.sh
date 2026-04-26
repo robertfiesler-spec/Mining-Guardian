@@ -71,12 +71,14 @@ else
   check "dashboard-api /fleet/latest 2xx" 1 "got $code"
 fi
 
-# approval-api on :8686 — has /pending
-if curl -sS --max-time 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:8686/pending 2>/dev/null | grep -qE "^(200|204)$"; then
-  check "approval-api /pending 2xx" 0
+# approval-api on :8686 — /pending is auth-gated, so 403 means "service is
+# up and refusing unauthenticated calls correctly". 200/204 means it
+# allowed us through (also fine). Anything else = real problem.
+if curl -sS --max-time 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:8686/pending 2>/dev/null | grep -qE "^(200|204|403)$"; then
+  check "approval-api /pending reachable (2xx or 403=auth-gated)" 0
 else
   code=$(curl -sS --max-time 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:8686/pending 2>/dev/null || echo "unreachable")
-  check "approval-api /pending 2xx" 1 "got $code"
+  check "approval-api /pending reachable (2xx or 403=auth-gated)" 1 "got $code"
 fi
 
 # ── Section 3: scan loop healthy ─────────────────────────────────────
