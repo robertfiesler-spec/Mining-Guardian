@@ -14,7 +14,7 @@ def main():
     print('=' * 80)
 
     # Load knowledge to see all data structures
-    k = json.load(open('/root/Mining-Gaurdian/knowledge.json'))
+    k = json.load(open('/root/Mining-Guardian/knowledge.json'))
 
     print('\n' + '=' * 80)
     print('SECTION 1: ALL DATA STRUCTURES IN KNOWLEDGE.JSON')
@@ -41,9 +41,9 @@ def main():
         'miner_profiles', 'fleet_summary', 'baselines', 'weekly_refinement_chain'
     ]
 
-    ai_files = list(Path('/root/Mining-Gaurdian/ai').glob('*.py'))
-    ai_files += list(Path('/root/Mining-Gaurdian/scripts').glob('*.py'))
-    ai_files += [Path('/root/Mining-Gaurdian/core/mining_guardian.py')]
+    ai_files = list(Path('/root/Mining-Guardian/ai').glob('*.py'))
+    ai_files += list(Path('/root/Mining-Guardian/scripts').glob('*.py'))
+    ai_files += [Path('/root/Mining-Guardian/core/mining_guardian.py')]
 
     writers = defaultdict(list)
     readers = defaultdict(list)
@@ -99,7 +99,7 @@ def main():
     print('SECTION 3: DATABASE TABLES')
     print('=' * 80)
 
-    conn = sqlite3.connect('/root/Mining-Gaurdian/guardian.db')
+    conn = sqlite3.connect('/root/Mining-Guardian/guardian.db')
     tables = [t[0] for t in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
 
     for t in sorted(tables):

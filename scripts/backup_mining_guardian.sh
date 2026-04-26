@@ -5,7 +5,7 @@
 # Keeps 12 rolling copies (1 hour window) + 1 daily snapshot per day
 
 VPS="root@187.124.247.182"
-REMOTE="/root/Mining-Gaurdian"
+REMOTE="/root/Mining-Guardian"
 BACKUP_BASE="/Volumes/Big-Bobby-T9/Bixbit USA/Mining Guardian Backups"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
 DATE=$(date +%Y-%m-%d)

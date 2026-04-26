@@ -4,10 +4,10 @@
 # Backs up: guardian.db, config.json, .env, knowledge.json, miner_specs.json
 # Keeps 7 days of backups, auto-deletes older ones
 
-BACKUP_ROOT="/root/Mining-Gaurdian/backups"
+BACKUP_ROOT="/root/Mining-Guardian/backups"
 TODAY=$(date +%Y-%m-%d)
 BACKUP_DIR="$BACKUP_ROOT/$TODAY"
-SRC="/root/Mining-Gaurdian"
+SRC="/root/Mining-Guardian"
 
 mkdir -p "$BACKUP_DIR"
 

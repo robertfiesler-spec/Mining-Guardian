@@ -6,7 +6,7 @@ The retry pass runs automatically for any miners that fail on first attempt.
 """
 import sys
 import logging
-sys.path.insert(0, '/root/Mining-Gaurdian')
+sys.path.insert(0, '/root/Mining-Guardian')
 
 from core.mining_guardian import MiningGuardian, GuardianConfig
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def main():
     logger.info('=== DAILY LOG COLLECTION START ===')
     
-    config = GuardianConfig.from_file('/root/Mining-Gaurdian/config.json')
+    config = GuardianConfig.from_file('/root/Mining-Guardian/config.json')
     mg = MiningGuardian(config)
     
     # First, we need to get the current list of miners from AMS

@@ -4,7 +4,7 @@
 # Runs every 5 minutes via cron
 # Keeps 12 rolling copies (1 hour) + daily snapshots
 
-REMOTE_DIR="/root/Mining-Gaurdian"
+REMOTE_DIR="/root/Mining-Guardian"
 BACKUP_BASE="/Volumes/Big-Bobby-T9/Bixbit USA/Mining Guardian Backups"
 MAC_USER="BigBobby"
 MAC_HOST="100.103.185.53"

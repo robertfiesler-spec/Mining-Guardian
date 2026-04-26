@@ -67,7 +67,7 @@ def get_pdu_power():
 
 def collect_sample():
     """Collect one hourly sample"""
-    conn = sqlite3.connect("/root/Mining-Gaurdian/guardian.db")
+    conn = sqlite3.connect("/root/Mining-Guardian/guardian.db")
     
     # Get data
     miner_data = get_miner_data(conn)
@@ -84,7 +84,7 @@ def collect_sample():
     print(f"Timestamp: {timestamp}\n")
     
     # Write to CSV
-    csv_path = "/root/Mining-Gaurdian/tests/s21_imm_benchmark.csv"
+    csv_path = "/root/Mining-Guardian/tests/s21_imm_benchmark.csv"
     
     # Create header if file doesn't exist
     try:

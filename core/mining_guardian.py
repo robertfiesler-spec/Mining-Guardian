@@ -2168,7 +2168,7 @@ class MiningGuardian:
                 if analysis_text:
                     logger.info("Qwen scan analysis: %s", analysis_text[:200])
                     # Write to llm_scan_analyses stream (the one weekly_train.py reads)
-                    kpath = _P("/root/Mining-Gaurdian/knowledge.json")
+                    kpath = _P("/root/Mining-Guardian/knowledge.json")
                     knowledge = _json.loads(kpath.read_text()) if kpath.exists() else {}
                     if not isinstance(knowledge.get("llm_scan_analyses"), list):
                         knowledge["llm_scan_analyses"] = []

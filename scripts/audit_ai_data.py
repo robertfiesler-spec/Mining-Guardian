@@ -6,8 +6,8 @@ import sqlite3
 from pathlib import Path
 
 def main():
-    k = json.load(open("/root/Mining-Gaurdian/knowledge.json"))
-    conn = sqlite3.connect("/root/Mining-Gaurdian/guardian.db")
+    k = json.load(open("/root/Mining-Guardian/knowledge.json"))
+    conn = sqlite3.connect("/root/Mining-Guardian/guardian.db")
     
     print("=" * 70)
     print("MINING GUARDIAN — COMPLETE AI DATA FLOW AUDIT")

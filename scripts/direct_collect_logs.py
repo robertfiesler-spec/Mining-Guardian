@@ -184,7 +184,7 @@ def send_slack_report(collected: int, failed: int, total: int, failures: List[st
     try:
         from slack_sdk import WebClient
         token = None
-        with open('/root/Mining-Gaurdian/.env') as f:
+        with open('/root/Mining-Guardian/.env') as f:
             for line in f:
                 if line.startswith('SLACK_BOT_TOKEN='):
                     token = line.strip().split('=', 1)[1]

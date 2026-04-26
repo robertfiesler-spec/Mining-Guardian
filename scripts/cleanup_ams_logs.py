@@ -16,7 +16,7 @@ import sys
 import time
 import logging
 
-sys.path.insert(0, '/root/Mining-Gaurdian')
+sys.path.insert(0, '/root/Mining-Guardian')
 
 from core.mining_guardian import AMSClient, GuardianConfig
 
@@ -32,7 +32,7 @@ def cleanup_all_logs():
     
     logger.info('=== AMS LOG CLEANUP START ===')
     
-    config = GuardianConfig.from_file('/root/Mining-Gaurdian/config.json')
+    config = GuardianConfig.from_file('/root/Mining-Guardian/config.json')
     ams = AMSClient(config)
     token = ams._ensure_token()
     

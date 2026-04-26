@@ -13,7 +13,7 @@ Resume-safety guarantees (added 2026-04-10 after Pass 4 crashed and lost Pass 3)
       Pass 1 exists, Pass 2 exists, anthropic SDK imports, API key present,
       Qwen endpoint reachable.
   - After Pass 3 completes, it is IMMEDIATELY written to
-      /root/Mining-Gaurdian/refinement_chain_wip/pass3_YYYYMMDD_HHMMSS.json
+      /root/Mining-Guardian/refinement_chain_wip/pass3_YYYYMMDD_HHMMSS.json
       BEFORE Pass 4 is attempted. If Pass 4 crashes, Pass 3 is preserved
       and --resume-from 4 can re-run Pass 4 against the saved Pass 3.
   - --smoke-test runs the plumbing end-to-end with fake 500-char inputs

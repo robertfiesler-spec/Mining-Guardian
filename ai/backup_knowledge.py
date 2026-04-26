@@ -6,7 +6,7 @@ Mining Guardian — Daily Knowledge Backup to GitHub
 Copies knowledge.json to knowledge_backup.json (tracked in git)
 and pushes to GitHub. Runs daily via cron.
 
-Cron: 0 4 * * * cd /root/Mining-Gaurdian && venv/bin/python ai/backup_knowledge.py >> /tmp/knowledge_backup.log 2>&1
+Cron: 0 4 * * * cd /root/Mining-Guardian && venv/bin/python ai/backup_knowledge.py >> /tmp/knowledge_backup.log 2>&1
 """
 
 import json
