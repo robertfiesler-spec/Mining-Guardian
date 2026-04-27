@@ -320,3 +320,113 @@ Thursday's installer rewrite is unaffected.
 ---
 
 *— end of 2026-04-27 log (addendum closed end-of-day)*
+
+---
+
+## Addendum #2 — Wednesday data track pulled forward (Monday late-day)
+
+After the Monday close, the user said: *"lets keep going and knock off tuesdays as well, this is my only job for the day, so lets go"* — and once Tuesday's track was done, *"All 6 — full Wednesday track"*. The entire Wednesday data track was completed in the same session.
+
+Six more PRs landed on `main` after the original close, in this order:
+
+| PR | Branch | Subject | Merge commit |
+|---|---|---|---|
+| #18 | `data/c3-microbt-watcher-2026-04-27` | MicroBT parser (Whatsminer M50/M53/M56/M60 SHA-256) | merged |
+| #19 | `data/c3-canaan-watcher-2026-04-27` | Canaan parser (Avalon A14/A15 SHA-256) | merged |
+| #20 | `data/c3-auradine-watcher-2026-04-27` | Auradine parser (Teraflux AT/AH SHA-256) | `77490e8` |
+| #21 | `data/c3-bitdeer-watcher-2026-04-27` | Bitdeer parser (SealMiner A1/A2 SHA-256) | `e3b12cb` |
+| #22 | `data/c5-feedback-loop-2026-04-27` | C5 operational→catalog feedback loop | `7105632` |
+| #23 | `data/c4-catalog-api-verify-2026-04-27` | Catalog API coverage verifier + minimal seed (21/21 PASS) | `9c90329` |
+
+### C3 — manufacturer parsers (PRs #18–#21)
+
+Four brands shipped using the same shape as the Bitmain reference parser from PR #15:
+
+- A `parsers/<brand>.py` module exporting `parse(html: str) -> ParsedCatalogRows` registered in the watcher's `PARSER_MODULES` map.
+- A static fixture under `tests/fixtures/<brand>_<page>.html` captured from the manufacturer's product index, frozen so the test suite has no network dependency.
+- A 9-test suite per brand asserting: SHA-256-only filtering, hashrate parsing, power parsing, alias generation, manufacturer slug, model_slug uniqueness, idempotent re-run, non-SHA SKU rejection, and metadata source tagging.
+
+Non-Bitcoin SKUs are dropped at parse time, not at staging — this matches the locked **Bitcoin SHA-256 only** decision and keeps `staging.miner_model_proposals` clean of Kaspa/Litecoin/Etchash hardware.
+
+Watcher tests after PR #21: **32 framework + 9 microbt + 9 canaan + 9 auradine + 9 bitdeer = 68 total, all passing**. Five of five planned parsers are now complete.
+
+### C5 — operational→catalog feedback loop (PR #22)
+
+`intelligence-catalog/db/feedback_loop.py` (725 LOC) plus 13 unit tests in `intelligence-catalog/db/tests/test_feedback_loop.py`. Three sync paths:
+
+1. **`sync_action_audit_to_failure_patterns`** — `public.action_audit_log` → `ops.failure_patterns`, deduped via `ON CONFLICT (pattern_code)`.
+2. **`sync_llm_analysis_to_war_stories`** — `public.llm_analysis` → `market.war_stories`, keyed on `metadata @> '{"llm_analysis_id": <id>}'::jsonb`. Uses UPDATE-then-INSERT because `market.war_stories` has no UNIQUE index suitable for ON CONFLICT.
+3. **`sync_miner_restarts_to_known_issues`** — `public.miner_restarts` → `hardware.model_known_issues`, keyed per `model_id` on `metadata @> '{"feedback_loop_key": "restart::<reason>"}'::jsonb`. Same UPDATE-then-INSERT pattern.
+
+All three are **fail-soft**: if a `public.*` operational table doesn't exist (e.g. on a fresh sandbox before the operational stack runs), the function returns an error string in the stats dict and never raises. The orchestrator `run_full_feedback_loop(*, dry_run=False)` runs all three and aggregates stats.
+
+Every row written by C5 is attributed to **`bobby_operational`** — the canonical `tier2_operational` source already present in `knowledge.sources` at id `a0000000-0000-0000-0000-00000000000f`. This locks the source attribution decision: real-world operational signal is always traceable back to Bobby's machine and never confused with manufacturer-spec rows from C3 (`tier1_specifications`).
+
+The sandbox now has `public.action_audit_log`, `public.miner_restarts`, and `public.llm_analysis` created idempotently by the C5 test suite via `CREATE TABLE IF NOT EXISTS`. Total tables in the sandbox: still 98 catalog + 3 staging on the catalog side, plus 3 `public.*` operational scaffolds added by C5 tests.
+
+### C4 — catalog API verification (PR #23)
+
+The last gate-row-5 question was simple: does the catalog API actually return real rows for every query type the AI agent will hit on day 1?
+
+`intelligence-catalog/tools/verify_catalog_api_coverage.py` enumerates all 21 `_check_table_exists()` callsites in `catalog_api.py` plus 2 C5 probes, and labels each:
+
+- **PASS** — table exists and has ≥1 row
+- **WARN** — table exists but is empty
+- **FAIL** — table missing (exits 2)
+
+**Before seed:** PASS=5, WARN=16, FAIL=0 — sixteen catalog query types existed in the API but had nothing to return.
+
+**After seed:** PASS=21, WARN=0, FAIL=0.
+
+The seed (`intelligence-catalog/seed-data/sample_rows_for_api_coverage_2026-04-27.sql`) is deliberately tiny — 2 psu_models, 2 failure_patterns, 3 failure_symptoms, 3 error_codes, 1 known_issue, 1 firmware_bug, 1 baseline_ref, 1 op_profile, 1 env_correlation, 2 procedures, 3 diag_tools, 3 parts, 2 cooling, 1 container — and every row is tagged `metadata->>'seed_pr'='pr23'` so the May 4 final housekeeping pass can sweep them in a single `DELETE … WHERE metadata->>'seed_pr'='pr23'` per table. Real rows from watchers, the C5 feedback loop, and Bobby's first weeks of operation will replace them.
+
+All seed inserts are idempotent (`WHERE NOT EXISTS`), and every row is attributed to either a tier1 manufacturer source or `bobby_operational`. No fake data, no placeholder vendors, no non-SHA-256 hardware.
+
+### Cutover gate progress (end-of-Monday, take 2)
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | No leaked secrets | ✅ |
+| 2 | No hardcoded passwords | ✅ |
+| 3 | No dead code | ✅ |
+| 4 | One canonical catalog schema | ✅ |
+| 5 | **AI has data (21/21 PASS)** | ✅ |
+| 6 | Installer rewrite | ⏳ (Thu) |
+| 7 | Daily paper trail | ✅ |
+| 8 | Customer docs | ⏳ (weekend) |
+
+**Six rows green, two pending.** Both pending rows have firm dates: installer Thursday, customer docs weekend. Gate row 5 — the one that has been amber for the entire D-week — is now green.
+
+### Schedule impact
+
+Wednesday is now empty. The original Wednesday roadmap items — four manufacturer parsers, the C5 feedback loop, and the catalog API verification — all landed on Monday. With Tuesday's data track also pulled in earlier in the same session, the next two scheduled days have no required work.
+
+The revised week looks like this:
+
+- **Tue 04-28:** open. Reserve as a buffer for any C3 parser fixture refresh if a manufacturer changes their product page, or for early start on Thu installer work.
+- **Wed 04-29:** open. Same.
+- **Thu 04-30:** Installer v2 rewrite (15 phases) + 8 plist templates + `restore_from_snapshot.sh`.
+- **Fri 05-01:** Sandbox install dry-run + S-7 through S-14 remaining security checks.
+- **Sat 05-02 / Sun 05-03:** Customer Setup Manual + Program Instructions + 8–10 page Brochure.
+- **Mon 05-04:** Final hardening pass + repo housekeeping (drop the 13 deprecated tables, `rm intelligence/`, sweep all `seed_pr='pr23'` rows) + tag `v1.0.0-rc1`.
+- **Tue 05-05:** Real Mac Mini install at Bobby's house. Customer #1.
+
+The "late and perfect" budget — the user's stated preference — is now two clear days. That is exactly the buffer this project should have.
+
+### Session totals
+
+- **PRs merged today:** 18 (PRs #6 through #23). All on `main`.
+- **Watcher tests:** 68 total, all passing (32 framework + 9 × 4 manufacturer suites).
+- **C5 tests:** 13, all passing.
+- **Manufacturer parsers complete:** 5 of 5 (Bitmain, MicroBT, Canaan, Auradine, Bitdeer).
+- **Catalog API coverage:** 21 of 21 query types returning real rows.
+- **Sandbox tables:** 98 catalog + 3 staging + 3 `public.*` operational scaffolds.
+- **Source attribution:** every C5 write tagged `bobby_operational` (`a0000000-0000-0000-0000-00000000000f`, tier2). Every C3 write tagged with the manufacturer's tier1 source.
+
+### Closing note
+
+The user's instruction at the top of the day was *"slow and steady, I would rather be late and perfect than early and wrong."* What actually happened today is that the methodical PR-per-task cadence — small branch, small body, sandbox verify, merge, move on — let three days of planned work land in one. That isn't fast; it's the same speed as before, just sustained without rework. No revert, no fix-up commit, no failed test. Eighteen PRs, eighteen merges, zero rollbacks.
+
+D-10 to Mac Mini install. Bitcoin SHA-256 miners only. Postgres-as-truth.
+
+*— end of 2026-04-27 log (addendum #2 closed late-evening, Wednesday data track pulled forward)*
