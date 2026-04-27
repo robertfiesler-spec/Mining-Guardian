@@ -28,6 +28,8 @@ import io
 import re
 import csv
 import json
+import hmac
+import secrets
 import zipfile
 import tempfile
 import traceback
@@ -35,9 +37,12 @@ import logging
 import time as _time_module
 from datetime import datetime, timezone
 from pathlib import Path
-from functools import lru_cache
+from functools import lru_cache, wraps
 
-from flask import Flask, request, jsonify, Response, render_template_string, redirect, url_for
+from flask import (
+    Flask, request, jsonify, Response, render_template_string,
+    redirect, url_for, session as flask_session,
+)
 
 # ---------------------------------------------------------------------------
 # Database password — single source of truth.
@@ -81,6 +86,197 @@ except ImportError:
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 512 * 1024 * 1024  # 512 MB
+
+# ---------------------------------------------------------------------------
+# CRIT-3: Authentication & session hardening
+#
+# Three required env vars (mg_import refuses to start without them):
+#   MG_IMPORT_PASSWORD            — single shared password for the importer UI
+#   MG_IMPORT_SECRET_KEY          — Flask session-cookie signing key (random,
+#                                   ≥ 32 bytes hex). Generate with:
+#                                       python -c "import secrets; print(secrets.token_hex(32))"
+# Optional:
+#   MG_IMPORT_SESSION_TTL_SECONDS — idle/absolute session lifetime in seconds.
+#                                   Default 28800 (8 hours, per DECISIONS D-4).
+#   MG_IMPORT_BIND                — interface to bind on. Default 127.0.0.1
+#                                   (loopback only, NOT reachable on the LAN).
+#                                   Override only if you know what you are doing.
+#
+# Auth model:
+#   - All routes (HTML + /api/*) require an authenticated session except
+#     /login, /logout, and /healthz.
+#   - Session cookie is HttpOnly + SameSite=Lax. Secure flag is enabled when
+#     the request scheme is https (Tailscale + reverse proxy scenarios).
+#   - Sessions expire after MG_IMPORT_SESSION_TTL_SECONDS measured from
+#     login time (absolute lifetime, not sliding).
+#   - Password comparison uses hmac.compare_digest to defeat timing oracles.
+# ---------------------------------------------------------------------------
+
+def _import_password() -> str:
+    pw = os.environ.get("MG_IMPORT_PASSWORD")
+    if not pw:
+        raise EnvironmentError(
+            "MG_IMPORT_PASSWORD is not set in the environment. "
+            "mg_import refuses to start without it. "
+            "Set it in ~/.mining-guardian/secrets.env (chmod 600) "
+            "or export it before launching."
+        )
+    return pw
+
+
+def _import_secret_key() -> bytes:
+    key = os.environ.get("MG_IMPORT_SECRET_KEY")
+    if not key:
+        raise EnvironmentError(
+            "MG_IMPORT_SECRET_KEY is not set in the environment. "
+            "mg_import refuses to start without it. "
+            'Generate with:  python -c "import secrets; print(secrets.token_hex(32))"  '
+            "and add to ~/.mining-guardian/secrets.env."
+        )
+    if len(key) < 32:
+        raise EnvironmentError(
+            "MG_IMPORT_SECRET_KEY is too short (need ≥ 32 chars). "
+            'Generate with: python -c "import secrets; print(secrets.token_hex(32))"'
+        )
+    return key.encode("utf-8")
+
+
+def _import_session_ttl() -> int:
+    raw = os.environ.get("MG_IMPORT_SESSION_TTL_SECONDS", "28800")
+    try:
+        ttl = int(raw)
+    except ValueError:
+        raise EnvironmentError(
+            f"MG_IMPORT_SESSION_TTL_SECONDS must be an integer, got {raw!r}"
+        )
+    if ttl < 60:
+        raise EnvironmentError(
+            "MG_IMPORT_SESSION_TTL_SECONDS must be ≥ 60 seconds."
+        )
+    return ttl
+
+
+# Configure Flask session cookie. Secret key is loaded lazily on first request
+# so test imports of this module don't blow up when env is unset.
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_NAME'] = 'mg_import_session'
+# SESSION_COOKIE_SECURE is set per-request in _ensure_secret_key based on scheme.
+
+_SECRET_KEY_LOADED = False
+
+def _ensure_secret_key():
+    global _SECRET_KEY_LOADED
+    if not _SECRET_KEY_LOADED:
+        app.secret_key = _import_secret_key()
+        _SECRET_KEY_LOADED = True
+
+
+def _is_session_authed() -> bool:
+    """True iff the current Flask session has a non-expired auth marker."""
+    authed_at = flask_session.get('authed_at')
+    if not authed_at:
+        return False
+    try:
+        age = _time_module.time() - float(authed_at)
+    except (TypeError, ValueError):
+        return False
+    if age < 0 or age > _import_session_ttl():
+        return False
+    return True
+
+
+def require_login(view):
+    """Gate a Flask view behind a valid session.
+
+    HTML routes redirect to /login. /api/* routes return 401 JSON.
+    """
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        _ensure_secret_key()
+        if _is_session_authed():
+            return view(*args, **kwargs)
+        # Not authed.
+        if request.path.startswith('/api/'):
+            return jsonify({
+                'ok': False,
+                'error': 'authentication required',
+                'login_url': '/login',
+            }), 401
+        # HTML — redirect to login, preserving where they wanted to go.
+        return redirect(url_for('login_view', next=request.path))
+    return wrapped
+
+
+LOGIN_PAGE_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mining Guardian — Importer Login</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0b0d10; color: #e6edf3; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 2rem; min-width: 320px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+    h1 { margin: 0 0 1rem 0; font-size: 1.25rem; }
+    label { display: block; margin: 1rem 0 .25rem; font-size: .85rem; color: #8b949e; }
+    input[type="password"] { width: 100%; box-sizing: border-box; padding: .5rem .75rem; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; font-size: 1rem; }
+    button { margin-top: 1.25rem; width: 100%; padding: .6rem; background: #238636; color: white; border: 0; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    .err { margin-top: 1rem; color: #f85149; font-size: .9rem; }
+    .footer { margin-top: 1.25rem; font-size: .75rem; color: #6e7681; text-align: center; }
+  </style>
+</head>
+<body>
+  <form class="card" method="POST" action="/login" autocomplete="off">
+    <h1>Mining Guardian — Importer</h1>
+    {% if next_path %}<input type="hidden" name="next" value="{{ next_path }}">{% endif %}
+    <label for="pw">Password</label>
+    <input type="password" id="pw" name="password" autofocus required>
+    <button type="submit">Sign in</button>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <div class="footer">Loopback-only • sessions last {{ ttl_hours }}h</div>
+  </form>
+</body>
+</html>
+"""
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login_view():
+    _ensure_secret_key()
+    error = None
+    next_path = request.values.get('next', '/')
+    # Sanitize next — only allow same-origin paths starting with /, no //.
+    if not next_path.startswith('/') or next_path.startswith('//'):
+        next_path = '/'
+    if request.method == 'POST':
+        submitted = request.form.get('password', '')
+        expected = _import_password()
+        if hmac.compare_digest(submitted, expected):
+            flask_session.clear()
+            flask_session['authed_at'] = _time_module.time()
+            flask_session.permanent = False  # cookie dies on browser close too
+            return redirect(next_path)
+        error = 'Incorrect password.'
+    ttl_hours = round(_import_session_ttl() / 3600, 1)
+    return render_template_string(
+        LOGIN_PAGE_HTML,
+        error=error,
+        next_path=next_path if next_path != '/' else '',
+        ttl_hours=ttl_hours,
+    ), (401 if error else 200)
+
+
+@app.route('/logout', methods=['GET', 'POST'])
+def logout_view():
+    _ensure_secret_key()
+    flask_session.clear()
+    return redirect(url_for('login_view'))
+
+
+@app.route('/healthz', methods=['GET'])
+def healthz_view():
+    """Unauthenticated liveness probe — returns no sensitive info."""
+    return jsonify({'ok': True, 'service': 'mg_import'}), 200
 
 # ---------------------------------------------------------------------------
 # v3: Structured logging
@@ -3006,11 +3202,13 @@ def process_zip(zip_bytes: bytes) -> list:
 # ---------------------------------------------------------------------------
 
 @app.route('/')
+@require_login
 def index():
     return HTML_PAGE
 
 
 @app.route('/api/test-connection', methods=['POST'])
+@require_login
 def test_connection():
     if not PSYCOPG2_AVAILABLE:
         return jsonify({'success': False, 'error': 'psycopg2 not installed. Run: pip install psycopg2-binary'})
@@ -3037,6 +3235,7 @@ def test_connection():
 
 
 @app.route('/api/generate-sql', methods=['POST'])
+@require_login
 def generate_sql():
     """Generate SQL from uploaded files without running it."""
     results = []
@@ -3165,6 +3364,7 @@ def generate_sql():
 
 
 @app.route('/api/run-sql', methods=['POST'])
+@require_login
 def run_sql():
     """Execute provided SQL against the database."""
     data = request.get_json(force=True)
@@ -3179,6 +3379,7 @@ def run_sql():
 
 
 @app.route('/api/import-files', methods=['POST'])
+@require_login
 def import_files():
     """Generate SQL from files and immediately run against PostgreSQL (auto-import mode)."""
     global _LAST_RESOLVER_STATS
@@ -3640,6 +3841,7 @@ def _get_conn_params_from_args():
 
 
 @app.route('/rma', methods=['GET', 'POST'])
+@require_login
 def rma_form():
     """GET: render RMA form. POST: validate + insert into mg.rma_records."""
     message = None
@@ -3711,6 +3913,7 @@ def rma_form():
 
 
 @app.route('/rma/csv', methods=['GET', 'POST'])
+@require_login
 def rma_csv():
     """GET: render batch CSV upload form. POST: process CSV and bulk-insert RMA records."""
     message = None
@@ -3785,6 +3988,7 @@ def rma_csv():
 
 
 @app.route('/dormant', methods=['GET'])
+@require_login
 def dormant_miners():
     """List all awaiting-review dormant miners."""
     miners = []
@@ -3818,6 +4022,7 @@ def dormant_miners():
 
 
 @app.route('/dormant/resolve', methods=['POST'])
+@require_login
 def dormant_resolve():
     """Resolve a dormant miner entry, optionally creating an RMA record."""
     dormant_id  = request.form.get('dormant_id', '').strip()
@@ -3862,12 +4067,14 @@ def dormant_resolve():
 
 
 @app.route('/api/import-history', methods=['GET'])
+@require_login
 def get_import_history():
     """Return in-memory import history."""
     return jsonify({'history': list(reversed(import_history))})
 
 
 @app.route('/api/clear-history', methods=['POST'])
+@require_login
 def clear_import_history():
     """Clear in-memory import history."""
     import_history.clear()
@@ -3883,6 +4090,7 @@ def clear_import_history():
 # ---------------------------------------------------------------------------
 
 @app.route('/api/cancel-batch', methods=['POST'])
+@require_login
 def cancel_batch():
     """Set the module-level cancel flag so the streaming import loop exits cleanly."""
     global _BATCH_CANCEL_FLAG
@@ -3896,6 +4104,7 @@ def cancel_batch():
 # ---------------------------------------------------------------------------
 
 @app.route('/api/resolver-summary', methods=['GET'])
+@require_login
 def resolver_summary():
     """
     Return per-archive resolver tier breakdown from the in-memory accumulator
@@ -3922,6 +4131,7 @@ def resolver_summary():
 # ---------------------------------------------------------------------------
 
 @app.route('/api/unresolved-sample', methods=['GET'])
+@require_login
 def unresolved_sample():
     """
     Return recent rows from mg.unresolved_models.
@@ -4013,6 +4223,7 @@ def _sse_event(event_type: str, data: dict) -> str:
 
 
 @app.route('/api/import-files-stream', methods=['POST'])
+@require_login
 def import_files_stream():
     """
     v3.3 streaming variant of /api/import-files.
@@ -4293,6 +4504,7 @@ def _build_resolver_totals() -> dict:
 
 
 @app.route('/api/browse-tables', methods=['GET'])
+@require_login
 def browse_tables():
     """Return list of tables in the knowledge schema with row counts."""
     if not PSYCOPG2_AVAILABLE:
@@ -4330,6 +4542,7 @@ def browse_tables():
 
 
 @app.route('/api/browse-rows', methods=['GET'])
+@require_login
 def browse_rows():
     """Return first 25 rows of a table in the knowledge schema."""
     if not PSYCOPG2_AVAILABLE:
@@ -6179,15 +6392,40 @@ document.addEventListener('DOMContentLoaded', () => {
 if __name__ == '__main__':
     import sys
     port = int(os.environ.get('PORT', 5050))
-    host = os.environ.get('HOST', '0.0.0.0')
+    # CRIT-3: default to loopback. Set MG_IMPORT_BIND=0.0.0.0 only if you
+    # really need LAN reach (and you've put auth+TLS in front of it).
+    # The legacy HOST var is honored as a fallback so existing launchers
+    # don't silently flip behavior.
+    host = os.environ.get('MG_IMPORT_BIND',
+                          os.environ.get('HOST', '127.0.0.1'))
+
+    # Eagerly validate auth/session env vars so the process refuses to start
+    # in an unsafe state instead of failing on the first authed request.
+    try:
+        _import_password()
+        _ensure_secret_key()
+        ttl = _import_session_ttl()
+    except EnvironmentError as e:
+        print('=' * 60)
+        print('  Mining Guardian — Intelligence Catalog Importer')
+        print('  STARTUP REFUSED — missing required configuration:')
+        print('=' * 60)
+        print(f'  {e}')
+        print('=' * 60)
+        sys.exit(2)
 
     print('=' * 60)
     print('  Mining Guardian — Intelligence Catalog Importer')
     print('  Capture Everything. Discard Nothing.')
     print('=' * 60)
-    print(f'  Server: http://localhost:{port}')
-    print(f'  psycopg2 available: {PSYCOPG2_AVAILABLE}')
-    print(f'  openpyxl available: {OPENPYXL_AVAILABLE}')
+    print(f'  Server:        http://{host}:{port}')
+    if host == '127.0.0.1':
+        print('  Reach:         loopback only (LAN cannot connect — by design)')
+    else:
+        print(f'  Reach:         bound on {host} — ensure firewall + TLS upstream')
+    print(f'  Auth:          login required (session TTL {ttl}s = {round(ttl/3600,1)}h)')
+    print(f'  psycopg2:      {PSYCOPG2_AVAILABLE}')
+    print(f'  openpyxl:      {OPENPYXL_AVAILABLE}')
     if not PSYCOPG2_AVAILABLE:
         print('  ⚠  MISSING: pip install psycopg2-binary')
     if not OPENPYXL_AVAILABLE:

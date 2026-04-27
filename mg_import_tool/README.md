@@ -69,7 +69,7 @@ psql -U guardian_admin -d mining_guardian -f sql/seed/002_mg_family_aliases_tier
 python mg_import.py
 ```
 
-Opens at **http://localhost:5050**
+Opens at **http://localhost:5050** (loopback only — not reachable from the LAN by default).
 
 To use a different port:
 
@@ -82,6 +82,24 @@ Enable debug logging:
 ```bash
 MG_DEBUG=1 python mg_import.py
 ```
+
+---
+
+## Authentication & network exposure (CRIT-3)
+
+As of 2026-04-27 the importer requires a login session and binds to loopback by default. Three environment variables are **required** at startup; the process exits with code 2 if any are missing.
+
+| Variable | Purpose | Required | Default |
+|---|---|---|---|
+| `MG_DB_PASSWORD` | Postgres password (192-bit, see DECISIONS D-1) | yes | — |
+| `MG_IMPORT_PASSWORD` | Login password for the importer UI | yes | — |
+| `MG_IMPORT_SECRET_KEY` | Flask session-cookie signing key (≥ 32 chars hex). Generate once: `python -c "import secrets; print(secrets.token_hex(32))"` | yes | — |
+| `MG_IMPORT_SESSION_TTL_SECONDS` | Absolute session lifetime | no | `28800` (8h, per D-4) |
+| `MG_IMPORT_BIND` | Interface to bind on. **Override only behind a firewall + TLS.** | no | `127.0.0.1` |
+
+On first request you'll be redirected to `/login`. Sessions last 8 hours, cookies are `HttpOnly` + `SameSite=Lax`, and password compare is constant-time (`hmac.compare_digest`). `/healthz` is the only unauthenticated endpoint and returns no sensitive info.
+
+Store secrets in `~/.mining-guardian/secrets.env` (chmod 600) on macOS/Linux, or `%USERPROFILE%\.mining-guardian\secrets.bat` on Windows. The launcher (`launch_mg_import.bat`) sources the Windows file automatically; the installer writes both.
 
 ---
 
