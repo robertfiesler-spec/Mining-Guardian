@@ -1,0 +1,221 @@
+{
+  "_comment": [
+    "Bundled offline fixture for the Bitdeer SealMiner parser (PR #21, 2026-04-27).",
+    "",
+    "Bitcoin SHA-256 SKUs only. 12 entries matching the 12 SealMiner rows already",
+    "seeded in hardware.miner_models so the C5 promotion path can validate slug,",
+    "hashrate and power equality. Specs are factory-published values from",
+    "bitdeer.com product pages.",
+    "",
+    "A2/A2 Pro = 4nm SEAL01; A3/A3 Pro = 3nm SEAL02; A4 Pro/Ultra = SEAL03;",
+    "DL1 Air is the desktop/lab class SKU."
+  ],
+  "models": [
+    {
+      "slug": "bitdeer-sealminer-a2",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A2 (226 TH)",
+      "model_number": "A2",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 226,
+        "power_watts": 3730,
+        "efficiency_j_per_th": 16.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a2"
+    },
+    {
+      "slug": "bitdeer-sealminer-a2-hyd",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A2 Hyd (446 TH)",
+      "model_number": "A2 Hyd",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 446,
+        "power_watts": 7360,
+        "efficiency_j_per_th": 16.5,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a2-hyd"
+    },
+    {
+      "slug": "bitdeer-sealminer-a2-pro-air",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A2 Pro Air (255 TH)",
+      "model_number": "A2 Pro Air",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 255,
+        "power_watts": 3790,
+        "efficiency_j_per_th": 14.9,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a2-pro-air"
+    },
+    {
+      "slug": "bitdeer-sealminer-a2-pro-hyd",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A2 Pro Hyd (500 TH)",
+      "model_number": "A2 Pro Hyd",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 500,
+        "power_watts": 7450,
+        "efficiency_j_per_th": 14.9,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a2-pro-hyd"
+    },
+    {
+      "slug": "bitdeer-sealminer-a3-air",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A3 Air (260 TH)",
+      "model_number": "A3 Air",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 260,
+        "power_watts": 3640,
+        "efficiency_j_per_th": 14.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a3-air"
+    },
+    {
+      "slug": "bitdeer-sealminer-a3-hydro",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A3 Hydro (500 TH)",
+      "model_number": "A3 Hydro",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 500,
+        "power_watts": 6750,
+        "efficiency_j_per_th": 13.5,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a3-hydro"
+    },
+    {
+      "slug": "bitdeer-sealminer-a3-pro-air",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A3 Pro Air (290 TH)",
+      "model_number": "A3 Pro Air",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 290,
+        "power_watts": 3625,
+        "efficiency_j_per_th": 12.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a3-pro-air"
+    },
+    {
+      "slug": "bitdeer-sealminer-a3-pro-hydro",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A3 Pro Hydro (660 TH)",
+      "model_number": "A3 Pro Hydro",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 660,
+        "power_watts": 8250,
+        "efficiency_j_per_th": 12.5,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a3-pro-hydro"
+    },
+    {
+      "slug": "bitdeer-sealminer-a4-pro-air",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A4 Pro Air (336 TH)",
+      "model_number": "A4 Pro Air",
+      "algorithm": "SHA-256",
+      "release_year": 2026,
+      "specs": {
+        "hashrate_th": 336,
+        "power_watts": 3662,
+        "efficiency_j_per_th": 10.9,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a4-pro-air"
+    },
+    {
+      "slug": "bitdeer-sealminer-a4-pro-hydro",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A4 Pro Hydro (680 TH)",
+      "model_number": "A4 Pro Hydro",
+      "algorithm": "SHA-256",
+      "release_year": 2026,
+      "specs": {
+        "hashrate_th": 680,
+        "power_watts": 7412,
+        "efficiency_j_per_th": 10.9,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a4-pro-hydro"
+    },
+    {
+      "slug": "bitdeer-sealminer-a4-ultra-hydro",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner A4 Ultra Hydro (886 TH)",
+      "model_number": "A4 Ultra Hydro",
+      "algorithm": "SHA-256",
+      "release_year": 2026,
+      "specs": {
+        "hashrate_th": 886,
+        "power_watts": 8372,
+        "efficiency_j_per_th": 9.45,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-a4-ultra-hydro"
+    },
+    {
+      "slug": "bitdeer-sealminer-dl1-air",
+      "manufacturer": "bitdeer",
+      "display_name": "Bitdeer SealMiner DL1 Air (179 TH)",
+      "model_number": "DL1 Air",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 179,
+        "power_watts": 3580,
+        "efficiency_j_per_th": 20.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitdeer.com/products/sealminer-dl1-air"
+    }
+  ],
+  "extra_aliases": {
+    "bitdeer-sealminer-a2": ["SealMiner A2", "Bitdeer A2", "A2 226T"],
+    "bitdeer-sealminer-a2-hyd": ["SealMiner A2 Hyd", "A2 Hydro"],
+    "bitdeer-sealminer-a2-pro-air": ["SealMiner A2 Pro Air", "A2 Pro"],
+    "bitdeer-sealminer-a2-pro-hyd": ["SealMiner A2 Pro Hyd", "A2 Pro Hydro"],
+    "bitdeer-sealminer-a3-air": ["SealMiner A3 Air", "A3 Air 260T"],
+    "bitdeer-sealminer-a3-hydro": ["SealMiner A3 Hydro", "A3 Hyd"],
+    "bitdeer-sealminer-a3-pro-air": ["SealMiner A3 Pro Air", "A3 Pro"],
+    "bitdeer-sealminer-a3-pro-hydro": ["SealMiner A3 Pro Hydro", "A3 Pro Hyd"],
+    "bitdeer-sealminer-a4-pro-air": ["SealMiner A4 Pro Air", "A4 Pro"],
+    "bitdeer-sealminer-a4-pro-hydro": ["SealMiner A4 Pro Hydro", "A4 Pro Hyd"],
+    "bitdeer-sealminer-a4-ultra-hydro": ["SealMiner A4 Ultra Hydro", "A4 Ultra"],
+    "bitdeer-sealminer-dl1-air": ["SealMiner DL1 Air", "DL1"]
+  }
+}
