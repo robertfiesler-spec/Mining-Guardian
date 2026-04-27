@@ -1,6 +1,6 @@
 """
 Catalog API Service — FastAPI on port 8420
-Serves knowledge bundles from the Mining Intelligence Catalog for OpenClaw LLM injection.
+Serves knowledge bundles from the Mining Intelligence Catalog for local LLM injection (Qwen on Mac Mini).
 
 Phase 1: READ-only path. Queries PostgreSQL catalog tables, returns structured
 knowledge bundles and pre-formatted prompt text for LLM system prompt injection.

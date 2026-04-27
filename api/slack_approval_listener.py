@@ -5,8 +5,9 @@ Mining Guardian — Slack Approval Listener
 Polls #mining-guardian for APPROVE/DENY replies in scan threads.
 Also handles text responses like "approve 1,2,3" to select specific miners.
 
-NOTE: Socket Mode is owned by OpenClaw — we use polling instead of Bolt
-to avoid conflicts. Block Kit buttons post a text reply that we detect here.
+Uses Slack's REST API with polling (not Bolt/Socket Mode). Block Kit
+buttons post a text reply that we detect here. Switching to Bolt/Socket Mode
+is a possible follow-up enhancement.
 """
 
 import sys

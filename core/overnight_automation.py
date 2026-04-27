@@ -13,8 +13,8 @@ Risk levels:
 Every action is logged to the audit trail with decision='AUTO_OVERNIGHT'.
 Morning briefing picks up these entries and summarizes what happened.
 
-OpenClaw integration: Posts an overnight summary via the webhook so the LLM
-can provide a narrative summary to Slack when the window closes.
+When the overnight window closes, a summary line is logged for the morning
+briefing to pick up.
 """
 
 import sys
@@ -72,8 +72,6 @@ def _pg_dsn() -> str:
     password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
     return f"host={host} port={port} dbname={dbname} user={user} password={password}"
 APPROVAL_API     = "http://localhost:8686"
-OPENCLAW_WEBHOOK = os.getenv("OPENCLAW_WEBHOOK_URL", "http://localhost:18789/hooks")
-OPENCLAW_TOKEN   = os.getenv("OPENCLAW_TOKEN", "")
 
 # ── Overnight window (24h clock) ──────────────────────────────────────────────
 # Set to 0 / 24 to run ALL DAY — full autonomous mode
@@ -372,39 +370,6 @@ def log_skip(action: dict, reason: str) -> None:
     conn.close()
 
 
-def notify_openclaw(summary: dict) -> None:
-    """Send overnight summary to OpenClaw for LLM narrative + Slack post."""
-    executed = summary.get("executed", [])
-    held     = summary.get("held", [])
-    manual   = summary.get("manual", [])
-
-    if not executed and not held:
-        return  # Nothing happened — no need to post
-
-    payload = {
-        "source":      "mining_guardian_overnight",
-        "window":      f"{WINDOW_START_HOUR:02d}:00 – {WINDOW_END_HOUR:02d}:00",
-        "executed":    executed,
-        "held":        held,
-        "manual":      manual,
-        "instructions": (
-            "You are Mining Guardian AI. The overnight automation window just closed. "
-            "Post a brief summary to #mining-guardian covering: what was auto-executed, "
-            "what was held back and why, and what still needs operator attention. "
-            "Be concise — 3-5 lines max. Include miner IPs where relevant."
-        )
-    }
-    try:
-        requests.post(
-            OPENCLAW_WEBHOOK, json=payload,
-            headers={"Authorization": f"Bearer {OPENCLAW_TOKEN}"},
-            timeout=10
-        )
-        logger.info("OpenClaw notified with overnight summary")
-    except Exception as e:
-        logger.warning("OpenClaw notify failed: %s", e)
-
-
 def run_overnight_cycle() -> dict:
     """
     Process all pending approvals and execute AUTO ones.
@@ -472,9 +437,8 @@ def main():
 
             else:
                 if window_was_active:
-                    # Window just closed — send OpenClaw summary
-                    logger.info("Overnight window CLOSED — sending summary")
-                    notify_openclaw(summary_for_report)
+                    # Window just closed — log summary for morning briefing
+                    logger.info("Overnight window CLOSED")
                     ex = len(summary_for_report["executed"])
                     hd = len(summary_for_report["held"])
                     mn = len(summary_for_report["manual"])

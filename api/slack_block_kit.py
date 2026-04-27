@@ -7,7 +7,6 @@ Mining Guardian posts these directly via Slack API.
 Interactive payloads (button clicks) are handled by approval_api.py.
 
 This replaces the plain-text scan messages with rich interactive UI.
-OpenClaw handles conversational AI separately.
 """
 
 import json

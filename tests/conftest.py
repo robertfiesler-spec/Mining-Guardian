@@ -27,7 +27,6 @@ def mock_config():
         ams_email="test@test.com",
         ams_password="testpass",
         ams_workspace_id=99999,
-        openclaw_webhook_url="https://test.webhook",
         slack_webhook_url="https://hooks.slack.com/test",
         slack_bot_token="xoxb-test",
         dry_run=True,

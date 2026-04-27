@@ -91,7 +91,6 @@ logger = _setup_logging()
 # Extracted modules
 from core.models import ParameterRule, MinerFinding, GuardianConfig, PolicyEngine, RemediationPlanner, RemediationCooldown
 from monitoring.weather_collector import WeatherCollector
-from notifiers.openclaw_notifier import OpenClawNotifier
 
 from notifiers.approval_interface import ApprovalInterface
 
@@ -101,7 +100,6 @@ class MiningGuardian:
     def __init__(self, config: GuardianConfig):
         self.config   = config
         self.ams      = AMSClient(config)
-        self.notifier = OpenClawNotifier(config.openclaw_webhook_url)
         self.db       = GuardianDB()
         self.slack    = SlackNotifier(
             webhook_url=GuardianConfig._resolve(config.slack_webhook_url) if config.slack_webhook_url else None,
@@ -2121,7 +2119,6 @@ class MiningGuardian:
         self.db.save_ams_extended(scan_id, datetime.now().isoformat(), miners)
         self.db.purge_old_logs(days=30)
         self.collect_logs(miners, issues)
-        self.notifier.send_scan(miners, issues)
 
         # Slack throttle — only post at most once per slack_interval_seconds
         import time as _time
@@ -2448,7 +2445,6 @@ EXAMPLE_CONFIG = {
     "ams_email":        "env:AMS_EMAIL",
     "ams_password":     "env:AMS_PASSWORD",
     "ams_workspace_id": "env:AMS_WORKSPACE_ID",
-    "openclaw_webhook_url": "http://127.0.0.1:18789/hooks",
     "dry_run": True,
     "scan_interval_seconds": 300,
     "approval_mode": "manual",
