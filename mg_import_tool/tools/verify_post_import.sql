@@ -44,7 +44,7 @@ UNION ALL SELECT 'mg.unresolved_models',    COUNT(*) FROM mg.unresolved_models
 UNION ALL SELECT 'mg.dormant_miners',       COUNT(*) FROM mg.dormant_miners
 UNION ALL SELECT 'mg.model_family_aliases', COUNT(*) FROM mg.model_family_aliases
 UNION ALL SELECT 'mg.rma_records',          COUNT(*) FROM mg.rma_records
-UNION ALL SELECT 'mg.unknown_fields',       COUNT(*) FROM mg.unknown_fields
+UNION ALL SELECT 'knowledge.unknown_fields', COUNT(*) FROM knowledge.unknown_fields
 ORDER BY table_name;
 
 \echo ''
@@ -80,15 +80,22 @@ LIMIT 5;
 
 \echo ''
 \echo '=== D2: resolver hit-rate (lower = more unresolved models = manual review) ==='
+-- mg.unresolved_models has NO raw_model_text column — the real identity
+-- strings are split across raw_miner_type + raw_control_board_version (per
+-- migration 002_layer2). We treat the (miner_type, control_board) tuple as
+-- the logical "unresolved string" for distinct/group-by purposes.
 SELECT
-    COUNT(*)                                          AS total_unresolved,
-    COUNT(DISTINCT raw_model_text)                    AS distinct_unresolved_strings
+    COUNT(*)                                                                AS total_unresolved,
+    COUNT(DISTINCT (raw_miner_type, raw_control_board_version))             AS distinct_unresolved_strings
 FROM mg.unresolved_models;
 
--- Top 20 unresolved model strings by occurrence (the manual review queue)
-SELECT raw_model_text, COUNT(*) AS occurrences
+-- Top 20 unresolved model tuples by occurrence (the manual review queue)
+SELECT
+    raw_miner_type,
+    raw_control_board_version,
+    COUNT(*) AS occurrences
 FROM mg.unresolved_models
-GROUP BY raw_model_text
+GROUP BY raw_miner_type, raw_control_board_version
 ORDER BY occurrences DESC
 LIMIT 20;
 
