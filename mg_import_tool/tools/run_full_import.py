@@ -281,7 +281,13 @@ def _discover_archives(archives_dir: Path,
 
 
 def _load_existing_filenames(conn_params: dict) -> set[str]:
-    """Read knowledge.field_log_imports.archive_filename for skip-existing.
+    """Read filenames already present in knowledge.field_log_imports.
+
+    The parent table’s filename-keyed column is `entity_label` (NOT
+    `archive_filename` — only the *child* tables use that). Pre-2026-04-27
+    versions of this script queried archive_filename and silently came
+    back with zero hits, causing --skip-existing to attempt the entire
+    folder from scratch. We now read entity_label.
 
     conn_params uses mg_import's 'database' key; psycopg2 expects 'dbname',
     so we map across here.
@@ -299,7 +305,7 @@ def _load_existing_filenames(conn_params: dict) -> set[str]:
     try:
         with psycopg2.connect(**pg_kwargs) as conn:
             with conn.cursor() as cur:
-                cur.execute('SELECT archive_filename '
+                cur.execute('SELECT entity_label '
                             'FROM knowledge.field_log_imports')
                 for (fn,) in cur.fetchall():
                     if fn:
