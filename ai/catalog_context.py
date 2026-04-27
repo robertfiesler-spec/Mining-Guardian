@@ -26,7 +26,15 @@ import requests
 logger = logging.getLogger("mining_guardian")
 
 CATALOG_API_URL = os.getenv("CATALOG_API_URL", "http://100.110.87.1:8420")
-CATALOG_API_KEY = os.getenv("CATALOG_API_KEY", "CHANGE_ME_TO_A_REAL_SECRET")
+# CRIT-6: never default to a placeholder. If the env var is missing or holds
+# a known placeholder, _headers() refuses to build a request rather than
+# emitting a useless Authorization header. The caller treats that the same
+# as any other failure (returns empty string + opens the circuit).
+CATALOG_API_KEY = os.getenv("CATALOG_API_KEY", "")
+_CATALOG_KEY_PLACEHOLDERS = {
+    "", "CHANGE_ME_TO_A_REAL_SECRET",
+    "__GENERATE_AT_INSTALL_TIME__", "__SET_BY_INSTALLER__",
+}
 
 # TTL cache: {cache_key: (timestamp, value)}
 _cache: dict = {}
@@ -73,7 +81,20 @@ def _cache_set(key: str, value: str):
     _cache[key] = (time.time(), value)
 
 
-def _headers() -> dict:
+def _headers() -> Optional[dict]:
+    """Build auth headers, or return None when the API key is unconfigured.
+
+    CRIT-6: returning None lets call sites short-circuit without ever putting
+    a placeholder token on the wire. Logged once per process at WARNING.
+    """
+    if CATALOG_API_KEY in _CATALOG_KEY_PLACEHOLDERS:
+        if not getattr(_headers, "_warned", False):
+            logger.warning(
+                "CATALOG_API_KEY is unset or holds a placeholder; "
+                "catalog context calls are disabled until it is set."
+            )
+            _headers._warned = True  # type: ignore[attr-defined]
+        return None
     return {
         "Authorization": f"Bearer {CATALOG_API_KEY}",
         "Content-Type": "application/json",
@@ -97,13 +118,17 @@ def get_catalog_context(miner_models: List[str],
     if _is_circuit_open():
         return ""
 
+    headers = _headers()
+    if headers is None:
+        return ""
+
     try:
         start = time.time()
         resp = requests.post(
             f"{CATALOG_API_URL}/api/v1/context/scan-bundle",
             json={"miner_models": list(set(miner_models)),
                   "active_issues": active_issues or []},
-            headers=_headers(),
+            headers=headers,
             timeout=10,
         )
         elapsed = time.time() - start
@@ -189,6 +214,10 @@ def get_miner_catalog_context(model_name: str) -> str:
     if _is_circuit_open():
         return ""
 
+    headers = _headers()
+    if headers is None:
+        return ""
+
     # Convert model name to URL slug: "S19J Pro" -> "s19j-pro"
     slug = model_name.strip().lower().replace(" ", "-")
 
@@ -196,7 +225,7 @@ def get_miner_catalog_context(model_name: str) -> str:
         start = time.time()
         resp = requests.get(
             f"{CATALOG_API_URL}/api/v1/knowledge/miner/{slug}",
-            headers=_headers(),
+            headers=headers,
             timeout=10,
         )
         elapsed = time.time() - start
@@ -225,10 +254,11 @@ def is_catalog_available() -> bool:
     """Check if the Catalog API is healthy."""
     if _is_circuit_open():
         return False
+    # /api/v1/health is unauthenticated by design, so we don't gate on _headers()
+    # — but if the server is on a different network we still need to reach it.
     try:
         resp = requests.get(
             f"{CATALOG_API_URL}/api/v1/health",
-            headers=_headers(),
             timeout=5,
         )
         if resp.status_code == 200:
