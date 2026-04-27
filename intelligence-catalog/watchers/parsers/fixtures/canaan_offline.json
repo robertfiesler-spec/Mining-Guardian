@@ -1,0 +1,199 @@
+{
+  "_comment": [
+    "Bundled offline fixture for the Canaan Avalon parser (PR #19, 2026-04-27).",
+    "",
+    "Bitcoin SHA-256 SKUs only. Focused on current-gen A14XX/A15/A16 lines.",
+    "Specs are factory-published values (canaan.io product pages)."
+  ],
+  "models": [
+    {
+      "slug": "canaan-avalon-a1466",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A1466",
+      "model_number": "A1466",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 150,
+        "power_watts": 3225,
+        "efficiency_j_per_th": 21.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalonminer-a1466"
+    },
+    {
+      "slug": "canaan-avalon-a1466i",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A1466I",
+      "model_number": "A1466I",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 170,
+        "power_watts": 3315,
+        "efficiency_j_per_th": 19.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalonminer-a1466i"
+    },
+    {
+      "slug": "canaan-avalon-a1566",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A1566",
+      "model_number": "A1566",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 185,
+        "power_watts": 3420,
+        "efficiency_j_per_th": 18.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalonminer-a1566"
+    },
+    {
+      "slug": "canaan-avalon-a1566i",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A1566I",
+      "model_number": "A1566I",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 261,
+        "power_watts": 4500,
+        "efficiency_j_per_th": 17.2,
+        "voltage_v": "380-415 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalonminer-a1566i"
+    },
+    {
+      "slug": "canaan-avalon-a1566ha",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A1566HA 2U",
+      "model_number": "A1566HA",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 480,
+        "power_watts": 8064,
+        "efficiency_j_per_th": 16.8,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://canaan.io/product/avalonminer-a1566ha"
+    },
+    {
+      "slug": "canaan-avalon-a15",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A15",
+      "model_number": "A15",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 194,
+        "power_watts": 3647,
+        "efficiency_j_per_th": 18.8,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalon-a15"
+    },
+    {
+      "slug": "canaan-avalon-a15-pro",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A15 Pro",
+      "model_number": "A15 Pro",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 221,
+        "power_watts": 3662,
+        "efficiency_j_per_th": 16.6,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalon-a15-pro"
+    },
+    {
+      "slug": "canaan-avalon-a15xp",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A15XP",
+      "model_number": "A15XP",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 206,
+        "power_watts": 3667,
+        "efficiency_j_per_th": 17.8,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalon-a15xp"
+    },
+    {
+      "slug": "canaan-avalon-a16",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A16",
+      "model_number": "A16",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 282,
+        "power_watts": 4795,
+        "efficiency_j_per_th": 17.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalon-a16"
+    },
+    {
+      "slug": "canaan-avalon-a16xp",
+      "manufacturer": "canaan",
+      "display_name": "Avalon A16XP",
+      "model_number": "A16XP",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 300,
+        "power_watts": 4500,
+        "efficiency_j_per_th": 15.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalon-a16xp"
+    },
+    {
+      "slug": "canaan-avalon-q",
+      "manufacturer": "canaan",
+      "display_name": "Avalon Q",
+      "model_number": "Q",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 90,
+        "power_watts": 1674,
+        "efficiency_j_per_th": 18.6,
+        "voltage_v": "100-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://canaan.io/product/avalon-q"
+    }
+  ],
+  "extra_aliases": {
+    "canaan-avalon-a1466": ["A1466", "Avalon A1466", "AvalonMiner A1466"],
+    "canaan-avalon-a1466i": ["A1466I", "Avalon A1466I"],
+    "canaan-avalon-a1566": ["A1566", "Avalon A1566"],
+    "canaan-avalon-a1566i": ["A1566I", "Avalon A1566I"],
+    "canaan-avalon-a1566ha": ["A1566HA", "Avalon A1566HA", "Avalon A1566HA 2U"],
+    "canaan-avalon-a15": ["A15", "Avalon A15"],
+    "canaan-avalon-a15-pro": ["A15 Pro", "AvalonA15Pro", "Avalon A15 Pro"],
+    "canaan-avalon-a15xp": ["A15XP", "Avalon A15XP"],
+    "canaan-avalon-a16": ["A16", "Avalon A16"],
+    "canaan-avalon-a16xp": ["A16XP", "Avalon A16XP"],
+    "canaan-avalon-q": ["Avalon Q", "AvalonQ"]
+  }
+}
