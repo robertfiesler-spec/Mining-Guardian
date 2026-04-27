@@ -1,13 +1,19 @@
 # =============================================================================
-# Mining Intelligence Catalog — One-Shot Deployment Script
+# Mining Intelligence Catalog — One-Shot Deployment Script (Docker dev box)
 # Run from: Mining-Guardian/intelligence-catalog/
 # =============================================================================
 # This script:
 #   1. Starts PostgreSQL 16 in Docker
 #   2. Waits for it to be ready
-#   3. Copies SQL files into the container
-#   4. Runs the schema deployment
+#   3. Copies SQL files into the container's /docker-entrypoint-initdb.d/
+#   4. Runs the canonical seed-data/deploy_schema.sql (uses \ir relative includes)
 #   5. Seeds 313 Bitcoin SHA-256 miners
+#
+# N6 consolidation (2026-04-27): the canonical schema entry point lives in
+# seed-data/deploy_schema.sql and uses psql's \ir directive so the same file
+# works in this Docker context AND in the customer Mac Mini install. The old
+# duplicate intelligence-catalog/deploy_schema.sql with hardcoded
+# /docker-entrypoint-initdb.d/ paths has been removed.
 # =============================================================================
 
 Write-Host "=== Mining Intelligence Catalog — Deployment ===" -ForegroundColor Cyan

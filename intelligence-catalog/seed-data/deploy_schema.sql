@@ -1,7 +1,7 @@
 -- =============================================================================
 -- MINING INTELLIGENCE CATALOG — Master Deployment Script
 -- Run BEFORE seed_miner_models.sql
--- Target: PostgreSQL 16 in Docker on ROBS-PC
+-- Target: PostgreSQL 16 (Docker on ROBS-PC dev box, native on customer Mac Mini)
 -- Database: mining_guardian
 -- =============================================================================
 -- This script:
@@ -11,16 +11,27 @@
 --   4. Seeds knowledge.sources with baseline sources
 --   5. Seeds knowledge.contributors with Bobby's record
 --   6. Seeds hardware.manufacturers with all 13 brands
+--
+-- IDIOMATIC USAGE (path-agnostic, N6 consolidated 2026-04-27):
+--   psql -U guardian_admin -d mining_guardian \
+--        -f intelligence-catalog/seed-data/deploy_schema.sql
+--
+-- The \ir directive below is psql's "include relative" — it resolves paths
+-- relative to *this script's* directory, so it works identically whether the
+-- file lives in the repo's seed-data/ folder or in the container's
+-- /docker-entrypoint-initdb.d/ directory. There is no longer a separate
+-- top-level intelligence-catalog/deploy_schema.sql with hardcoded
+-- /docker-entrypoint-initdb.d/ paths — that duplicate was removed in N6.
 -- =============================================================================
 
--- Run the base schema (63 tables)
-\i /sql/intelligence_catalog_schema.sql
+-- Run the base schema (63 tables) — relative include
+\ir intelligence_catalog_schema.sql
 
--- Run V2 additions (9 tables)
-\i /sql/intelligence_catalog_schema_v2_additions.sql
+-- Run V2 additions (9 tables) — relative include
+\ir intelligence_catalog_schema_v2_additions.sql
 
--- Run V3 additions (14+ tables)
-\i /sql/intelligence_catalog_schema_v3_additions.sql
+-- Run V3 additions (14+ tables) — relative include
+\ir intelligence_catalog_schema_v3_additions.sql
 
 -- =============================================================================
 -- ENUM EXTENSIONS — Add manufacturer brands not in original schema
