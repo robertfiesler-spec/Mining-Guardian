@@ -46,7 +46,7 @@ These are the **gates** between today and a real customer install. Not all need 
 
 ## 2.1. S-2 — Revoke leaked GitHub PAT 🔴 EMERGENCY
 
-- **Where:** `docs/SECURITY.md:80` — token `ghp_q0iv5r0qUYy24gxZ1e8XVWrDrKdTCQ1QwLkV` is still committed in cleartext
+- **Where:** `docs/SECURITY.md:80` — token `<REDACTED — revoked 2026-04-24, full literal scrubbed 2026-04-27>` is still committed in cleartext
 - **Action:** One-click revoke at https://github.com/settings/tokens, then commit `[REDACTED — token revoked YYYY-MM-DD]` over the literal
 - **Effort:** 2 minutes
 - **Why it's #1:** Anyone who reads the repo has the token. If the repo is ever public or leaked, it's already compromised. **Do this within the hour.**

@@ -42,7 +42,11 @@ DB_HOST = os.getenv("DB_HOST", "mining-guardian-db")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "mining_guardian")
 DB_USER = os.getenv("DB_USER", "guardian_admin")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "MiningGuardian2026!")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+if not DB_PASSWORD:
+    raise EnvironmentError(
+        "DB_PASSWORD must be set in the environment. Populate the catalog-api .env file."
+    )
 API_KEY = os.getenv("CATALOG_API_KEY", "CHANGE_ME_TO_A_REAL_SECRET")
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8420"))

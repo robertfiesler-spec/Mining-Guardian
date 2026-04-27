@@ -103,7 +103,7 @@ MG_DEBUG=1 python mg_import.py
 | Port     | `5432`              |
 | Database | `mining_guardian`   |
 | User     | `guardian_admin`    |
-| Password | `MiningGuardian2026!` |
+| Password | Set via environment variable `MG_DB_PASSWORD` — see installer / `.env` file. Never written into source. |
 
 All connection settings are editable in the GUI — no config file needed.
 
@@ -684,7 +684,7 @@ python tools/test_archive_parsers.py
 - Check host/port match your PostgreSQL configuration (`pg_hba.conf`, `postgresql.conf`)
 
 **"role does not exist"**
-- Create the user: `CREATE USER guardian_admin WITH PASSWORD 'MiningGuardian2026!';`
+- Create the user: `CREATE USER guardian_admin WITH PASSWORD '<MG_DB_PASSWORD>';` (substitute the value from your `.env`)
 - Grant access: `GRANT ALL PRIVILEGES ON DATABASE mining_guardian TO guardian_admin;`
 
 **"psycopg2 not installed"**
@@ -743,14 +743,14 @@ Use this for all batch runs of 5+ archives. Emits real-time Server-Sent Events s
 **Watch in real time with curl:**
 ```bash
 curl -N -X POST http://localhost:5050/api/import-files-stream \
-  -F 'conn_params={"host":"localhost","port":5432,"database":"mining_guardian","user":"guardian_admin","password":"MiningGuardian2026!"}' \
+  -F "conn_params={\"host\":\"localhost\",\"port\":5432,\"database\":\"mining_guardian\",\"user\":\"guardian_admin\",\"password\":\"$MG_DB_PASSWORD\"}" \
   -F 'file0=@/path/to/your/archive.tar.gz'
 ```
 
 **Batch recipe for 83 archives in a ZIP:**
 ```bash
 curl -N -X POST http://localhost:5050/api/import-files-stream \
-  -F 'conn_params={"host":"localhost","port":5432,"database":"mining_guardian","user":"guardian_admin","password":"MiningGuardian2026!"}' \
+  -F "conn_params={\"host\":\"localhost\",\"port\":5432,\"database\":\"mining_guardian\",\"user\":\"guardian_admin\",\"password\":\"$MG_DB_PASSWORD\"}" \
   -F 'file0=@/path/to/all_83_archives.zip'
 ```
 
