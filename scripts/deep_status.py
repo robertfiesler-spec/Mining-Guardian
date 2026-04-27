@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Deep status check — denial reasons, patterns, OpenClaw usage."""
-import sqlite3, json, subprocess, os
+"""Deep status check — denial reasons, patterns, training integration."""
+import sqlite3, json, os
 
 c = sqlite3.connect("guardian.db", timeout=30)
 
@@ -32,21 +32,6 @@ print("\nCross-miner analysis present:", bool(xm))
 # Fingerprints
 fps = k.get("miner_profiles", {})
 print("Miner fingerprints:", len(fps))
-
-# OpenClaw status
-print("\nOPENCLAW STATUS:")
-try:
-    oc = subprocess.run(["docker", "ps", "--filter", "name=openclaw", "--format", "table {{.Names}}\t{{.Status}}"],
-                        capture_output=True, text=True, timeout=5)
-    print(" ", oc.stdout.strip() or "NOT RUNNING")
-except Exception as e:
-    print("  Could not check:", e)
-
-# What OpenClaw has actually done in the system
-oc_actions = c.execute(
-    "SELECT COUNT(*) FROM action_audit_log WHERE approved_by LIKE '%OpenClaw%' OR notes LIKE '%openclaw%' OR notes LIKE '%webhook%'"
-).fetchone()[0]
-print("  Actions/references in audit log:", oc_actions)
 
 # Is denial data feeding into weekly training?
 print("\nWEEKLY TRAINING — DENIAL REASON INTEGRATION:")

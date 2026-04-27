@@ -33,20 +33,4 @@ class ApprovalInterface:
             return False
 
 
-# ------------------------------------------------------------
-# ------------------------------------------------------------
-# OpenClaw notifier
-# ------------------------------------------------------------
-# Sends a structured JSON payload to the local OpenClaw webhook
-# after every scan. OpenClaw's local LLM interprets the findings
-# and posts a plain-English summary to Slack for operator review.
-#
-# OpenClaw Gateway runs at http://127.0.0.1:18789 by default.
-# Webhook URL format: http://127.0.0.1:18789/hooks
-# Requires hooks.enabled: true and hooks.token set in ~/.openclaw/openclaw.json
-# Full URL example: http://127.0.0.1:18789/hooks  (token sent as Authorization header)
-#
-# Set openclaw_webhook_url in config.json when OpenClaw is ready.
-# Leave it null to disable silently — no errors will be thrown.
-# ------------------------------------------------------------
 

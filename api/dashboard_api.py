@@ -3,9 +3,9 @@
 dashboard_api.py
 Mining Guardian — Local Dashboard API
 
-Serves pre-built queries from guardian.db as JSON endpoints.
+Serves pre-built queries from the operational Postgres database as JSON endpoints.
 Used by Retool dashboard and future custom React dashboard.
-Also available to OpenClaw for AI context.
+Also available to the local LLM (Qwen) for AI context.
 
 Usage:
     source venv/bin/activate
@@ -1985,19 +1985,11 @@ def health():
     }
 
 
-# ── QUERY ENDPOINTS (Bobby/OpenClaw skill-facing) ──
+# ── QUERY ENDPOINTS (LLM-facing) ──
 #
-# These endpoints are consumed by the guardian-db OpenClaw skill at
-# /data/.openclaw/skills/guardian-db/ inside the OpenClaw container.
-# The skill makes HTTP calls to these endpoints to answer fleet questions
-# in Slack DMs.
-#
-# TEMP: In the current VPS dev environment, the OpenClaw container reaches
-#       these endpoints via the Docker bridge IP of the VPS host
-#       (typically 172.18.0.1:8585). On May 1 2026 when Mining Guardian and
-#       OpenClaw are both containers in the same docker-compose stack on a
-#       Mac mini, this becomes http://mining-guardian:8585/query/... via
-#       service-name DNS — a one-line config change in the skill.
+# These endpoints provide read-only fleet queries that can be consumed by
+# the local LLM (Qwen on the Mac Mini) or any internal client to answer
+# fleet questions.
 #
 # Design rules for this block:
 #   - Read-only only. No writes under any circumstances.

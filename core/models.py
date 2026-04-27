@@ -60,7 +60,6 @@ class GuardianConfig:
     ams_email: str
     ams_password: str
     ams_workspace_id: int
-    openclaw_webhook_url: Optional[str] = None
     slack_webhook_url: Optional[str] = None
     slack_bot_token:   Optional[str] = None
     dry_run: bool = True
@@ -92,7 +91,6 @@ class GuardianConfig:
             ams_email=GuardianConfig._resolve(raw["ams_email"]),
             ams_password=GuardianConfig._resolve(raw["ams_password"]),
             ams_workspace_id=int(GuardianConfig._resolve(raw["ams_workspace_id"])),
-            openclaw_webhook_url=raw.get("openclaw_webhook_url"),
             slack_webhook_url=raw.get("slack_webhook_url"),
             slack_bot_token=raw.get("slack_bot_token"),
             dry_run=raw.get("dry_run", True),

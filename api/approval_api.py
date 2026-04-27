@@ -2,8 +2,8 @@
 approval_api.py
 Mining Guardian — Approval Webhook API
 
-Listens for APPROVE/DENY callbacks from OpenClaw.
-When OpenClaw sees a reply in #mining-guardian, it calls this API
+Listens for APPROVE/DENY callbacks from the Slack approval listener.
+When the listener sees a reply in #mining-guardian, it calls this API
 which processes the pending approvals and executes actions.
 
 Runs on: http://localhost:8686
@@ -155,7 +155,7 @@ def verify_internal(request: Request) -> bool:
 @app.post("/approve")
 async def approve_actions(request: Request):
     """
-    Called by OpenClaw when operator replies APPROVE in Slack thread.
+    Called by the Slack approval listener when operator replies APPROVE in Slack thread.
     Expects JSON: {"thread_ts": "...", "user": "...", "user_id": "..."}
     """
     if not verify_internal(request):
@@ -230,7 +230,7 @@ async def approve_actions(request: Request):
 @app.post("/deny")
 async def deny_actions(request: Request):
     """
-    Called by OpenClaw when operator replies DENY in Slack thread.
+    Called by the Slack approval listener when operator replies DENY in Slack thread.
     Expects JSON: {"thread_ts": "...", "user": "...", "user_id": "..."}
     """
     if not verify_internal(request):

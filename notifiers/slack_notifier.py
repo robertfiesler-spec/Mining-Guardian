@@ -138,8 +138,8 @@ class SlackNotifier:
         Block Kit messages need a bot token (webhooks do not reliably render
         rich blocks). Falls back to plain text via post_to_channel if bot
         token is not configured. Interactive button click handling is routed
-        through OpenClaw socket → localhost approval API, NOT through any URL
-        handler that would require public ingress. See docs/CLOUDFLARE_MIGRATION.md.
+        through the Slack approval listener → localhost approval API, NOT through
+        any URL handler that would require public ingress.
         """
         target = channel_id or self.channel_id
         if not self.bot_token:
@@ -571,8 +571,9 @@ class SlackNotifier:
         """Post a rich Block Kit approval card in the thread.
 
         Uses display-only blocks (no buttons/checkboxes that need Socket Mode).
-        OpenClaw owns Socket Mode so interactive elements would be intercepted.
-        Instead: visual Block Kit card with ☐ checkboxes + text-reply approval.
+        We use polling instead of Bolt/Socket Mode, so interactive elements
+        are presented as visual Block Kit cards with ☐ checkboxes plus
+        text-reply approval that the listener detects.
         """
         ACTION_ICONS  = {"RESTART": "🔄", "PDU_CYCLE": "🔌", "RESTART_CHECK_BOARDS": "🔴"}
         ACTION_LABELS = {"RESTART": "Firmware Restart", "PDU_CYCLE": "PDU Power Cycle",
