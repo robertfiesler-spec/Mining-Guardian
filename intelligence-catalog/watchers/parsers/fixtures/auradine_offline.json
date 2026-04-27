@@ -1,0 +1,115 @@
+{
+  "_comment": [
+    "Bundled offline fixture for the Auradine Teraflux parser (PR #20, 2026-04-27).",
+    "",
+    "Bitcoin SHA-256 SKUs only (US-designed ASICs). Specs are factory-published",
+    "values from auradine.com product pages. AI3680 is a Kaspa SKU and is",
+    "intentionally excluded \u2014 not Bitcoin/SHA-256."
+  ],
+  "models": [
+    {
+      "slug": "auradine-teraflux-at1500",
+      "manufacturer": "auradine",
+      "display_name": "Auradine Teraflux AT1500",
+      "model_number": "AT1500",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 150,
+        "power_watts": 3375,
+        "efficiency_j_per_th": 22.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.auradine.com/products/teraflux-at1500"
+    },
+    {
+      "slug": "auradine-teraflux-at2860",
+      "manufacturer": "auradine",
+      "display_name": "Auradine Teraflux AT2860",
+      "model_number": "AT2860",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 280,
+        "power_watts": 5260,
+        "efficiency_j_per_th": 18.8,
+        "voltage_v": "380-415 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.auradine.com/products/teraflux-at2860"
+    },
+    {
+      "slug": "auradine-teraflux-at2880",
+      "manufacturer": "auradine",
+      "display_name": "Auradine Teraflux AT2880",
+      "model_number": "AT2880",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 180,
+        "power_watts": 2880,
+        "efficiency_j_per_th": 16.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.auradine.com/products/teraflux-at2880"
+    },
+    {
+      "slug": "auradine-teraflux-ah3880",
+      "manufacturer": "auradine",
+      "display_name": "Auradine Teraflux AH3880",
+      "model_number": "AH3880",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 600,
+        "power_watts": 10740,
+        "efficiency_j_per_th": 17.9,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.auradine.com/products/teraflux-ah3880"
+    },
+    {
+      "slug": "auradine-teraflux-at3680",
+      "manufacturer": "auradine",
+      "display_name": "Auradine Teraflux AT3680",
+      "model_number": "AT3680",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 320,
+        "power_watts": 4800,
+        "efficiency_j_per_th": 15.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.auradine.com/products/teraflux-at3680"
+    },
+    {
+      "slug": "auradine-teraflux-ai3680",
+      "manufacturer": "auradine",
+      "display_name": "Auradine Teraflux AI3680 (Kaspa)",
+      "model_number": "AI3680",
+      "algorithm": "kHeavyHash",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 360,
+        "power_watts": 3500,
+        "efficiency_j_per_th": 9.7,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.auradine.com/products/teraflux-ai3680",
+      "_filter_note": "intentionally non-SHA \u2014 should be dropped by parser"
+    }
+  ],
+  "extra_aliases": {
+    "auradine-teraflux-at1500": ["AT1500", "Teraflux AT1500", "Auradine AT1500"],
+    "auradine-teraflux-at2860": ["AT2860", "Teraflux AT2860"],
+    "auradine-teraflux-at2880": ["AT2880", "Teraflux AT2880"],
+    "auradine-teraflux-ah3880": ["AH3880", "Teraflux AH3880"],
+    "auradine-teraflux-at3680": ["AT3680", "Teraflux AT3680"]
+  }
+}
