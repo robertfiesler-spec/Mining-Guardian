@@ -247,4 +247,76 @@ Eight days. Slow and steady.
 
 ---
 
-*— end of 2026-04-27 log*
+## Addendum — Tuesday data track pulled into Monday afternoon
+
+Operator direction at the start of the afternoon:
+
+> "lets keep going and knock off tuesdays as well, this is my only job for the day, so lets go"
+
+The full Tuesday data track was executed in the same session. All five PRs merged to `main` before end of day. D-10 to install. Cutover gate row 5 ("AI has data") moves from ⏳ to ✅ on the C4, C1, and C3 sub-rows.
+
+### PRs merged this afternoon
+
+| # | Title | Commit | What it does |
+|---|---|---|---|
+| 12 | N6 schema consolidation | `833bc95` | Deletes duplicate `deploy_schema.sql`, promotes canonical `apply_schema.sql`, adds `seed-data/README.md`, fixes 7 latent bugs surfaced during review |
+| 13 | C4 seed runner | `d9aca73` | `scripts/seed_catalog.sh` with idempotency guard, enum prerequisite block, 6-test suite |
+| 14 | Orphan tables audit | _PR #14_ | `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md` — drop / defer / wire-up disposition for every orphan table; `intelligence/` deprecated in favor of `intelligence-catalog/` |
+| 15 | C1 dual-write | _PR #15_ | `staging.*` schema (3 tables + view + enum) + `intelligence-catalog/db/dual_writer.py` + `catalog_updater.py` wiring. Watchers UPSERT to `staging.*` then promote to `hardware.*`; JSON becomes debug export only |
+| 16 | C3 manufacturer watcher | `8c6dc94` | `intelligence-catalog/watchers/` — 388-line framework, Bitmain parser (10 SHA-256 SKUs), 23 unit tests, cross-model alias collision detection (closes N6 review feedback) |
+
+Combined with the morning's security batch (PRs #6–#11), today's total is **11 merged PRs** plus this addendum.
+
+### Decisions locked during the afternoon
+
+- **D-12 — Postgres-as-truth for spec/observation split.** The two-sets-of-numbers question (factory specs vs. real-world readings) was raised again. Ruling: factory specs live in `hardware.*` (one canonical row per model), real-world numbers live in `market.war_stories` and `ops.failure_patterns` (many rows per model, time-stamped, source-tagged). Watchers write to `staging.*` first; promotion into `hardware.*` is a deliberate human / C5 step. The JSON files (`unified_miner_index.json` etc.) become debug exports, not the source of truth.
+- **C3 watcher source — fresh in repo, ignore VPS.** The VPS-only watcher script is abandoned. Mac Mini will be 100% repo-controlled, which is the only way the install date promise ("100% representative of what customer would receive") holds.
+- **Drop list confirmed for May 4.** 13 tables and the entire `intelligence/` directory will be removed during the housekeeping pass: `hardware.{psu,control_board,board}_serial_batches`, `hardware.connector_pinouts`, `hardware.signal_chain_reference`, `facility.container_*` (3), `regulatory.*` (entire schema). PR #14 documents the rationale per table.
+
+### Latent bugs surfaced and fixed mid-flight
+
+1. **PR #12** — apply_schema.sql had 7 small but real defects (duplicated CHECK constraints, missing trigger function reference, etc.). All fixed.
+2. **PR #14** — `intelligence/database/*.sql` files differed from canonical (still had the 7 latent bugs). Confirmed they are abandoned, not just duplicates.
+3. **PR #14** — 16 manufacturers seeded but only 13 brand enums declared. Three (`jasminer`, `iceriver`, `goldshell`) had been silently re-introduced from a second `INSERT` block. Documented in the audit; will be reconciled before the May 4 housekeeping cut.
+4. **PR #16** — `dual_writer.py` from PR #15 never registered the psycopg2 UUID adapter. PR #15 unit tests passed because they used `None` for `source_run_id`; the C3 watcher always passes a UUID, which exposed the gap. Fixed with a 21-line idempotent `_ensure_uuid_adapter()` helper. PR #15's full test suite still passes after the patch.
+
+Finding #4 is the kind of bug you can only surface by running the next layer end-to-end — a small but useful argument for stacking the data-track PRs in one session rather than across two days.
+
+### Sandbox state at end of afternoon
+
+Postgres 17 sandbox at `/tmp:5433` against `mining_guardian`:
+
+- **98 tables** (95 catalog + 3 staging from PR #15)
+- **317 miner_models** in `hardware.miner_models`
+- **16 manufacturers**
+- **23 sources** in `knowledge.sources`
+- C3 live watcher run produced 10 model proposals, 42 alias proposals, 1 manufacturer proposal in `staging.*` (status=pending). Idempotent re-run produced zero new rows. Test rows cleaned up post-validation; only the pre-existing PR #15 test rows remain.
+
+### Cutover gate progress (end of Monday)
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | No leaked secrets | ✅ |
+| 2 | No hardcoded passwords | ✅ |
+| 3 | No dead code | ✅ |
+| 4 | One canonical catalog schema | ✅ |
+| 5 | AI has data (C1, C3, C4 done; C5 + remaining watchers Wed) | ⏳ |
+| 6 | Installer rewrite | ⏳ (Thu) |
+| 7 | Daily paper trail | ✅ |
+| 8 | Customer docs | ⏳ (weekend) |
+
+Four rows green, two rows partially green, two rows pending. On schedule for D-Day.
+
+### Wednesday roadmap (now reduced)
+
+With the Tuesday data track done, Wednesday's work shrinks to:
+
+1. C3 remaining manufacturer parsers — MicroBT, Canaan, Auradine, Bitdeer (all stubbed in `PARSER_MODULES`, just need `parsers/<brand>.py` + fixture each)
+2. C5 feedback loop — auto-validation of `staging.*` rows that match existing `hardware.*` data, status flip from `pending` → `validated`
+3. Wire writes for the DEFER tables that have parser sources: `firmware.*`, `market.*`, `repair.*`, `pool.*`, `facility.*`
+
+Thursday's installer rewrite is unaffected.
+
+---
+
+*— end of 2026-04-27 log (addendum closed end-of-day)*
