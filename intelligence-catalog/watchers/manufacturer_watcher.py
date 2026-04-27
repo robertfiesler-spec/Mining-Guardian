@@ -173,7 +173,7 @@ PARSER_MODULES: list[str] = [
     "parsers.microbt",
     "parsers.canaan",
     "parsers.auradine",
-    # "parsers.bitdeer",   # Wed (PR #21)
+    "parsers.bitdeer",
 ]
 
 
