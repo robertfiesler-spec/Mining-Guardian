@@ -86,6 +86,144 @@ from mg_import import (  # type: ignore
     _build_resolver_totals,
 )
 
+# ── Fast block executor ─────────────────────────────────────────────────────
+# mg_import.execute_sql_block calls split_sql_statements(), which is O(N²)
+# in the size of the SQL string (it does `lines[i:]` substring + regex on
+# every character). For archives with ~32k power-sample INSERTs the resulting
+# SQL is several MB and the splitter pegs one CPU core for many minutes,
+# eventually getting silently killed by Windows / Defender on Python 3.14.
+#
+# Our generated SQL never uses dollar-quoting and every statement is
+# terminated with `;\n`, so a plain split on `;\n` is correct and ~1000x
+# faster. We open ONE connection per archive (not per statement) and
+# execute statements sequentially, committing once at the end.
+#
+# This bypasses execute_sql_block entirely for the bulk path. The web UI
+# still uses execute_sql_block; we leave that import in place so anyone
+# grepping for it in mg_import.py still finds a caller.
+
+def _fast_execute_block(conn_params: dict, sql: str, log: logging.Logger) -> dict:
+    """Drop-in replacement for execute_sql_block, optimised for huge blocks.
+
+    Returns the same shape: {statements_run, rows_affected, errors}.
+    """
+    import psycopg2  # type: ignore
+
+    out = {'statements_run': 0, 'rows_affected': 0, 'errors': []}
+    pg_kwargs = {
+        'host':     conn_params.get('host', 'localhost'),
+        'port':     int(conn_params.get('port', 5432)),
+        'dbname':   conn_params.get('database', 'mining_guardian'),
+        'user':     conn_params.get('user', 'guardian_admin'),
+        'password': conn_params.get('password'),
+        'connect_timeout': 10,
+    }
+
+    # Fast splitter. Statement boundary = `;\n` (or `;` at EOF). String
+    # literals come from mg_import._dq which dollar-quotes with $val$...$val$
+    # (or $val1$, $val2$ etc. when 'val' appears in the value). We DO need
+    # to skip semicolons that fall inside such a quoted body — raw miner-log
+    # lines stored in raw_line columns can contain `;\n`.
+    #
+    # The mg_import.split_sql_statements function does this correctly but
+    # is O(N²) due to per-character substring slicing. Here we walk the
+    # buffer once, advancing past dollar-quote tags as whole tokens.
+    raw = sql.replace('\r\n', '\n')
+    stmts = []
+    buf = []
+    i = 0
+    n = len(raw)
+    in_dollar = False
+    dollar_tag = ''
+    DOLLAR_RE = __import__('re').compile(r'\$[A-Za-z0-9_]*\$')
+    while i < n:
+        if in_dollar:
+            # Look for the closing tag
+            j = raw.find(dollar_tag, i)
+            if j < 0:
+                # Unterminated dollar-quote — take the rest verbatim
+                buf.append(raw[i:])
+                i = n
+                break
+            buf.append(raw[i:j + len(dollar_tag)])
+            i = j + len(dollar_tag)
+            in_dollar = False
+            dollar_tag = ''
+            continue
+        ch = raw[i]
+        if ch == '$':
+            m = DOLLAR_RE.match(raw, i)
+            if m:
+                dollar_tag = m.group(0)
+                in_dollar = True
+                buf.append(dollar_tag)
+                i += len(dollar_tag)
+                continue
+        if ch == ';' and (i + 1 >= n or raw[i + 1] == '\n'):
+            stmt = ''.join(buf).strip()
+            if stmt:
+                # Drop bare-line comments inside the statement
+                kept = '\n'.join(
+                    ln for ln in stmt.split('\n')
+                    if not ln.strip().startswith('--')
+                ).strip()
+                if kept:
+                    stmts.append(kept)
+            buf = []
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    # Trailing fragment without ;
+    tail = ''.join(buf).strip()
+    if tail:
+        kept = '\n'.join(
+            ln for ln in tail.split('\n') if not ln.strip().startswith('--')
+        ).strip()
+        if kept:
+            stmts.append(kept)
+
+    if not stmts:
+        return out
+
+    log.info('  fast-exec: %d statements queued (%.1f KB SQL)',
+             len(stmts), len(sql) / 1024)
+
+    conn = psycopg2.connect(**pg_kwargs)
+    conn.autocommit = False
+    try:
+        cur = conn.cursor()
+        for i, stmt in enumerate(stmts, 1):
+            try:
+                cur.execute(stmt)
+                out['statements_run'] += 1
+                status = (cur.statusmessage or '').strip()
+                if status.startswith('INSERT'):
+                    sp = status.split()
+                    if sp and sp[-1].isdigit():
+                        out['rows_affected'] += int(sp[-1])
+            except psycopg2.Error as exc:
+                conn.rollback()
+                out['errors'].append(f'stmt {i}: {exc}'.strip())
+                # Re-open a cursor since rollback closed the txn
+                cur = conn.cursor()
+            if i % 5000 == 0:
+                log.info('  fast-exec progress: %d/%d statements',
+                         i, len(stmts))
+        if not out['errors']:
+            conn.commit()
+        else:
+            try:
+                conn.commit()
+            except Exception:
+                conn.rollback()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return out
+
 # ── Defaults ────────────────────────────────────────────────────────────────
 DEFAULT_EXTENSIONS = ('.tar', '.tgz', '.tar.gz', '.rar')
 
@@ -265,9 +403,9 @@ def main(argv: list[str] | None = None) -> int:
                 log.info('%s   [dry-run] block: %s ...', prefix, snippet)
                 continue
             try:
-                res = execute_sql_block(conn_params, block)
+                res = _fast_execute_block(conn_params, block, log)
             except Exception as exc:
-                archive_errors.append(f'execute_sql_block raised: {exc}')
+                archive_errors.append(f'fast_execute_block raised: {exc}')
                 continue
             archive_statements += res.get('statements_run', 0)
             archive_rows       += res.get('rows_affected', 0)
