@@ -13,7 +13,7 @@ This document synthesizes and consolidates:
 - `docs/CLOUDFLARE_MIGRATION.md` (Mac mini migration)
 - `docs/DAILY_LOG_CAPTURE_VISION.md` (regression detection)
 - `docs/OPEN_LOG_UPLOADER_VISION.md` (any-vendor ingestion)
-- `intelligence/README.md` (research database)
+- `intelligence-catalog/seed-data/README.md` (research database — the legacy `intelligence/` directory is deprecated, see `intelligence/DEPRECATED.md`)
 - `installer/DEPLOYMENT.md` on `installer-build` branch (customer installer)
 
 If any of the above conflict with this doc, this doc is wrong — update it.

@@ -151,7 +151,7 @@ doc before proposing anything.
 | Cloudflare removal before Mac mini arrival | `docs/CLOUDFLARE_MIGRATION.md` |
 | Daily log capture + 14-day rolling baseline (firmware regression detection) | `docs/DAILY_LOG_CAPTURE_VISION.md` |
 | Open log uploader (any-vendor, any-format ingestion) | `docs/OPEN_LOG_UPLOADER_VISION.md` |
-| Mining Intelligence Catalog (PostgreSQL research DB) | `intelligence/README.md` |
+| Mining Intelligence Catalog (PostgreSQL research DB) | `intelligence-catalog/seed-data/README.md` (legacy `intelligence/` deprecated — see `intelligence/DEPRECATED.md`) |
 | Mac mini deployment spec + installer wizard | `installer/DEPLOYMENT.md` (on `installer-build` branch) |
 | How to feed logs to Claude for analysis | `docs/HOW_TO_UPLOAD_LOGS_TO_CLAUDE.md` |
 | Container/warehouse mechanical monitoring (future) | `docs/CONTAINER_MONITORING.md` + `docs/WAREHOUSE_MECHANICAL.md` |
