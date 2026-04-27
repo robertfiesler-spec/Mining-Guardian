@@ -171,7 +171,7 @@ class BaseParser(ABC):
 PARSER_MODULES: list[str] = [
     "parsers.bitmain",
     "parsers.microbt",
-    # "parsers.canaan",    # Wed (PR #19)
+    "parsers.canaan",
     # "parsers.auradine",  # Wed (PR #20)
     # "parsers.bitdeer",   # Wed (PR #21)
 ]
