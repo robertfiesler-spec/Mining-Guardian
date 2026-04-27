@@ -10,12 +10,16 @@ instance — start the API first with `docker-compose up` or `uvicorn`.
 
 import argparse
 import json
+import os
 import sys
 import urllib.request
 import urllib.error
 
 DEFAULT_BASE_URL = "http://localhost:8420"
-DEFAULT_API_KEY = "CHANGE_ME_TO_A_REAL_SECRET"
+# CRIT-6: there is no working default. Pass --api-key from your installed .env
+# or set the CATALOG_API_KEY env var; the placeholder string is rejected
+# by the server at startup.
+DEFAULT_API_KEY = os.environ.get("CATALOG_API_KEY", "")
 
 
 def _request(method: str, url: str, api_key: str, body: dict | None = None) -> tuple[int, dict]:

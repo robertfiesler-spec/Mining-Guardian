@@ -7,21 +7,25 @@ knowledge bundles and pre-formatted prompt text for LLM system prompt injection.
 """
 
 import hashlib
+import hmac
 import json
 import logging
 import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import psycopg2
 import psycopg2.pool
 from cachetools import TTLCache
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Header, Query
+from fastapi import Depends, FastAPI, HTTPException, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 load_dotenv()
 
@@ -47,9 +51,40 @@ if not DB_PASSWORD:
     raise EnvironmentError(
         "DB_PASSWORD must be set in the environment. Populate the catalog-api .env file."
     )
-API_KEY = os.getenv("CATALOG_API_KEY", "CHANGE_ME_TO_A_REAL_SECRET")
-API_HOST = os.getenv("API_HOST", "0.0.0.0")
+
+# CRIT-6: API key must be set explicitly. The old default
+# "CHANGE_ME_TO_A_REAL_SECRET" is REJECTED — if you see that string in your
+# .env, the installer never ran (or you copied .env.example without editing).
+# Generate one with:  python -c "import secrets; print(secrets.token_hex(32))"
+API_KEY = os.getenv("CATALOG_API_KEY")
+_FORBIDDEN_API_KEYS = {
+    None, "", "CHANGE_ME_TO_A_REAL_SECRET",
+    "__GENERATE_AT_INSTALL_TIME__", "__SET_BY_INSTALLER__",
+}
+if API_KEY in _FORBIDDEN_API_KEYS:
+    raise EnvironmentError(
+        "CATALOG_API_KEY must be set to a real secret in the environment. "
+        "The placeholder value is rejected. "
+        'Generate one with:  python -c "import secrets; print(secrets.token_hex(32))"'
+    )
+if len(API_KEY) < 32:
+    raise EnvironmentError(
+        f"CATALOG_API_KEY is too short ({len(API_KEY)} chars; need ≥ 32). "
+        'Generate one with:  python -c "import secrets; print(secrets.token_hex(32))"'
+    )
+
+# CRIT-6: default to loopback. Docker port mapping in docker-compose.yml is
+# what exposes this to the host — the FastAPI process itself should bind
+# loopback only inside the container. If you need external reach, override
+# with API_HOST=0.0.0.0 + ensure auth + TLS upstream.
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("API_PORT", "8420"))
+
+# CRIT-6: rate limit defaults. Override with env vars if needed (e.g. fleet
+# of 1000 miners scanning every 5 min would need a higher cap).
+RATE_LIMIT_SCAN_BUNDLE = os.getenv("CATALOG_RATE_LIMIT_SCAN_BUNDLE", "60/minute")
+RATE_LIMIT_MINER = os.getenv("CATALOG_RATE_LIMIT_MINER", "120/minute")
+RATE_LIMIT_HEALTH = os.getenv("CATALOG_RATE_LIMIT_HEALTH", "600/minute")
 
 # ---------------------------------------------------------------------------
 # Connection pool (created at startup, closed at shutdown)
@@ -98,34 +133,102 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CRIT-6: rate limiter, keyed by client IP (X-Forwarded-For aware via slowapi).
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 # ---------------------------------------------------------------------------
 # Auth dependency
 # ---------------------------------------------------------------------------
 async def verify_token(authorization: Optional[str] = Header(None)) -> None:
-    """Validate Bearer token from Authorization header."""
+    """Validate Bearer token from Authorization header.
+
+    CRIT-6: comparison uses hmac.compare_digest to defeat timing oracles.
+    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     parts = authorization.split(" ", 1)
-    if len(parts) != 2 or parts[0].lower() != "bearer" or parts[1] != API_KEY:
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Malformed Authorization header")
+    submitted = parts[1]
+    # hmac.compare_digest requires both args to be the same type and is
+    # constant-time relative to the shorter of the two.
+    if not hmac.compare_digest(submitted, API_KEY):
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
+# CRIT-6: section names are restricted to this allow-list. Anything else
+# is rejected by Pydantic at request time.
+SectionName = Literal[
+    "failure_patterns", "firmware", "thresholds",
+    "repair", "env_factors", "baselines",
+]
+
+# CRIT-6: per-field length caps to defeat trivial DoS / memory-blowup attempts.
+# A real fleet has at most ~30 unique miner models; ~50 active issue codes is
+# already on the high side. These caps are intentionally generous so a normal
+# operator never hits them, but a bad actor cannot send a 10MB JSON list.
+_MAX_MODELS = 200
+_MAX_ISSUES = 100
+_MAX_CHIPS = 100
+_MAX_FW = 100
+_MAX_STR_LEN = 256
+
+
 class ScanBundleRequest(BaseModel):
     """Request body for the scan-bundle endpoint."""
-    miner_models: list[str] = Field(default_factory=list, description="Model names from scan")
-    active_issues: list[str] = Field(default_factory=list, description="Active issue codes")
-    chip_dies: list[str] = Field(default_factory=list, description="Chip die identifiers")
-    firmware_versions: list[str] = Field(default_factory=list, description="Firmware versions in fleet")
-    include_sections: list[str] = Field(
+    miner_models: list[str] = Field(
+        default_factory=list,
+        description="Model names from scan",
+        max_length=_MAX_MODELS,
+    )
+    active_issues: list[str] = Field(
+        default_factory=list,
+        description="Active issue codes",
+        max_length=_MAX_ISSUES,
+    )
+    chip_dies: list[str] = Field(
+        default_factory=list,
+        description="Chip die identifiers",
+        max_length=_MAX_CHIPS,
+    )
+    firmware_versions: list[str] = Field(
+        default_factory=list,
+        description="Firmware versions in fleet",
+        max_length=_MAX_FW,
+    )
+    include_sections: list[SectionName] = Field(
         default_factory=lambda: [
             "failure_patterns", "firmware", "thresholds", "repair", "env_factors", "baselines"
         ],
-        description="Sections to include in the bundle",
+        description="Sections to include in the bundle (allow-listed)",
+        max_length=len([
+            "failure_patterns", "firmware", "thresholds",
+            "repair", "env_factors", "baselines",
+        ]),
     )
+
+    @classmethod
+    def _trim_strs(cls, values: list[str], field: str) -> list[str]:
+        for v in values:
+            if not isinstance(v, str):
+                raise ValueError(f"{field}: list items must be strings")
+            if len(v) > _MAX_STR_LEN:
+                raise ValueError(
+                    f"{field}: individual entries must be ≤ {_MAX_STR_LEN} chars"
+                )
+        return values
+
+    def model_post_init(self, __context: Any) -> None:  # type: ignore[override]
+        self._trim_strs(self.miner_models, "miner_models")
+        self._trim_strs(self.active_issues, "active_issues")
+        self._trim_strs(self.chip_dies, "chip_dies")
+        self._trim_strs(self.firmware_versions, "firmware_versions")
 
 
 class ScanBundleResponse(BaseModel):
@@ -565,7 +668,8 @@ def _build_cache_key(request: ScanBundleRequest) -> str:
 # Endpoints
 # ---------------------------------------------------------------------------
 @app.get("/api/v1/health")
-async def health():
+@limiter.limit(RATE_LIMIT_HEALTH)
+async def health(request: Request):
     """Health check — verifies service status and DB connectivity."""
     db_ok = False
     db_tables = 0
@@ -597,7 +701,12 @@ async def health():
 
 
 @app.post("/api/v1/context/scan-bundle", response_model=ScanBundleResponse)
-async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_token)):
+@limiter.limit(RATE_LIMIT_SCAN_BUNDLE)
+async def scan_bundle(
+    request: Request,
+    body: ScanBundleRequest,
+    _auth: None = Depends(verify_token),
+):
     """
     Main endpoint — hot path. Given miner models and active issues from a scan,
     query the Intelligence Catalog and return a knowledge bundle with pre-formatted
@@ -606,7 +715,7 @@ async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_t
     Target: <200ms p95.
     """
     start = time.monotonic()
-    cache_key = _build_cache_key(request)
+    cache_key = _build_cache_key(body)
 
     # Check in-memory cache
     if cache_key in bundle_cache:
@@ -614,35 +723,35 @@ async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_t
         return bundle_cache[cache_key]
 
     logger.info("Cache MISS — building bundle for models=%s issues=%s",
-                request.miner_models, request.active_issues)
+                body.miner_models, body.active_issues)
 
     sources: list[str] = []
     bundle: dict[str, Any] = {}
 
     # Fuzzy-match miner models
-    matched_models = _fuzzy_match_models(request.miner_models)
+    matched_models = _fuzzy_match_models(body.miner_models)
     bundle["matched_models"] = matched_models
     model_ids = [m.get("id") or m.get("model_id") for m in matched_models if m.get("id") or m.get("model_id")]
     if matched_models:
         sources.append("hardware.miner_models")
 
     # Chip specs
-    if request.chip_dies:
-        bundle["chip_specs"] = _fetch_chip_specs(request.chip_dies)
+    if body.chip_dies:
+        bundle["chip_specs"] = _fetch_chip_specs(body.chip_dies)
         if bundle["chip_specs"]:
             sources.append("hardware.chips")
 
     # Sections
-    sections = set(request.include_sections)
+    sections = set(body.include_sections)
 
     if "failure_patterns" in sections:
-        bundle["failure_patterns"] = _fetch_failure_patterns(model_ids, request.active_issues)
+        bundle["failure_patterns"] = _fetch_failure_patterns(model_ids, body.active_issues)
         if bundle["failure_patterns"]:
             sources.extend(["ops.failure_patterns", "ops.failure_symptoms",
                             "ops.miner_error_codes", "hardware.model_known_issues"])
 
     if "firmware" in sections:
-        bundle["firmware"] = _fetch_firmware_data(model_ids, request.firmware_versions)
+        bundle["firmware"] = _fetch_firmware_data(model_ids, body.firmware_versions)
         if any(bundle["firmware"].values()):
             sources.extend(["firmware.firmware_releases", "firmware.firmware_compatibility",
                             "firmware.firmware_bugs"])
@@ -667,7 +776,7 @@ async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_t
     sources = list(dict.fromkeys(sources))
 
     # Generate prompt text
-    prompt_text = _format_prompt_text(bundle, request)
+    prompt_text = _format_prompt_text(bundle, body)
 
     # Sanitize bundle for JSON (remove sim_score floats, convert datetimes)
     def _sanitize(obj: Any) -> Any:
@@ -702,11 +811,14 @@ async def scan_bundle(request: ScanBundleRequest, _auth: None = Depends(verify_t
 
 
 @app.get("/api/v1/knowledge/miner/{model_slug}")
+@limiter.limit(RATE_LIMIT_MINER)
 async def get_miner_knowledge(
+    request: Request,
     model_slug: str,
     include: str = Query(
         default="specs,firmware,failures,repair,thresholds",
         description="Comma-separated sections: specs,firmware,failures,repair,thresholds",
+        max_length=256,
     ),
     _auth: None = Depends(verify_token),
 ):
