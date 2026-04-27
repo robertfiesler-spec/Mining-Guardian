@@ -124,8 +124,15 @@ CREATE TRIGGER trg_unknown_fields_updated_at
 
 -- A3: Raw Ingestion Log — stores EVERY raw API/log response for forensic analysis
 -- When something weird happens, Bobby can look at exactly what the system received
+--
+-- N6 (2026-04-27): partitioned tables in Postgres require the partitioning
+-- column to be part of every unique constraint, including the primary key.
+-- The original PK (id alone) was rejected because the table partitions on
+-- ingested_at. PK is now (id, ingested_at) — lookups by id stay unique
+-- because id is uuid_generate_v4(), and (id, ingested_at) plus the
+-- partition layout still answers id-only queries via partition pruning.
 CREATE TABLE IF NOT EXISTS knowledge.raw_ingestion_log (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                  UUID NOT NULL DEFAULT uuid_generate_v4(),
     ingestion_source    TEXT NOT NULL,             -- 'ams_api', 'bixbit_api', 'container_monitor', 'hvac_bacnet', 'miner_log', 'weather_api'
     source_endpoint     TEXT,                      -- Specific endpoint or log path
     source_miner_id     TEXT,
@@ -139,7 +146,8 @@ CREATE TABLE IF NOT EXISTS knowledge.raw_ingestion_log (
     processing_time_ms  INTEGER,
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- Partitioning column — auto-prune after retention period
-    retention_tier      TEXT NOT NULL DEFAULT 'standard'  -- 'standard' (90 days), 'flagged' (1 year), 'permanent'
+    retention_tier      TEXT NOT NULL DEFAULT 'standard',  -- 'standard' (90 days), 'flagged' (1 year), 'permanent'
+    PRIMARY KEY (id, ingested_at)
 ) PARTITION BY RANGE (ingested_at);
 
 COMMENT ON TABLE knowledge.raw_ingestion_log IS

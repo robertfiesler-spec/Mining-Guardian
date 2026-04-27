@@ -413,8 +413,11 @@ CREATE TABLE knowledge.freshness_log (
     verified_by     UUID REFERENCES knowledge.contributors(id),
     verification_method TEXT,           -- 'api_pull', 'manual_check', 'automated_test', etc.
     next_verify_due TIMESTAMPTZ,        -- When should this be re-verified?
-    staleness_days  INTEGER GENERATED ALWAYS AS
-        (EXTRACT(DAY FROM NOW() - last_verified_at)::INTEGER) STORED,
+    -- staleness_days was previously a STORED GENERATED column referencing NOW(),
+    -- which Postgres rejects (generation expression must be immutable). N6
+    -- (2026-04-27) replaced it with a query-time computation; downstream views
+    -- and design notes already use EXTRACT(DAY FROM NOW() - last_verified_at)
+    -- inline. If a stored column becomes necessary later, populate via trigger.
     is_stale        BOOLEAN NOT NULL DEFAULT FALSE,
     metadata        JSONB NOT NULL DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -440,7 +443,11 @@ CREATE INDEX idx_freshness_due ON knowledge.freshness_log(next_verify_due ASC)
 -- ---------------------------------------------------------------------------
 CREATE TABLE hardware.manufacturers (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    brand               public.manufacturer_brand NOT NULL,
+    -- N6 (2026-04-27): added UNIQUE on brand. The deploy_schema.sql seed uses
+    -- ON CONFLICT (brand) DO NOTHING for idempotency, which requires this
+    -- constraint to exist. Brand is also semantically one-row-per-enum-value
+    -- (you cannot have two "Bitmain" manufacturers).
+    brand               public.manufacturer_brand NOT NULL UNIQUE,
     legal_name          TEXT NOT NULL,
     common_name         TEXT NOT NULL,    -- "Bitmain", "MicroBT", "Auradine"
     country_of_origin   CHAR(2),          -- ISO 3166-1 alpha-2
@@ -684,7 +691,11 @@ CREATE TABLE hardware.hashboards (
     pcb_revision        TEXT,             -- "v1.0", "v1.2", "rev3"
     -- Chip info
     chip_id             UUID REFERENCES hardware.chips(id),
-    chips_per_board     INTEGER NOT NULL,
+    -- N6 (2026-04-27): relaxed NOT NULL. Some manufacturers (e.g. Auradine)
+    -- do not publish chip count per board, and the seed data accordingly
+    -- inserts NULL. The schema's own seed (line ~3866) demonstrates this. Keep
+    -- column nullable so queries can distinguish "unknown" from "zero".
+    chips_per_board     INTEGER,
     chip_layout         TEXT,             -- '3 domains of 8' — textual description
     chip_layout_json    JSONB,            -- Machine-readable domain/row/column layout
     -- Electrical
@@ -863,7 +874,21 @@ CREATE TABLE hardware.model_aliases (
     primary_source_id UUID REFERENCES knowledge.sources(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (alias_normalized)
+    -- N6 (2026-04-27): the original constraint UNIQUE (alias_normalized) was
+    -- too strict and broke the schema's own seed data. Two distinct
+    -- human-readable aliases ('S21EXP' and 'S21 EXP') legitimately normalize
+    -- to the same string ('s21exp') for the same model, and that should not
+    -- be rejected. We also do not want different models to claim the same
+    -- normalized alias — that would defeat fuzzy matching. The right shape:
+    --   * unique (miner_model_id, alias)              — no exact duplicates per model
+    --   * separate guard against cross-model collisions on alias_normalized
+    --     (a partial unique index where it points to different models)
+    -- The cross-model guard is enforced by trigger or by application logic
+    -- since SQL alone can't express "unique except within the same group".
+    -- For now, the table-level constraint is the per-model uniqueness; the
+    -- model_aliases ingestion path in the watchers must check for cross-model
+    -- collisions before INSERT.
+    UNIQUE (miner_model_id, alias)
 );
 
 COMMENT ON TABLE hardware.model_aliases IS
@@ -871,7 +896,12 @@ COMMENT ON TABLE hardware.model_aliases IS
 alias_normalized = lower(alias) with spaces, hyphens, underscores, dots stripped.
 Use trigram similarity on alias + alias_normalized to resolve incoming data.
 Example: "s19j pro", "s19jpro", "antminers19jpro", "S19J-Pro" → all resolve to same miner_model_id.
-Auto-generate variants on INSERT to miner_models via application trigger.';
+Uniqueness: (miner_model_id, alias) — the same human-readable alias cannot be
+listed twice for one model, but two human variants that normalize identically
+("S21EXP" and "S21 EXP" both → "s21exp") are both valid rows. Cross-model
+normalized collisions are checked at ingestion time by the manufacturer
+watcher (see PR #16). Auto-generate variants on INSERT to miner_models via
+application trigger.';
 
 CREATE INDEX idx_aliases_model ON hardware.model_aliases(miner_model_id);
 CREATE INDEX idx_aliases_trgm ON hardware.model_aliases USING GIN(alias gin_trgm_ops);
@@ -1059,12 +1089,26 @@ CREATE TRIGGER trg_fw_updated_at
     BEFORE UPDATE ON firmware.firmware_releases
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+-- N6 (2026-04-27): firmware_family is an enum; tsvector_update_trigger
+-- requires text-typed columns AND does not accept casts in its arg list.
+-- Replaced with a custom PL/pgSQL trigger that builds the tsvector explicitly
+-- with enum->text coercion. Same indexable result, schema deploys cleanly.
+CREATE OR REPLACE FUNCTION firmware.fw_search_vector_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.firmware_family::text, '')), 'A') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.version_string, '')), 'A') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.display_name, '')), 'B') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.developer_name, '')), 'C') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.notes, '')), 'D');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TRIGGER trg_fw_search_vector
     BEFORE INSERT OR UPDATE ON firmware.firmware_releases
-    FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger(
-        search_vector, 'pg_catalog.english',
-        firmware_family::TEXT, version_string, display_name, developer_name, notes
-    );
+    FOR EACH ROW EXECUTE FUNCTION firmware.fw_search_vector_trigger();
 
 -- ---------------------------------------------------------------------------
 -- FIRMWARE ↔ HARDWARE COMPATIBILITY MATRIX
@@ -3136,12 +3180,25 @@ CREATE TRIGGER trg_cool_sol_updated_at
     BEFORE UPDATE ON facility.cooling_solutions
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+-- N6 (2026-04-27): cooling_type is an enum. Same fix as fw_search_vector —
+-- replace tsvector_update_trigger with a custom PL/pgSQL trigger that does
+-- the enum->text coercion explicitly.
+CREATE OR REPLACE FUNCTION facility.cool_sol_search_vector_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.search_vector :=
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.solution_name, '')), 'A') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.manufacturer_name, '')), 'B') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.cooling_type::text, '')), 'B') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.fluid_type, '')), 'C') ||
+        setweight(to_tsvector('pg_catalog.english', coalesce(NEW.notes, '')), 'D');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TRIGGER trg_cool_sol_search_vector
     BEFORE INSERT OR UPDATE ON facility.cooling_solutions
-    FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger(
-        search_vector, 'pg_catalog.english',
-        solution_name, manufacturer_name, cooling_type::TEXT, fluid_type, notes
-    );
+    FOR EACH ROW EXECUTE FUNCTION facility.cool_sol_search_vector_trigger();
 
 -- ---------------------------------------------------------------------------
 -- POWER DISTRIBUTION UNITS
