@@ -1,0 +1,201 @@
+{
+  "_comment": [
+    "Bundled offline fixture for the MicroBT Whatsminer parser (PR #18, 2026-04-27).",
+    "",
+    "Bitcoin SHA-256 SKUs only. Air-cooled and hydro both included since the",
+    "customer (Bobby) may run either. Specs are factory-published (whatsminer.com).",
+    "",
+    "Slug convention mirrors PR #16 Bitmain: '<brand>-<model_number_normalized>'."
+  ],
+  "models": [
+    {
+      "slug": "microbt-whatsminer-m50",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M50",
+      "model_number": "M50",
+      "algorithm": "SHA-256",
+      "release_year": 2022,
+      "specs": {
+        "hashrate_th": 114,
+        "power_watts": 3306,
+        "efficiency_j_per_th": 29.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m50"
+    },
+    {
+      "slug": "microbt-whatsminer-m50s",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M50S",
+      "model_number": "M50S",
+      "algorithm": "SHA-256",
+      "release_year": 2022,
+      "specs": {
+        "hashrate_th": 126,
+        "power_watts": 3276,
+        "efficiency_j_per_th": 26.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m50s"
+    },
+    {
+      "slug": "microbt-whatsminer-m50s-plus",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M50S+",
+      "model_number": "M50S+",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 142,
+        "power_watts": 3405,
+        "efficiency_j_per_th": 24.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m50s-plus"
+    },
+    {
+      "slug": "microbt-whatsminer-m50s-plus-plus",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M50S++",
+      "model_number": "M50S++",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 156,
+        "power_watts": 3265,
+        "efficiency_j_per_th": 21.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m50s-plus-plus"
+    },
+    {
+      "slug": "microbt-whatsminer-m53s-plus-plus",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M53S++",
+      "model_number": "M53S++",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 320,
+        "power_watts": 6720,
+        "efficiency_j_per_th": 21.0,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.whatsminer.com/products/m53s-plus-plus"
+    },
+    {
+      "slug": "microbt-whatsminer-m56s-plus-plus",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M56S++",
+      "model_number": "M56S++",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 254,
+        "power_watts": 5588,
+        "efficiency_j_per_th": 22.0,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.whatsminer.com/products/m56s-plus-plus"
+    },
+    {
+      "slug": "microbt-whatsminer-m60",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M60",
+      "model_number": "M60",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 162,
+        "power_watts": 3104,
+        "efficiency_j_per_th": 19.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m60"
+    },
+    {
+      "slug": "microbt-whatsminer-m60s",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M60S",
+      "model_number": "M60S",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 186,
+        "power_watts": 3441,
+        "efficiency_j_per_th": 18.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m60s"
+    },
+    {
+      "slug": "microbt-whatsminer-m60s-plus",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M60S+",
+      "model_number": "M60S+",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 195,
+        "power_watts": 3315,
+        "efficiency_j_per_th": 17.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m60s-plus"
+    },
+    {
+      "slug": "microbt-whatsminer-m60s-plus-plus",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M60S++",
+      "model_number": "M60S++",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 226,
+        "power_watts": 3600,
+        "efficiency_j_per_th": 16.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.whatsminer.com/products/m60s-plus-plus"
+    },
+    {
+      "slug": "microbt-whatsminer-m66s-plus-plus",
+      "manufacturer": "microbt",
+      "display_name": "Whatsminer M66S++",
+      "model_number": "M66S++",
+      "algorithm": "SHA-256",
+      "release_year": 2025,
+      "specs": {
+        "hashrate_th": 356,
+        "power_watts": 6764,
+        "efficiency_j_per_th": 19.0,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.whatsminer.com/products/m66s-plus-plus"
+    }
+  ],
+  "extra_aliases": {
+    "microbt-whatsminer-m50": ["M50", "Whatsminer M50"],
+    "microbt-whatsminer-m50s": ["M50S", "Whatsminer M50S"],
+    "microbt-whatsminer-m50s-plus": ["M50S Plus", "Whatsminer M50S Plus"],
+    "microbt-whatsminer-m50s-plus-plus": ["M50S Plus Plus", "Whatsminer M50S Plus Plus"],
+    "microbt-whatsminer-m53s-plus-plus": ["M53S Plus Plus", "Whatsminer M53S Plus Plus"],
+    "microbt-whatsminer-m56s-plus-plus": ["M56S Plus Plus", "Whatsminer M56S Plus Plus"],
+    "microbt-whatsminer-m60": ["M60", "Whatsminer M60"],
+    "microbt-whatsminer-m60s": ["M60S", "Whatsminer M60S"],
+    "microbt-whatsminer-m60s-plus": ["M60S Plus", "Whatsminer M60S Plus"],
+    "microbt-whatsminer-m60s-plus-plus": ["M60S Plus Plus", "Whatsminer M60S Plus Plus"],
+    "microbt-whatsminer-m66s-plus-plus": ["M66S Plus Plus", "Whatsminer M66S Plus Plus"]
+  }
+}

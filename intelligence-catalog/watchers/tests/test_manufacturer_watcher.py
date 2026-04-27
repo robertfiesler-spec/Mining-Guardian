@@ -53,16 +53,21 @@ class NormalizeAliasTests(unittest.TestCase):
 
 
 class ParserRegistryTests(unittest.TestCase):
-    def test_only_bitmain_registered(self):
-        # Wed PRs will add microbt/canaan/auradine/bitdeer
-        self.assertEqual(mw.PARSER_MODULES, ["parsers.bitmain"])
+    def test_registered_parsers_have_fixtures(self):
+        parsers = mw._load_parsers()
+        self.assertGreaterEqual(len(parsers), 1)
+        for p in parsers:
+            self.assertTrue(p.BRAND, f"{p} missing BRAND")
+            self.assertTrue(p.DISPLAY_NAME, f"{p} missing DISPLAY_NAME")
+            self.assertTrue(
+                p.OFFLINE_FIXTURE and p.OFFLINE_FIXTURE.exists(),
+                f"{p.BRAND} missing offline fixture",
+            )
 
     def test_bitmain_loads(self):
-        parsers = mw._load_parsers()
+        parsers = mw._load_parsers(only=["bitmain"])
         self.assertEqual(len(parsers), 1)
         self.assertEqual(parsers[0].BRAND, "bitmain")
-        self.assertEqual(parsers[0].DISPLAY_NAME, "Bitmain")
-        self.assertTrue(parsers[0].OFFLINE_FIXTURE.exists())
 
     def test_only_filter(self):
         parsers = mw._load_parsers(only=["bitmain"])
