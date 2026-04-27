@@ -71,6 +71,25 @@ LOG = logging.getLogger("dual_writer")
 # Connection helpers
 # ──────────────────────────────────────────────────────────────────────────
 
+# Register Python UUID <-> Postgres uuid adapter exactly once. Without this,
+# psycopg2 cannot adapt a uuid.UUID object as a parameter and every propose_*
+# call that passes source_run_id fails with "can't adapt type 'UUID'".
+# Patched in PR #16 after the C3 watcher exposed the gap during sandbox runs.
+_UUID_ADAPTER_REGISTERED = False
+
+
+def _ensure_uuid_adapter() -> None:
+    global _UUID_ADAPTER_REGISTERED
+    if _UUID_ADAPTER_REGISTERED:
+        return
+    try:
+        import psycopg2.extras  # type: ignore
+        psycopg2.extras.register_uuid()
+        _UUID_ADAPTER_REGISTERED = True
+    except Exception as exc:  # pragma: no cover
+        LOG.warning("could not register UUID adapter: %s", exc)
+
+
 def _get_connection():
     """Open a Postgres connection using D-1 env vars. Returns None on any
     failure — the caller is expected to log and degrade gracefully.
@@ -81,6 +100,8 @@ def _get_connection():
     except ImportError:
         LOG.warning("psycopg2 not installed; dual-write disabled.")
         return None
+
+    _ensure_uuid_adapter()
 
     pw = os.environ.get("MG_DB_PASSWORD")
     if not pw:

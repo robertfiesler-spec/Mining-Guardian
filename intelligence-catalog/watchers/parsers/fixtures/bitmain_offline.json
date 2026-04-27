@@ -1,0 +1,188 @@
+{
+  "_comment": [
+    "Bundled offline fixture for the Bitmain parser (PR #16, 2026-04-27).",
+    "",
+    "Used when the host has no internet (sandbox / CI / Mac Mini bring-up before",
+    "first online sync) so the watcher can still produce staging proposals end-to-end.",
+    "",
+    "Specs are factory-published values (Bitmain product pages). They populate",
+    "hardware.* on promotion. Real-world numbers live in market.war_stories /",
+    "ops.failure_patterns and never come from this fixture (per D-12 decision).",
+    "",
+    "Only Bitcoin SHA-256 SKUs (per user direction). No KAS, no LTC, no ETC."
+  ],
+  "models": [
+    {
+      "slug": "bitmain-antminer-s21",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S21",
+      "model_number": "S21",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 200,
+        "power_watts": 3500,
+        "efficiency_j_per_th": 17.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s21"
+    },
+    {
+      "slug": "bitmain-antminer-s21-pro",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S21 Pro",
+      "model_number": "S21 Pro",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 234,
+        "power_watts": 3531,
+        "efficiency_j_per_th": 15.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s21-pro"
+    },
+    {
+      "slug": "bitmain-antminer-s21-plus",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S21+",
+      "model_number": "S21+",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 216,
+        "power_watts": 3564,
+        "efficiency_j_per_th": 16.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s21plus"
+    },
+    {
+      "slug": "bitmain-antminer-s21-hyd",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S21 Hydro",
+      "model_number": "S21 Hyd",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 335,
+        "power_watts": 5360,
+        "efficiency_j_per_th": 16.0,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s21-hyd"
+    },
+    {
+      "slug": "bitmain-antminer-s21-xp",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S21 XP",
+      "model_number": "S21 XP",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 270,
+        "power_watts": 3645,
+        "efficiency_j_per_th": 13.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s21xp"
+    },
+    {
+      "slug": "bitmain-antminer-s21-xp-hyd",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S21 XP Hydro",
+      "model_number": "S21 XP Hyd",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 473,
+        "power_watts": 5676,
+        "efficiency_j_per_th": 12.0,
+        "voltage_v": "380-415 AC",
+        "cooling": "hydro"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s21xp-hyd"
+    },
+    {
+      "slug": "bitmain-antminer-s19j-pro-plus",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S19j Pro+",
+      "model_number": "S19j Pro+",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 122,
+        "power_watts": 3355,
+        "efficiency_j_per_th": 27.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s19j-pro-plus"
+    },
+    {
+      "slug": "bitmain-antminer-s19xp",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S19 XP",
+      "model_number": "S19 XP",
+      "algorithm": "SHA-256",
+      "release_year": 2022,
+      "specs": {
+        "hashrate_th": 140,
+        "power_watts": 3010,
+        "efficiency_j_per_th": 21.5,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s19xp"
+    },
+    {
+      "slug": "bitmain-antminer-t21",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer T21",
+      "model_number": "T21",
+      "algorithm": "SHA-256",
+      "release_year": 2024,
+      "specs": {
+        "hashrate_th": 190,
+        "power_watts": 3610,
+        "efficiency_j_per_th": 19.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/t21"
+    },
+    {
+      "slug": "bitmain-antminer-s19k-pro",
+      "manufacturer": "bitmain",
+      "display_name": "Antminer S19k Pro",
+      "model_number": "S19k Pro",
+      "algorithm": "SHA-256",
+      "release_year": 2023,
+      "specs": {
+        "hashrate_th": 120,
+        "power_watts": 2760,
+        "efficiency_j_per_th": 23.0,
+        "voltage_v": "200-240 AC",
+        "cooling": "air"
+      },
+      "source_url": "https://www.bitmain.com/products/antminer/s19k-pro"
+    }
+  ],
+  "extra_aliases": {
+    "bitmain-antminer-s21": ["S21", "Antminer S21", "AntminerS21"],
+    "bitmain-antminer-s21-pro": ["S21Pro", "S21 Pro", "Antminer S21 Pro"],
+    "bitmain-antminer-s21-plus": ["S21 Plus", "S21Plus", "Antminer S21 Plus"],
+    "bitmain-antminer-s21-hyd": ["S21 Hyd", "S21Hyd", "S21 Hydro", "Antminer S21 Hydro"],
+    "bitmain-antminer-s21-xp": ["S21XP", "S21 XP", "Antminer S21 XP"],
+    "bitmain-antminer-s21-xp-hyd": ["S21 XP Hyd", "S21XP Hyd", "S21 XP Hydro"],
+    "bitmain-antminer-s19j-pro-plus": ["S19j Pro+", "S19jPro+", "S19j Pro Plus"],
+    "bitmain-antminer-s19xp": ["S19 XP", "S19XP", "Antminer S19 XP"],
+    "bitmain-antminer-t21": ["T21", "Antminer T21"],
+    "bitmain-antminer-s19k-pro": ["S19k Pro", "S19kPro", "Antminer S19k Pro"]
+  }
+}
