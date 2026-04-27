@@ -1,5 +1,8 @@
 # Mining Intelligence Catalog — Monday Build Plan
 
+> **⚠️ DEPRECATED ARCHITECTURE — historical reference only.**
+> This document describes the original April 2026 plan to host the catalog on **ROBS-PC** with a Thunderbolt 4 SSD enclosure. That architecture was superseded on 2026-04-27 by the **Mac Mini** plan. The canonical schema and seed now live in `intelligence-catalog/seed-data/` (not `intelligence/`). The legacy `intelligence/` directory is deprecated — see `intelligence/DEPRECATED.md`. For the current architecture see `intelligence-catalog/seed-data/README.md` and `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`. The instructions below are kept for historical traceability and should not be followed for the May 5 customer install.
+
 **Date:** April 10, 2026 (created for Monday April 13 session)
 **Status:** READY TO BUILD
 **Hardware:** ROBS-PC (Windows 11, Ryzen 7 7800X3D, 32GB RAM, RTX 4090)

@@ -79,4 +79,4 @@ The Intelligence Catalog is a living, learning system:
 - 1 Mac mini per 1-2 containers, max ~500 miners
 - NAS migration July 2026, cloud backup on top
 
-See `intelligence/README.md` for full architecture documentation.
+See `intelligence-catalog/seed-data/README.md` for full architecture documentation. The legacy `intelligence/` directory is deprecated as of 2026-04-27 — see `intelligence/DEPRECATED.md` and `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`.

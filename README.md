@@ -467,7 +467,7 @@ AI answers include: current fleet state, 14-day miner history, audit trail, dead
 | `guardian.db` | SQLite database — never delete, never overwrite with template |
 | `installer/DEPLOYMENT.md` | Mac mini installer spec (on `installer-build` branch) — 313 lines |
 | `api/intelligence_report_api.py` | Miner Intelligence Report API v2.1 — 226 models, live BTC/difficulty, correction rules engine (port 8590) |
-| `intelligence/README.md` | Mining Intelligence Catalog architecture (Postgres research DB) |
+| `intelligence-catalog/seed-data/README.md` | Mining Intelligence Catalog architecture (Postgres research DB on Mac Mini). The legacy `intelligence/` directory is deprecated — see `intelligence/DEPRECATED.md` |
 
 ---
 

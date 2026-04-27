@@ -248,7 +248,7 @@ Bobby corrected the diagnosis in 5 seconds with one operator insight: "I just up
 **Current state:** Running every scan, storing predictions, but NOT posting to Slack. Predictions are being stored for review but the action recommendation path is paused pending confidence threshold tuning.
 
 ### Feature 7: Repair Shop Data Ingestion ⏳ BLOCKED
-**Blocked on:** Dataset from James Scaggs / Advanced Crypto Services. 1M+ historical data points expected. Will feed into the Mining Intelligence Catalog (Postgres research DB on ROBS-PC → NAS in July) rather than `guardian.db`. See `intelligence/README.md`.
+**Blocked on:** Dataset from James Scaggs / Advanced Crypto Services. 1M+ historical data points expected. Will feed into the Mining Intelligence Catalog (Postgres research DB, now hosted on the customer Mac Mini per the post-2026-04 architecture) rather than `guardian.db`. See `intelligence-catalog/seed-data/README.md` (the legacy `intelligence/` directory is deprecated — see `intelligence/DEPRECATED.md`).
 
 ### Feature 8: Action Diversity ✅ LIVE (fixed during test)
 **File:** `ai/action_diversity.py`
@@ -396,7 +396,7 @@ See `docs/CLOUDFLARE_MIGRATION.md` for full detail.
 ### P3 — Post-Mac mini launch
 
 21. **Open Log Uploader** (2-4 week build) — see `docs/OPEN_LOG_UPLOADER_VISION.md`. 4 phases, 10 open design questions to resolve first. Any-vendor any-format ingestion engine for repair shop bulk drops.
-22. **Mining Intelligence Catalog Phase 1** on ROBS-PC — see `intelligence/README.md`. Blocked on Thunderbolt 4 SSD enclosure delivery AND WSL2/Docker virtualization conflict (Memory Integrity likely). **30-minute hard cap** on WSL2 debug, fall back to native Postgres via EnterpriseDB installer.
+22. **Mining Intelligence Catalog Phase 1** — superseded by the Mac Mini architecture (May 5, 2026). The original ROBS-PC + Thunderbolt 4 SSD plan is deprecated; canonical schema and seed live in `intelligence-catalog/seed-data/`. The legacy `intelligence/` directory is deprecated — see `intelligence/DEPRECATED.md`.
 23. **Monthly federation refinement pipeline** — add dual-pass refinement (Claude + local LLM) to `combine_knowledge.py` for higher-quality `master_knowledge.json`
 24. **Auradine AH3880 direct API integration** — port 8443, standby-before-PDU-cut rule, see `docs/AURADINE_API.md`
 25. **Auradine firmware rollback** — waiting on vendor. Roll back `.55` first, observe 24h, then `.28`.
