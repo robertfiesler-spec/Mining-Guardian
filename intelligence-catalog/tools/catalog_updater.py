@@ -6,6 +6,15 @@ Mining Guardian — Catalog Auto-Updater Tool
 Standalone script to add or update miner models in the unified catalog.
 Can be called by cron jobs, other scripts, or manually from CLI.
 
+*** D-12 (locked 2026-04-27): Postgres-as-truth ***
+This tool now writes EVERY change to Postgres FIRST (via the dual_writer
+module) and then to unified_miner_index.json as a debug / git-tracked export.
+The JSON file is no longer the source of truth — hardware.miner_models in
+Postgres is. The Postgres write is best-effort; if it fails (Postgres down,
+library missing, etc.) the JSON path proceeds and a warning is logged. This
+lets us run the tool from environments without Postgres during the May 5
+transition. After mid-May, this fail-soft policy will tighten.
+
 Usage:
   python catalog_updater.py --add-model '{"slug": "antminer-s25", "manufacturer": "bitmain", ...}'
   python catalog_updater.py --update-model antminer-s21 '{"specs": {"current_street_price_usd": 3500}}'
@@ -19,12 +28,37 @@ Importable as a module:
 import argparse
 import csv
 import json
+import logging
 import os
 import sys
 from copy import deepcopy
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError
+
+# C1 dual-write: every JSON change also lands in staging.miner_model_proposals.
+# Import is wrapped so this module still runs in environments without
+# psycopg2 or without the catalog repo on PYTHONPATH.
+try:
+    # Adjust path so "intelligence-catalog/db/dual_writer.py" is importable
+    # whether this file is run as a script or imported as a module.
+    _DB_DIR = Path(__file__).resolve().parent.parent / "db"
+    if str(_DB_DIR.parent) not in sys.path:
+        sys.path.insert(0, str(_DB_DIR.parent))
+    # We import the module by file path because "intelligence-catalog" is not
+    # a valid Python package name (the hyphen breaks `import` syntax).
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("_mg_dual_writer", _DB_DIR / "dual_writer.py")
+    _dw_module = _ilu.module_from_spec(_spec)  # type: ignore[arg-type]
+    _spec.loader.exec_module(_dw_module)        # type: ignore[union-attr]
+    propose_miner_model = _dw_module.propose_miner_model  # type: ignore[attr-defined]
+    _DUAL_WRITE_AVAILABLE = True
+except Exception as _exc:
+    propose_miner_model = None  # type: ignore[assignment]
+    _DUAL_WRITE_AVAILABLE = False
+    logging.getLogger("catalog_updater").debug(
+        "dual_writer not loaded (%s); JSON-only mode", _exc
+    )
 
 
 # ── Paths ────────────────────────────────────────────────────────
@@ -51,6 +85,29 @@ def save_index(index: dict) -> None:
     with open(INDEX_JSON, "w") as f:
         json.dump(index, f, indent=2)
         f.write("\n")
+
+
+def _dual_write_proposal(slug: str, payload: dict, *, op: str) -> None:
+    """Best-effort dual-write into staging.miner_model_proposals (D-12).
+
+    Never raises — a Postgres outage must NOT break the JSON path during the
+    May 5 transition. The dual_writer module already swallows exceptions and
+    logs warnings; we just check the feature flag and call.
+    """
+    if not _DUAL_WRITE_AVAILABLE or propose_miner_model is None:
+        return
+    try:
+        propose_miner_model(
+            slug=slug,
+            payload=payload,
+            source_tool="catalog_updater",
+        )
+    except Exception as exc:
+        # Defense in depth — dual_writer already swallows but if a future
+        # change leaks an exception we still don't want to break JSON writes.
+        logging.getLogger("catalog_updater").warning(
+            "dual-write %s for %s failed: %s", op, slug, exc
+        )
 
 
 def deep_merge(base: dict, update: dict) -> dict:
@@ -111,6 +168,7 @@ def add_model(model_data: dict, index: dict | None = None) -> tuple[dict, str]:
         index[slug] = deep_merge(index[slug], {
             k: v for k, v in model_data.items() if k != "slug"
         })
+        _dual_write_proposal(slug, index[slug], op="update")
         return index, f"Updated existing model: {slug}"
 
     # New model — build entry
@@ -132,6 +190,7 @@ def add_model(model_data: dict, index: dict | None = None) -> tuple[dict, str]:
             entry[k] = v
 
     index[slug] = entry
+    _dual_write_proposal(slug, entry, op="add")
     return index, f"Added new model: {slug}"
 
 
@@ -153,6 +212,7 @@ def update_model(slug: str, updates: dict, index: dict | None = None) -> tuple[d
         raise ValueError(f"Model '{slug}' not found in catalog ({len(index)} models available)")
 
     index[slug] = deep_merge(index[slug], updates)
+    _dual_write_proposal(slug, index[slug], op="update")
     return index, f"Updated model: {slug}"
 
 

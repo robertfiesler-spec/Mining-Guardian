@@ -33,6 +33,9 @@
 -- Run V3 additions (14+ tables) — relative include
 \ir intelligence_catalog_schema_v3_additions.sql
 
+-- Run staging schema (3 proposal tables + work-queue view) — C1 dual-write intake (PR #15)
+\ir staging_schema.sql
+
 -- =============================================================================
 -- ENUM EXTENSIONS — Add manufacturer brands not in original schema
 -- =============================================================================
