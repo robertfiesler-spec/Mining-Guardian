@@ -85,5 +85,6 @@ ORDER BY 1;
 
 Write-Host ""
 Write-Host "=== Deployment Complete ===" -ForegroundColor Green
-Write-Host "Connection: postgresql://guardian_admin:MiningGuardian2026!@localhost:5432/mining_guardian" -ForegroundColor White
-Write-Host "Tailscale:  postgresql://guardian_admin:MiningGuardian2026!@100.110.87.1:5432/mining_guardian" -ForegroundColor White
+Write-Host "Connection: postgresql://guardian_admin:<MG_DB_PASSWORD>@localhost:5432/mining_guardian" -ForegroundColor White
+Write-Host "Tailscale:  postgresql://guardian_admin:<MG_DB_PASSWORD>@<tailscale-ip>:5432/mining_guardian" -ForegroundColor White
+Write-Host "            (substitute the value of `$Env:MG_DB_PASSWORD or read from your .env)" -ForegroundColor DarkGray

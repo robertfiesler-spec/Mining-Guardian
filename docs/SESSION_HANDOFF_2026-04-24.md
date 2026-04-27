@@ -1,5 +1,23 @@
 # Mining Guardian — Master Session Handoff (2026-04-24)
 
+> ## ⚠️ DEAD CREDENTIALS — DO NOT USE ⚠️
+>
+> **Status as of 2026-04-27:** Every secret literal that appears below in this
+> document — including the Postgres password `MiningGuardian2026!` and any
+> GitHub PAT strings (`ghp_...`) — has been **rotated and revoked**. They are
+> preserved here only as a forensic record of what was leaked, per decision
+> **D-5b** in `docs/DECISIONS.md`.
+>
+> - The live DB password is now stored in the env var `MG_DB_PASSWORD`
+>   (see `docs/SECURITY.md` and `docs/DECISIONS.md` D-1).
+> - The old GitHub PAT was revoked on 2026-04-24; a new token was issued and
+>   the old one is confirmed `Never used` in GitHub settings.
+> - **Do not copy any secret out of this file.** If you need a working
+>   credential, source it from `~/.mining-guardian/secrets.env` on the host
+>   or from the password manager — never from this handoff.
+>
+> CRIT-1 purge tracked in `security/crit-1-password-purge-2026-04-27`.
+
 > **Purpose of this document:** Single source of truth for Rob + next-chat-me to pick up where we stopped. Read this first in the new chat. Everything else is supporting detail linked from here.
 >
 > **Author:** Perplexity Computer (same agent that will continue in the next chat — "just you" per Rob's rule, no Mac Claude).

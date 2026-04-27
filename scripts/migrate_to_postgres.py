@@ -20,13 +20,16 @@ import sys
 BASE_DIR = Path(__file__).parent.parent
 SQLITE_DIR = BASE_DIR / "databases"
 
-# PostgreSQL connection settings
+# PostgreSQL connection settings — password MUST come from environment.
+# This script is also guarded by MG_ALLOW_MIGRATION=1 (see decision D-6).
 PG_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'dbname': 'mining_guardian',
-    'user': 'guardian_app',
-    'password': 'MiningGuardian2026!'
+    'host': os.environ.get('MG_DB_HOST', 'localhost'),
+    'port': int(os.environ.get('MG_DB_PORT', '5432')),
+    'dbname': os.environ.get('MG_DB_NAME', 'mining_guardian'),
+    'user': os.environ.get('MG_DB_USER', 'guardian_app'),
+    'password': os.environ.get('MG_DB_PASSWORD') or (_ for _ in ()).throw(
+        EnvironmentError("MG_DB_PASSWORD must be set in environment to run this migration script.")
+    ),
 }
 
 # SQLite databases and their tables

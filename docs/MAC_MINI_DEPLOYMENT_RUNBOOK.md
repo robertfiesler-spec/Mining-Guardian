@@ -122,20 +122,28 @@ Do NOT shut down the VPS tunnels until the Mac Mini is up and verified. But have
 
 ### Phase 2: Postgres setup (15 min)
 
+> **Secret handling:** the DB password lives in `MG_DB_PASSWORD` (export it in
+> your shell or source `~/.mining-guardian/secrets.env` before running these
+> commands). Never paste the literal into the runbook, shell history, or git.
+
+    # Load secret into the current shell (one-time per session)
+    set -a; source ~/.mining-guardian/secrets.env; set +a
+    : "${MG_DB_PASSWORD:?MG_DB_PASSWORD must be set before running Phase 2}"
+
     # Create role and DB matching VPS setup
     psql postgres <<SQL
-    CREATE ROLE guardian_app WITH LOGIN PASSWORD 'MiningGuardian2026!';
+    CREATE ROLE guardian_app WITH LOGIN PASSWORD '${MG_DB_PASSWORD}';
     CREATE DATABASE mining_guardian OWNER guardian_app;
     GRANT ALL PRIVILEGES ON DATABASE mining_guardian TO guardian_app;
     SQL
 
     # Load from VPS dump (brought over on USB)
     gunzip /path/to/mining_guardian_YYYYMMDD.sql.gz
-    PGPASSWORD='MiningGuardian2026!' psql -h localhost -U guardian_app \\
+    PGPASSWORD="$MG_DB_PASSWORD" psql -h localhost -U guardian_app \\
         mining_guardian < /path/to/mining_guardian_YYYYMMDD.sql
 
     # Verify row counts match VPS
-    PGPASSWORD='MiningGuardian2026!' psql -h localhost -U guardian_app mining_guardian \\
+    PGPASSWORD="$MG_DB_PASSWORD" psql -h localhost -U guardian_app mining_guardian \\
         -c 'SELECT COUNT(*) FROM scans, miner_readings, hvac_readings, llm_analysis;'
 
 ### Phase 3: Python env (10 min)

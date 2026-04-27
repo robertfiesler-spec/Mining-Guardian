@@ -77,10 +77,10 @@ allow_origins=[
 
 #### GitHub Secret Alert (Apr 5-21, 2026)
 - **Issue:** GitHub PAT committed in `git hub paswords.rtfd/TXT.rtf`
-- **Token:** `ghp_q0iv5r0qUYy24gxZ1e8XVWrDrKdTCQ1QwLkV`
-- **Status:** PENDING - Token needs to be revoked in GitHub Settings
+- **Token:** `<REDACTED — revoked 2026-04-24>` (full literal scrubbed during CRIT-1 purge 2026-04-27)
+- **Status:** RESOLVED — token revoked at GitHub on 2026-04-24, confirmed `Never used` on 2026-04-27. New PAT "3rd" issued in its place.
 - **File removed:** Yes, in commit `ac0a215`
-- **Note:** Token remains in git history; revoke to invalidate
+- **Note:** Old token literal still exists in pre-2026-04-27 git history; revocation at GitHub is what invalidates it (and that step is complete).
 
 ---
 

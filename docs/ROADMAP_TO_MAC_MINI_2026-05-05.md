@@ -45,7 +45,7 @@ The Mac Mini install does NOT happen until all 8 of these are green:
 - This roadmap + session log committed
 
 **Tonight (within 1 hour):**
-- 🔴 **S-2 — Revoke leaked GitHub PAT** at `docs/SECURITY.md:80` (`ghp_q0iv5r0qUYy24gxZ1e8XVWrDrKdTCQ1QwLkV`). Click-only operation in GitHub UI. ~2 min.
+- ✅ **S-2 — Revoked leaked GitHub PAT** at `docs/SECURITY.md:80` (token `<REDACTED — revoked 2026-04-24>`). Confirmed `Never used` in GitHub settings on 2026-04-27. New PAT "3rd" issued.
 
 ---
 

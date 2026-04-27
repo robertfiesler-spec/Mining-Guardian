@@ -100,8 +100,9 @@ lets us skip the split-SQLite step entirely).
   user but still needs rotation before the Mac Mini cutover
 - `scripts/cleanup_ams_logs.py` — cron removed today, script itself still in
   repo. Delete when convenient (it has a pre-existing `datetime` import bug)
-- Hardcoded password `'MiningGuardian2026!'` in `scripts/migrate_to_postgres.py`
-  line 26 — will rotate alongside PAT
+- ~~Hardcoded password in `scripts/migrate_to_postgres.py`~~ — **resolved
+  2026-04-27** under CRIT-1: literal purged, script now reads `MG_DB_PASSWORD`
+  from env and refuses to run unless the env var is set
 - Field Intelligence Pipeline v3.3 deployment — if Field Intelligence work
   resumes, see previous `NEXT_SESSION.md` in commit `3a38112`
 
