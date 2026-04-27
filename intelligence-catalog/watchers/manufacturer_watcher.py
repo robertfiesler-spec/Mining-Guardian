@@ -170,10 +170,10 @@ class BaseParser(ABC):
 # manufacturer_watcher and added to this list as they go online.
 PARSER_MODULES: list[str] = [
     "parsers.bitmain",
-    # "parsers.microbt",   # Wed (community track)
-    # "parsers.canaan",    # Wed
-    # "parsers.auradine",  # Wed
-    # "parsers.bitdeer",   # Wed
+    "parsers.microbt",
+    # "parsers.canaan",    # Wed (PR #19)
+    # "parsers.auradine",  # Wed (PR #20)
+    # "parsers.bitdeer",   # Wed (PR #21)
 ]
 
 
