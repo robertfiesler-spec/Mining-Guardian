@@ -40,7 +40,7 @@ pick up the fix without re-deriving the context.
 ## B-3 — `000_bootstrap_field_log_tables.sql` migration trap
 
 **Severity:** High
-**Status:** Not fixed (deliberately skipped during 2026-04-27 import; flagged for post-install rebase)
+**Status:** Fixed 2026-04-28 in PR (this commit). The `knowledge.field_log_raw_json` block in `000_bootstrap_field_log_tables.sql` was rebased onto the canonical PARTITIONED shape introduced by `002_layer2_and_learning_foundation.sql`. Verified end-to-end against a Postgres 17 instance: (a) fresh run of 000 produces a structural diff of zero against the same table built by 002 alone, (b) re-running 000 is idempotent (NOTICE skips, no errors), (c) 002 layered on top of 000 is a clean no-op for the raw_json section.
 **Discovered:** 2026-04-27 (PR #25 addendum #3)
 **Location:** `mg_import_tool/sql/migrations/000_bootstrap_field_log_tables.sql`
 
@@ -73,22 +73,37 @@ order will trip this. The current "live DB" was built by applying `001_initial_s
 plus the partition-aware schema delivered manually months ago, so `000_*` was never
 exercised in production.
 
-### Fix Plan
+### Fix Applied
 
-1. Rebase `000_bootstrap_field_log_tables.sql` onto the partitioned shape that the
-   live DB actually uses (drop `file_path_in_archive`, add `PARTITION BY` clause,
-   and the per-quarter partition children).
-2. Add a guard at the top of the file: `DO $$ BEGIN IF EXISTS (...) THEN RAISE
-   NOTICE 'already applied'; RETURN; END IF; END $$;` to make it idempotent.
-3. Add a regression test in `tests/test_migrations.py` that diffs the post-migration
-   schema against the canonical partitioned shape captured in `docs/db/SCHEMA.md`.
-4. Mark this bug as fixed in this file with the PR number and commit SHA.
+1. ✅ Rebased `000_bootstrap_field_log_tables.sql` onto the partitioned shape the
+   live DB uses: dropped `file_path_in_archive` and `raw_content`, added
+   `PARTITION BY RANGE (ingested_at)` with quarterly children for 2026-Q2 →
+   2027-Q1, switched primary key to `(id, ingested_at)`, and replaced the
+   `(archive_filename, file_path_in_archive)` unique constraint with the three
+   non-unique indexes that 002 already declares (`idx_raw_json_entity`,
+   `idx_raw_json_archive`, `idx_raw_json_sha`).
+2. ✅ Idempotent: every CREATE in the rebased block uses `IF NOT EXISTS`
+   (table, partitions, indexes), so re-running the migration on a DB that
+   already has 002 applied is a no-op. Verified via two consecutive runs
+   against a fresh Postgres 17 instance — second run produced only NOTICE
+   skips, no errors.
+3. ⏳ Pending follow-up (NOT in this PR): regression test in
+   `tests/test_migrations.py` that diffs post-migration schema vs canonical.
+   The test infrastructure does not yet exist; this is tracked separately.
+4. ✅ This entry updated with the rebase status above.
+
+**Open follow-up:** the runtime DDL bootstrap inside `mg_import.py` (lines
+~929-969 and ~1287-1296) still creates the OLD non-partitioned shape. That
+write path, plus the silent-swallow in `insert_raw_json`, is tracked as
+B-4 / B-5. Fixing the migration file unblocks them but does not in itself
+resolve the runtime divergence.
 
 ### References
 
 - `docs/SESSION_LOG_2026-04-27.md` — addendum #3
 - PR #25 (squashed as `6f0b5a2`)
 - `docs/DECISIONS.md` D-1 (Postgres-as-canonical)
+- B-4, B-5 below — coupled runtime issues in `mg_import.py`
 
 ---
 
@@ -160,7 +175,7 @@ be logged.
 ## B-5 — `mg_import.py` raw_json index targets nonexistent column
 
 **Severity:** Medium
-**Status:** Patched out (lines 1315-1316 commented out 2026-04-27); needs proper fix
+**Status:** Patched out (lines 1315-1316 commented out 2026-04-27); B-3 root cause now fixed (2026-04-28), but the runtime CREATE TABLE inside `mg_import.py` still bootstraps the OLD non-partitioned shape — see updated Fix Plan below.
 **Discovered:** 2026-04-27 (PR #25 addendum #3)
 **Location:** `mg_import_tool/mg_import.py` lines 1315-1316
 
@@ -197,19 +212,32 @@ psycopg2.errors.UndefinedColumn: column "raw_json_jsonb_field" does not exist
 
 ### Fix Plan
 
-Coupled to B-3. Fix B-3 first (rebase `000_bootstrap_*` onto partitioned shape),
-then:
+B-3 root cause was fixed 2026-04-28 (the migration file is now correct), but
+the runtime DDL inside `mg_import.py` is a separate write path that ALSO
+needs to converge before this index can be restored:
 
-1. Confirm the partitioned table exposes a `raw_json_jsonb_field` column (or pick
-   the correct equivalent column name — likely `payload` or `data`).
-2. Uncomment lines 1315-1316 and update the column reference.
-3. Add `CONCURRENTLY` to the index creation if the table is large.
+1. Update the runtime bootstrap CREATE TABLE in `mg_import.py` (~lines 1287-1296)
+   to match the canonical partitioned shape — same columns, partition key,
+   and quarterly partitions as the rebased 000 migration. Until this is done,
+   `mg_import.py` running against a fresh DB will create the wrong shape and
+   then 002 will fail with an `ALREADY EXISTS` mismatch.
+2. Update `insert_raw_json()` (~line 929) to write to the canonical column set
+   (`entity_label, archive_filename, source_file, parser, raw_payload, sha256,
+   ingested_at`) instead of the legacy `(archive_filename, file_path_in_archive,
+   raw_content)` triple. This is the same code path that B-4 (silent swallow)
+   touches — fix both together.
+3. Once the writer is canonical, replace the patched-out index (lines
+   1315-1316) with the appropriate index against the partitioned shape —
+   most likely `(archive_filename, sha256)` rather than
+   `(archive_filename, file_path_in_archive)`. Use `CREATE INDEX CONCURRENTLY`
+   if running against a populated table.
 4. Remove the `# 2026-04-27` marker comment.
 
 ### References
 
 - `docs/SESSION_LOG_2026-04-27.md` — addendum #3
-- B-3 (root cause)
+- B-3 (root cause — fixed 2026-04-28 in this PR)
+- B-4 (silent swallow — same `mg_import.py` write path)
 - PR #25 (squashed as `6f0b5a2`)
 
 ---
