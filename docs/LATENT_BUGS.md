@@ -19,7 +19,7 @@ pick up the fix without re-deriving the context.
 | B-3 | High     | `000_bootstrap_field_log_tables.sql` non-partitioned shape trap   | Not fixed  |
 | B-4 | High     | `mg_import.insert_raw_json` silently swallows ingestion errors    | Not fixed  |
 | B-5 | Medium   | `mg_import.py` raw_json index targets nonexistent column          | Patched out|
-| B-6 | Medium   | `docs/CRON_SCHEDULE.md` references retired `Mining-Gaurdian/` typo | Not fixed  |
+| B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Not fixed  |
 | B-7 | Medium   | Live migrations `002_layer2` + staging not committed to the repo  | Not fixed  |
 
 ---
@@ -214,52 +214,178 @@ then:
 
 ---
 
-## B-6 — `docs/CRON_SCHEDULE.md` references retired `Mining-Gaurdian/` typo
+## B-6 — Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files
 
 **Severity:** Medium
 **Status:** Not fixed
 **Discovered:** 2026-04-28 (this session, while reviewing post-rename cleanup)
-**Location:** `docs/CRON_SCHEDULE.md`
+**Original scope:** `docs/CRON_SCHEDULE.md` (single file)
+**Expanded scope (verified 2026-04-28 on `main` @ `9ff9925`):** 8 `deploy/*.service` files + 13 currently-active docs. Full breakdown below.
 
 ### Description
 
 On Sunday 2026-04-26, the VPS directory was renamed from `/root/Mining-Gaurdian/`
 (typo, missing the `r`) to `/root/Mining-Guardian/` (correct spelling) as part of
 PR #1. The cron jobs documented in `docs/CRON_SCHEDULE.md` still reference the old
-typoed path. Any operator who copies these cron lines onto a freshly-provisioned
-VPS will end up writing to a directory that does not exist — silent failure, since
-cron's stderr is mailed to root and routinely ignored.
+typoed path, and so do the rest of the documents and systemd unit files listed
+below. Any operator who copies these onto a freshly-provisioned VPS will end up
+writing to a directory that does not exist — silent failure, since cron's stderr
+is mailed to root and routinely ignored, and a `systemd` unit with a bad
+`WorkingDirectory` will refuse to start with a confusing error.
 
-The actual cron jobs running on the live Hostinger VPS (187.124.247.182) were
-updated in place during the 2026-04-26 rename, so production is fine. The risk
-is purely "future re-install copies stale doc."
+The actual cron jobs and systemd units running on the live Hostinger VPS
+(187.124.247.182) were updated in place during the 2026-04-26 rename, so
+production is fine. The risk is purely "future re-install copies stale doc /
+stale unit file."
 
-### Evidence
+When this entry was first written (PR #30, 2026-04-28 morning) the scope was
+recorded as `docs/CRON_SCHEDULE.md` only. A follow-up audit later that morning
+(during preparation of `docs/REMAINING_WORK_2026-04-28.md`, PR #34) re-grepped
+the full repo and found the typo persists in many more places. This entry is
+the corrected record of that scope.
 
-```bash
-$ grep -n 'Mining-Gaurdian' docs/CRON_SCHEDULE.md
-# (expected: several hits — full list TBD when fix is opened)
-```
+### Evidence — full repo grep on `main` @ `9ff9925` (2026-04-28)
+
+Command: `grep -rln 'Mining-Gaurdian' . --exclude-dir=.git`
+
+#### To-fix scope — currently-active files (21 files, 73 hits)
+
+**`deploy/*.service` — 8 files, 29 hits.** Every systemd unit on the VPS
+references the typoed path. These get installed on every fresh host.
+
+| File | Hits |
+|---|---|
+| `deploy/approval-api.service` | 4 |
+| `deploy/dashboard-api.service` | 4 |
+| `deploy/intelligence-report.service` | 3 |
+| `deploy/mining-guardian-alerts.service` | 3 |
+| `deploy/mining-guardian.service` | 4 |
+| `deploy/overnight-automation.service` | 4 |
+| `deploy/slack-commands.service` | 3 |
+| `deploy/slack-listener.service` | 4 |
+
+**Repo-root docs — 4 files, 17 hits.** These are the first docs anyone reads.
+
+| File | Hits |
+|---|---|
+| `CLAUDE.md` | 5 |
+| `DEPLOYMENT_CHECKLIST.md` | 6 |
+| `README.md` | 1 |
+| `REPAIR_LOG.md` | 5 |
+
+**`docs/` active references — 9 files, 27 hits.**
+
+| File | Hits |
+|---|---|
+| `docs/CRON_SCHEDULE.md` | 10 |
+| `docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md` | 4 |
+| `docs/DAILY_DEEP_DIVE_DESIGN.md` | 3 |
+| `docs/DIRECT_LOG_COLLECTION.md` | 3 |
+| `docs/MORNING_KICKOFF_PROMPT.md` | 2 |
+| `docs/TESTING.md` | 2 |
+| `docs/SECURITY.md` | 1 |
+| `docs/LOG_COLLECTION_ARCHITECTURE.md` | 1 |
+| `docs/MG_UNIFIED_TODO_LIST.md` | 1 |
+
+#### Allowed-exception scope — references the typo as data, do NOT replace
+
+| File | Hits | Why allowed |
+|---|---|---|
+| `docs/LATENT_BUGS.md` | 7 | This entry — quotes the typo string as the bug's identity |
+| `docs/REMAINING_WORK_2026-04-28.md` | 2 | Bucket 2 references the typo as the bug name (PR #34) |
+| `archive/installer-build-20260428` (git tag) | n/a | Frozen by design, not in working tree |
+
+A CI lint (Fix Plan step 3 below) must whitelist these three references.
+
+#### Leave-as-historical-record scope — preserved verbatim per the
+"comprehensive + over-document always" lock
+
+These are dated handoff / log files that capture what was true on the day they
+were written. Editing them would falsify the historical record.
+
+| File | Hits |
+|---|---|
+| `NEXT_SESSION.md` (post-banner body, banner-superseded by PR #31) | 5 |
+| `docs/SESSION_LOG_2026-04-09.md` | 2 |
+| `docs/SESSION_LOG_2026-04-16.md` | 1 |
+| `docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md` | 6 |
+| `docs/SESSION_HANDOFF_2026-04-24.md` | 2 |
+| `docs/RESUME_HERE_2026_04_08_EVENING.md` | 9 |
+| `docs/HANDOFF_2026_04_09_MIDMORNING.md` | 7 |
+| `docs/DEMO_DAY_HANDOFF_2026_04_08.md` | 2 |
+| `docs/DB_STATE_2026-04-22.md` | 2 |
+| `docs/DB_STATE_2026-04-23.md` | 7 |
+| `docs/S15_APPLIED.txt` | 1 |
+
+#### Leave-as-frozen-by-design scope
+
+| Path | Files | Hits | Why frozen |
+|---|---|---|---|
+| `archive/fix_scripts_apr10-12/**` | 16 | 32 | Frozen one-shot fix scripts from April 10–12 |
+| `archive/session_artifacts/**` | 2 | 5 | Frozen per-session artifacts |
+| `archive/tmp_scripts_apr08/**` | 22 | 65 | Frozen April 8 temp scripts |
+| `fixes/2026-04-13/**` | 6 | 12 | Frozen single-day fix scripts |
+
+#### Leave-as-build-artifact scope
+
+| File | Hits | Why ignored |
+|---|---|---|
+| `.coverage` | 27 | Binary coverage artifact, regenerated on next test run |
 
 ### Reproduction
 
-Any greenfield VPS deploy that uses `docs/CRON_SCHEDULE.md` as its source of truth
-will install crons pointing at the wrong path.
+Any greenfield deploy that copies these systemd units or follows any of the
+13 listed active docs as its source of truth will install services or crons
+pointing at the wrong path. `mining-guardian.service` failing to start is the
+most user-visible breakage; the rest are silent until first scheduled run.
 
 ### Fix Plan
 
-1. `Select-String -Path docs/CRON_SCHEDULE.md -Pattern 'Mining-Gaurdian'` to enumerate
-   every hit.
-2. Replace `Mining-Gaurdian` → `Mining-Guardian` (note the position of the `r`).
-3. Add a CI lint that fails the build if the string `Mining-Gaurdian` appears
-   anywhere in the repo (the tag `archive/installer-build-20260428` is the only
-   legitimate reference and lives outside the working tree).
-4. Optional: add a one-line note at the top of `CRON_SCHEDULE.md` explaining the
-   2026-04-26 rename for historical context.
+This bug is fixed in **two PRs**, in this order:
+
+**PR-1 — Update bug registry (this PR).** Expand the B-6 entry to match the
+verified blast radius and TOC row. No source changes. Lets the registry tell
+the truth before the second PR runs a sed-replace.
+
+**PR-2 — Single sed-replace across the to-fix scope.** On Mac zsh:
+
+```bash
+# from repo root, on a clean branch
+grep -rln 'Mining-Gaurdian' . \
+  --exclude-dir=.git \
+  --exclude-dir=archive \
+  --exclude-dir=fixes \
+  --exclude='.coverage' \
+  --exclude='SESSION_LOG_*' \
+  --exclude='SESSION_HANDOFF_*' \
+  --exclude='SESSION_*_S21_*' \
+  --exclude='RESUME_HERE_*' \
+  --exclude='HANDOFF_*' \
+  --exclude='DEMO_DAY_HANDOFF_*' \
+  --exclude='DB_STATE_2026-04-2*.md' \
+  --exclude='S15_APPLIED.txt' \
+  --exclude='NEXT_SESSION.md' \
+  --exclude='LATENT_BUGS.md' \
+  --exclude='REMAINING_WORK_2026-04-28.md' \
+  | xargs sed -i '' 's|Mining-Gaurdian|Mining-Guardian|g'
+```
+
+After the replace, re-run the same `grep -rln` against the to-fix scope and
+confirm zero hits before commit. The expected post-replace allowed-exception
+set is exactly the three rows in the "Allowed-exception" table above.
+
+**Optional PR-3 — Add a CI lint** that fails on `Mining-Gaurdian` outside the
+allowed-exception list. This guarantees the typo cannot regress.
+
+**Optional PR-4 (or part of PR-2)** — One-line note at the top of
+`docs/CRON_SCHEDULE.md` explaining the 2026-04-26 rename for historical context.
 
 ### References
 
 - PR #1 (2026-04-26) — VPS directory rename
+- PR #30 (2026-04-28) — original B-6 entry, single-file scope
+- PR #34 (2026-04-28) — `docs/REMAINING_WORK_2026-04-28.md`, where the
+  expanded scope was first surfaced
 - `docs/CLAUDE.md` — Repo paths section
 
 ---
