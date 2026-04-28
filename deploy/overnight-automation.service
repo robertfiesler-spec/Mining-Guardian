@@ -3,14 +3,14 @@ Description=Mining Guardian Overnight Automation
 After=network.target mining-guardian.service
 
 [Service]
-EnvironmentFile=/root/Mining-Gaurdian/.env
+EnvironmentFile=/root/Mining-Guardian/.env
 Type=simple
 User=root
-WorkingDirectory=/root/Mining-Gaurdian
-ExecStart=/root/Mining-Gaurdian/venv/bin/python core/overnight_automation.py
+WorkingDirectory=/root/Mining-Guardian
+ExecStart=/root/Mining-Guardian/venv/bin/python core/overnight_automation.py
 Restart=always
 RestartSec=30
-Environment=PATH=/root/Mining-Gaurdian/venv/bin:/usr/local/bin:/usr/bin
+Environment=PATH=/root/Mining-Guardian/venv/bin:/usr/local/bin:/usr/bin
 
 [Install]
 WantedBy=multi-user.target

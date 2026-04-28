@@ -90,17 +90,17 @@ Removes high-volume repetitive lines:
 
 ```
 # 12:45pm: AMS cleanup (15 min before collection)
-45 12 * * * cd /root/Mining-Gaurdian && venv/bin/python scripts/cleanup_ams_logs.py
+45 12 * * * cd /root/Mining-Guardian && venv/bin/python scripts/cleanup_ams_logs.py
 
 # 1pm: Direct log collection
-0 13 * * * cd /root/Mining-Gaurdian && venv/bin/python scripts/direct_collect_logs.py
+0 13 * * * cd /root/Mining-Guardian && venv/bin/python scripts/direct_collect_logs.py
 ```
 
 ---
 
 ## Script Location
 
-/root/Mining-Gaurdian/scripts/direct_collect_logs.py
+/root/Mining-Guardian/scripts/direct_collect_logs.py
 
 ---
 

@@ -34,7 +34,7 @@ Spin up a scratch Postgres DB and verify all 8 services come up cleanly against 
     SQL
 
     # Apply canonical schema
-    cd /root/Mining-Gaurdian
+    cd /root/Mining-Guardian
     set -a; source .env; set +a
     PGPASSWORD="\$GUARDIAN_PG_PASSWORD" psql -h localhost -U guardian_app \\
         -d mining_guardian_dryrun -f migrations/001_initial_schema.sql
@@ -72,7 +72,7 @@ Spin up a scratch Postgres DB and verify all 8 services come up cleanly against 
 
 Before leaving the VPS, export the state that Mac Mini needs on day 1:
 
-    cd /root/Mining-Gaurdian
+    cd /root/Mining-Guardian
     set -a; source .env; set +a
 
     # Full Postgres dump
@@ -189,7 +189,7 @@ Template plists should live in deploy/macos/ (create these during dry-run prep �
 
 macOS cron works the same as Linux cron but env handling is different. crontab -e, paste VPS crontab, adjust paths:
 
-- /root/Mining-Gaurdian → /Users/BigBobby/Documents/GitHub/Mining Gaurdian
+- `/root/Mining-Guardian` → `/Users/BigBobby/Documents/GitHub/Mining-Guardian`
 - PYTHONPATH accordingly
 - venv/bin/python path
 
@@ -234,7 +234,7 @@ Once Mac Mini has logged >=1 clean scan + HVAC write + Slack message:
 
 **GUARDIAN_PG_DBNAME vs GUARDIAN_PG_DB** — the code standardized on GUARDIAN_PG_DBNAME as of 2026-04-24. Do not introduce the shorter variant when writing new code.
 
-**Repo path on Mac** — /Users/BigBobby/Documents/GitHub/Mining Gaurdian has both a space AND the typo 'Gaurdian'. Always quote the path in shell commands. The VPS path /root/Mining-Gaurdian has only the typo (no space).
+**Repo paths after the 2026-04-26 rename (PR #1)** — the VPS path is `/root/Mining-Guardian/` (no typo, no space) and the Mac clone is `/Users/BigBobby/Documents/GitHub/Mining-Guardian/` (no typo, no space, hyphenated). The historical typo path `/root/Mining-Gaurdian/` and the historical space-and-typo Mac path `/Users/BigBobby/Documents/GitHub/Mining Gaurdian/` are both retired. The OLD-20260428 backup of the historical Mac clone gets deleted Wed 2026-04-29.
 
 **Cloudflare tunnels stop BEFORE VPS services stop**, not after. If you stop VPS services first, the tunnels return 502s and Slack/Retool users see errors. Correct order: stop tunnels → confirm Mac Mini is primary → stop VPS services.
 

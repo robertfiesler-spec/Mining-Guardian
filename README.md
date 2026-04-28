@@ -500,7 +500,7 @@ Slash commands for Claude Code (VS Code extension):
 - AMS API docs: https://api-staging.dev.bixbit.io/api/doc/index.html
 - Slack channel: `#mining-guardian` (ID: C0AQ8SE1448)
 - Grafana: `grafana.fieslerfamily.com` (temporary — becomes `http://mac-mini-ip:3000` at customer sites)
-- GitHub repo: `robertfiesler-spec/Mining-Gaurdian` (intentional typo in repo name, space in folder name — always quote in terminal)
+- GitHub repo: `robertfiesler-spec/Mining-Guardian` (the original 2024 repo name had an intentional typo `Mining-Gaurdian`; renamed to the correct spelling in PR #1 on 2026-04-26 — see `docs/CLAUDE.md` Repo Rename History)
 
 ---
 

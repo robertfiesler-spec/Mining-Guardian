@@ -48,7 +48,7 @@ Using `slowapi` library.
 
 ### 4. Secrets Management
 
-**Location:** `/root/Mining-Gaurdian/.env`
+**Location:** `/root/Mining-Guardian/.env`
 
 | Secret | Source | Rotation |
 |--------|--------|----------|

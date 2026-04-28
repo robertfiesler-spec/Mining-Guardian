@@ -217,7 +217,7 @@ See `.apply_dd_merge.py` in the working tree (written during this session but no
 
 **Manual:**
 ```bash
-cd /root/Mining-Gaurdian
+cd /root/Mining-Guardian
 venv/bin/python3 ai/daily_deep_dive.py --manual
 ```
 
@@ -228,7 +228,7 @@ venv/bin/python3 ai/daily_deep_dive.py --dry-run
 
 **Cron (starting April 10, 2026):**
 ```
-0 16 * * * cd /root/Mining-Gaurdian && /root/Mining-Gaurdian/venv/bin/python3 ai/daily_deep_dive.py >> /tmp/daily_deep_dive.log 2>&1
+0 16 * * * cd /root/Mining-Guardian && /root/Mining-Guardian/venv/bin/python3 ai/daily_deep_dive.py >> /tmp/daily_deep_dive.log 2>&1
 ```
 
 ## Thread Safety & Concurrency
@@ -251,7 +251,7 @@ The script runs single-process, sequential per-miner. No thread pool. No concurr
 The daily deep dive is **PERMANENT**. Unlike the `TEMP_MAY_REMOVE` restart comparison merge block, the daily deep dive stays on forever and its output keeps flowing into the Sunday Claude training stream indefinitely.
 
 On May arrival, two things happen to the deep dive:
-1. The script moves from VPS (`/root/Mining-Gaurdian/`) to the Mac mini deployment path.
+1. The script moves from VPS (`/root/Mining-Guardian/`) to the Mac mini deployment path.
 2. The `LLM_URL` config value changes from `http://100.110.87.1:11434` (ROBS-PC Tailscale) to `http://localhost:11434` (Mac mini's own Ollama). This is a config change, not a code change.
 
 Nothing else changes. The logic stays identical.

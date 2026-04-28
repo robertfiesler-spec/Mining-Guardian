@@ -183,7 +183,7 @@ This means:
 1. Check services: `systemctl is-active mining-guardian`
 2. Check last scan: `SELECT id, scanned_at, online FROM scans ORDER BY id DESC LIMIT 1` — is the scan loop even running?
 3. Check eligible miners: `SELECT COUNT(*) FROM miner_state_readings WHERE scan_id = <latest> AND ip IS NOT NULL AND hashrate_medium > 0;`
-4. Run the cron manually: `cd /root/Mining-Gaurdian && set -a && source .env && set +a && venv/bin/python scripts/direct_collect_logs.py` and watch the output
+4. Run the cron manually: `cd /root/Mining-Guardian && set -a && source .env && set +a && venv/bin/python scripts/direct_collect_logs.py` and watch the output
 5. If a specific miner is failing, curl it directly: `curl -sS --digest -u root:root -X POST -H 'Content-Type: application/json' -d '["/2026-04/24"]' http://192.168.188.125/cgi-bin/create_log_backup.cgi`
 
 ### "Why are pre/post restart pairs missing?"

@@ -335,7 +335,7 @@ REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
 **What we changed:**
 
 **FIX 1: Created lightweight summary database for Grafana**
-- Created `/root/Mining-Gaurdian/grafana_summary.db` (12 KB vs 5.8 GB)
+- Created `/root/Mining-Guardian/grafana_summary.db` (12 KB vs 5.8 GB)
 - Extracts 5 key metrics into simple table: `dashboard_metrics`
 - Metrics: ai_intelligence_score, fleet_status, avg_hashrate_pct, avg_chip_temp, issues_flagged
 - Updated Grafana datasource to use summary DB instead of main guardian.db
@@ -386,8 +386,8 @@ Do NOT flag these as problems.
 
 **Files modified:**
 - `/etc/grafana/provisioning/datasources/summary.yaml` — new SQLite datasource
-- `/root/Mining-Gaurdian/grafana_summary.db` — new summary database (created)
-- `/root/Mining-Gaurdian/knowledge.json` — added warehouse offline rule
+- `/root/Mining-Guardian/grafana_summary.db` — new summary database (created)
+- `/root/Mining-Guardian/knowledge.json` — added warehouse offline rule
 - Database: `known_dead_boards` table cleared (21 → 0 entries)
 - Grafana dashboard UID `efj6ctso3zw1sd` — all 17 panels updated
 
@@ -2039,7 +2039,7 @@ fh = TimedRotatingFileHandler(
 ### 2026-04-14 (morning) · S-15: Missing EnvironmentFile in 5 of 7 systemd services
 
 **What Bobby thought was configured:**
-All 7 systemd services load environment variables from `/root/Mining-Gaurdian/.env` via `EnvironmentFile` directive.
+All 7 systemd services load environment variables from `/root/Mining-Guardian/.env` via `EnvironmentFile` directive.
 
 **What was actually configured:**
 Only 2 of 7 services had `EnvironmentFile`:
@@ -2063,7 +2063,7 @@ Services without `EnvironmentFile` cannot access secrets from `.env`:
 Result: Services start but fail silently when they need secrets.
 
 **What we changed:**
-Added `EnvironmentFile=/root/Mining-Gaurdian/.env` to all 5 missing services.
+Added `EnvironmentFile=/root/Mining-Guardian/.env` to all 5 missing services.
 
 **Files modified:**
 - deploy/mining-guardian.service

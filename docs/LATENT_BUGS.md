@@ -19,7 +19,7 @@ pick up the fix without re-deriving the context.
 | B-3 | High     | `000_bootstrap_field_log_tables.sql` non-partitioned shape trap   | Not fixed  |
 | B-4 | High     | `mg_import.insert_raw_json` silently swallows ingestion errors    | Not fixed  |
 | B-5 | Medium   | `mg_import.py` raw_json index targets nonexistent column          | Patched out|
-| B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Not fixed  |
+| B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Fixed in PR-2 (path strings); 4 narrative references retained as allowed-exception |
 | B-7 | Medium   | Live migrations `002_layer2` + staging not committed to the repo  | Not fixed  |
 
 ---
@@ -217,10 +217,11 @@ then:
 ## B-6 — Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files
 
 **Severity:** Medium
-**Status:** Not fixed
+**Status:** Fixed (path strings) in PR-2 (`docs/b6-typo-cleanup`); 4 files retain the typo as narrative / historical reference and are added to the allowed-exception list. Closed.
 **Discovered:** 2026-04-28 (this session, while reviewing post-rename cleanup)
 **Original scope:** `docs/CRON_SCHEDULE.md` (single file)
 **Expanded scope (verified 2026-04-28 on `main` @ `9ff9925`):** 8 `deploy/*.service` files + 13 currently-active docs. Full breakdown below.
+**Fix scope (PR-2, 2026-04-28):** 65 path-string hits across 17 files were replaced with `Mining-Guardian`. 8 hits across 4 files were retained as historical / warning references (see updated allowed-exception table).
 
 ### Description
 
@@ -289,13 +290,23 @@ references the typoed path. These get installed on every fresh host.
 
 #### Allowed-exception scope — references the typo as data, do NOT replace
 
+Updated 2026-04-28 after PR-2. The four files in the lower group below were
+originally on the to-fix list; case-by-case review during PR-2 found that
+each one quotes the typo as historical / warning context where replacing it
+would destroy meaning. They are now allowed-exceptions.
+
 | File | Hits | Why allowed |
 |---|---|---|
-| `docs/LATENT_BUGS.md` | 7 | This entry — quotes the typo string as the bug's identity |
+| `docs/LATENT_BUGS.md` | 8 | This entry — quotes the typo string as the bug's identity |
 | `docs/REMAINING_WORK_2026-04-28.md` | 2 | Bucket 2 references the typo as the bug name (PR #34) |
 | `archive/installer-build-20260428` (git tag) | n/a | Frozen by design, not in working tree |
+| `CLAUDE.md` | 5 | Failure-mode example (L193), do-not-use warnings about old VPS path (L379, L496), Repo Rename History entry (L514–515) |
+| `README.md` | 1 | "Original 2024 repo name had an intentional typo `Mining-Gaurdian`” — historical context inside backticks (L503) |
+| `docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md` | 1 | "Known gotchas" entry that explicitly names the historical typo path so a future operator can recognize it (L237) |
+| `docs/MG_UNIFIED_TODO_LIST.md` | 1 | Rename log row — "Rename `Mining-Gaurdian` → `Mining-Guardian` (289 typos)" (L31) |
 
-A CI lint (Fix Plan step 3 below) must whitelist these three references.
+A CI lint (Optional PR-3) must whitelist all seven files above plus the
+`archive/installer-build-20260428` git tag.
 
 #### Leave-as-historical-record scope — preserved verbatim per the
 "comprehensive + over-document always" lock
@@ -341,44 +352,37 @@ most user-visible breakage; the rest are silent until first scheduled run.
 
 ### Fix Plan
 
-This bug is fixed in **two PRs**, in this order:
+This bug was fixed in two PRs:
 
-**PR-1 — Update bug registry (this PR).** Expand the B-6 entry to match the
-verified blast radius and TOC row. No source changes. Lets the registry tell
-the truth before the second PR runs a sed-replace.
+**PR-1 — Bug registry update (PR #35, merged `2888ada`).** Expanded the B-6
+entry to match the verified blast radius. No source changes. Got the registry
+telling the truth before any path replacement ran.
 
-**PR-2 — Single sed-replace across the to-fix scope.** On Mac zsh:
+**PR-2 — Path replacement and narrative cleanup (this commit).** Applied via
+targeted-sed across 16 pure-path-only files (8 `deploy/*.service`, all of
+`docs/CRON_SCHEDULE.md`, plus `DEPLOYMENT_CHECKLIST.md`, `REPAIR_LOG.md`, and
+7 other docs in `docs/` whose only hits were path commands). The 5 mixed
+files got per-line review: `MAC_MINI_DEPLOYMENT_RUNBOOK.md` had two path
+lines replaced and one stale "Known gotchas" block rewritten to current
+paths; `README.md` L503 was rewritten to remove the stale "intentional typo"
+claim while preserving the historical context; `CLAUDE.md`,
+`MG_UNIFIED_TODO_LIST.md`, and the rewritten `MAC_MINI_DEPLOYMENT_RUNBOOK.md`
+L237 retain the typo string as historical / warning context and are now
+allowed-exceptions (table above).
 
-```bash
-# from repo root, on a clean branch
-grep -rln 'Mining-Gaurdian' . \
-  --exclude-dir=.git \
-  --exclude-dir=archive \
-  --exclude-dir=fixes \
-  --exclude='.coverage' \
-  --exclude='SESSION_LOG_*' \
-  --exclude='SESSION_HANDOFF_*' \
-  --exclude='SESSION_*_S21_*' \
-  --exclude='RESUME_HERE_*' \
-  --exclude='HANDOFF_*' \
-  --exclude='DEMO_DAY_HANDOFF_*' \
-  --exclude='DB_STATE_2026-04-2*.md' \
-  --exclude='S15_APPLIED.txt' \
-  --exclude='NEXT_SESSION.md' \
-  --exclude='LATENT_BUGS.md' \
-  --exclude='REMAINING_WORK_2026-04-28.md' \
-  | xargs sed -i '' 's|Mining-Gaurdian|Mining-Guardian|g'
-```
+Final verification on the PR-2 branch: 65 path-string hits replaced across
+17 files; 8 narrative hits intentionally retained across 4 files. Zero
+working-tree hits of `Mining-Gaurdian` outside the seven-file
+allowed-exception list.
 
-After the replace, re-run the same `grep -rln` against the to-fix scope and
-confirm zero hits before commit. The expected post-replace allowed-exception
-set is exactly the three rows in the "Allowed-exception" table above.
+**Optional PR-3 — CI lint** that fails on `Mining-Gaurdian` outside the
+seven-file allowed-exception list above plus the
+`archive/installer-build-20260428` tag. Not yet opened. This guarantees
+the typo cannot regress.
 
-**Optional PR-3 — Add a CI lint** that fails on `Mining-Gaurdian` outside the
-allowed-exception list. This guarantees the typo cannot regress.
-
-**Optional PR-4 (or part of PR-2)** — One-line note at the top of
-`docs/CRON_SCHEDULE.md` explaining the 2026-04-26 rename for historical context.
+**Optional PR-4** — One-line historical note at the top of
+`docs/CRON_SCHEDULE.md` explaining the 2026-04-26 rename. Not yet opened
+— may be folded into PR-3 or skipped, depending on reviewer call.
 
 ### References
 
