@@ -1,0 +1,20 @@
+[Unit]
+Description=Mining Guardian C5 Feedback Loop Daemon (NOTIFY/LISTEN)
+After=network.target postgresql.service mining-guardian.service
+Wants=postgresql.service
+
+[Service]
+EnvironmentFile=/root/Mining-Guardian/.env
+Type=simple
+User=root
+WorkingDirectory=/root/Mining-Guardian
+ExecStart=/root/Mining-Guardian/venv/bin/python -u intelligence-catalog/db/feedback_loop_daemon.py
+Restart=always
+RestartSec=10
+Environment=PATH=/root/Mining-Guardian/venv/bin:/usr/local/bin:/usr/bin
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
