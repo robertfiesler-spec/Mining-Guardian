@@ -1,3 +1,43 @@
+> # ⚠️ SUPERSEDED — DO NOT ACT ON THIS DOCUMENT
+>
+> **Superseded:** 2026-04-28 by PRs #25 / #26 / #27 / #29 / #30
+> **Status:** Historical record only — kept for audit trail per
+> "comprehensive + over-document always" lock.
+>
+> ## Why this is superseded
+>
+> This document was written 2026-04-23 as a "Step 7: Scratch Router Test" plan
+> for the **split-SQLite** architecture. Five days of work between 2026-04-23
+> and 2026-04-28 has made every operational instruction below incorrect:
+>
+> | Stale assumption in this doc | Current reality |
+> |---|---|
+> | `/root/Mining-Gaurdian/guardian.db` is the live DB (monolithic SQLite, ~6.6 GB) | Postgres 16 in container `mining-guardian-db`, db `mining_guardian`, is the canonical store. SQLite is **never** referred to as live. (D-1) |
+> | Path uses `Mining-Gaurdian/` (typo) | Renamed to `Mining-Guardian/` (correct spelling) on 2026-04-26 in PR #1 |
+> | "Step 7: Scratch Router Test" is the next action | Moot — Postgres migration replaced the split-SQLite experiment in one step |
+> | Mac Mini May-5-9 stand-up plan | Still upcoming, but rewritten — see D-13 (Ollama RAM auto-detect), Q1 (Hybrid ~500 MB .pkg installer, double-click), cutover scope γ (Mini replaces both Hostinger VPS and ROBS-PC catalog) |
+> | "GitHub PAT in VPS .git/config still exposed" | Resolved — see `docs/SESSION_LOG_2026-04-27.md` |
+> | "Hardcoded password in scripts/migrate_to_postgres.py" | Already noted as resolved 2026-04-27 in this doc itself, under CRIT-1 |
+>
+> ## Where to look instead
+>
+> | For… | Read this |
+> |---|---|
+> | Current architecture, paths, branches, schema | `docs/CLAUDE.md` (rewritten 2026-04-27, PR #27 / `3248bde`) |
+> | All locked decisions including D-13 Ollama RAM auto-detect | `docs/DECISIONS.md` |
+> | Live-DB cutover record, addendum #3 | `docs/SESSION_LOG_2026-04-27.md` |
+> | Known but unfixed defects | `docs/LATENT_BUGS.md` (rewritten 2026-04-28, PR #30 / `121dcd4`) |
+> | Brand system | `branding/BRANDING.md` (PR #29 / `4313ba9`) |
+> | Installer-build branch history | tag `archive/installer-build-20260428` → `ec7d359` |
+>
+> ## What was preserved verbatim below
+>
+> The original 2026-04-23 body is left **intact and unedited** below this banner
+> as historical record. Do not act on any instruction in it. Read it only to
+> understand what the plan looked like five days ago.
+>
+> ---
+
 # Next Session Notes — Mining Guardian
 
 **Last Updated:** 2026-04-23 05:45 CDT
