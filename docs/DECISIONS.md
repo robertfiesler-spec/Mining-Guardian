@@ -129,4 +129,17 @@ This is the canonical log of decisions that are committed and not subject to re-
 
 ---
 
+## D-13 - Ollama model selection: install-time RAM auto-detect (supersedes D-8)
+- **Date locked:** 2026-04-28
+- **Decided by:** Operator + agent
+- **Decision:** Installer detects host RAM at install time and selects the Ollama model accordingly. Customer can override via prompt.
+  - **16 GB RAM** (e.g., base Mac Mini M4) picks `llama3.2:3b` (q4 default)
+  - **24 GB RAM or more** picks `qwen2.5:14b-instruct-q4_K_M`
+  - **Override:** Installer surfaces the auto-detected pick and lets the customer choose a different supported model before download.
+- **Why:** D-8 hard-coded `qwen2.5:14b-instruct-q4_K_M` on the assumption every Mac Mini in the deployment fleet would be 16 GB. That assumption no longer holds. We now expect a mix of 16 GB and 24 GB+ Minis at customer sites, and 14b q4 on a 16 GB host pushes the working set close to swap once Postgres, Colima, and the MG app are also resident. `llama3.2:3b` keeps the 16 GB envelope responsive; the 14b model becomes the default the moment there is headroom for it.
+- **Supersedes:** D-8 (Ollama model on Mac Mini). D-8 stays in this file as the historical record; D-13 is the live policy.
+- **Implementation status (as of 2026-04-28):** Pending. Encoded in `mg/pr26-mac-mini-installer` (Phase 8: model selection step).
+
+---
+
 *Append new decisions below this line. Do not edit history.*
