@@ -66,6 +66,17 @@ install_colima_runtime() {
     install -m 0755 "${src}/colima"  "${target_bin}/colima"
     install -m 0755 "${src}/limactl" "${target_bin}/limactl"
 
+    # Docker CLI — client only. Daemon runs inside the Colima VM.
+    # Vendored at <payload>/runtime/docker/docker (alongside colima/).
+    local docker_src="${payload}/runtime/docker/docker"
+    if [[ -f "$docker_src" ]]; then
+        install -m 0755 "$docker_src" "${target_bin}/docker"
+        _log "INFO copied docker CLI to ${target_bin}/docker"
+    else
+        _die "vendored docker CLI not found at ${docker_src}"
+        return 1
+    fi
+
     # Lima 2.x ships its helpers (lima-driver-krunkit, limactl-mcp) in
     # libexec/. Mirror the vendored layout into /usr/local/libexec so
     # limactl can find them at runtime.
