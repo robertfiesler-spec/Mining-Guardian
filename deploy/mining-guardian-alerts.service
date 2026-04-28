@@ -6,9 +6,9 @@ Wants=approval-api.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/Mining-Gaurdian
-EnvironmentFile=/root/Mining-Gaurdian/.env
-ExecStart=/root/Mining-Gaurdian/venv/bin/python /root/Mining-Gaurdian/api/ams_alert_listener.py
+WorkingDirectory=/root/Mining-Guardian
+EnvironmentFile=/root/Mining-Guardian/.env
+ExecStart=/root/Mining-Guardian/venv/bin/python /root/Mining-Guardian/api/ams_alert_listener.py
 Restart=always
 RestartSec=10
 StandardOutput=journal

@@ -5,9 +5,9 @@ After=network.target dashboard-api.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/root/Mining-Gaurdian
-ExecStart=/root/Mining-Gaurdian/venv/bin/python /root/Mining-Gaurdian/api/intelligence_report_api.py
-Environment=GUARDIAN_DB=/root/Mining-Gaurdian/guardian.db
+WorkingDirectory=/root/Mining-Guardian
+ExecStart=/root/Mining-Guardian/venv/bin/python /root/Mining-Guardian/api/intelligence_report_api.py
+Environment=GUARDIAN_DB=/root/Mining-Guardian/guardian.db
 Restart=always
 RestartSec=5
 StandardOutput=journal

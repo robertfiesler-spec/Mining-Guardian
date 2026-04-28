@@ -3,14 +3,14 @@ Description=Mining Guardian Fleet Monitor
 After=network.target tailscaled.service
 
 [Service]
-EnvironmentFile=/root/Mining-Gaurdian/.env
+EnvironmentFile=/root/Mining-Guardian/.env
 Type=simple
 User=root
-WorkingDirectory=/root/Mining-Gaurdian
-ExecStart=/root/Mining-Gaurdian/venv/bin/python core/mining_guardian.py --loop
+WorkingDirectory=/root/Mining-Guardian
+ExecStart=/root/Mining-Guardian/venv/bin/python core/mining_guardian.py --loop
 Restart=always
 RestartSec=10
-Environment=PATH=/root/Mining-Gaurdian/venv/bin:/usr/local/bin:/usr/bin
+Environment=PATH=/root/Mining-Guardian/venv/bin:/usr/local/bin:/usr/bin
 
 [Install]
 WantedBy=multi-user.target

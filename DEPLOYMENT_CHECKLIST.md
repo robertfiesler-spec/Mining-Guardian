@@ -45,13 +45,13 @@ systemctl status mining-guardian approval-api dashboard-api slack-listener slack
 journalctl -u mining-guardian -n 50 | grep -i ollama
 
 # Check if knowledge context appears in LLM calls (DG-3 fix)
-tail -f /root/Mining-Gaurdian/mining_guardian.log | grep -i "knowledge\|operator_rules"
+tail -f /root/Mining-Guardian/mining_guardian.log | grep -i "knowledge\|operator_rules"
 ```
 
 **3. Test Log Rotation:**
 ```bash
 # Wait until midnight, verify new log file created
-ls -lh /root/Mining-Gaurdian/mining_guardian.log*
+ls -lh /root/Mining-Guardian/mining_guardian.log*
 ```
 
 **4. Verify Bare Except Fixes:**
@@ -89,7 +89,7 @@ journalctl -u mining-guardian | grep -i auradine
 If issues occur:
 ```bash
 # Restore from backups
-cd /root/Mining-Gaurdian
+cd /root/Mining-Guardian
 for f in *.backup_*; do
   orig="${f%.backup_*}"
   cp "$f" "$orig"
@@ -103,13 +103,13 @@ systemctl restart mining-guardian approval-api dashboard-api
 
 ```bash
 # 1. Pull latest code
-cd /root/Mining-Gaurdian && git pull origin main
+cd /root/Mining-Guardian && git pull origin main
 
 # 2. Install FastAPI
-/root/Mining-Gaurdian/venv/bin/pip install fastapi uvicorn
+/root/Mining-Guardian/venv/bin/pip install fastapi uvicorn
 
 # 3. Copy systemd service
-cp /root/Mining-Gaurdian/deploy/intelligence-report.service /etc/systemd/system/
+cp /root/Mining-Guardian/deploy/intelligence-report.service /etc/systemd/system/
 
 # 4. Reload, enable, start
 systemctl daemon-reload

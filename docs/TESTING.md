@@ -11,9 +11,9 @@ Mining Guardian uses **pytest** for automated testing. Tests run automatically o
 ## Quick Start
 
 ```bash
-cd /root/Mining-Gaurdian
+cd /root/Mining-Guardian
 source venv/bin/activate
-PYTHONPATH=/root/Mining-Gaurdian pytest tests/ -v
+PYTHONPATH=/root/Mining-Guardian pytest tests/ -v
 ```
 
 ## Test Suite Summary
