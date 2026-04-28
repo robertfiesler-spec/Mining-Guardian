@@ -15,7 +15,8 @@
 # It expects:
 #   • Caller is already root.
 #   • $MG_PKG_PAYLOAD points at the directory in which the bundled
-#     binaries (colima, lima, qemu) and the docker images live.
+#     binaries (colima, lima) and the docker images live. We use
+#     Apple's Virtualization.framework (--vm-type vz) — no QEMU needed.
 #   • $MG_INSTALL_ROOT = /usr/local/MiningGuardian.
 #   • $MG_INSTALL_LOG is open for append.
 #
@@ -64,9 +65,30 @@ install_colima_runtime() {
     install -d -m 0755 "$target_bin"
     install -m 0755 "${src}/colima"  "${target_bin}/colima"
     install -m 0755 "${src}/limactl" "${target_bin}/limactl"
-    install -m 0755 "${src}/qemu-img" "${target_bin}/qemu-img" 2>/dev/null || true
 
-    _log "INFO copied colima + lima to ${target_bin}"
+    # Lima 2.x ships its helpers (lima-driver-krunkit, limactl-mcp) in
+    # libexec/. Mirror the vendored layout into /usr/local/libexec so
+    # limactl can find them at runtime.
+    if [[ -d "${src}/libexec" ]]; then
+        install -d -m 0755 /usr/local/libexec
+        cp -R "${src}/libexec/lima" /usr/local/libexec/lima
+    fi
+    if [[ -d "${src}/share" ]]; then
+        install -d -m 0755 /usr/local/share
+        cp -R "${src}/share/"* /usr/local/share/ 2>/dev/null || true
+    fi
+    if [[ -d "${src}/bin" ]]; then
+        # Lima wrapper scripts (docker.lima, kubectl.lima, etc.)
+        for w in "${src}/bin"/*.lima; do
+            [[ -f "$w" ]] && install -m 0755 "$w" "${target_bin}/$(basename "$w")"
+        done
+        # The actual lima binary lives in bin/ on Lima 2.x
+        if [[ -f "${src}/bin/lima" ]]; then
+            install -m 0755 "${src}/bin/lima" "${target_bin}/lima"
+        fi
+    fi
+
+    _log "INFO copied colima + lima (VZ-only, no QEMU) to ${target_bin}"
 
     # Initialise the colima VM in the operator's home. We pin a small VM
     # (4 CPU, 8 GB) — the heavier work is the LLM, which runs on the host
@@ -77,14 +99,17 @@ install_colima_runtime() {
         return 1
     fi
 
+    # Apple Silicon: use --vm-type vz (Apple's Virtualization.framework).
+    # Faster than QEMU, native to M-series, and means we don't need to
+    # bundle qemu-system-aarch64 in the .pkg payload (saves ~50 MB).
     sudo -u "${SUDO_USER:-${USER}}" \
-        "${target_bin}/colima" start --runtime docker --memory 8 --cpu 4 \
-        --disk 60 \
+        "${target_bin}/colima" start --vm-type vz \
+        --runtime docker --memory 8 --cpu 4 --disk 60 \
         2>&1 | tee -a "${MG_INSTALL_LOG}" || {
             _die "colima start failed; see install log"
             return 1
         }
-    _log "INFO colima started (4 cpu, 8 GB, 60 GB disk)"
+    _log "INFO colima started (vz, 4 cpu, 8 GB, 60 GB disk)"
 }
 
 load_postgres_image() {
