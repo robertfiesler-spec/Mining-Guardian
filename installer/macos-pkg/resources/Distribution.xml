@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!--
+  Distribution.xml — Mining Guardian macOS .pkg distribution descriptor
+
+  Read by `productbuild` at .pkg-build time and by macOS Installer.app at
+  install time. Drives the welcome / license / conclusion screens, the
+  refuse-to-install requirements, and the single-shot install behavior
+  required by Q1 (Hybrid ~500 MB .pkg) — NOT a multi-step wizard.
+
+  Locked decisions honored:
+    Q1                — single-step install, no choice tree, no per-component
+                         opt-outs (the user double-clicks, types password
+                         once, the install runs end-to-end).
+    Cutover scope γ   — Apple Silicon Mini, macOS 13+ required.
+    Vision Anchor 6   — no altcoin scaffolding referenced.
+    Vision Anchor 7   — no cloud-only deps; the welcome HTML mentions the
+                         single first-run network step (Ollama model pull)
+                         clearly and up-front.
+
+  This file is consumed by Makefile target `pkg` and by build_pkg.sh.
+-->
+<installer-gui-script minSpecVersion="2">
+
+    <!-- =================================================================
+         Branding + identity
+         ================================================================= -->
+    <title>Mining Guardian</title>
+    <organization>com.miningguardian</organization>
+
+    <!-- ${VERSION} and ${BUILD_SHA} are stamped at build time by
+         build_pkg.sh (see Makefile pkg target). NEVER hard-code here. -->
+    <welcome    file="welcome.html"    mime-type="text/html"/>
+    <license    file="license.txt"     mime-type="text/plain"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <background file="background.png"  alignment="bottomleft" scaling="proportional"/>
+
+    <!-- =================================================================
+         Refuse-to-install requirements
+
+         These supplement the gates inside preinstall.sh — Installer.app
+         enforces these BEFORE preinstall.sh ever runs, so the user gets
+         a clean "Cannot install on this Mac" dialog instead of an
+         install that aborts halfway through.
+
+         (preinstall.sh repeats them defensively because Installer.app
+         does not enforce them on every codepath, e.g. command-line
+         `installer -pkg`.)
+         ================================================================= -->
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="13.0"/>
+        </allowed-os-versions>
+    </volume-check>
+
+    <installation-check script="installation_check_arch();"/>
+
+    <script>
+        // Refuse Intel Macs at Installer.app time.
+        function installation_check_arch() {
+            var arch = system.sysctl('hw.optional.arm64');
+            if (arch != 1) {
+                my.result.title       = 'Mining Guardian requires Apple Silicon';
+                my.result.message     = 'This installer supports Apple Silicon (M-series) Macs only. ' +
+                                        'Detected an Intel Mac.';
+                my.result.type        = 'Fatal';
+                return false;
+            }
+            return true;
+        }
+    </script>
+
+    <!-- =================================================================
+         Single-step install (Q1)
+         ================================================================= -->
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.miningguardian.installer.core"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default" title="Mining Guardian"/>
+
+    <choice id="com.miningguardian.installer.core"
+            visible="false"
+            title="Mining Guardian"
+            description="Mining Guardian application, vendored Colima + Postgres, and Ollama runtime."
+            start_selected="true"
+            start_visible="false">
+        <pkg-ref id="com.miningguardian.installer.core"/>
+    </choice>
+
+    <pkg-ref id="com.miningguardian.installer.core"
+             auth="root"
+             onConclusion="none">core.pkg</pkg-ref>
+
+</installer-gui-script>

@@ -1,7 +1,7 @@
 # Mining Guardian Makefile
 # Quick commands for development and operations
 
-.PHONY: test test-cov lint clean run scan help
+.PHONY: test test-cov lint clean run scan help pkg pkg-clean
 
 # Default target
 help:
@@ -15,6 +15,8 @@ help:
 	@echo "make scan      - Alias for run"
 	@echo "make services  - Show systemd service status"
 	@echo "make logs      - Show recent logs"
+	@echo "make pkg       - Build signed + notarized macOS .pkg (Bucket-3, macOS only)"
+	@echo "make pkg-clean - Remove build/ directory"
 
 # Testing
 test:
@@ -51,3 +53,35 @@ logs:
 
 db-status:
 	sqlite3 /root/Mining-Guardian/guardian.db "SELECT COUNT(*) as scans FROM scans; SELECT COUNT(*) as actions FROM action_audit_log;"
+
+# ---------------------------------------------------------------------------
+# macOS .pkg installer build (Bucket-3, Q1 hybrid ~500 MB pkg)
+#
+# Runs on macOS only — the build host is the operator's Mac with the
+# Developer ID Installer cert in its keychain and the .p8 notarization
+# private key on disk at the path declared in CREDENTIALS_NOTES.txt.
+#
+# `make pkg` runs the full 9-step pipeline documented in
+# installer/macos-pkg/README.md and implemented in
+# installer/macos-pkg/scripts/build_pkg.sh:
+#
+#   1. Verify Apple Developer cert + notarization credentials reachable
+#   2. Refuse to build with a dirty git tree
+#   3. Stamp build with current git SHA + version
+#   4. Assemble payload (app code + vendored runtime + scripts)
+#   5. pkgbuild + productbuild + productsign
+#   6. xcrun notarytool submit (with --wait, 30 min timeout)
+#   7. xcrun stapler staple + validate
+#   8. SHA-256 sidecar + spctl acceptance check
+#   9. Print install command
+#
+# `make pkg-clean` removes the build/ directory.
+# ---------------------------------------------------------------------------
+
+pkg:
+	@bash installer/macos-pkg/scripts/build_pkg.sh
+
+pkg-clean:
+	@rm -rf build/
+	@echo "build/ removed"
+

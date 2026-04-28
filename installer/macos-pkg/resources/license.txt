@@ -1,0 +1,56 @@
+MINING GUARDIAN — END USER LICENSE AGREEMENT
+=============================================
+
+Version: see /etc/mining-guardian/install-receipt.json after install
+Effective: at install time
+
+This software ("Mining Guardian") is licensed, not sold. By installing
+or using Mining Guardian you agree to the following terms.
+
+1. GRANT OF LICENSE
+   You are granted a non-exclusive, non-transferable, non-sublicensable
+   license to install and run Mining Guardian on hardware you own or
+   directly operate, for the purpose of monitoring Bitcoin SHA-256
+   mining equipment on your own networks.
+
+2. SCOPE OF SUPPORTED HARDWARE
+   Mining Guardian is designed for and limited to the monitoring of
+   Bitcoin SHA-256 mining ASIC hardware. Use of Mining Guardian to
+   monitor or control non-Bitcoin (altcoin) mining equipment, GPU
+   mining rigs, or any non-SHA-256 workload is outside the scope of
+   this license and not supported.
+
+3. NETWORK ACCESS
+   Mining Guardian operates locally. Apart from a single first-run
+   download of an open-weights local LLM model from ollama.com (and
+   its mirrors), Mining Guardian does not require, initiate, or rely
+   on any cloud-only service. No telemetry, usage data, or operator
+   credentials are transmitted off your network.
+
+4. NO WARRANTY
+   MINING GUARDIAN IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGE-
+   MENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+   FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+   CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+5. THIRD-PARTY COMPONENTS
+   Mining Guardian bundles or relies on the following third-party
+   components, each governed by their own license:
+
+   - Colima                        Apache License 2.0
+   - Lima                          Apache License 2.0
+   - PostgreSQL 16                 PostgreSQL License
+   - Ollama                        MIT License
+   - Python and the Python ecosystem libraries listed in
+     /usr/local/MiningGuardian/requirements.txt
+
+6. TERMINATION
+   This license terminates automatically if you breach its terms.
+   Upon termination you must remove all installed copies of Mining
+   Guardian using the supplied uninstall script.
+
+By clicking "Continue" you acknowledge that you have read, understood,
+and agreed to be bound by the terms of this License Agreement.
