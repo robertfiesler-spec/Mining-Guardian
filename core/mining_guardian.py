@@ -94,18 +94,29 @@ from monitoring.weather_collector import WeatherCollector
 
 from notifiers.approval_interface import ApprovalInterface
 
-# ── D-14 PR 2/5: Catalog live-reference ───────────────────────────────────
+# ── D-14 PR 2/5 + 3/5: Catalog live-reference ──────────────────────────────
 # The hourly scan must consult the Intelligence Catalog before evaluating
-# any miner (DECISIONS.md D-14 sub-lock 2). This import mirrors the
-# graceful-fallback pattern used by ai/daily_deep_dive.py — if the catalog
-# client is unavailable for any reason, the scanner continues with an empty
-# context. D-14 PR 3/5 will replace this silent degrade with a loud-failure
-# path; this PR only wires the consultation.
+# any miner (DECISIONS.md D-14 sub-lock 2). PR 3/5 added a strict variant
+# that raises CatalogReadFailure on any failure path so the scanner can
+# refuse to evaluate a miner instead of silently proceeding with an empty
+# context (D-14 sub-lock 4 — "a catalog read failure is loud, not silent").
 try:
-    from ai.catalog_context import get_miner_catalog_context
+    from ai.catalog_context import (
+        get_miner_catalog_context_strict,
+        CatalogReadFailure,
+    )
 except ImportError:
-    def get_miner_catalog_context(model_name: str) -> str:  # type: ignore[no-redef]
-        return ""
+    # Module unavailable (broken venv during partial install, etc.).
+    # Fall back to a strict-shaped shim that always raises so the loud-failure
+    # path in _analyze_miner triggers and the operator sees the configuration
+    # problem in the report.
+    class CatalogReadFailure(Exception):  # type: ignore[no-redef]
+        pass
+
+    def get_miner_catalog_context_strict(model_name: str) -> str:  # type: ignore[no-redef]
+        raise CatalogReadFailure(
+            "ai.catalog_context module is not importable"
+        )
 
 class MiningGuardian:
     HASHRATE_THRESHOLD = 0.80   # flag if below 80% of rated TH/s
@@ -241,38 +252,65 @@ class MiningGuardian:
             "pct_capacity":    pct_capacity,
         }
 
+    # D-14 PR 3/5: sentinel returned by _consult_catalog when the strict
+    # catalog read fails. _analyze_miner detects this and produces a
+    # CATALOG UNAVAILABLE issue dict instead of evaluating the miner with
+    # an empty context. The literal value uses U+0000 NUL so it can never
+    # collide with a real catalog content string (formatted prompts only
+    # contain printable ASCII + a few Unicode dashes).
+    CATALOG_READ_FAILED_SENTINEL = "\x00CATALOG_READ_FAILED\x00"
+
     def _consult_catalog(self, miner: Dict[str, Any]) -> str:
-        """D-14 sub-lock 2 — read the catalog for this miner before evaluation.
+        """D-14 sub-lock 2 + 4 — strict catalog read before miner evaluation.
 
-        Returns the formatted catalog context string for the miner's model,
-        or empty string if the catalog has no entry / the call fails.
+        Returns one of three values:
+          - The formatted catalog context string on success.
+          - Empty string "" when the model is empty or the catalog has no
+            entry for it (404 — not a failure, just "no data yet").
+          - CATALOG_READ_FAILED_SENTINEL on any real failure (catalog
+            unavailable, breaker open, HTTP error, request exception,
+            placeholder API key, module import failure). The strict
+            variant in ai/catalog_context.py has already logged ERROR
+            with the underlying detail; this method adds a second ERROR
+            line tagged with the miner_id so log-grepping by miner finds
+            the outage. _analyze_miner converts the sentinel into a
+            CATALOG UNAVAILABLE issue dict.
 
-        Failure semantics (intentional, this PR only):
-          - Catalog unavailable, key missing, breaker open, HTTP error → ""
-          - Module import failure (already handled at top of file) → ""
-          - Any unexpected exception → logged at WARNING, return ""
-
-        D-14 PR 3/5 will replace this silent-degrade contract with a loud
-        failure path that logs ERROR and refuses to evaluate the miner. This
-        PR (2/5) only wires the consultation so the gap named in D-14
-        sub-lock 2 is closed; the failure-handling rework is its own PR.
+        D-14 PR 3/5: this is the "loud, not silent" failure path. The
+        previous PR-2 implementation silently returned "" on failure,
+        which let the scanner proceed with an empty context — exactly
+        the silent-failure mode D-14 sub-lock 4 forbids.
         """
         # Same name resolution as _analyze_miner uses for display: prefer
         # shortModel, fall back to name. Avoids pulling on `model` (the AMS
         # numeric code) which is not what the catalog is keyed on.
         model_name = miner.get("shortModel") or miner.get("name") or ""
         if not model_name:
+            # No identity to look up. Not a failure — the catalog literally
+            # has nothing to say about an unidentified miner. _analyze_miner
+            # treats "" the same as a 404 (proceed with empty context).
             return ""
         try:
-            return get_miner_catalog_context(model_name)
+            return get_miner_catalog_context_strict(model_name)
+        except CatalogReadFailure as e:
+            logger.error(
+                "[%s] catalog read FAILED for %r — refusing to evaluate "
+                "this miner this scan: %s",
+                miner.get("id", "?"), model_name, e,
+            )
+            return self.CATALOG_READ_FAILED_SENTINEL
         except Exception as e:
-            # Defensive: ai.catalog_context.get_miner_catalog_context already
-            # promises never to raise, but if a future regression breaks that
-            # contract we still want the scan loop to survive. PR 3/5 will
-            # make this branch loud.
-            logger.warning("[%s] catalog consult failed for %r: %s",
-                           miner.get("id", "?"), model_name, e)
-            return ""
+            # Defensive: the strict variant should only raise
+            # CatalogReadFailure, but a future regression could leak
+            # something else (e.g. a requests.Timeout if the wrapper
+            # changes). Treat any unexpected exception as a real failure
+            # — same loud-failure behavior, never silently empty.
+            logger.error(
+                "[%s] catalog read raised UNEXPECTED %s for %r — "
+                "refusing to evaluate this miner this scan: %s",
+                miner.get("id", "?"), type(e).__name__, model_name, e,
+            )
+            return self.CATALOG_READ_FAILED_SENTINEL
 
     def _analyze_miner(self, miner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -290,6 +328,16 @@ class MiningGuardian:
         downstream remediation, log-analysis, and Slack-notification paths
         receive live reference material (firmware notes, repair patterns,
         thresholds, war stories) without round-tripping again.
+
+        D-14 sub-lock 4 (PR 3/5): a catalog read failure is loud, not
+        silent. If the strict catalog client raises CatalogReadFailure,
+        _consult_catalog returns CATALOG_READ_FAILED_SENTINEL and this
+        method produces a CATALOG UNAVAILABLE issue dict immediately,
+        BEFORE the post-restart grace period and offline branches. The
+        rationale: a catalog outage is operator-visible signal in its
+        own right; collapsing it into other issue types (or letting it
+        be silently masked by elevated_monitoring) hides the outage.
+        Recovery is automatic on the next scan once the catalog returns.
         """
         miner_id   = str(miner.get("id", "unknown"))
         ip         = miner.get("ip", "unknown")
@@ -299,10 +347,31 @@ class MiningGuardian:
         hashrate   = miner.get("hashrate", 0) or 0     # MH/s from AMS
         firmware   = miner.get("firmwareManufacturer", "") or ""
 
-        # ── D-14 sub-lock 2: live catalog read for this miner ──────────
-        # Attached to the issue dict in _build_issue. Empty string is OK in
-        # this PR (silent degrade); PR 3/5 makes failures loud.
+        # ── D-14 sub-locks 2 + 4: live catalog read for this miner ──────
+        # Attached to the issue dict in _build_issue. PR 3/5 — if the
+        # catalog read fails (sentinel returned), refuse to evaluate this
+        # miner; produce a CATALOG UNAVAILABLE issue dict so the operator
+        # sees the outage in the report rather than a silent skip. ""
+        # (success-with-empty or 404 "no data yet") still proceeds normally.
         catalog_context = self._consult_catalog(miner)
+        if catalog_context == self.CATALOG_READ_FAILED_SENTINEL:
+            issues = [
+                "🔴 CATALOG UNAVAILABLE — evaluation skipped this scan. "
+                "See ERROR-level catalog_context log lines for the cause. "
+                "This miner will be re-evaluated next scan."
+            ]
+            return self._build_issue(
+                miner, issues,
+                action="CATALOG_OUTAGE_SKIP",
+                pdu_action=None,
+                power_watts=0, power_source="unknown", power_kw=None,
+                pdu_id=0, outlet_index=0,
+                hashrate_pct="N/A", tier="catalog_outage",
+                tier_note="Catalog read failed — cannot evaluate without reference",
+                chain_info=None,
+                catalog_context="",  # empty, not the sentinel — issue dict consumers
+                                     # downstream don't deal with the sentinel
+            )
 
         # ── Post-restart grace period ─────────────────────────────────
         # Skip action recommendations for miners that aren't fully stable.
