@@ -17,6 +17,7 @@
 #         APPLE_NOTARIZATION_ISSUER_UUID=<uuid>   # PRIVATE
 #         APPLE_NOTARIZATION_KEY_PATH=/path/to.p8 # PRIVATE
 #         APPLE_DEV_ID_INSTALLER="Developer ID Installer: Robert Fiesler (ARJZ5FYU94)"
+#         APPLE_DEV_ID_APPLICATION="Developer ID Application: Robert Fiesler (ARJZ5FYU94)"
 #       The script reads ONLY this one file. It refuses to read env vars
 #       or prompt interactively, by design — single source of truth.
 #
@@ -98,6 +99,7 @@ step_1_verify_creds() {
             APPLE_NOTARIZATION_ISSUER_UUID) APPLE_NOTARIZATION_ISSUER_UUID="$v" ;;
             APPLE_NOTARIZATION_KEY_PATH)    APPLE_NOTARIZATION_KEY_PATH="$v" ;;
             APPLE_DEV_ID_INSTALLER)         APPLE_DEV_ID_INSTALLER="$v" ;;
+            APPLE_DEV_ID_APPLICATION)       APPLE_DEV_ID_APPLICATION="$v" ;;
         esac
     done < <(grep -E '^[A-Z_]+=' "$CREDS_FILE")
 
@@ -106,18 +108,25 @@ step_1_verify_creds() {
     : "${APPLE_NOTARIZATION_ISSUER_UUID:?missing APPLE_NOTARIZATION_ISSUER_UUID}"
     : "${APPLE_NOTARIZATION_KEY_PATH:?missing APPLE_NOTARIZATION_KEY_PATH}"
     : "${APPLE_DEV_ID_INSTALLER:?missing APPLE_DEV_ID_INSTALLER}"
+    : "${APPLE_DEV_ID_APPLICATION:?missing APPLE_DEV_ID_APPLICATION in $CREDS_FILE}"
 
     if [[ ! -r "$APPLE_NOTARIZATION_KEY_PATH" ]]; then
         _die 41 ".p8 private key not readable: ${APPLE_NOTARIZATION_KEY_PATH}"
     fi
 
-    # Verify the signing identity exists in the keychain.
-    if ! /usr/bin/security find-identity -p basic -v \
-            | grep -q "${APPLE_DEV_ID_INSTALLER}"; then
+    # Verify both signing identities exist in the keychain.
+    # - Installer cert signs the outer .pkg (productsign)
+    # - Application cert signs every Mach-O binary in runtime/ (codesign)
+    local identities
+    identities="$(/usr/bin/security find-identity -p basic -v)"
+    if ! echo "$identities" | grep -q "${APPLE_DEV_ID_INSTALLER}"; then
         _die 41 "Developer ID Installer not in keychain: ${APPLE_DEV_ID_INSTALLER}"
     fi
+    if ! echo "$identities" | grep -q "${APPLE_DEV_ID_APPLICATION}"; then
+        _die 41 "Developer ID Application not in keychain: ${APPLE_DEV_ID_APPLICATION}"
+    fi
 
-    _log "step 1 OK: credentials reachable, signing identity in keychain"
+    _log "step 1 OK: credentials reachable, both signing identities in keychain"
 }
 
 step_2_clean_tree() {
@@ -225,6 +234,65 @@ step_4_assemble_payload() {
     chmod +x "${SCRIPTS_DIR}/lib/"*.sh
 
     _log "step 4 OK: payload assembled at ${PAYLOAD_DIR}"
+}
+
+step_4b_codesign_inner_binaries() {
+    # Notarization (step 6) rejects any third-party Mach-O inside the
+    # payload that isn't:
+    #   * signed with a Developer ID Application cert
+    #   * stamped with a secure timestamp
+    #   * built with hardened runtime enabled
+    #
+    # Vendored binaries (Colima, lima, docker) ship unsigned, so we
+    # codesign each one in place here, BEFORE pkgbuild snapshots the
+    # payload.
+    #
+    # We also drop runtime/colima/share/lima/lima-guestagent.Darwin-aarch64.gz —
+    # that's the Linux guest agent for QEMU mode. We're VZ-only on Apple
+    # Silicon (PR #47), so the guest agent is dead weight AND notarization
+    # rejects it because the .gz wrapper contains an unsigned Linux binary
+    # that codesign cannot fix.
+    local runtime_dir="${PAYLOAD_DIR}/runtime"
+    if [[ ! -d "$runtime_dir" ]]; then
+        _log "step 4b SKIP: no runtime/ in payload (vendor dir was missing)"
+        return 0
+    fi
+
+    # Drop the Linux guest agent — VZ doesn't use it.
+    local guestagent_gz="${runtime_dir}/colima/share/lima/lima-guestagent.Darwin-aarch64.gz"
+    if [[ -f "$guestagent_gz" ]]; then
+        rm -f "$guestagent_gz"
+        _log "  removed lima-guestagent.Darwin-aarch64.gz (VZ-only build, Linux guest agent unused)"
+    fi
+
+    # Find every Mach-O file under runtime/ and codesign it.
+    # `file` reports Mach-O binaries with strings like:
+    #   "Mach-O 64-bit executable arm64"
+    #   "Mach-O 64-bit dynamically linked shared library arm64"
+    #   "Mach-O universal binary with 2 architectures"
+    local count=0 failed=0 path file_out
+    while IFS= read -r -d '' path; do
+        file_out="$(/usr/bin/file -b "$path" 2>/dev/null || true)"
+        if [[ "$file_out" != *"Mach-O"* ]]; then
+            continue
+        fi
+        if /usr/bin/codesign \
+                --force \
+                --sign "$APPLE_DEV_ID_APPLICATION" \
+                --options runtime \
+                --timestamp \
+                "$path" >/dev/null 2>&1; then
+            count=$((count + 1))
+        else
+            failed=$((failed + 1))
+            _log "  WARN codesign failed for ${path#${PAYLOAD_DIR}/}"
+        fi
+    done < <(/usr/bin/find "$runtime_dir" -type f -print0)
+
+    if (( failed > 0 )); then
+        _die 44 "step 4b: codesign failed on ${failed} inner binaries (see WARNs above)"
+    fi
+    _log "step 4b OK: codesigned ${count} Mach-O binaries in payload runtime/"
 }
 
 step_5_pkgbuild_and_sign() {
@@ -342,6 +410,7 @@ main() {
     step_2_clean_tree
     step_3_stamp
     step_4_assemble_payload
+    step_4b_codesign_inner_binaries
     step_5_pkgbuild_and_sign
     step_6_notarize
     step_7_staple
