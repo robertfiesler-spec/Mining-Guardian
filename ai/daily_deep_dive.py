@@ -213,6 +213,87 @@ def query_qwen(prompt: str, label: str = "") -> Optional[str]:
     return response
 
 
+def query_claude_for_fleet(prompt: str, label: str = "fleet synthesis") -> Optional[str]:
+    """Call Claude API for fleet synthesis only (200K context, no truncation).
+
+    Per-miner analyses run on Qwen (small prompts, fits in 32K easily).
+    Fleet synthesis runs on Claude because the prompt is ~195K chars and Qwen
+    truncates to 32K — we were losing ~50%% of premier per-miner data at the
+    aggregation step.
+
+    This is a temporary deviation from the local-LLM-only design principle.
+    When the Mac Mini ships, fleet synthesis flips back to local Qwen plus
+    a hierarchical (cohort -> fleet) chunking pass that fits in 32K.
+    """
+    import os
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        logger.error('Claude API key not set in ANTHROPIC_API_KEY — cannot run fleet synthesis')
+        return None
+
+    model = 'claude-sonnet-4-20250514'
+    prompt_chars = len(prompt)
+    logger.info(
+        'Claude call [%s]: prompt=%d chars (estimated %d tokens), model=%s',
+        label, prompt_chars, prompt_chars // 4, model,
+    )
+
+    start = time.time()
+    try:
+        body = json.dumps({
+            'model': model,
+            'max_tokens': 8192,  # synthesis output is typically 3-13K chars; 8192 tokens = ~32K chars
+            'messages': [{'role': 'user', 'content': prompt}],
+        }).encode()
+        req = urllib.request.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=body,
+            method='POST',
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json',
+            },
+        )
+        # Generous timeout: 195K-char prompts can take 60-120s to process
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            data_bytes = resp.read()
+        d = json.loads(data_bytes.decode())
+    except urllib.error.HTTPError as he:
+        body_preview = ''
+        try:
+            body_preview = he.read().decode()[:300]
+        except Exception:
+            pass
+        logger.error('Claude HTTP error [%s]: %s %s body=%s', label, he.code, he.reason, body_preview)
+        return None
+    except urllib.error.URLError as ue:
+        logger.error('Claude connection error [%s]: %s', label, ue.reason)
+        return None
+    except Exception as e:
+        logger.error('Claude call failed [%s]: %s: %s', label, type(e).__name__, e)
+        return None
+
+    elapsed = time.time() - start
+    text = ''
+    for block in d.get('content', []):
+        if isinstance(block, dict) and block.get('type') == 'text':
+            text = block['text']
+            break
+    if not text:
+        logger.error('Claude returned no text block [%s]: keys=%s', label, list(d.keys()))
+        return None
+
+    usage = d.get('usage', {})
+    in_tok = usage.get('input_tokens', 0)
+    out_tok = usage.get('output_tokens', 0)
+    logger.info(
+        'Claude OK [%s]: %.1fs wall, in=%d tok, out=%d tok (%d chars)',
+        label, elapsed, in_tok, out_tok, len(text),
+    )
+    return text
+
+
 # ── Data gathering ───────────────────────────────────────────────────────
 
 def get_online_miners(conn: "_PgConnWrapper",
@@ -1048,7 +1129,9 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_ove
         fleet_analyses=fleet_analyses,
     )
 
-    fleet_synthesis = query_qwen(fleet_prompt, label="fleet synthesis")
+    # FLEET SYNTHESIS uses Claude (200K context) instead of Qwen (32K) until Mac Mini arrives.
+    # See query_claude_for_fleet() docstring for details. Per-miner pass above keeps using Qwen.
+    fleet_synthesis = query_claude_for_fleet(fleet_prompt, label="fleet synthesis")
     if not fleet_synthesis:
         logger.error("Fleet synthesis returned no result")
         conn.close()
