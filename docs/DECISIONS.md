@@ -142,4 +142,30 @@ This is the canonical log of decisions that are committed and not subject to re-
 
 ---
 
+## D-14 — Operational ↔ Catalog: live-reference architecture, no scheduled refresh
+- **Date locked:** 2026-04-28
+- **Decided by:** Operator + agent
+- **Decision:** The two databases on the Mac Mini — `mining_guardian` (operational) and `intelligence_catalog` (reference) — communicate as a **live reference**, not on a schedule. Five sub-locks make this concrete:
+  1. **Both DBs are always reachable, no client-side cache.** Both databases run in the same Postgres 16 container on the Mini. Every Mining Guardian process — the scan daemon (`core/mining_guardian.py`), the AI analysis paths (`ai/daily_deep_dive.py`, `ai/train_cohort.py`, `ai/deep_analysis_claude.py`, `core/llm_analyzer.py`, `ai/local_llm_analyzer.py`), the dashboard API, the briefing scripts — opens a connection to BOTH at startup and holds it open for the life of the process. There is no client-side TTL cache between any reader and the catalog. The current 5-minute cache in `ai/catalog_context.py` is removed as part of D-14 implementation.
+  2. **The hourly scan must consult the catalog.** Today, `core/mining_guardian.py` (verified 2026-04-28 on commit `ffc687c`) has zero references to the catalog — no `catalog_context` import, no `hardware.*` / `ops.*` / `market.*` / `knowledge.*` queries. That is the live gap. After D-14 implementation, before the scanner evaluates any miner it reads `hardware.miner_models` for the spec, `ops.failure_patterns` for known patterns matching this model, `hardware.model_known_issues` for documented defects, and `market.war_stories` for field-observed comparisons. The scanner is no longer blind to the reference.
+  3. **Operational outcomes flow back to the catalog continuously, not on a schedule.** Every operational write to `public.action_audit_log`, `public.miner_restarts`, and `public.llm_analysis` fires a Postgres `NOTIFY catalog_feedback`. A `feedback_loop_daemon` (managed by launchd on the Mini) `LISTEN`s for those notifications and runs the existing C5 sync logic (`intelligence-catalog/db/feedback_loop.py`, PR #22, 30 KB, on `main` today) within ~100 ms of the operational write. There is no cron, no scheduled refresh, no batch window. The catalog is effectively-current to the moment any reader opens it.
+  4. **A catalog read failure is loud, not silent.** If the catalog DB is unreachable or any catalog query raises, the scanner / AI / briefing logs at ERROR and refuses to proceed for that miner rather than continuing with an empty catalog context. This replaces the current `ai/catalog_context.py` circuit-breaker that silently returns `""` after three failures — a B-4-class silent-failure mode that hides catalog outages from the operator.
+  5. **The HTTP catalog-api layer is retired post-cutover.** Today, AI consumers reach the catalog via HTTP to `intelligence-catalog/catalog-api` running on ROBS-PC at `100.110.87.1:8420`. After May 5 cutover scope γ, ROBS-PC is decommissioned. On the Mini, AI consumers talk to the catalog DB directly via psycopg, not via HTTP to a localhost catalog-api. Same machine, same Postgres, no round-trip.
+- **Why:** Operator quote 2026-04-28: *"they should always be able to reference each other, so when you are talking to the llm to ask questions everything is live for it to reference"* and *"when the hourly scans happen it will be able to access it whenever it is needed it will be there, as a reference to look things up and learn correct."* The original C5 design treated the operational→catalog feedback as a cron job (intelligence-catalog/db/feedback_loop.py header documents "running this hourly (or daily) is safe"). That design produces a stale catalog — every reader is reading wisdom up to one cron-interval old. The corrected D-14 design makes the catalog effectively-current: every operational outcome is folded into catalog wisdom within ~100 ms, every read of the catalog returns whatever the catalog knew at that exact moment, and the LLM is never working from a stale snapshot of fleet history. The reference is always open.
+- **Code-grounded findings that motivated this lock (verified on `main` at `ffc687c`, 2026-04-28):**
+  - `core/mining_guardian.py` (128 KB, the scan daemon started by `deploy/mining-guardian.service` as `python core/mining_guardian.py --loop`) has **zero** catalog references. Verified by full-file grep for `catalog_context|catalog_api|CATALOG_API|hardware\.miner_models|hardware\.manufacturers|ops\.failure_patterns|market\.war_stories|knowledge\.field_registry|knowledge\.sources` — match count = 0.
+  - `ai/daily_deep_dive.py` has 15 catalog references and **does** consult the catalog through `ai/catalog_context.py`.
+  - `ai/catalog_context.py` enforces a 5-minute TTL cache and a 3-failure circuit-breaker that silently returns `""`.
+  - `intelligence-catalog/db/feedback_loop.py` (PR #22, 30 KB) is fully implemented and tested but is not currently invoked by any cron, daemon, trigger, or systemd unit. The aggregation loop exists in code but does not run.
+- **Supersedes:** Implicit prior assumption that C5 is a scheduled job. D-14 makes C5 event-driven.
+- **Implementation plan:** Delivered across small per-PR increments per Option β branch cadence, in this order:
+  1. Drop the 5-minute cache in `ai/catalog_context.py` (`_CACHE_TTL = 0`).
+  2. Wire `core/mining_guardian.py` to consult the catalog on every miner evaluation.
+  3. Make catalog read failure raise / log at ERROR rather than silently return `""`.
+  4. Build the C5 daemon: NOTIFY triggers on the three operational tables, `feedback_loop_daemon.py` that LISTENs and runs the existing sync functions, launchd plist on the Mini.
+  5. On the Mini install, point AI consumers at psycopg-direct and retire the HTTP catalog-api round-trip.
+- **Implementation status (as of 2026-04-28):** Locked, no implementation yet. Implementation PRs to follow per the plan above.
+
+---
+
 *Append new decisions below this line. Do not edit history.*
