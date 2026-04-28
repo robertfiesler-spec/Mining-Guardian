@@ -437,3 +437,144 @@ ExFAT is the right format for this stick. FAT32 caps per-file size at 4 GB — f
 The full Bucket 3 chain — codesign correctness → notarization → staple → tag → release → upload → round-trip → USB — is now end-to-end shippable. The next time we touch this is either (a) PR #53 branding (icon.icns + installer background.png), which means a second notarization cycle of its own; or (b) a content release that actually changes the payload. Either way the runbook is now grooved deep enough that future-us can do it without thinking. Bitcoin SHA-256 miners only. Postgres-as-truth. Stay local.
 
 *— end of 2026-04-28 distribution addendum*
+
+
+---
+
+# 2026-04-28 — Evening addendum: .pkg installer branding (PR #54)
+
+**Time window:** ~3:30 PM – 4:15 PM CDT
+**PR:** [#54 — docs(customer)+installer(brand): three customer PDFs + .pkg branding](https://github.com/robertfiesler-spec/Mining-Guardian/pull/54)
+**Branch:** `docs/customer-docs-and-installer-branding`
+**Final commit:** `a2b1261984938011e293b87a4db9dd31e6c4c4d6` (rebased onto main `9e24a94`)
+**State:** OPEN, MERGEABLE, mergeStateStatus CLEAN — ready to merge.
+
+## 1. Why this addendum exists
+
+Earlier in the day (afternoon addendum above) the PDF customer-doc work and the v1.0.0 distribution chain shipped. PR #54 then went stale because:
+
+- The first attempt at "installer branding" was a terminal-wizard toolkit (`installer/brand/`) sized for the **rejected pre-D-13 architecture** (a Bash-driven setup wizard). The real installer is the signed/notarized native macOS `.pkg` that PR #46 introduced and PR #53 documented as shipped (`MiningGuardian-1.0.0-978ff61126ea.pkg`).
+- Robert caught the mismatch ("we changed it to a pkg installer yesterday and that is what we built today isnt it?"). Confirmed correct.
+- The terminal-wizard toolkit was therefore dropped from PR #54 and replaced with three pieces of native `.pkg` brand surface.
+
+## 2. What landed in PR #54 (the brand surface)
+
+All three files live in `installer/macos-pkg/resources/`. They are the assets `Distribution.xml` already references (welcome HTML, conclusion HTML, sidebar background art) — previously they were unstyled placeholders or absent.
+
+| File | Size | Purpose |
+|---|---|---|
+| `welcome.html` | 5.7 KB | First Installer.app screen — restyled with brand tokens, lists what's about to install, names the Developer ID, warns about the one network step |
+| `conclusion.html` | 5.6 KB | Final Installer.app screen — green "INSTALLED" check pill, four launchctl verification commands (with `sudo` highlighted in BTC orange), uninstall instructions, Bitcoin-only-policy footer |
+| `background.png` | 305 KB (620×1111 PNG-8) | Sidebar artwork — Hero shield + crossed pickaxes + glowing Bitcoin coin + electric-blue circuit lines on a navy gradient, "MINING GUARDIAN" wordmark with electric-blue underline. Sized for crisp Retina at the ~200×350 sidebar slot Installer.app uses |
+
+`Distribution.xml` already had `<background file="background.png" alignment="bottomleft" scaling="proportional"/>` on line 35 — **no Distribution.xml change required**. The previous build was simply falling back to plain Installer.app chrome because `background.png` did not exist.
+
+## 3. Brand token lock-in (identical to PDFs)
+
+| Token | Hex | Used where |
+|---|---|---|
+| Navy | `#0A1428` | Page background |
+| Navy deep | `#050A14` | Code/URL pills |
+| Surface | `#11203B` | Cards, callouts |
+| Border | `#1F3A66` | Card borders, dividers |
+| Electric blue | `#3DA9FC` | H2 uppercase, links, code text |
+| Bitcoin orange | `#F7931A` | Eyebrow, accent rule, bullets, `sudo` keyword |
+| Text | `#E6ECF5` | Body |
+| Text muted | `#A8B5CC` | Secondary text |
+| Success green | `#3BD16F` | "INSTALLED" check pill on conclusion |
+
+**Typography rule:** the PDFs and `background.png` use DM Sans (TTFs shipped in `customer_docs/fonts/`). The HTML files use **Apple system fonts only** (`-apple-system, BlinkMacSystemFont, "SF Pro Text"`) — zero remote font CDN, zero offline-install breakage. Decision rationale: the `.pkg` must install cleanly on a Mac with no internet (e.g. air-gapped customer install).
+
+## 4. PR #54 final shape
+
+Eight files, one consolidated commit, rebased onto current `main` so the merge is clean. Diff stats (vs main `9e24a94`):
+
+```
+docs/MG_UNIFIED_TODO_LIST.md                                    +16 -0
+docs/customer/MiningGuardian_Brochure.pdf                       (binary, added)
+docs/customer/MiningGuardian_Program_Instructions.pdf           (binary, added)
+docs/customer/MiningGuardian_Setup_Manual.pdf                   (binary, added)
+docs/customer/README.md                                         +45 -0
+installer/macos-pkg/resources/background.png                    (binary, added)
+installer/macos-pkg/resources/conclusion.html                   +167 -31
+installer/macos-pkg/resources/welcome.html                      +152 -33
+```
+
+## 5. Build / push process notes (for future-us)
+
+### What worked
+- **Git Data API end-to-end** (`gh api` with `["github"]` credentials): upload blob → create tree → create commit → PATCH ref. This is the **only** reliable push path right now.
+- For binary files >100 KB (e.g. `background.png` 305 KB), write base64 to a JSON file and pass via `gh api --input file.json`. `argv` has size limits.
+- Force-pushing the rebased commit: `gh api -X PATCH repos/.../git/refs/heads/<branch> -f sha=<commit> -F force=true`.
+
+### What did NOT work
+- **Direct `git push` is broken.** The local proxy token in git config (`agp_019dd5a1-…`) is expired/invalid. Don't waste time on it. Use `gh api`.
+
+### The rebase (because main had advanced through PRs #25–#53)
+The first push of PR #54 went CONFLICTING because main had moved a lot since the PR's original base. Strategy that worked:
+
+1. Fetch the current main `MG_UNIFIED_TODO_LIST.md` from origin.
+2. Splice our new "## 1.1 Tuesday 2026-04-28" section in **after** the "Bottom line of weekend so far" marker. Purely additive (+16 lines, no deletions), so no semantic conflict.
+3. Build a tree on top of the **current main tree SHA**, with all 8 PR files (5 new docs/customer/* + 3 installer/macos-pkg/resources/* + 1 spliced TODO).
+4. Create a single commit with `parent=main_tip`.
+5. Force-update the branch ref. Result: MERGEABLE / CLEAN.
+
+## 6. Visual review
+
+Composite Installer.app window mockups were rendered at 1640×1008 (2× retina) showing:
+- macOS titlebar with traffic-light buttons + "Install Mining Guardian" title
+- Sidebar with `background.png` cover-fit, bottom-anchored
+- Right pane with the HTML preview (Playwright-rendered at 620×420 viewport)
+- Footer with Continue/Go Back (welcome) or Close (conclusion) buttons
+
+Files in `/home/user/workspace/pkg_brand/`:
+- `preview_window_welcome.png` (552 KB)
+- `preview_window_conclusion.png` (513 KB)
+
+Visual review: PASSED. No text wrapping issues, no truncation, no clashes.
+
+## 7. What this PR does NOT do
+
+- **Does not rebuild the .pkg.** The current shipped `.pkg` (`MiningGuardian-1.0.0-978ff61126ea.pkg`) still has the unstyled welcome screen. A rebuild + re-notarize on Robert's Mac is required after merge.
+- **Does not refresh the USB stick.** The "MG Install" USB stick still holds the unbranded build. After the rebuild, the new `.pkg` must be copied to the stick (the stick itself does NOT need to be erased — the file just needs to be replaced).
+- **Does not refresh the GitHub Release.** Same story — `gh release upload` the new `.pkg` after rebuild.
+
+## 8. Rebuild procedure (Robert's next action on the Mac)
+
+After PR #54 merges:
+
+```zsh
+cd ~/Documents/GitHub/Mining-Guardian
+git checkout main
+git pull --ff-only
+make pkg
+```
+
+`build_pkg.sh` runs the full chain end-to-end:
+1. `productbuild` → unsigned `.pkg`
+2. `productsign` with Developer ID Installer Robert Fiesler (ARJZ5FYU94)
+3. `xcrun notarytool submit --wait` (expect Accepted in ~3–5 min based on submission `2c4130a4`)
+4. `xcrun stapler staple`
+
+Output: `build/MiningGuardian-1.0.0-<newsha>.pkg`. Then re-upload to the GitHub Release and replace the file on the USB stick.
+
+## 9. State of the repo at end of session
+
+| Branch | vs main | Note |
+|---|---|---|
+| `main` | (tip `9e24a94`) | PR #53 is the head |
+| `docs/customer-docs-and-installer-branding` (PR #54) | +1 ahead, 0 behind, CLEAN | Ready to merge |
+| `feature/fast-cohort-analysis` | diverged 2 ahead / 202 behind | Stale experiment, not blocking |
+| `feature/intelligence-catalog` | diverged 21 / 294 | Stale experiment, not blocking |
+| `pre-prod-audit-2026-04-25` | diverged 47 / 294 | Stale audit branch, not blocking |
+| `fix/typo-rename-…` | 0 ahead | Already merged content, branch can be deleted |
+| 4× `hotfix/cr-*` branches | 0 ahead | Already merged content, branches can be deleted |
+| `openclaw-integration` | 0 ahead | Already merged content, branch can be deleted |
+
+Bottom line: every piece of work that needs to be in `main` either is in `main` or is in PR #54 waiting to merge. Nothing is uncommitted, nothing is unpushed, nothing is silently behind.
+
+## 10. Closing note (evening)
+
+The day went: morning (PRs #44–#51 fixed the .pkg build pipeline) → afternoon (notarized, stapled, released, USB-shipped — PR #53) → evening (the brand surface that would have looked sloppy on a customer's screen got the same DM Sans / navy / BTC-orange treatment as the PDFs — PR #54). After PR #54 merges and `make pkg` runs once more, the customer experience is end-to-end branded: the box (PDFs), the install (.pkg with our welcome + conclusion + sidebar art), and the running app. Bitcoin SHA-256 miners only. Postgres-as-truth. Stay local.
+
+*— end of 2026-04-28 evening addendum*
