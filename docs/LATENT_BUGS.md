@@ -110,7 +110,11 @@ resolve the runtime divergence.
 ## B-4 — `mg_import.insert_raw_json` silently swallows ingestion errors
 
 **Severity:** High
-**Status:** Not fixed (post-install TODO)
+**Status:** Fixed 2026-04-28 in PR (this commit). `insert_raw_json()` was rewritten to (a) write to the canonical 7-column partitioned `knowledge.field_log_raw_json` table — `(entity_label, archive_filename, source_file, parser, raw_payload, sha256, ingested_at)` — instead of the legacy `(archive_filename, file_path_in_archive, raw_content)` triple, and (b) replace the silent `except Exception: pass` with `log.error(..., exc_info=True); raise` so failures surface immediately. Walker `_insert_archive_raw_json_files()` was rewritten to take `shape` + `archive_meta`, return per-call stats `{scanned, inserted, skipped, failed}`, log every per-file failure at ERROR, and have the call site log loudly when `stats.failed > 0`. The archive-level blob now uses `parser='<shape>:archive_meta'` with the archive's own sha256.
+
+**Backfill of 124 rows missing from the 2026-04-27 import:** out of scope for this PR. Tracked as a Bucket-1 follow-up — needs the on-disk archives and a one-shot script that walks them through the new canonical writer.
+
+**Runtime invariant assertion** (`raw_json_count >= imports_count * 0.95` at end of `run_full_import.py`): out of scope for this PR. Tracked as a Bucket-1 follow-up.
 **Discovered:** 2026-04-27 (PR #25 addendum #3)
 **Location:** `mg_import_tool/mg_import.py` — `insert_raw_json()` function
 
@@ -175,9 +179,9 @@ be logged.
 ## B-5 — `mg_import.py` raw_json index targets nonexistent column
 
 **Severity:** Medium
-**Status:** Patched out (lines 1315-1316 commented out 2026-04-27); B-3 root cause now fixed (2026-04-28), but the runtime CREATE TABLE inside `mg_import.py` still bootstraps the OLD non-partitioned shape — see updated Fix Plan below.
+**Status:** Fixed 2026-04-28 in PR (this commit). The runtime bootstrap `CREATE TABLE knowledge.field_log_raw_json` inside `mg_import.py` was rebased onto the canonical PARTITIONED shape (8 columns, partition by range on `ingested_at`, quarterly children for 2026 q2/q3/q4 + 2027 q1, PK `(id, ingested_at)`, three non-unique indexes `idx_raw_json_entity` / `idx_raw_json_archive` / `idx_raw_json_sha`) — mirrors the rebased `000_bootstrap_field_log_tables.sql` from the B-3 fix. The patched-out unique-index comment block (the `2026-04-27` marker plus the commented-out `CREATE UNIQUE INDEX ... (archive_filename, file_path_in_archive)`) was removed entirely: the canonical shape has no `file_path_in_archive` column, and the three non-unique indexes provide the lookup paths we need. `insert_raw_json()` no longer uses `ON CONFLICT`. All statements are `IF NOT EXISTS`, so the live DB is unaffected.
 **Discovered:** 2026-04-27 (PR #25 addendum #3)
-**Location:** `mg_import_tool/mg_import.py` lines 1315-1316
+**Location:** `mg_import_tool/mg_import.py` lines 1315-1316 (historical; now removed)
 
 ### Description
 
