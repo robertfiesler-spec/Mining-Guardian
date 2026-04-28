@@ -94,6 +94,19 @@ from monitoring.weather_collector import WeatherCollector
 
 from notifiers.approval_interface import ApprovalInterface
 
+# ── D-14 PR 2/5: Catalog live-reference ───────────────────────────────────
+# The hourly scan must consult the Intelligence Catalog before evaluating
+# any miner (DECISIONS.md D-14 sub-lock 2). This import mirrors the
+# graceful-fallback pattern used by ai/daily_deep_dive.py — if the catalog
+# client is unavailable for any reason, the scanner continues with an empty
+# context. D-14 PR 3/5 will replace this silent degrade with a loud-failure
+# path; this PR only wires the consultation.
+try:
+    from ai.catalog_context import get_miner_catalog_context
+except ImportError:
+    def get_miner_catalog_context(model_name: str) -> str:  # type: ignore[no-redef]
+        return ""
+
 class MiningGuardian:
     HASHRATE_THRESHOLD = 0.80   # flag if below 80% of rated TH/s
 
@@ -228,6 +241,39 @@ class MiningGuardian:
             "pct_capacity":    pct_capacity,
         }
 
+    def _consult_catalog(self, miner: Dict[str, Any]) -> str:
+        """D-14 sub-lock 2 — read the catalog for this miner before evaluation.
+
+        Returns the formatted catalog context string for the miner's model,
+        or empty string if the catalog has no entry / the call fails.
+
+        Failure semantics (intentional, this PR only):
+          - Catalog unavailable, key missing, breaker open, HTTP error → ""
+          - Module import failure (already handled at top of file) → ""
+          - Any unexpected exception → logged at WARNING, return ""
+
+        D-14 PR 3/5 will replace this silent-degrade contract with a loud
+        failure path that logs ERROR and refuses to evaluate the miner. This
+        PR (2/5) only wires the consultation so the gap named in D-14
+        sub-lock 2 is closed; the failure-handling rework is its own PR.
+        """
+        # Same name resolution as _analyze_miner uses for display: prefer
+        # shortModel, fall back to name. Avoids pulling on `model` (the AMS
+        # numeric code) which is not what the catalog is keyed on.
+        model_name = miner.get("shortModel") or miner.get("name") or ""
+        if not model_name:
+            return ""
+        try:
+            return get_miner_catalog_context(model_name)
+        except Exception as e:
+            # Defensive: ai.catalog_context.get_miner_catalog_context already
+            # promises never to raise, but if a future regression breaks that
+            # contract we still want the scan loop to survive. PR 3/5 will
+            # make this branch loud.
+            logger.warning("[%s] catalog consult failed for %r: %s",
+                           miner.get("id", "?"), model_name, e)
+            return ""
+
     def _analyze_miner(self, miner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Return an issue dict if the miner has a problem, else None.
@@ -237,6 +283,13 @@ class MiningGuardian:
           Tier 2 — Known model spec: look up default_rated_ths in miner_specs.json
           Tier 3 — Unknown model:    use 3-day running average baseline
         During Tier 3 learning window, hashrate is NOT flagged — only hard faults.
+
+        D-14 sub-lock 2: before any evaluation branch, this method consults
+        the Intelligence Catalog for the miner's model. The result is
+        attached to the returned issue dict as `catalog_context` so the
+        downstream remediation, log-analysis, and Slack-notification paths
+        receive live reference material (firmware notes, repair patterns,
+        thresholds, war stories) without round-tripping again.
         """
         miner_id   = str(miner.get("id", "unknown"))
         ip         = miner.get("ip", "unknown")
@@ -245,6 +298,11 @@ class MiningGuardian:
         status     = miner.get("status", "unknown")
         hashrate   = miner.get("hashrate", 0) or 0     # MH/s from AMS
         firmware   = miner.get("firmwareManufacturer", "") or ""
+
+        # ── D-14 sub-lock 2: live catalog read for this miner ──────────
+        # Attached to the issue dict in _build_issue. Empty string is OK in
+        # this PR (silent degrade); PR 3/5 makes failures loud.
+        catalog_context = self._consult_catalog(miner)
 
         # ── Post-restart grace period ─────────────────────────────────
         # Skip action recommendations for miners that aren't fully stable.
@@ -339,6 +397,7 @@ class MiningGuardian:
                     hashrate_pct="N/A", tier="ams_sync",
                     tier_note="AMS offline but miner reachable",
                     chain_info=None,
+                    catalog_context=catalog_context,
                 )
             else:
                 logger.debug(
@@ -393,6 +452,7 @@ class MiningGuardian:
                     hashrate_pct="0%", tier="offline",
                     tier_note="Miner offline — confirmed by direct check",
                     chain_info=None,
+                    catalog_context=catalog_context,
                 )
 
         # ── HASHBOARD check (always evaluated when online) ───────────────
@@ -500,6 +560,7 @@ class MiningGuardian:
             hashrate_pct=hashrate_pct_str, tier=tier,
             tier_note=tier_note,
             chain_info=chain_info,
+            catalog_context=catalog_context,
         )
 
     def _build_issue(self, miner: Dict[str, Any], issues: list,
@@ -508,8 +569,17 @@ class MiningGuardian:
                      power_kw: Optional[float], pdu_id: int, outlet_index: int,
                      hashrate_pct: str = "N/A", tier: str = "unknown",
                      tier_note: str = "",
-                     chain_info: Optional[dict] = None) -> Dict[str, Any]:
-        """Build the standardised issue dict returned by _analyze_miner."""
+                     chain_info: Optional[dict] = None,
+                     catalog_context: str = "") -> Dict[str, Any]:
+        """Build the standardised issue dict returned by _analyze_miner.
+
+        D-14 PR 2/5: `catalog_context` is the live Intelligence Catalog
+        snippet for this miner's model, passed through from
+        _analyze_miner._consult_catalog(). Empty string is a valid value
+        and means either (a) the catalog has no entry for this model yet,
+        or (b) the catalog read failed in a way the current silent-degrade
+        contract permits. PR 3/5 will tighten failure semantics.
+        """
         temp_chip  = miner.get("tempChip", None)
         model_code = miner.get("model", "")
         profile    = miner.get("currentProfile", "") or ""
@@ -547,6 +617,11 @@ class MiningGuardian:
             "map_location": miner.get("mapLocation", {}).get("title") or "not mapped",
             "active_profile": miner.get("currentProfile", "") or "N/A",
             "chain_info":   chain_info,
+            # D-14 PR 2/5: live catalog snippet for this miner's model.
+            # Empty string when the catalog has no entry or the read failed.
+            # Not yet consumed by execute_*/Slack/log-analysis paths — those
+            # are follow-up wiring beyond this PR's narrow scope.
+            "catalog_context": catalog_context,
         }
 
     # ── Hashboard restart + verification flow ─────────────────
