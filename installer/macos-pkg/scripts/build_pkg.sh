@@ -265,13 +265,51 @@ step_4b_codesign_inner_binaries() {
         _log "  removed lima-guestagent.Darwin-aarch64.gz (VZ-only build, Linux guest agent unused)"
     fi
 
-    # Find every Mach-O file under runtime/ and codesign it.
+    # Two-pass codesign:
+    #
+    # Pass 1: re-sign every .app and .framework bundle as a UNIT with
+    # --deep. App/framework bundles are pre-sealed by their vendor
+    # (Ollama, etc.) and ship with internal _CodeSignature manifests.
+    # If we walk inside one and re-sign individual Mach-O files, we
+    # break that seal and the bundle becomes invalid — which is exactly
+    # what happened to Ollama.app in submission 63236a3b on 2026-04-28.
+    # The correct approach is to re-sign the bundle from the outside in
+    # using --deep + --options runtime + --timestamp, which re-seals
+    # every level (helpers, frameworks, dylibs, the main executable).
+    #
+    # Pass 2: codesign every loose Mach-O file that is NOT inside a
+    # .app or .framework bundle (Pass 1 already handled those).
+    local count_bundles=0 count_loose=0 failed=0 path file_out
+
+    # Pass 1 — .app and .framework bundles. -prune so find doesn't
+    # descend into them after we list them.
+    while IFS= read -r -d '' path; do
+        if /usr/bin/codesign \
+                --force \
+                --deep \
+                --sign "$APPLE_DEV_ID_APPLICATION" \
+                --options runtime \
+                --timestamp \
+                "$path" >/dev/null 2>&1; then
+            count_bundles=$((count_bundles + 1))
+            _log "  re-sealed bundle: ${path#${PAYLOAD_DIR}/}"
+        else
+            failed=$((failed + 1))
+            _log "  WARN codesign --deep failed for bundle ${path#${PAYLOAD_DIR}/}"
+        fi
+    done < <(/usr/bin/find "$runtime_dir" \
+        \( -name '*.app' -o -name '*.framework' \) -prune -print0)
+
+    # Pass 2 — loose Mach-O files outside any .app/.framework bundle.
     # `file` reports Mach-O binaries with strings like:
     #   "Mach-O 64-bit executable arm64"
     #   "Mach-O 64-bit dynamically linked shared library arm64"
     #   "Mach-O universal binary with 2 architectures"
-    local count=0 failed=0 path file_out
     while IFS= read -r -d '' path; do
+        # Skip anything inside a .app or .framework — Pass 1 owns those.
+        case "$path" in
+            */*.app/*|*/*.framework/*) continue ;;
+        esac
         file_out="$(/usr/bin/file -b "$path" 2>/dev/null || true)"
         if [[ "$file_out" != *"Mach-O"* ]]; then
             continue
@@ -282,7 +320,7 @@ step_4b_codesign_inner_binaries() {
                 --options runtime \
                 --timestamp \
                 "$path" >/dev/null 2>&1; then
-            count=$((count + 1))
+            count_loose=$((count_loose + 1))
         else
             failed=$((failed + 1))
             _log "  WARN codesign failed for ${path#${PAYLOAD_DIR}/}"
@@ -290,9 +328,21 @@ step_4b_codesign_inner_binaries() {
     done < <(/usr/bin/find "$runtime_dir" -type f -print0)
 
     if (( failed > 0 )); then
-        _die 44 "step 4b: codesign failed on ${failed} inner binaries (see WARNs above)"
+        _die 44 "step 4b: codesign failed on ${failed} item(s) (see WARNs above)"
     fi
-    _log "step 4b OK: codesigned ${count} Mach-O binaries in payload runtime/"
+
+    # Verify every bundle's seal is intact — catches the failure mode
+    # that bit us in submission 63236a3b: a binary whose hash no longer
+    # matches the bundle's CodeResources manifest. Apple's notary
+    # service runs the same check.
+    while IFS= read -r -d '' path; do
+        if ! /usr/bin/codesign --verify --deep --strict "$path" >/dev/null 2>&1; then
+            _die 44 "step 4b: bundle failed --verify --deep --strict: ${path#${PAYLOAD_DIR}/}"
+        fi
+    done < <(/usr/bin/find "$runtime_dir" \
+        \( -name '*.app' -o -name '*.framework' \) -prune -print0)
+
+    _log "step 4b OK: re-sealed ${count_bundles} bundle(s), codesigned ${count_loose} loose Mach-O"
 }
 
 step_5_pkgbuild_and_sign() {
