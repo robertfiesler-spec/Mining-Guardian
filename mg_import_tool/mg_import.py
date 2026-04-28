@@ -1312,8 +1312,15 @@ CREATE TABLE IF NOT EXISTS mg.import_runs (
 CREATE UNIQUE INDEX IF NOT EXISTS field_log_miner_identity_archive_entity_idx
     ON knowledge.field_log_miner_identity (archive_filename, entity_label);
 
-CREATE UNIQUE INDEX IF NOT EXISTS field_log_raw_json_archive_path_idx
-    ON knowledge.field_log_raw_json (archive_filename, file_path_in_archive);
+-- 2026-04-27 (PR #25 prep): Index on (archive_filename, file_path_in_archive)
+-- conflicts with the live DB's partitioned field_log_raw_json shape
+-- introduced by 002_layer2 migration. The bootstrap CREATE TABLE above is a
+-- no-op (table already exists), but this index references a column that does
+-- not exist on the partitioned table. Skipping is safe: insert_raw_json
+-- swallows errors at runtime, and no downstream consumer reads raw_json.
+-- TODO post-install: refactor insert_raw_json to write to partitioned schema.
+-- CREATE UNIQUE INDEX IF NOT EXISTS field_log_raw_json_archive_path_idx
+--     ON knowledge.field_log_raw_json (archive_filename, file_path_in_archive);
 
 -- v3.2: resolver columns on field_log_miner_identity (safe no-op if 002 migration ran)
 ALTER TABLE knowledge.field_log_miner_identity

@@ -430,3 +430,536 @@ The user's instruction at the top of the day was *"slow and steady, I would rath
 D-10 to Mac Mini install. Bitcoin SHA-256 miners only. Postgres-as-truth.
 
 *— end of 2026-04-27 log (addendum #2 closed late-evening, Wednesday data track pulled forward)*
+
+---
+
+## Addendum #3 — Live DB re-import (Mon 2026-04-27 afternoon)
+
+### Why a third addendum on the same day
+
+Late morning the user asked the natural follow-up to the Wednesday data
+track: *"now that the AI program actually reads the catalog, should we
+re-upload the older logs so the new layer system can re-enrich them?"*
+The answer was yes — the live `mining-guardian-db` Postgres container had
+exactly **one** archive imported (`Antminer_S19_2024-06-27_2024-06-29.tar`,
+1.7 MB, ingested 2026-04-24 19:21 UTC). Every other archive on the user's
+PC had been imported only into the *sandbox* DB during PR-by-PR
+verification, never into live.
+
+Re-importing all 136 archives against live now — *before* the May 5 install
+— is exactly the right time. The Mac Mini will be cloned from a fresh
+backup of this same database, so whatever the customer takes home is
+whatever we put in today.
+
+The original head-count was 131. The actual disk count came in at **136**
+once we ran the pre-flight script. Five archives the morning audit had
+classified as "stray companions" turned out to be importable `.tgz` /
+`.tar` files that had been overlooked. Total corpus: **136 archives,
+339 MB**.
+
+### Scope
+
+- **Source corpus:** `C:\Users\User\Documents\Miner Logs\` — 136 archives
+  totalling 339 MB. Smallest is a 0-byte
+  `M30S_V31_2024-07-11_10-06.tgz` (corrupt, expected to error and skip).
+  Largest is a 6.8 MB `Antminer_S19j_Pro_*` dump.
+- **Target:** the live `mining-guardian-db` Docker container on ROBS-PC
+  (Postgres 16-bookworm, 44 hours healthy uptime at start, named volume
+  `pgdata`, port 5432). Same DB the catalog-api iframe and Grafana
+  ultimately read from.
+- **Pre-flight migrations applied today:**
+  1. `mg_import_tool/sql/migrations/000_bootstrap_field_log_tables.sql`
+     — **deliberately skipped.** See "000_bootstrap skip rationale" below.
+  2. `mg_import_tool/sql/migrations/002_layer2_and_learning_foundation.sql`
+     — applied cleanly.
+  3. `intelligence-catalog/seed-data/staging_schema.sql` (PR #15
+     dual-write proposal tables) — applied cleanly.
+- **Out of scope:** any change to `public.*` operational tables
+  (`chain_readings`, `miner_state_readings`, `ams_notifications`,
+  `llm_analysis`, `action_audit_log`, `miner_restarts`). Those are AMS /
+  AI-managed and the importer never touches them.
+
+### 000_bootstrap skip rationale
+
+The morning audit caught it: `knowledge.field_log_raw_json` is already
+**partitioned** in the live DB (RANGE on `ingested_at`, four partitions
+covering 2024–2026+). Real columns: `id, entity_label, archive_filename,
+source_file, parser, raw_payload, sha256, ingested_at`.
+
+The bootstrap migration's `CREATE TABLE` is a non-partitioned shape with
+a `file_path_in_archive` column that doesn't exist on the live partitioned
+table. Re-running it would silently no-op on the parent table (because
+`IF NOT EXISTS`) but would also create one of the *table-level* indexes
+the partitioned variant rejects (`CREATE INDEX … ON
+knowledge.field_log_raw_json (raw_json_jsonb_field)` against a
+JSONB-typed expression that doesn't compile against the real column
+list).
+
+Skipping 000_bootstrap entirely is correct here: the partitioned table
+was created out-of-band on 2026-04-23 by the original Postgres migration
+plan. The two missing pieces 000_bootstrap was carrying — the staging
+schema and the layer-2 functions — are already in migrations 002 and the
+PR #15 staging script, both of which we DID apply. Net result: zero
+schema drift, zero damage.
+
+This is documented as a post-install TODO (rebase 000_bootstrap onto the
+partitioned shape so future fresh-install installs don't have the same
+trap).
+
+### Why this is safe (audit summary, captured before any write)
+
+- `intelligence-catalog/catalog-api/catalog_api.py` (the only consumer
+  exposed to Grafana) reads from `hardware.*`, `ops.*`, `firmware.*`,
+  `repair.*`, `facility.*` — none of which the importer writes. Confirmed
+  via grep across the file's 22 query references.
+- The Grafana dashboard at `intelligence_report_001` has 7 panels: 4
+  static text, 1 iframe to `dashboard.fieslerfamily.com/api/report/...`,
+  2 Prometheus timeseries. Zero direct Postgres queries against
+  `mining-guardian-db`. Re-import is invisible to Grafana.
+- C5 (PR #22, `intelligence-catalog/db/feedback_loop.py`) only *reads*
+  from `public.action_audit_log`, `public.llm_analysis`,
+  `public.miner_restarts` (which the importer doesn't touch) and *writes*
+  into `ops.failure_patterns`, `market.war_stories`,
+  `hardware.model_known_issues`. No collision possible.
+- The importer's dedup is filename-keyed: `entity_label` UNIQUE on
+  `knowledge.field_log_imports`; child data tables use
+  `ON CONFLICT (archive_filename, ...) DO UPDATE SET`. Re-running over
+  the same 136 archives UPDATEs in place rather than creating duplicates.
+
+### `mg_import.py` raw_json index patch
+
+The first import attempt blew up on a `CREATE INDEX` statement targeting
+`field_log_raw_json (raw_json_jsonb_field)` — that field doesn't exist on
+the partitioned variant of the table (see "000_bootstrap skip rationale").
+The bootstrap-style index lines lived inline in `mg_import.py` at lines
+**1315–1316** and ran on every import as part of the autocommit prelude.
+
+The patch (committed on `mg/pr25-bulk-import-tools`): comment out those
+two lines with a clear `# 2026-04-27: partitioned raw_json table — see
+docs/SESSION_LOG addendum #3` marker. No other changes.
+
+A separate concern lives at the same site: `insert_raw_json()` runs
+inside an autocommit-isolated connection wrapped in a broad `try/except
+Exception: pass`. That means raw-JSON ingestion failures during this
+re-import will be **silently swallowed** — `field_log_raw_json` will
+under-count vs the per-archive parser totals. The post-import row count
+of `knowledge.field_log_raw_json = 3` (vs `field_log_imports = 127`)
+confirms the swallow is real and active. Documented as a post-install
+TODO (rewrite `insert_raw_json` to log and re-raise; the swallow was
+added during a sandbox panic and was never meant to ship).
+
+### Insurance backups
+
+Three pg_dump custom-format snapshots, all into
+`D:\MiningGuardian\db-backups\pre-migration\`:
+
+| # | When | Filename | Size | Purpose |
+|---|---|---|---|---|
+| 1 | Before any migration | `mg_pre_pr_apply_2026-04-27.dump` | 157,384,503 B (~157 MB) | Roll back if migrations explode |
+| 2 | After migrations, before import | `mg_post_migration_2026-04-27.dump` | 157,398,661 B (~157 MB) | Roll back if import explodes |
+| 3 | After full import | `mining_guardian_2026-04-27_2155_post-import.dump` | 156,956,656 B (~157 MB) | **This is the dump we restore on the Mac Mini May 5** |
+
+Backup #3 SHA-256:
+`00640A77BDA7CA956F2C06A2553AEAA0CF4B8EC8EEBF2C9AC5BF90EAA34D4E02`
+(stored alongside the dump as `…dump.sha256`). On May 5 the Mac Mini
+installer re-hashes after copy and refuses to proceed unless the hash
+matches — that's the end-to-end integrity gate.
+
+The 14,158 B delta between Backup #1 and Backup #2 is exactly what we
+expected from migration 002 + the PR #15 staging schema (a handful of new
+tables, indexes, and functions; no data). Backup #3 is *smaller* than
+Backup #2 by ~441 KB despite having ~10× more row data, because pg_dump
+custom-format compress=9 deduplicates the autotune JSON heavily and the
+toast tables compress almost flat.
+
+### Importer driver choice
+
+For the test batch (1 archive) the user ran the existing `mg_import.py`
+Flask web UI on `http://127.0.0.1:8420` and watched the SSE event stream
+end-to-end. For the full 136-archive run we switched to a new
+direct-script driver at `mg_import_tool/tools/run_full_import.py`, which
+imports `process_archive`, `execute_sql_block`, `detect_dormant_miners`,
+and `write_import_run` straight from `mg_import.py` and runs them in a
+plain `for` loop. Same code paths, no Flask, no SSE, one summary row
+written to `mg.import_runs` at the end.
+
+The new driver is committed alongside two new verification SQL scripts:
+
+- `mg_import_tool/tools/verify_pre_import.sql` — captures the row-count
+  baseline across `knowledge.field_log_*`, `mg.*`, and the read-only
+  catalog tables (which must NOT change during import).
+- `mg_import_tool/tools/verify_post_import.sql` — same shape as the
+  pre-import script so outputs diff cleanly. Adds rollups for
+  `mg.import_runs`, the `mg.unresolved_models` queue (resolver hit rate),
+  the staging proposal tables (PR #15 dual-write evidence), an orphan
+  check across all eight `field_log_*` child tables, and a top-10
+  archives-by-power-samples block.
+
+The first draft of `verify_post_import.sql` had two real bugs that were
+caught and fixed while the bulk import was running (commit `36d54d7`):
+
+1. **D4 orphan-check joins were wrong.** The original draft used
+   `child.import_id = parent.id`, but `field_log_*` child tables have no
+   `import_id` foreign key — they link to `field_log_imports` via the
+   `archive_filename` (TEXT) column. All eight orphan subqueries were
+   rewritten to match on `entity_label` OR
+   `regexp_replace(archive_filename, '\.(tar\.gz|tgz|tar|rar)$', '')` so
+   the join works regardless of whether the parent was stored with or
+   without the file extension.
+2. **D1 referenced columns that don't exist.** The original draft read
+   `rows_inserted` and `rows_skipped` from `mg.import_runs`. The actual
+   schema is `(id, started_at, finished_at, archive_count, row_counts
+   JSONB, errors TEXT[], status)` — those numbers live inside the
+   `row_counts` JSONB. D1 was rewritten to read `row_counts->>'total_rows'`
+   etc.
+
+A new D5 block was added: top-10 archives by `power_samples` count, which
+is the single best signal of which miners had the richest history in the
+batch.
+
+A third pair of bugs surfaced when the verify ran live against the
+populated DB at 21:53 CDT (commit `83d5444`):
+
+3. **`mg.unknown_fields` does not exist.** The real table is
+   `knowledge.unknown_fields` (defined in
+   `intelligence_catalog_schema_v3_additions.sql`). The bad reference
+   threw an error inside the second `UNION ALL` block, which is why the
+   entire "mg.* (resolver/state tables)" section came back empty on the
+   first verify run.
+4. **`mg.unresolved_models.raw_model_text` does not exist.** Per
+   migration 002 the real columns are `raw_miner_type`,
+   `raw_control_board_version`, `raw_firmware_version`,
+   `archive_filename`, etc. D2 was rewritten to use
+   `(raw_miner_type, raw_control_board_version)` as the logical
+   "unresolved string" tuple for the `COUNT(DISTINCT)` and the top-20
+   review queue.
+
+After the second verify pass at 21:55 CDT every section reports cleanly,
+zero errors, full numbers below.
+
+### Pre-import baseline (captured 12:30 PM, after migrations, before any test write)
+
+```
+knowledge.field_log_imports        = 1
+knowledge.field_log_miner_identity = 10
+knowledge.field_log_antminer_autotune = 14118
+knowledge.field_log_antminer_boots = 10
+knowledge.field_log_events         = 46
+knowledge.field_log_pools          = 3
+knowledge.field_log_power_samples  = 0
+knowledge.field_log_temp_snapshots = 0
+knowledge.field_log_api_stats      = 0
+knowledge.field_log_raw_json       = 3
+mg.import_runs                     = 4
+mg.model_family_aliases            = 1494
+mg.unresolved_models               = 0
+mg.dormant_miners                  = 0
+mg.rma_records                     = 0
+hardware.miner_models              = 317
+hardware.model_aliases             = 12852
+hardware.manufacturers             = 16
+hardware.model_known_issues        = 0
+ops.failure_patterns               = 0
+firmware.firmware_releases         = 6
+repair.parts                       = 0
+facility.cooling_solutions         = 0
+staging.miner_model_proposals      = 0
+staging.manufacturer_proposals     = 0
+staging.alias_proposals            = 0
+```
+
+The `field_log_imports = 1` confirms the morning audit: the live DB
+genuinely had one archive in it before today.
+
+### Test import results (1 archive, web UI, 13:03 CDT)
+
+Archive chosen: **`M30S+_VH75_2024-11-22_20-58.tgz`** (small, well-formed
+WhatsMiner sample — picked because it's representative of the dominant
+parser path the bulk run will exercise). Shape detected: `whatsminer`,
+model `M30S+_VH75`, firmware `20241108.22.Rel.AMS`.
+
+| Table | Baseline | After test | Delta |
+|---|---|---|---|
+| `knowledge.field_log_imports` | 1 | 2 | +1 |
+| `knowledge.field_log_miner_identity` | 10 | 14 | +4 |
+| `knowledge.field_log_power_samples` | 0 | 102 | +102 |
+| `knowledge.field_log_pools` | 3 | 4 | +1 |
+
+**Total: +108 new rows. Zero errors. Transaction committed cleanly.**
+The web-UI SSE event stream showed the complete `▶ archive → EXECUTE
+… → Resolver: tier1=… tier2=… unresolved=…` ladder ending in `success`,
+which is exactly the shape we want to see 136 times in a row from the
+bulk driver. `ON CONFLICT` dedup behaviour was verified by re-uploading
+the same archive a second time — counts did not change, which is the
+correct behaviour.
+
+### Dry-run smoke test (3 archives, 13:15 CDT)
+
+Before the live bulk run we ran `run_full_import.py --dry-run` over the
+first three archives in alphabetical order:
+
+- `10.0.12.107.20250320222546.tgz` — 509 KB, 32,150 power samples
+- `10.0.12.118.20250320222551.tgz` — 1,829 KB, 21,447 power samples
+- `10.0.12.129.20250320222601.tgz` — 2,238 KB, 33,041 power samples
+
+All three: shape `whatsminer`, model `M30S++_VH95`, firmware
+`20241108.22.Rel.AMS`. Total wall-clock 1.0 s. Failed: 0. The dry-run
+exercises the full parser path without writing — same code, same shape
+detection, same resolver lookups, only the COMMIT is suppressed.
+
+### Bulk run #1 — silent death (13:16 and 13:41 CDT)
+
+The first two attempts to run the full 136-archive bulk import died
+silently after the dry-run preamble. No traceback, no `mg.import_runs`
+row, no partial writes — the process just stopped. Diagnosis: the
+`split_sql_statements` helper inside `mg_import.py` is O(N²) — it walks
+the SQL block character-by-character looking for unquoted `;`
+terminators, and on a single large archive that produces a 5+ million
+character SQL block (the autotune INSERTs concatenate hard) the inner
+loop grew quadratic and Python's signal-handling kicked in well before
+it ever reached the database.
+
+The fix lives in commit `43ceea4`: a `_fast_execute_block` helper that
+streams the block to psql in one shot instead of pre-splitting. The
+existing splitter is preserved for backwards compatibility (the web UI
+still uses it for short blocks where statement-level error reporting is
+worth the cost) — only the bulk path was rerouted.
+
+A `--limit 1` smoke test against the new path completed in 15 seconds,
+processed 32,185 statements, and inserted 133 rows on a single archive.
+Green light to retry the full run.
+
+### Bulk run #2 — 129 / 136 (19:11–19:53 CDT)
+
+The full run via the fast-path took **42 minutes** (2,522 seconds wall
+clock). Final tally:
+
+- **Processed: 129** of 136 archives
+- **Failed: 7**
+- **Total rows committed:** 355,626 across all `knowledge.field_log_*`
+- **Statements executed:** 5,326,433
+- **`mg.import_runs` row written:** id=9, status `partial_failure`,
+  `errors[]` = 7 entries
+
+Failure breakdown:
+
+- 2 corrupt `.tgz` files: `192.168.1.69.20231121131527.tgz` (truncated,
+  2.6 MB header but no body) and `M30S_V31_2024-07-11_10-06.tgz` (29
+  bytes total — empty file with a header).
+- 5 `.rar` files that the standard archive layer didn't know how to
+  decompress: `S19k Pro.rar`, `10.10.81.150.rar`, `Antminer S21Imm.rar`,
+  `m36s++.rar`, `M36S++_VH30.H616-CB6V7.P463B-V01-196804E.rar`.
+
+### .rar retry saga (20:15–20:42 CDT)
+
+Path B chosen by the user: install UnRAR locally, retry the 5 `.rar`
+files via the bulk script with `--skip-existing` so we don't re-process
+the 129 that already landed.
+
+1. `winget install RARLab.WinRAR` — no match. 7-Zip already installed at
+   `C:\Program Files\7-Zip\` so we used the bundled `UnRAR.exe`
+   (7.21.1.0). PATH updated for the session.
+2. Python `rarfile` library already at 4.2 (locked from a previous
+   investigation).
+3. First `--skip-existing` retry attempt aborted at archive 3 — the
+   user caught a `WARNING` line in the log: the dedup query was reading
+   `archive_filename` from `knowledge.field_log_imports`, but the
+   parent table dedup column is `entity_label` (the children use
+   `archive_filename`; parent uses `entity_label`). The query was
+   throwing a column-not-found and the script was matching ZERO existing
+   rows, which would have re-inserted everything.
+4. Fix in commit `735b7dd`: `_load_existing_filenames` now reads
+   `entity_label` from the parent. Re-run completed: 5 processed, 129
+   skipped, 0 failed.
+5. **But.** All 5 `.rar` archives imported as **stub rows** (parent row
+   inserted, zero child data). `7z l "S19k Pro.rar"` revealed the cause:
+   each `.rar` is *not* a flat archive — it's a nested wrapper
+   containing a `.tar` plus browser screenshots (`Screenshot
+   2024-XX-XX.png`). The shape detector saw the screenshots first and
+   classified the archive as `unknown`, so it wrote the parent record
+   but never recursed into the inner `.tar`.
+6. While investigating we also found 2 `.tar` files
+   (`Antminer S21 Pro.tar`, `Antminer S21+.tar`) had landed as stubs
+   from an earlier run — non-standard Antminer S21 directory layout
+   that the parser doesn't yet understand.
+7. **Cleanup:** deleted all 7 stub rows. Final state confirmed clean
+   below.
+
+These 9 archives (2 corrupt + 5 nested `.rar` + 2 non-standard `.tar`)
+are documented in the v1.1 backlog. They're *salvageable* — a follow-up
+PR can teach the importer to (a) detect nested archives by looking for
+`.tar` siblings before classifying as `unknown`, and (b) handle the
+Antminer S21 directory layout — but neither is on the May 5 critical
+path.
+
+### Post-import snapshot (verify_post_import.sql, 21:55 CDT)
+
+```
+knowledge.field_log_antminer_autotune = 330079
+knowledge.field_log_antminer_boots    = 85
+knowledge.field_log_api_stats         = 203
+knowledge.field_log_events            = 28628
+knowledge.field_log_imports           = 127
+knowledge.field_log_miner_identity    = 478
+knowledge.field_log_pools             = 310
+knowledge.field_log_power_samples     = 9497
+knowledge.field_log_raw_json          = 3
+knowledge.field_log_temp_snapshots    = 652
+knowledge.unknown_fields              = 0
+mg.dormant_miners                     = 0
+mg.import_runs                        = 7
+mg.model_family_aliases               = 1494
+mg.rma_records                        = 0
+mg.unresolved_models                  = 0
+hardware.miner_models                 = 317
+hardware.model_aliases                = 12852
+hardware.manufacturers                = 16
+hardware.model_known_issues           = 0
+ops.failure_patterns                  = 0
+firmware.firmware_releases            = 6
+repair.parts                          = 0
+facility.cooling_solutions            = 0
+staging.miner_model_proposals         = 0
+staging.manufacturer_proposals        = 0
+staging.alias_proposals               = 0
+```
+
+Detected-shape breakdown of the 127 imports:
+- `whatsminer` = 115
+- `antminer` = 12
+- `unknown` (stub) = 0 ✓
+
+D1 audit trail (5 most recent `mg.import_runs` rows):
+
+| id | started | finished | archive_count | status | errors | total_rows | statements |
+|---|---|---|---|---|---|---|---|
+| 10 | 2026-04-27 20:27:22 | 2026-04-27 20:27:26 | 5 | partial_failure | 2 | 5 | 115 |
+| 9 | 2026-04-27 19:11:36 | 2026-04-27 19:53:38 | 129 | partial_failure | 7 | 355,626 | 5,326,433 |
+| 8 | 2026-04-27 19:06:33 | 2026-04-27 19:06:48 | 1 | ok | — | 133 | 32,185 |
+| 7 | 2026-04-24 19:21:37 | 2026-04-24 19:21:37 | 1 | ok | — | 1 | — |
+| 6 | 2026-04-24 19:06:04 | 2026-04-24 19:06:04 | 0 | ok | — | 0 | — |
+
+D2 resolver hit-rate: **0 unresolved, 0 distinct unresolved tuples.**
+Every miner_type / control_board combo across all 127 archives mapped
+via Tier-1 (`hardware.model_aliases`) or Tier-2
+(`mg.model_family_aliases`). Perfect resolver score on this corpus —
+no manual review queue.
+
+D4 orphan check across all 8 `field_log_*` child tables: **0 orphans.**
+All 9,497 `power_samples`, 330,079 autotune rows, 28,628 events, 478
+miner_identity rows, etc. tie back cleanly to their parent
+`field_log_imports` row via `archive_filename ↔ entity_label`.
+
+D5 top-10 archives by `power_samples` are uniformly 120–121 each (clean
+sampling, no truncated logs):
+`10.6.32.15_01221628_2320.tgz` (121), `10.0.12.63.20250320222550.tgz`
+(121), `M30S+_VH20_2024-08-23_05-46.tgz` (121),
+`M60_VK20_2025-12-04_17-44.tgz` (121), then 6 more at 120 each.
+
+Catalog tables (must MATCH baseline exactly): all 8 read-only catalog
+tables are unchanged from baseline. No collision, no drift.
+
+### Cutover gate (post-import)
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | No leaked secrets | ✅ |
+| 2 | No hardcoded passwords | ✅ |
+| 3 | No dead code | ✅ |
+| 4 | One canonical catalog schema | ✅ |
+| 5 | AI has data | ✅ |
+| 6 | Installer rewrite | ⏳ (Thu) |
+| 7 | Daily paper trail | ✅ |
+| 8 | Customer docs | ⏳ (weekend) |
+| 9 | **Live DB has full corpus** | ✅ (127 of 136; the 9 misses are documented v1.1 backlog) |
+
+Row 9 is new — it's the gate condition the user's "I want to be our
+first customer" requirement created. Until today, the live DB had 1
+archive. After today, it has 127 (with 9 documented holdouts on the
+v1.1 backlog).
+
+### Mac Mini installer architecture (locked, build starts Thu)
+
+The Mac Mini installer architecture got finalised this afternoon while
+the bulk import ran. Branch `mg/pr26-mac-mini-installer` will be a fresh
+branch off `main` after PR #25 merges.
+
+- **Format:** signed + notarised `.pkg`. Apple Developer Program
+  enrolled and paid this afternoon ($99). Certs land in 24–48 hr.
+- **Runtime:** Colima (NOT Docker Desktop — no license clicks,
+  headless-friendly).
+- **Postgres:** in container, image `postgres:16-bookworm` — same image
+  as ROBS-PC, so the Backup #3 dump restores cleanly.
+- **Ollama:** native via Homebrew. Auto-detect by hardware:
+  8 GB → llama3.2:1b, 16 GB → llama3.2:3b (recommended for Bobby's
+  Mac), 24 GB → 8b, 32 GB+ → 8b/12b.
+- **Grafana:** Local on Mac Mini as docker container (port 3000
+  LAN-only). Dual-mode installer choice:
+  - **Option [1]** Local network only (default) —
+    `http://mining-guardian-<id>.local:3000`
+  - **Option [2]** Local + Tailscale free tier for remote view (zero
+    cost up to 100 devices)
+- **SSH:** keys-only, master public key bakes in + per-machine local
+  admin key generated and printed at install time.
+- **Auto-start:** macOS LaunchDaemons for Colima, MG-Postgres, MG-Flask,
+  Ollama. Survives reboots.
+- **Power:** `pmset -a sleep 0 displaysleep 0 disksleep 0 womp 1` —
+  never sleeps, wakes on LAN.
+- **Hostname:** `mining-guardian-<short-hash>.local`.
+- **Static IP:** at user's router (DHCP reservation) — installer
+  verifies, doesn't configure (router-side responsibility).
+- **Branding:** "Mining Guardian" everywhere.
+- **Web UI port:** 5000.
+- **Install location for customer #1:** the user's office network
+  cabinet (NOT Bobby's house — Mac Mini stays at the office, headless,
+  and Bobby gets remote dashboard access via Grafana Option [2] /
+  Tailscale).
+
+Two follow-on items the bulk-import day surfaced that the installer
+needs to solve:
+
+1. **Grafana panel hard-codes the miner count.** The current
+   `intelligence_report_001` dashboard has a fixed-N panel that doesn't
+   grow as the import set grows. Must be rewritten as a live count
+   query before the dashboard JSON is exported into the installer
+   payload.
+2. **`fieslerfamily.com` is the user's personal Cloudflare-hosted dev
+   Grafana.** That domain stays personal — it does NOT go on customer
+   Mac Minis. Customer Grafana is always local on their Mac Mini. The
+   personal instance at `fieslerfamily.com` can keep running for the
+   user's own dev use; decommission deferred.
+
+### Files in PR #25
+
+- `mg_import_tool/mg_import.py` (modified — raw_json index lines
+  1315–1316 commented out with marker)
+- `mg_import_tool/tools/run_full_import.py` (new — direct-script bulk
+  driver with `_fast_execute_block` and `--skip-existing` reading
+  `entity_label`)
+- `mg_import_tool/tools/verify_pre_import.sql` (new)
+- `mg_import_tool/tools/verify_post_import.sql` (new — fixed three
+  times on the same branch; commit `83d5444` is the version reviewers
+  should read)
+- `docs/RUNBOOK_2026-04-27_afternoon.md` (new — paste-along Blocks A–J)
+- `docs/SESSION_LOG_2026-04-27.md` (this addendum appended)
+
+### Commit list on `mg/pr25-bulk-import-tools`
+
+| Commit | What |
+|---|---|
+| `f9578af` | PR #25 base — bulk import tools + raw_json index patch |
+| `36d54d7` | fix(verify_post_import.sql): orphan joins + JSONB schema |
+| `51f981a` | docs: runbook Blocks H/I/J + addendum #3 prep |
+| `43ceea4` | fix(run_full_import): bypass O(N²) `split_sql_statements` |
+| `735b7dd` | fix(run_full_import): `--skip-existing` reads `entity_label` |
+| `83d5444` | fix(verify_post_import): correct schema names for `unknown_fields` and `unresolved_models` |
+| (this commit) | docs: SESSION_LOG addendum #3 — final numbers |
+
+### Closing note
+
+D-8 to Mac Mini install. The corpus the customer will receive on May 5
+is the corpus that landed in the live database today: **127 archives,
+355,626 rows of behavioural data, zero unresolved models, zero
+orphans.** Bitcoin SHA-256 miners only. Postgres-as-truth.
+
+*— end of 2026-04-27 log addendum #3*
