@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.approval-api.plist (PR I-2 / Bucket-3 installer)
+
+  launchd LaunchDaemon for the Mining Guardian approval API (the FastAPI
+  service that handles the human-in-the-loop reset/restart approval queue
+  used by the Slack listener and the dashboard). Mirrors the systemd unit
+  `approval-api.service` on ROBS-PC.
+
+  Install path: copied by postinstall.sh to
+      /Library/LaunchDaemons/com.miningguardian.approval-api.plist
+
+  Same path + env conventions as the other plists in this directory.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.approval-api</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/usr/local/MiningGuardian/bin/approval_api_launcher.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/MiningGuardian/logs/approval_api.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/MiningGuardian/logs/approval_api.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
