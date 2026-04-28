@@ -5,10 +5,15 @@ Provides synchronous access to the Intelligence Catalog API running on
 ROBS-PC (100.110.87.1:8420) for all AI consumers on the VPS.
 
 Features:
-  - TTL cache (5 min) to avoid redundant API calls
+  - Live reads on every call — no client-side cache (D-14 PR 1/5)
   - Circuit breaker (3 failures → skip 60s)
   - Never raises — returns empty string on any failure
   - Uses requests (sync, already installed)
+
+D-14 note: the previous 5-minute TTL cache was removed because operational
+facts (firmware notes, repair patterns, thresholds) are edited live and a
+stale read is worse than an extra HTTP round-trip. The catalog API runs on
+the same Mac Mini post-cutover; a local round-trip is cheap.
 
 Usage:
   from ai.catalog_context import get_catalog_context, get_miner_catalog_context
@@ -35,10 +40,6 @@ _CATALOG_KEY_PLACEHOLDERS = {
     "", "CHANGE_ME_TO_A_REAL_SECRET",
     "__GENERATE_AT_INSTALL_TIME__", "__SET_BY_INSTALLER__",
 }
-
-# TTL cache: {cache_key: (timestamp, value)}
-_cache: dict = {}
-_CACHE_TTL = 300  # 5 minutes
 
 # Circuit breaker state
 _failure_count = 0
@@ -70,17 +71,6 @@ def _record_success():
     _circuit_open_until = 0.0
 
 
-def _cache_get(key: str) -> Optional[str]:
-    entry = _cache.get(key)
-    if entry and (time.time() - entry[0]) < _CACHE_TTL:
-        return entry[1]
-    return None
-
-
-def _cache_set(key: str, value: str):
-    _cache[key] = (time.time(), value)
-
-
 def _headers() -> Optional[dict]:
     """Build auth headers, or return None when the API key is unconfigured.
 
@@ -110,11 +100,6 @@ def get_catalog_context(miner_models: List[str],
     if not miner_models:
         return ""
 
-    cache_key = f"bundle:{'|'.join(sorted(set(miner_models)))}"
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        return cached
-
     if _is_circuit_open():
         return ""
 
@@ -135,7 +120,6 @@ def get_catalog_context(miner_models: List[str],
         if resp.status_code == 200:
             text = resp.json().get("prompt_text", "")
             _record_success()
-            _cache_set(cache_key, text)
             logger.info("Catalog scan-bundle OK: %d chars in %.1fs", len(text), elapsed)
             return text
         logger.warning("Catalog scan-bundle HTTP %s (%.1fs)", resp.status_code, elapsed)
@@ -206,11 +190,6 @@ def get_miner_catalog_context(model_name: str) -> str:
     if not model_name:
         return ""
 
-    cache_key = f"miner:{model_name}"
-    cached = _cache_get(cache_key)
-    if cached is not None:
-        return cached
-
     if _is_circuit_open():
         return ""
 
@@ -232,13 +211,14 @@ def get_miner_catalog_context(model_name: str) -> str:
         if resp.status_code == 200:
             text = _format_miner_knowledge(resp.json(), model_name)
             _record_success()
-            _cache_set(cache_key, text)
             logger.info("Catalog miner-knowledge OK [%s]: %d chars in %.1fs",
                         model_name, len(text), elapsed)
             return text
         if resp.status_code == 404:
-            # Model not in catalog yet — not an error, cache empty
-            _cache_set(cache_key, "")
+            # Model not in catalog yet — not an error.
+            # D-14: no cache, so a missing model will re-query each call;
+            # that's fine because adding a model in the catalog should be
+            # picked up on the very next scan.
             logger.debug("Catalog: no data for model '%s'", model_name)
             return ""
         logger.warning("Catalog miner-knowledge HTTP %s for %s (%.1fs)",
