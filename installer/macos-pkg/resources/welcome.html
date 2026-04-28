@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Welcome — Mining Guardian</title>
+<style>
+  body {
+    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    color: #1d1d1f;
+    margin: 24px 28px;
+    line-height: 1.45;
+  }
+  h1 { font-size: 22px; margin: 0 0 8px 0; }
+  h2 { font-size: 14px; margin: 18px 0 6px 0; color: #424247; }
+  p, li { font-size: 13px; }
+  ul { margin: 0; padding-left: 18px; }
+  .meta { color: #6e6e73; font-size: 12px; margin-top: 4px; }
+  .callout {
+    background: #f5f5f7;
+    border-left: 3px solid #0066cc;
+    padding: 10px 12px;
+    margin: 14px 0;
+    font-size: 12.5px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Welcome to Mining Guardian</h1>
+<p class="meta">
+  Bitcoin mining-fleet observability and auto-remediation, running entirely
+  on your hardware.
+</p>
+
+<h2>What this installer does</h2>
+<ul>
+  <li>Lays down the Mining Guardian application at
+      <code>/usr/local/MiningGuardian</code>.</li>
+  <li>Stands up a local Postgres 16 database in a Colima-managed
+      container, bound to <code>127.0.0.1:5432</code> only.</li>
+  <li>Installs Ollama and pulls a local LLM model sized to your Mac's RAM
+      (16 GB → llama3.2:3b, 24 GB+ → qwen2.5:14b-instruct-q4_K_M).</li>
+  <li>Registers four background services so Mining Guardian comes up
+      automatically every time this Mac boots.</li>
+</ul>
+
+<div class="callout">
+  <strong>One network step at first install:</strong> the local LLM model
+  is pulled from <code>ollama.com</code> the first time you run this
+  installer. After install, Mining Guardian operates entirely offline —
+  no cloud-only dependencies, no telemetry, nothing leaves your network.
+</div>
+
+<h2>What you'll need</h2>
+<ul>
+  <li>An Apple Silicon Mac (M-series) running macOS 13 (Ventura) or later.</li>
+  <li>At least 16 GB of RAM and 20 GB of free disk on the boot volume.</li>
+  <li>Network access for the one-time Ollama model pull (~2 GB at 16 GB
+      tier, ~9 GB at 24 GB+ tier).</li>
+  <li>Your Mac's administrator password — Installer.app will ask for it
+      when you click Install.</li>
+</ul>
+
+<h2>What happens after Install</h2>
+<p>
+  Once the installer finishes, the four Mining Guardian services start
+  immediately and a baseline scan runs in the background. You can open
+  the dashboard at <code>http://127.0.0.1:8080/</code> within about 30
+  seconds.
+</p>
+
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Mining Guardian — Installed</title>
+<style>
+  body {
+    font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    color: #1d1d1f;
+    margin: 24px 28px;
+    line-height: 1.45;
+  }
+  h1 { font-size: 22px; margin: 0 0 8px 0; }
+  h2 { font-size: 14px; margin: 18px 0 6px 0; color: #424247; }
+  p, li { font-size: 13px; }
+  ul { margin: 0; padding-left: 18px; }
+  code { background: #f5f5f7; padding: 1px 4px; border-radius: 3px; }
+  .url { color: #0066cc; }
+</style>
+</head>
+<body>
+
+<h1>Mining Guardian is running.</h1>
+<p>
+  All four background services are now registered with launchd and
+  will start automatically every time this Mac boots. A first-run
+  baseline scan is running in the background — give it about 30
+  seconds before opening the dashboard.
+</p>
+
+<h2>Quick links</h2>
+<ul>
+  <li>Dashboard: <code class="url">http://127.0.0.1:8080/</code></li>
+  <li>Approval queue: <code class="url">http://127.0.0.1:8081/</code></li>
+  <li>Install log: <code>/var/log/mining-guardian/install-postinstall.log</code></li>
+  <li>Service logs: <code>/usr/local/MiningGuardian/logs/</code></li>
+  <li>Install receipt: <code>/etc/mining-guardian/install-receipt.json</code></li>
+</ul>
+
+<h2>Verifying the four services</h2>
+<p>From Terminal.app:</p>
+<pre><code>sudo launchctl print system/com.miningguardian.scanner
+sudo launchctl print system/com.miningguardian.dashboard-api
+sudo launchctl print system/com.miningguardian.approval-api
+sudo launchctl print system/com.miningguardian.feedback-loop-daemon</code></pre>
+
+<h2>Uninstall</h2>
+<p>
+  Run <code>sudo /usr/local/MiningGuardian/bin/uninstall.sh</code> to
+  cleanly stop all four services, drop the Postgres container, and
+  remove <code>/usr/local/MiningGuardian</code>. Your Postgres data
+  volume is preserved at <code>/usr/local/MiningGuardian/postgres-data</code>
+  by default — pass <code>--purge-data</code> to remove it.
+</p>
+
+</body>
+</html>
