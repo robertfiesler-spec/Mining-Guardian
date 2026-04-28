@@ -927,22 +927,43 @@ def get_archive_id_by_label(conn_params: dict, entity_label: str):
 # ---------------------------------------------------------------------------
 
 def insert_raw_json(conn_params: dict, archive_filename: str,
-                    file_path_in_archive: str, payload: dict):
+                    source_file: str, parser: str, payload: dict,
+                    sha256: str, entity_label: str):
     """
-    INSERT into knowledge.field_log_raw_json.
+    INSERT one row into knowledge.field_log_raw_json (canonical partitioned shape).
 
-    Schema (v3.1 — idempotent bootstrap adds this table at startup):
-        id BIGSERIAL PRIMARY KEY,
+    Canonical schema (matches mg_import_tool/sql/migrations/000 + 002 after
+    the B-3 fix):
+        id              BIGSERIAL,
+        entity_label    TEXT NOT NULL,
         archive_filename TEXT NOT NULL,
-        file_path_in_archive TEXT NOT NULL DEFAULT '',
-        raw_content JSONB NOT NULL,
-        ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        source_file     TEXT NOT NULL,
+        parser          TEXT NOT NULL,
+        raw_payload     JSONB NOT NULL,
+        sha256          TEXT NOT NULL,
+        ingested_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (id, ingested_at),
+        PARTITION BY RANGE (ingested_at)
 
-    ON CONFLICT (archive_filename, file_path_in_archive) DO NOTHING
-    ensures idempotent re-import.
+    No ON CONFLICT clause: the canonical table has no unique constraint on
+    (archive_filename, source_file) — idempotency at re-import time is
+    enforced one level up by knowledge.field_log_imports.entity_label
+    UNIQUE, so a re-imported archive never reaches this writer twice.
+
+    History
+    -------
+    Pre-2026-04-28 versions of this function targeted a non-partitioned
+    table with columns (archive_filename, file_path_in_archive, raw_content)
+    and swallowed every exception with `except Exception: pass`. During the
+    2026-04-27 live import, 124 of 127 archives silently lost their raw
+    JSON because the live DB was already on the canonical partitioned shape
+    and every INSERT raised UndefinedColumn — see docs/LATENT_BUGS.md §B-4.
+    This rewrite lands the canonical schema and replaces the silent swallow
+    with a logged ERROR + re-raise so callers cannot ship blind.
     """
     if not PSYCOPG2_AVAILABLE or not conn_params or not archive_filename:
         return
+    log = get_run_logger('mg_raw_json')
     try:
         conn = psycopg2.connect(
             host=conn_params.get('host', 'localhost'),
@@ -957,16 +978,29 @@ def insert_raw_json(conn_params: dict, archive_filename: str,
         cur.execute(
             """
             INSERT INTO knowledge.field_log_raw_json
-                (archive_filename, file_path_in_archive, raw_content, ingested_at)
-            VALUES (%s, %s, %s::jsonb, NOW())
-            ON CONFLICT (archive_filename, file_path_in_archive) DO NOTHING
+                (entity_label, archive_filename, source_file, parser,
+                 raw_payload, sha256, ingested_at)
+            VALUES (%s, %s, %s, %s, %s::jsonb, %s, NOW())
             """,
-            (archive_filename, file_path_in_archive or '', json.dumps(payload))
+            (entity_label or archive_filename,
+             archive_filename,
+             source_file or '',
+             parser or 'mg_import',
+             json.dumps(payload),
+             sha256 or '')
         )
         cur.close()
         conn.close()
     except Exception as exc:
-        get_run_logger('mg_raw_json').debug('insert_raw_json error: %s', exc)
+        # B-4 fix: never swallow. Log the failure with full context and
+        # propagate. Callers that want best-effort semantics MUST wrap the
+        # call in their own try/except so the swallow is explicit and
+        # auditable, not hidden inside this helper.
+        log.error(
+            'insert_raw_json FAILED archive=%s source=%s parser=%s: %s',
+            archive_filename, source_file, parser, exc, exc_info=True,
+        )
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -1287,14 +1321,43 @@ CREATE TABLE IF NOT EXISTS knowledge.field_log_events (
     UNIQUE (archive_filename, source_file, event_idx)
 );
 
+-- knowledge.field_log_raw_json — canonical partitioned shape (B-4/B-5 fix).
+-- Mirrors db/migrations/000_bootstrap_field_log_tables.sql §raw_json (rebased
+-- in B-3) and 002_layer2_and_learning_foundation.sql §7. The earlier
+-- 5-column non-partitioned shape with file_path_in_archive/raw_content has
+-- been retired because it disagreed with what the live DB has been running
+-- for weeks. All statements are IF NOT EXISTS so live DB is unaffected.
 CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json (
-    id BIGSERIAL PRIMARY KEY,
-    archive_filename TEXT NOT NULL,
-    file_path_in_archive TEXT NOT NULL DEFAULT '',
-    raw_content JSONB NOT NULL,
-    ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (archive_filename, file_path_in_archive)
-);
+    id                BIGSERIAL,
+    entity_label      TEXT NOT NULL,
+    archive_filename  TEXT NOT NULL,
+    source_file       TEXT NOT NULL,
+    parser            TEXT NOT NULL,
+    raw_payload       JSONB NOT NULL,
+    sha256            TEXT NOT NULL,
+    ingested_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id, ingested_at)
+) PARTITION BY RANGE (ingested_at);
+
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2026_q2
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2026_q3
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2026_q4
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2027_q1
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2027-01-01') TO ('2027-04-01');
+
+CREATE INDEX IF NOT EXISTS idx_raw_json_entity
+    ON knowledge.field_log_raw_json (entity_label);
+CREATE INDEX IF NOT EXISTS idx_raw_json_archive
+    ON knowledge.field_log_raw_json (archive_filename);
+CREATE INDEX IF NOT EXISTS idx_raw_json_sha
+    ON knowledge.field_log_raw_json (sha256);
 
 CREATE SCHEMA IF NOT EXISTS mg;
 
@@ -1312,15 +1375,12 @@ CREATE TABLE IF NOT EXISTS mg.import_runs (
 CREATE UNIQUE INDEX IF NOT EXISTS field_log_miner_identity_archive_entity_idx
     ON knowledge.field_log_miner_identity (archive_filename, entity_label);
 
--- 2026-04-27 (PR #25 prep): Index on (archive_filename, file_path_in_archive)
--- conflicts with the live DB's partitioned field_log_raw_json shape
--- introduced by 002_layer2 migration. The bootstrap CREATE TABLE above is a
--- no-op (table already exists), but this index references a column that does
--- not exist on the partitioned table. Skipping is safe: insert_raw_json
--- swallows errors at runtime, and no downstream consumer reads raw_json.
--- TODO post-install: refactor insert_raw_json to write to partitioned schema.
--- CREATE UNIQUE INDEX IF NOT EXISTS field_log_raw_json_archive_path_idx
---     ON knowledge.field_log_raw_json (archive_filename, file_path_in_archive);
+-- B-4/B-5 fix: the legacy unique index on (archive_filename,
+-- file_path_in_archive) has been removed entirely. The canonical partitioned
+-- shape above does not have a file_path_in_archive column, and the
+-- non-unique indexes idx_raw_json_archive / idx_raw_json_entity /
+-- idx_raw_json_sha provide the lookup paths we need. insert_raw_json no
+-- longer relies on ON CONFLICT.
 
 -- v3.2: resolver columns on field_log_miner_identity (safe no-op if 002 migration ran)
 ALTER TABLE knowledge.field_log_miner_identity
@@ -2823,18 +2883,32 @@ def process_archive(file_bytes: bytes, filename: str,
 # ---------------------------------------------------------------------------
 
 def _insert_archive_raw_json_files(conn_params: dict, archive_filename: str,
-                                    tmp_dir: str):
+                                    tmp_dir: str, shape: str = '',
+                                    archive_meta: dict = None) -> dict:
     """
     Walk tmp_dir and call insert_raw_json for every *.json file found, plus
     any *.log file whose content starts with '{' or '[' (best-effort JSON).
-    Uses ON CONFLICT DO NOTHING for idempotency.
+
     Skips files larger than 50 MB to avoid JSONB bloat.
+
+    Returns a stats dict {scanned, inserted, skipped, failed} so the caller
+    can assert against expected ratios (see B-4 fix — the live 2026-04-27
+    import lost 124 rows because every per-file failure was swallowed inside
+    the now-removed `except Exception: pass`). Per-file insert failures are
+    logged at ERROR (not debug) and counted in `failed`; they do not abort
+    the walk, but they do propagate to the caller via the return value so
+    a downstream invariant check can fail loudly.
     """
     log = get_run_logger('mg_raw_json')
+    stats = {'scanned': 0, 'inserted': 0, 'skipped': 0, 'failed': 0}
     if not tmp_dir or not os.path.isdir(tmp_dir):
-        return
+        return stats
     MAX_BYTES = 50 * 1024 * 1024  # 50 MB per file cap
-    inserted = 0
+    archive_meta = archive_meta or {}
+    archive_sha256 = archive_meta.get('sha256') or ''
+    parser = _shape_to_parser(shape) + ':raw_files'
+    entity_label = archive_filename  # walker rows reuse the archive label
+
     for root, _dirs, files in os.walk(tmp_dir):
         for fname in files:
             fpath = os.path.join(root, fname)
@@ -2843,28 +2917,78 @@ def _insert_archive_raw_json_files(conn_params: dict, archive_filename: str,
             is_log_ext = flower.endswith('.log')
             if not (is_json_ext or is_log_ext):
                 continue
+            stats['scanned'] += 1
             try:
                 fsize = os.path.getsize(fpath)
                 if fsize == 0 or fsize > MAX_BYTES:
+                    stats['skipped'] += 1
                     continue
                 with open(fpath, 'r', errors='replace') as fh:
                     raw_text = fh.read()
                 stripped = raw_text.lstrip()
                 if not stripped:
+                    stats['skipped'] += 1
                     continue
                 if is_log_ext and stripped[0] not in ('{', '['):
+                    stats['skipped'] += 1
                     continue  # not JSON-looking
                 try:
                     payload = json.loads(raw_text)
                 except json.JSONDecodeError:
-                    continue  # not valid JSON — skip
-                # Compute relative path from tmp_dir for file_path_in_archive
+                    stats['skipped'] += 1
+                    continue  # not valid JSON — skip without counting as failure
                 rel_path = os.path.relpath(fpath, tmp_dir).replace(os.sep, '/')
-                insert_raw_json(conn_params, archive_filename, rel_path, payload)
-                inserted += 1
             except Exception as exc:
-                log.debug('_insert_archive_raw_json_files: skip %s: %s', fname, exc)
-    log.info('_insert_archive_raw_json_files: %d files for %s', inserted, archive_filename)
+                # File-system / decode error reading this file. Log + count
+                # as failed and move on — this is genuinely best-effort, but
+                # it is now COUNTED, not silent.
+                stats['failed'] += 1
+                log.error('_insert_archive_raw_json_files: read error %s: %s',
+                          fname, exc)
+                continue
+
+            # The actual DB insert is wrapped separately so a single bad
+            # row does not poison the rest of the walk — but the failure is
+            # logged at ERROR + counted, never silent.
+            try:
+                insert_raw_json(
+                    conn_params,
+                    archive_filename,
+                    rel_path,
+                    parser,
+                    payload,
+                    archive_sha256,
+                    entity_label,
+                )
+                stats['inserted'] += 1
+            except Exception as exc:
+                stats['failed'] += 1
+                log.error('_insert_archive_raw_json_files: insert failed for %s: %s',
+                          rel_path, exc)
+
+    log.info(
+        '_insert_archive_raw_json_files: archive=%s scanned=%d inserted=%d skipped=%d failed=%d',
+        archive_filename, stats['scanned'], stats['inserted'],
+        stats['skipped'], stats['failed'],
+    )
+    return stats
+
+
+def _shape_to_parser(shape: str) -> str:
+    """Map archive shape → canonical `parser` value for field_log_raw_json.
+
+    The parser column is a free-text tag describing which parser produced
+    the row; values are not enumerated by the schema. Conventions used by
+    the rest of the system (002 migration comments, dashboard filters):
+      whatsminer  → 'whatsminer_api'
+      antminer    → 'antminer_cgi'
+      <other/empty> → 'mg_import'
+    """
+    if shape == 'whatsminer':
+        return 'whatsminer_api'
+    if shape == 'antminer':
+        return 'antminer_cgi'
+    return 'mg_import'
 
 
 def _update_import_run_resolver_stats(conn_params: dict, archive_filename: str,
@@ -3057,14 +3181,26 @@ def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
         insert_miner_identity(conn_params, identity_rows)
 
     # ---------------------------------------------------------------
-    # v3.2 Fix 3: Raw JSON capture — one row per JSON file in archive
+    # v3.2 Fix 3 / B-4 fix: Raw JSON capture — one row per JSON file
+    # in archive. The walker returns a stats dict so we can log if any
+    # per-file insert failed (B-4 silent-swallow regression guard).
     # ---------------------------------------------------------------
+    raw_files_stats = {'scanned': 0, 'inserted': 0, 'skipped': 0, 'failed': 0}
     try:
-        _insert_archive_raw_json_files(conn_params, filename, tmp_dir)
+        raw_files_stats = _insert_archive_raw_json_files(
+            conn_params, filename, tmp_dir, shape=shape, archive_meta=archive_meta
+        )
     except Exception as exc:
-        log.debug('Layer2 per-file raw-json error: %s', exc)
+        # Walker itself blew up (e.g. tmp_dir disappeared mid-walk). This is
+        # different from a single per-file insert failure; log at ERROR.
+        log.error('Layer2 per-file raw-json walker error: %s', exc, exc_info=True)
+    if raw_files_stats.get('failed'):
+        log.error(
+            'Layer2 raw-json: %d/%d per-file inserts FAILED for archive=%s',
+            raw_files_stats['failed'], raw_files_stats['scanned'], filename,
+        )
 
-    # Archive-level metadata blob (v3.1 behaviour kept)
+    # Archive-level metadata blob (v3.1 behaviour kept; rewired for canonical schema)
     try:
         raw_payload = {
             'archive_filename': filename,
@@ -3081,8 +3217,18 @@ def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
         }
         source_file = ('miner_overview.log' if shape == 'whatsminer'
                        else 'cgminer.conf+miner.log')
-        # v3.1: use archive_filename + file_path_in_archive (new schema)
-        insert_raw_json(conn_params, filename, source_file, raw_payload)
+        # B-4 fix: writer now takes canonical args (parser, sha256, entity_label).
+        # Layer2 archive-level blob uses parser='<shape>:archive_meta' so it can be
+        # distinguished from the per-file walker rows in dashboard queries.
+        insert_raw_json(
+            conn_params,
+            filename,
+            source_file,
+            _shape_to_parser(shape) + ':archive_meta',
+            raw_payload,
+            archive_meta.get('sha256') or '',
+            filename,  # entity_label — archive label is the natural row key here
+        )
 
         # 6. Unknown fields: check archive_meta keys not in known set
         _known_meta = frozenset(raw_payload.keys()) | frozenset(('identity_rows',))
@@ -3095,7 +3241,12 @@ def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
                 record_unknown_fields(conn_params, archive_id, source_file,
                                       extra_dict, _known_meta)
     except Exception as exc:
-        log.debug('Layer2 raw-json/unknown-fields error: %s', exc)
+        # B-4 fix: this used to be `log.debug` — a single failed archive-level
+        # insert is now ERROR so it surfaces in journalctl/log review. The
+        # outer Layer2 flow continues so one bad archive does not bring down
+        # the whole import run.
+        log.error('Layer2 raw-json/unknown-fields error for %s: %s',
+                  filename, exc, exc_info=True)
 
 
 def _legacy_resolve(conn_params: dict, archive_id: int, raw_miner_type,
