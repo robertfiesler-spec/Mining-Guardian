@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Mining Guardian — Field Log Bootstrap Migration
 -- ============================================================================
--- Creates the `knowledge.field_log_*` v2 tables and `mg.import_runs`.
+-- Creates the `knowledge.field_log_*` tables and `mg.import_runs`.
 -- These tables are currently bootstrapped at runtime by mg_import.py
 -- (lines 941-1112 of mg_import_tool/mg_import.py) on first connection.
 -- This file captures that DDL as a formal migration so a fresh database can
@@ -19,6 +19,20 @@
 --
 -- Idempotent: all CREATEs use IF NOT EXISTS; all ALTERs use IF NOT EXISTS.
 -- Safe to run against a database that already has these tables (no-op).
+--
+-- ----------------------------------------------------------------------------
+-- 2026-04-28 — B-3 FIX: knowledge.field_log_raw_json block rebased onto the
+-- canonical PARTITIONED shape that 002_layer2_and_learning_foundation.sql
+-- introduced and that the live DB has been running. Earlier revisions of
+-- this file created a non-partitioned variant with a `file_path_in_archive`
+-- column that does not exist on the canonical shape — see
+-- docs/LATENT_BUGS.md §B-3 and docs/SESSION_LOG_2026-04-27.md addendum #3 for
+-- the full incident record. Running this migration in numerical order on a
+-- fresh DB now produces the SAME shape as 002, so 000 → 002 is a coherent
+-- chain and is safe to run idempotently against a DB that already has 002
+-- applied. The runtime bootstrap inside mg_import.py (which still creates
+-- the OLD non-partitioned shape) is tracked separately as B-4 / B-5; this
+-- PR addresses B-3 only.
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -202,21 +216,77 @@ CREATE TABLE IF NOT EXISTS knowledge.field_log_events (
 
 -- ---------------------------------------------------------------------------
 -- knowledge.field_log_raw_json — raw JSON blob capture (insurance policy)
--- Dedup key: (archive_filename, file_path_in_archive)
--- Note: 002_layer2_and_learning_foundation.sql creates a partitioned variant
---       of this table. Keep these definitions in sync when upgrading.
+--
+-- ⚠ B-3 FIX (PR — this commit) ⚠
+-- Earlier revisions of this migration created a NON-partitioned table with
+-- columns (archive_filename, file_path_in_archive, raw_content) and a unique
+-- constraint on (archive_filename, file_path_in_archive). That shape
+-- DISAGREES with the canonical partitioned shape introduced by
+-- 002_layer2_and_learning_foundation.sql, which is what the live PC Docker
+-- `mining-guardian-db` Postgres has been running for weeks (see
+-- docs/LATENT_BUGS.md B-3 and docs/SESSION_LOG_2026-04-27.md addendum #3).
+--
+-- Applying the old shape on top of the live DB would either fail outright
+-- on column mismatch or — worse — succeed against an empty schema and
+-- produce a divergent layout. Either is data-corruption-grade.
+--
+-- This block is now rebased onto the SAME shape as 002, so any operator
+-- running migrations in numerical order on a fresh DB lands on the canonical
+-- partitioned shape, and any operator running them against a DB that
+-- already has 002 applied gets safe no-ops (CREATE TABLE IF NOT EXISTS,
+-- CREATE INDEX IF NOT EXISTS).
+--
+-- Canonical shape (matches 002_layer2_and_learning_foundation.sql §7):
+--   columns      : entity_label, archive_filename, source_file, parser,
+--                  raw_payload (JSONB), sha256, ingested_at
+--   partitioning : PARTITION BY RANGE (ingested_at), quarterly children
+--   primary key  : (id, ingested_at)   -- partition-key must be in PK
+--   indexes      : (entity_label), (archive_filename), (sha256)
+--
+-- Note: there is intentionally NO unique constraint on
+-- (archive_filename, file_path_in_archive). file_path_in_archive does NOT
+-- exist on the canonical shape — see B-5 in docs/LATENT_BUGS.md for the
+-- coupled mg_import.py index that was patched out for the same reason.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json (
-    id                     BIGSERIAL PRIMARY KEY,
-    archive_filename       TEXT NOT NULL,
-    file_path_in_archive   TEXT NOT NULL DEFAULT '',
-    raw_content            JSONB NOT NULL,
-    ingested_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (archive_filename, file_path_in_archive)
-);
+    id                BIGSERIAL,
+    entity_label      TEXT NOT NULL,
+    archive_filename  TEXT NOT NULL,
+    source_file       TEXT NOT NULL,
+    parser            TEXT NOT NULL,
+    raw_payload       JSONB NOT NULL,
+    sha256            TEXT NOT NULL,
+    ingested_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (id, ingested_at)
+) PARTITION BY RANGE (ingested_at);
 
-CREATE UNIQUE INDEX IF NOT EXISTS field_log_raw_json_archive_path_idx
-    ON knowledge.field_log_raw_json (archive_filename, file_path_in_archive);
+-- Quarterly partitions — must match 002. Adding partitions here is
+-- idempotent (IF NOT EXISTS) so re-running this migration on a DB that
+-- already has 002 applied is a no-op.
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2026_q2
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2026_q3
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2026_q4
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+CREATE TABLE IF NOT EXISTS knowledge.field_log_raw_json_2027_q1
+    PARTITION OF knowledge.field_log_raw_json
+    FOR VALUES FROM ('2027-01-01') TO ('2027-04-01');
+
+CREATE INDEX IF NOT EXISTS idx_raw_json_entity
+    ON knowledge.field_log_raw_json (entity_label);
+CREATE INDEX IF NOT EXISTS idx_raw_json_archive
+    ON knowledge.field_log_raw_json (archive_filename);
+CREATE INDEX IF NOT EXISTS idx_raw_json_sha
+    ON knowledge.field_log_raw_json (sha256);
+
+COMMENT ON TABLE knowledge.field_log_raw_json IS
+    'Full raw JSON payload of every parsed log file, for re-extraction when '
+    'parsers improve. Partitioned quarterly for retention management. '
+    'Shape rebased in B-3 fix to match 002_layer2 — see docs/LATENT_BUGS.md.';
 
 -- ---------------------------------------------------------------------------
 -- mg.import_runs — per-batch run tracker (not per-archive; for that use
@@ -237,6 +307,11 @@ CREATE TABLE IF NOT EXISTS mg.import_runs (
 -- End of bootstrap migration.
 -- Next: apply 002_layer2_and_learning_foundation.sql for the Layer 2 resolver
 -- tables (hardware.model_aliases, mg.model_family_aliases, mg.unresolved_models,
--- mg.unknown_fields, mg.field_promotion_queue, and the partitioned raw_json
--- variants).
+-- mg.unknown_fields, mg.field_promotion_queue, and additional indexes /
+-- foreign keys against the field_log_raw_json table created above).
+--
+-- Post B-3 fix: 002 is now strictly additive over 000 for field_log_raw_json
+-- — the table+partitions+indexes block above is intentionally identical to
+-- the corresponding section of 002 so re-running 002 against a DB built from
+-- this migration is a clean no-op.
 -- ============================================================================
