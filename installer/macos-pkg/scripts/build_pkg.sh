@@ -137,10 +137,15 @@ step_2_clean_tree() {
 step_3_stamp() {
     cd "$REPO_ROOT"
     BUILD_SHA="$(/usr/bin/git rev-parse --short=12 HEAD)"
+    # Read version from pyproject.toml (single source of truth in this repo).
+    # Falls back to 0.0.0 if pyproject.toml missing or unparseable.
     BUILD_VERSION="$(/usr/bin/python3 -c \
         "import re,sys;
-m=re.search(r'__version__\s*=\s*[\"\']([^\"\']+)', open('mining_guardian.py').read());
-sys.stdout.write(m.group(1) if m else '0.0.0')")"
+try:
+    m=re.search(r'^version\s*=\s*[\"\']([^\"\']+)', open('pyproject.toml').read(), re.M);
+    sys.stdout.write(m.group(1) if m else '0.0.0')
+except Exception:
+    sys.stdout.write('0.0.0')")"
     BUILD_STAMP_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
     rm -rf "$BUILD_DIR"
@@ -166,7 +171,7 @@ step_4_assemble_payload() {
     /usr/bin/rsync -a --delete \
         --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' \
         --exclude 'build' --exclude 'venv' --exclude '.venv' \
-        --include 'mining_guardian.py' \
+        --include 'pyproject.toml' \
         --include 'predictor.py' \
         --include 'requirements.txt' \
         --include 'core/***' \
