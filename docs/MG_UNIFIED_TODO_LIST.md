@@ -456,3 +456,69 @@ This is what I'd tackle, in this order, if you asked me to drive it:
 ---
 
 **End of unified list. This is the canonical to-do for everything still open across security, database, OpenClaw, Slack audit, orphan code, installer, and backlog.**
+
+---
+
+# SECTION 14 — Update 2026-04-28 (Tuesday) — Bucket 3 Installer Status
+
+Added after the Tuesday installer-build session. **Does not invalidate Sections 1–13** — those represent the broader sprint plan; this section is a focused delta on Bucket 3 (the macOS installer) only. For full session detail see `SESSION_LOG_2026-04-28.md`.
+
+## 14.1 Bucket 3 PRs merged this session
+
+| PR | SHA | Subject | Status |
+|---|---|---|---|
+| #44 | `5e715ab` | I-1: preinstall.sh + lib/detect_ram.sh | 🟢 merged |
+| #45 | `048f772` | I-2: postinstall.sh + Colima/Ollama libs + 4 launchd plists | 🟢 merged |
+| #46 | `b8555c7` | I-3: Distribution.xml + branding HTML + Makefile pkg target + build_pkg.sh | 🟢 merged |
+| #47 | `fb0cb9c` | VZ-only on Apple Silicon, drop qemu-img, copy lima libexec/bin | 🟢 merged |
+| #48 | `07d1ec8` | Vendor docker CLI into .pkg payload | 🟢 merged |
+| #49 | `df936f3` | Read version from pyproject.toml (was wrong path) | 🟢 merged |
+| #50 | `ad986a5` | Codesign inner Mach-O binaries before pkgbuild (notarization fix v1) | 🟢 merged |
+| #51 | `978ff61` | Re-seal .app/.framework bundles, don't break their seal (notarization fix v2) | 🟢 merged |
+
+## 14.2 Bucket 3 — still open
+
+| Item | Status | Notes |
+|---|---|---|
+| Notarization of submission `2c4130a4-13e6-4783-9b06-b7969ccb36aa` | ⏸ in flight | Awaiting Apple Accepted/Invalid for build SHA `978ff61126ea` |
+| `make pkg` steps 7–9 (staple, sha256, spctl, banner) | ⏸ BLOCKED on notarization | Auto-runs on Accepted; nothing operator needs to do |
+| **PR #52** — installer branding (icon.icns + background.png) | 🔴 OPEN, deferred | Locked direction: "Hero". Source PNGs at `Mining guardian logos/Icons/mining_guardian_recuts_all_sets/setA/{01_primary_shield_logo,04_long_horizontal_wordmark_logo}.png`. Will only touch `installer/macos-pkg/resources/`, no code. Picked up *after* notarization Accepted per operator direction "one thing at a time". |
+| Q2 distribution — upload signed/notarized .pkg to private GitHub Release | 🔴 OPEN | Plus USB stick offline fallback. Out of scope for `build_pkg.sh`. |
+| D-14 PR 5/5 (final Bucket 1 piece) | ⏸ BLOCKED | Gated on Mini physical install. |
+
+## 14.3 Apple credentials — final shape
+
+All six `KEY=VALUE` entries now live at the bottom of `/Users/BigBobby/Documents/Apple Cert/CREDENTIALS_NOTES.txt` (NOT in git):
+
+```
+APPLE_TEAM_ID=ARJZ5FYU94
+APPLE_NOTARIZATION_KEY_ID=FPZJ87B3QF
+APPLE_NOTARIZATION_ISSUER_UUID=f53661a7-931a-4976-8f8e-82353256931a
+APPLE_NOTARIZATION_KEY_PATH=/Users/BigBobby/Documents/Apple Cert/AuthKey_FPZJ87B3QF.p8
+APPLE_DEV_ID_INSTALLER=Developer ID Installer: Robert Fiesler (ARJZ5FYU94)
+APPLE_DEV_ID_APPLICATION=Developer ID Application: Robert Fiesler (ARJZ5FYU94)
+```
+
+Verified valid signing identities in keychain (after intermediate-CA fix — see SESSION_LOG_2026-04-28.md § Major Discoveries #2):
+
+| Cert | SHA-1 |
+|---|---|
+| Developer ID Application | `3A92362E47C40BE6A9A60C8D4EAB85E5CA0EB3D5` |
+| Developer ID Installer | `2CB9429B5D64274D152E2CD5A8E0E66D1DB26AB9` |
+
+## 14.4 Notarization submission ledger
+
+| Submission ID | Build SHA | Status | Outcome |
+|---|---|---|---|
+| `ce730e52-460e-4220-a790-2f50b41401fa` | `df936f3c2781` | Invalid | 6 unsigned vendored binaries → fixed by PR #50 |
+| `63236a3b-6a0d-4944-bb43-48de27ad6cda` | `ad986a5dc738` | Invalid | Ollama.app bundle seal broken → fixed by PR #51 |
+| `2c4130a4-13e6-4783-9b06-b7969ccb36aa` | `978ff61126ea` | ⏸ in flight | Awaiting Apple |
+
+## 14.5 New "Out of Scope (deferred)" entries
+
+| Item | Why |
+|---|---|
+| 🚫 Logo PR #52 mid-flight | "one thing at a time" — operator OCD, no logo work until notarization green |
+| 🚫 Editing CREDENTIALS_NOTES.txt prose half | All future agents: write/parse only the `KEY=VALUE` block at the bottom; the prose half above is for future-Bobby's eyes |
+
+*— end of 2026-04-28 update*

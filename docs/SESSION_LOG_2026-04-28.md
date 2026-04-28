@@ -1,0 +1,391 @@
+# Session Log — 2026-04-28 (Tuesday)
+
+**Operator:** Bobby Fiesler (BigBobby)
+**Agent:** Perplexity Computer
+**Session window:** Carry-over context from 2026-04-27 evening through 2026-04-28 ~1:18 PM CDT, with notarization wait still in flight at the time of this writing.
+**Commits shipped to `main`:**
+
+| PR | SHA | Subject |
+|---|---|---|
+| #44 | `5e715ab` | Bucket 3 I-1: `preinstall.sh` + `lib/detect_ram.sh` |
+| #45 | `048f772` | Bucket 3 I-2: `postinstall.sh` + Colima/Ollama libs + 3 launchd plists |
+| #46 | `b8555c7` | Bucket 3 I-3: `Distribution.xml` + welcome/license/conclusion + Makefile `pkg` target + `build_pkg.sh` |
+| #47 | `fb0cb9c` | Installer: VZ-only on Apple Silicon, drop `qemu-img`, copy lima `libexec/bin` |
+| #48 | `07d1ec8` | Installer: vendor `docker` CLI into `.pkg` payload |
+| #49 | `df936f3` | Installer: read `version` from `pyproject.toml` (the prior `mining_guardian.py` grep was the wrong path) |
+| #50 | `ad986a5` | Installer: codesign inner Mach-O binaries before `pkgbuild` (notarization fix v1) |
+| #51 | `978ff61` | Installer: re-seal `.app`/`.framework` bundles, don't break their seal (notarization fix v2) |
+
+**Locked decisions reaffirmed today:** Q1 hybrid `.pkg` shape (~500–767 MB), Q2 distribution via private GitHub Release + USB stick, D-13 RAM-detected Ollama model (16 GB → `llama3.2:3b`, 24 GB+ → `qwen2.5:14b-instruct-q4_K_M`), cutover scope **γ** (Mini replaces both Hostinger VPS *and* ROBS-PC catalog), branch cadence Option **β** (one narrow PR per change, branch deleted after squash-merge).
+
+---
+
+## TL;DR
+
+The Bucket 3 installer code is **complete and merged**. The session's load-bearing work was iterating to a clean Apple notarization — six PRs of plumbing, then two PRs of codesign correctness. As of this log being written we are mid-flight on the third notarization round (submission `2c4130a4-13e6-4783-9b06-b7969ccb36aa`), waiting on Apple. Ollama.app's bundle seal verified locally with `codesign --verify --deep --strict`, which is the same check Apple's notary service runs.
+
+Two notarization rejections this afternoon, both diagnosed end-to-end and resolved:
+
+- **Reject #1** (submission `ce730e52`) — 6 vendored arm64 binaries had no Developer ID Application signature, no secure timestamp, no hardened runtime. Fixed by **PR #50**.
+- **Reject #2** (submission `63236a3b`) — PR #50 went too deep: it walked into `Ollama.app` with `find -type f` and broke the bundle's `_CodeSignature/CodeResources` seal by re-signing the inner Mach-O without rewriting the manifest. Fixed by **PR #51** with a two-pass codesign strategy that treats `.app`/`.framework` bundles as atomic units.
+
+The third submission is still processing. Steps 7–9 (staple, sha256 sidecar, spctl Gatekeeper acceptance, install banner) will run automatically the moment Apple returns Accepted.
+
+Beyond the installer, three orthogonal tracks were touched today:
+
+- A pile of **stale launchd agents at typo paths** were discovered and bootout'd (full discovery in the "Major discoveries" section).
+- The **Apple Developer cert chain was missing intermediates** so `find-identity -v` reported zero valid identities even though both certs and private keys were present. Fixed by importing `DeveloperIDG2CA.cer` and `DeveloperIDCA.cer` from `apple.com/certificateauthority/`.
+- The operator chose the **"Hero"** logo direction for the eventual `.pkg` branding PR (deferred to PR #52, post-notarization).
+
+---
+
+## Opening state (2026-04-28 morning, before this session's PRs)
+
+- **Origin HEAD:** `df936f3` — PR #49 (`pyproject.toml` version read), the most recent installer fix from the prior segment.
+- **VPS:** srv1549463 healthy.
+- **Cert keychain:** both Developer ID certs and private keys imported, but no valid identity reported by `security find-identity -p basic -v` (root cause: missing intermediate CAs — see Major Discoveries §2).
+- **Vendor directory:** `/Users/BigBobby/MiningGuardian-vendor/` populated, 767 MB across `colima/`, `docker/`, `images/`, `ollama/`.
+- **Stale launchd agents:** 3 leftover plists in `~/Library/LaunchAgents/` from typo'd earlier paths (`com.bixbit.mining-guardian`, `com.miningguardian.dashboard`, `com.bixbit.hvac-collector`). The `mining-guardian` one was respawning every 30 s due to `ThrottleInterval=30` and spamming `launchd_stderr.log`.
+- **Six-step user walkthrough**, status entering this session:
+
+  | # | Step | Status entering session |
+  |---|---|---|
+  | 1 | Sync Mac clone | ✅ done previously |
+  | 2 | Delete OLD/typo paths + 3 stale launchd | ✅ done at start of segment |
+  | 3 | `CREDENTIALS_NOTES.txt` 5 keys | ✅ done — needed 6th key by end of session |
+  | 4 | Developer ID Installer signing identity | ✅ done after intermediate-CA fix |
+  | 5 | Populate `~/MiningGuardian-vendor/` (767 MB) | ✅ done |
+  | 6 | `make pkg` end-to-end | 🔄 reached step 6/9 (notarize), failed Invalid twice |
+
+---
+
+## Commits shipped this session (chronological)
+
+### PR #44 — `5e715ab` — Bucket 3 I-1: preinstall.sh + lib/detect_ram.sh
+
+The first of three "Option β" narrow PRs for the installer. Adds the preinstall script and the RAM-detect helper that picks the Ollama model per **D-13**.
+
+- New: `installer/macos-pkg/scripts/preinstall.sh`
+- New: `installer/macos-pkg/scripts/lib/detect_ram.sh`
+- Validation: `bash -n` on both files
+- Branch deleted after squash-merge per Option β
+
+### PR #45 — `048f772` — Bucket 3 I-2: postinstall.sh + Colima/Ollama libs + 3 launchd plists
+
+- New: `installer/macos-pkg/scripts/postinstall.sh`
+- New: `installer/macos-pkg/scripts/lib/colima.sh`, `installer/macos-pkg/scripts/lib/ollama.sh`
+- New: 4 launchd plists in `installer/macos-pkg/launchd/`
+- Validation: `bash -n` + `plutil -lint` on every plist
+
+### PR #46 — `b8555c7` — Bucket 3 I-3: Distribution.xml + branding + Makefile pkg target + build_pkg.sh
+
+The big one. Wires the entire 9-step build pipeline.
+
+- New: `installer/macos-pkg/resources/Distribution.xml`
+- New: `installer/macos-pkg/resources/welcome.html`, `license.html`, `conclusion.html`
+- New: `Makefile` `pkg` target
+- New: `installer/macos-pkg/scripts/build_pkg.sh` (the orchestrator)
+- Validation: `xmllint --noout` on the Distribution.xml, `bash -n` on the orchestrator
+
+### PR #47 — `fb0cb9c` — VZ-only on Apple Silicon, drop qemu-img
+
+After PR #46 we discovered Lima 2.x ships only the krunkit driver in `libexec/` on macOS — no QEMU binaries. Apple Silicon should use `--vm-type vz` (Apple's Virtualization.framework) anyway.
+
+- Drop `qemu-img` from vendor expectations
+- Copy `lima/libexec/bin/` so `limactl` and `limactl-mcp` ship inside the pkg
+
+### PR #48 — `07d1ec8` — Vendor docker CLI into payload
+
+The Mac Mini will be a sealed/fresh box, no Homebrew. We can't assume `docker` is on the operator's PATH. Vendored a static arm64 `docker` binary into `runtime/docker/docker`.
+
+### PR #49 — `df936f3` — Read version from pyproject.toml
+
+`build_pkg.sh` step 3 was grepping for `__version__` in repo-root `mining_guardian.py`. That file is at `core/mining_guardian.py` and contains no `__version__` attribute. Switched to parsing `pyproject.toml` (single source of truth, already has `version = "1.0.0"`).
+
+### PR #50 — `ad986a5` — Codesign inner Mach-O binaries before pkgbuild (notarization fix v1)
+
+First notarization rejection (`ce730e52-460e-4220-a790-2f50b41401fa`) listed 6 vendored binaries:
+
+| Path | Why rejected |
+|---|---|
+| `runtime/colima/colima` | not signed with Developer ID, no secure timestamp, hardened runtime not enabled |
+| `runtime/colima/bin/limactl` | same |
+| `runtime/colima/libexec/lima/limactl-mcp` | same |
+| `runtime/colima/libexec/lima/lima-driver-krunkit` | same |
+| `runtime/colima/share/lima/lima-guestagent.Darwin-aarch64` | same, plus the Linux guest agent inside a `.gz` wrapper |
+| `runtime/docker/docker` | same |
+
+Three additional `.gz` warnings on Postgres image internals — harmless Linux man-pages, ignored.
+
+PR #50 added `step_4b_codesign_inner_binaries()` between steps 4 and 5:
+
+- New env var `APPLE_DEV_ID_APPLICATION` required in `CREDENTIALS_NOTES.txt` (step 1 now validates both Installer + Application identities are in keychain)
+- Walks `${PAYLOAD_DIR}/runtime/`, detects every Mach-O via `/usr/bin/file`, codesigns with `--sign "$APPLE_DEV_ID_APPLICATION" --options runtime --timestamp --force`
+- Deletes `runtime/colima/share/lima/lima-guestagent.Darwin-aarch64.gz` — VZ-only on Apple Silicon (per PR #47), Linux guest agent unused, and the `.gz` wrapper cannot be re-signed in place
+
+Operator action after merge: append to `CREDENTIALS_NOTES.txt`:
+
+```
+APPLE_DEV_ID_APPLICATION=Developer ID Application: Robert Fiesler (ARJZ5FYU94)
+```
+
+Result of next `make pkg`: step 4b reported `codesigned 21 Mach-O binaries`. Notarization re-submitted.
+
+### PR #51 — `978ff61` — Re-seal .app/.framework bundles, don't break their seal (notarization fix v2)
+
+Second rejection (`63236a3b-6a0d-4944-bb43-48de27ad6cda`) cut the errors from 6 → 2, but introduced a new one:
+
+```
+runtime/ollama/Ollama.app/Contents/MacOS/Ollama (x86_64)  → "The signature of the binary is invalid."
+runtime/ollama/Ollama.app/Contents/MacOS/Ollama (arm64)   → "The signature of the binary is invalid."
+```
+
+**Root cause:** PR #50's step_4b walked into `Ollama.app` with `find -type f` and re-signed `Contents/MacOS/Ollama` with `codesign --force`. That overwrote the binary's signature but left the bundle's outer `Contents/_CodeSignature/CodeResources` manifest still hashing the *original* binary. Internally inconsistent → notary rejects.
+
+**Fix (PR #51) — three-stage step_4b:**
+
+1. **Pass 1 — bundles.** `find -prune` at every `.app` and `.framework` boundary, then `codesign --deep` each bundle as a unit. `--deep` re-signs every nested helper/framework/dylib **and** rewrites the bundle's `CodeResources` so the seal stays consistent.
+2. **Pass 2 — loose Mach-O.** Walk `-type f`, skip any path inside `*/*.app/*` or `*/*.framework/*` (Pass 1 owns those), codesign each Mach-O individually.
+3. **Verify.** `codesign --verify --deep --strict` on every bundle. Same check Apple runs — fails locally instead of after a 5–15 min Apple round-trip.
+
+All sign operations still use `--sign "$APPLE_DEV_ID_APPLICATION" --options runtime --timestamp --force`.
+
+After merge, `make pkg` produced:
+
+```
+[build_pkg]   removed lima-guestagent.Darwin-aarch64.gz (VZ-only build, Linux guest agent unused)
+[build_pkg]   re-sealed bundle: runtime/ollama/Ollama.app
+[build_pkg] step 4b OK: re-sealed 1 bundle(s), codesigned 5 loose Mach-O
+```
+
+Loose count dropped from 21 → 5 because most of those 21 were Ollama.app internals, now correctly handled by Pass 1's `--deep` re-seal. The Ollama bundle passed `--verify --deep --strict` locally, which is the strongest local signal that Apple will accept it. Submitted to Apple as `2c4130a4-13e6-4783-9b06-b7969ccb36aa`. **Status at the time of this log: in flight.**
+
+---
+
+## Major discoveries this session
+
+### 1. Three stale launchd agents at typo paths
+
+Found in `~/Library/LaunchAgents/` from earlier development:
+
+- `com.bixbit.mining-guardian.plist`
+- `com.miningguardian.dashboard.plist`
+- `com.bixbit.hvac-collector.plist`
+
+The `mining-guardian` one had `ThrottleInterval=30` and was respawning every 30 s, spamming `launchd_stderr.log` constantly. All three were `bootout`'d cleanly and the plists deleted. Operator confirmed `~/Library/LaunchAgents/` is now empty of MG-related plists.
+
+**Implication for the installer:** the Mac Mini will be a sealed/fresh box, so this won't recur on the customer machine. But on operator development boxes the cleanup is a one-shot manual step — captured in the runbook.
+
+### 2. Apple intermediate CAs were missing
+
+Symptom: `security find-identity -p basic -v` returned **0 valid identities** even though `Developer ID Application` and `Developer ID Installer` certs (plus their private keys) were both present in the login keychain.
+
+Root cause: macOS verifies cert chains up to a known root. The Apple Developer ID chain looks like:
+
+```
+Apple Root CA → Developer ID Certification Authority (G2) → your leaf cert
+```
+
+Both intermediate CAs (`DeveloperIDG2CA.cer` and `DeveloperIDCA.cer`) were absent from the System keychain. Without them, the leaf certs were valid-but-unverifiable.
+
+Fix:
+
+```bash
+curl -O https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+curl -O https://www.apple.com/certificateauthority/DeveloperIDCA.cer
+sudo security import DeveloperIDG2CA.cer -k /Library/Keychains/System.keychain
+sudo security import DeveloperIDCA.cer   -k /Library/Keychains/System.keychain
+```
+
+After that, both leaf certs reported as valid:
+
+```
+3A92362E47C40BE6A9A60C8D4EAB85E5CA0EB3D5  "Developer ID Application: Robert Fiesler (ARJZ5FYU94)"
+2CB9429B5D64274D152E2CD5A8E0E66D1DB26AB9  "Developer ID Installer: Robert Fiesler (ARJZ5FYU94)"
+```
+
+**Cosmetic note:** Keychain Access GUI still shows "certificate is not trusted" in red for the two leaf certs. This is a known macOS UI bug — `codesign` and `productsign` work correctly. Documented in `CREDENTIALS_NOTES.txt` so future-Bobby doesn't try to "fix" it.
+
+### 3. Lima 2.x is VZ-only on macOS
+
+When laying down the vendor expectations in PR #46 we assumed `qemu-img` would ship inside Lima. It doesn't on Lima 2.x — only the krunkit driver is in `libexec/`. Apple Silicon should use `--vm-type vz` (Apple's Virtualization.framework) anyway, which doesn't need QEMU. Patched in PR #47: drop `qemu-img`, document VZ-only.
+
+### 4. Docker CLI not bundled with Colima
+
+Colima starts a Lima VM and exposes a Docker socket — but doesn't ship the `docker` *client* CLI. On a sealed Mini with no Homebrew, the operator wouldn't have `docker` on PATH. Vendored a static arm64 `docker` binary into `~/MiningGuardian-vendor/docker/docker` and patched the assembly step to copy it into `${PAYLOAD_DIR}/runtime/docker/`. PR #48.
+
+### 5. `build_pkg.sh` step 3 was grepping the wrong file for the version
+
+Was: `grep '__version__' mining_guardian.py` from repo root.
+Reality: there is no repo-root `mining_guardian.py` — it's `core/mining_guardian.py`, and that file has no `__version__` attribute. Symptom: `BUILD_VERSION=0.0.0` in `BUILD_STAMP.json`.
+Fix (PR #49): parse `pyproject.toml`'s `version = "1.0.0"` line via Python regex, fall back to `0.0.0` only on parse failure.
+
+### 6. Inner binaries need codesigning AND .app bundles need re-sealing
+
+The two-step lesson of PRs #50 and #51 — vendored binaries unsigned by their vendor need a fresh Developer ID + secure timestamp + hardened runtime, and `.app`/`.framework` bundles are pre-sealed atoms that `codesign --deep` must re-sign as units. Splitting the codesign loop into "bundles via --deep" + "loose Mach-O via --force" + "verify via --strict" was the correct shape; doing it as a flat `find -type f` was the bug.
+
+---
+
+## Files added/modified on `main` this session
+
+```
+Makefile                                                 (PR #46)
+installer/macos-pkg/Distribution.xml                     (PR #46)
+installer/macos-pkg/launchd/*.plist                      (PR #45 — 4 files)
+installer/macos-pkg/resources/Distribution.xml           (PR #46)
+installer/macos-pkg/resources/welcome.html               (PR #46)
+installer/macos-pkg/resources/license.html               (PR #46)
+installer/macos-pkg/resources/conclusion.html            (PR #46)
+installer/macos-pkg/scripts/build_pkg.sh                 (PR #46, #47, #48, #49, #50, #51)
+installer/macos-pkg/scripts/preinstall.sh                (PR #44)
+installer/macos-pkg/scripts/postinstall.sh               (PR #45)
+installer/macos-pkg/scripts/lib/detect_ram.sh            (PR #44)
+installer/macos-pkg/scripts/lib/colima.sh                (PR #45)
+installer/macos-pkg/scripts/lib/ollama.sh                (PR #45)
+```
+
+**Out-of-tree (operator's local Mac, NOT committed):**
+
+- `/Users/BigBobby/Documents/Apple Cert/CREDENTIALS_NOTES.txt` — 6 `KEY=VALUE` lines at the bottom (5 prior + 1 new `APPLE_DEV_ID_APPLICATION` added today).
+- `/Users/BigBobby/MiningGuardian-vendor/` — 767 MB across `colima/`, `docker/`, `images/`, `ollama/`. Required by `step_4_assemble_payload`.
+- `~/Library/Keychains/login.keychain-db` — both Developer ID certs + private keys imported.
+- `/Library/Keychains/System.keychain` — `DeveloperIDG2CA.cer` and `DeveloperIDCA.cer` imported.
+- `~/Library/LaunchAgents/` — emptied of stale MG plists.
+
+---
+
+## Apple credentials snapshot (machine-readable block in CREDENTIALS_NOTES.txt)
+
+```
+APPLE_TEAM_ID=ARJZ5FYU94
+APPLE_NOTARIZATION_KEY_ID=FPZJ87B3QF
+APPLE_NOTARIZATION_ISSUER_UUID=f53661a7-931a-4976-8f8e-82353256931a
+APPLE_NOTARIZATION_KEY_PATH=/Users/BigBobby/Documents/Apple Cert/AuthKey_FPZJ87B3QF.p8
+APPLE_DEV_ID_INSTALLER=Developer ID Installer: Robert Fiesler (ARJZ5FYU94)
+APPLE_DEV_ID_APPLICATION=Developer ID Application: Robert Fiesler (ARJZ5FYU94)
+```
+
+Signing identity SHAs (verified valid in keychain after intermediate-CA fix):
+
+| Cert | SHA-1 |
+|---|---|
+| Developer ID Application | `3A92362E47C40BE6A9A60C8D4EAB85E5CA0EB3D5` |
+| Developer ID Installer | `2CB9429B5D64274D152E2CD5A8E0E66D1DB26AB9` |
+
+Notarization submission ledger:
+
+| Submission ID | Build SHA | Status | Outcome |
+|---|---|---|---|
+| `ce730e52-460e-4220-a790-2f50b41401fa` | `df936f3c2781` | Invalid | 6 unsigned vendored binaries → fixed by PR #50 |
+| `63236a3b-6a0d-4944-bb43-48de27ad6cda` | `ad986a5dc738` | Invalid | Ollama.app bundle seal broken by over-aggressive codesign → fixed by PR #51 |
+| `2c4130a4-13e6-4783-9b06-b7969ccb36aa` | `978ff61126ea` | **In flight** | (waiting on Apple at log time) |
+
+---
+
+## Logo direction (PR #52, deferred)
+
+Operator chose **"Hero"** direction for installer branding:
+
+- **`.pkg` Finder icon (square `.icns`):** `01_primary_shield_logo.png` from `setA/` — the knight helmet + crossed pickaxes + Bitcoin orb shield mark.
+- **Installer window background (wide):** `04_long_horizontal_wordmark_logo.png` from `setA/` — the wide "MINING GUARDIAN" wordmark on dark background.
+
+Source folder on operator's Mac: `/Users/BigBobby/Documents/Personal/Mining guardian logos/Icons/mining_guardian_recuts_all_sets/setA/`.
+
+PR #52 is **not started yet** — explicitly deferred per operator direction ("one thing at a time" / "i do not want to get into this because my ocd will take off"). Will be picked up after the current notarization comes back Accepted and steps 7–9 finish. PR #52 will only touch `installer/macos-pkg/resources/` (icon.icns + background.png + a small Distribution.xml `<background>` reference) — no code changes, no risk to the now-clean signing chain.
+
+Two assets the operator will need to surface before PR #52:
+
+1. The original PNG of `01_primary_shield_logo.png` at ≥ 1024×1024 with transparent background.
+2. The original PNG of `04_long_horizontal_wordmark_logo.png` at native resolution (preferably ≥ 1600 px wide).
+
+JPGs were sufficient for previewing today; PR #52 needs the PNGs because (a) `.icns` requires alpha and (b) JPG quality losses compound across the 6 sizes Apple wants in an icon set.
+
+---
+
+## Six-step user walkthrough — status at end of session
+
+| # | Step | Status |
+|---|---|---|
+| 1 | Sync Mac clone | ✅ |
+| 2 | Delete OLD/typo paths + 3 stale launchd | ✅ |
+| 3 | `CREDENTIALS_NOTES.txt` 6 keys | ✅ |
+| 4 | Both Developer ID signing identities present | ✅ |
+| 5 | Populate `~/MiningGuardian-vendor/` (767 MB) | ✅ |
+| 6 | `make pkg` end-to-end | 🔄 reached step 6/9 (notarize, third attempt, awaiting Apple) |
+
+---
+
+## Next steps when notarization comes back
+
+### If Accepted
+
+The script auto-continues:
+
+- **Step 7:** `xcrun stapler staple` then `xcrun stapler validate` on the .pkg
+- **Step 8:** SHA-256 sidecar + `spctl --assess --type install -vv` (Gatekeeper acceptance check)
+- **Step 9:** Print the install banner with the `sudo installer -pkg ... -target /` command
+
+Then unblock:
+
+1. **PR #52 — installer branding** (icon.icns + background.png). Walk operator through `sips -g pixelWidth -g pixelHeight` on the two source PNGs, then build the `.icns` via `iconutil -c icns` and wire it into `Distribution.xml`. Branch: `feat/installer-branding-icon-and-background`.
+2. **Q2 distribution** — upload signed/notarized .pkg to private GitHub Release on `robertfiesler-spec/Mining-Guardian`, copy to USB stick as offline fallback.
+3. **D-14 PR 5/5** — final Bucket 1 piece, gated on Mini physical install.
+
+### If Invalid again
+
+Fetch the structured log:
+
+```bash
+xcrun notarytool log 2c4130a4-13e6-4783-9b06-b7969ccb36aa \
+  --key "$HOME/Documents/Apple Cert/AuthKey_FPZJ87B3QF.p8" \
+  --key-id FPZJ87B3QF \
+  --issuer f53661a7-931a-4976-8f8e-82353256931a \
+  /tmp/mg_notary_log_v3.json
+```
+
+Read the `issues[]` array. Plausible remaining failure modes (in order of likelihood, all low):
+
+1. **Postgres image `.gz` warnings escalate to errors** — the three Linux man-page archives the notary couldn't unpack. If they ever flip from `severity: warning` to `severity: error`, the fix is to extract and re-pack the postgres tarball minus those three paths, or to rely on `--force-allow-not-malicious-binary` style mitigations (none currently exist for this; the real fix would be tarball surgery).
+2. **A different `.app` or `.framework` we haven't seen yet** — unlikely, since `pkgbuild` only reported `Ollama.app` and `Squirrel.framework` and both were re-sealed by Pass 1 of PR #51's step_4b.
+3. **A hardened-runtime entitlement issue** on Ollama specifically — unlikely because Ollama upstream already shipped with hardened runtime, and `--options runtime` only adds, never removes.
+
+If any of those hit, document the failure mode in this file and write PR #53.
+
+---
+
+## Outstanding work (broader buckets, unchanged from prior session)
+
+🔴 **Bucket 1**
+
+- D-14 PR 5/5 (waiting for Mini install)
+- Backfill of 124 missing `raw_json` rows from the 2026-04-27 import
+- Runtime invariant assertion in `run_full_import.py`
+
+🟡 **Bucket 2**
+
+- Optional CI lint for typo regression
+- B-7 migrations `002_layer2` + staging not committed
+- VPS GitHub PAT rotation
+- Delete `scripts/cleanup_ams_logs.py`
+- Regression test in `tests/test_migrations.py`
+
+🟢 **Bucket 3 — installer**
+
+- Code complete (PRs #44–#51 merged)
+- Blocked on third notarization round (in flight at log time)
+- Branding PR #52 deferred until notarization Accepted
+
+🟢 **Bucket 4 — per-customer ops**
+
+- Power cycle 53476
+- Inspect 53494 / 53521 hashboards
+- 53482 underperforming
+- HVAC re-enable + remove `hvac_work_apr2026` hardware fact
+
+---
+
+## Closing note
+
+D-7 to Mac Mini install. The `.pkg` is one Apple decision away from being a real, signed, notarized, stapled, customer-ready installer. The codesign correctness work today was the kind of thing where the second fix is much shorter than the first because the first one taught you what `--deep` really means. Tomorrow we'll either be polishing branding (best case, PR #52) or chasing a third Apple complaint (less likely, but the diagnostic loop is now well-grooved: `notarytool log` → JSON → fix → push → re-submit). Bitcoin SHA-256 miners only. Postgres-as-truth.
+
+*— end of 2026-04-28 log*
