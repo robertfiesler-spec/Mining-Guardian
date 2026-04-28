@@ -522,3 +522,60 @@ Verified valid signing identities in keychain (after intermediate-CA fix — see
 | 🚫 Editing CREDENTIALS_NOTES.txt prose half | All future agents: write/parse only the `KEY=VALUE` block at the bottom; the prose half above is for future-Bobby's eyes |
 
 *— end of 2026-04-28 update*
+
+
+---
+
+## Section 14.6 — Q2 distribution shipped (2026-04-28 PM)
+
+### Status flip
+
+| Bucket 3 line item | Old status | New status |
+|---|---|---|
+| Q2 distribution — upload signed/notarized .pkg to private GitHub Release | 🔴 OPEN | ✅ DONE |
+| Q2 distribution — USB stick offline fallback | 🔴 OPEN | ✅ DONE |
+| Notarization (third try) | ⏸ in flight | ✅ Accepted (`2c4130a4`) |
+| Repo visibility | public | private (per locked Q2 decision) |
+| **PR #53** — installer branding | 🔴 OPEN, deferred | 🔴 OPEN, deferred (unchanged) |
+
+### Distribution artifacts (single source of truth)
+
+| Asset | Location | SHA-256 |
+|---|---|---|
+| `MiningGuardian-1.0.0-978ff61126ea.pkg` | Private GitHub Release `v1.0.0-978ff61126ea` + USB "MG Install" + `~/Documents/GitHub/Mining-Guardian/build/` | `c7030d69f56cf846014745c37eead0e5b79b10f0e29701d28ea1d550ceb765f8` |
+| `.pkg.sha256` sidecar | Same three locations | n/a |
+| `INSTALL.txt` (USB-only) | `/Volumes/MG Install/INSTALL.txt` | n/a (1,269 bytes, plain English) |
+
+### Tag
+
+`v1.0.0-978ff61126ea` → commit `978ff61126ea8acd21a41aa9d29293c9ec96dc0d` (PR #51, the build SHA — **not** current `main`). Annotated tag, message embeds full SHA-256, both signing identity SHAs, and the accepted `notarytool` submission ID.
+
+### Release URL
+
+[robertfiesler-spec/Mining-Guardian releases v1.0.0-978ff61126ea](https://github.com/robertfiesler-spec/Mining-Guardian/releases/tag/v1.0.0-978ff61126ea)
+
+### Round-trip verification proof
+
+| Check | Result |
+|---|---|
+| `shasum -c` on GitHub-downloaded copy | OK |
+| `spctl -a -t install` on GitHub-downloaded copy | accepted, Notarized Developer ID |
+| `xattr` on GitHub-downloaded copy | `com.apple.provenance` (Sequoia+ "internet download" mark) |
+| `shasum -c` on USB copy | OK |
+| `spctl -a -t install` on USB copy | accepted, Notarized Developer ID |
+
+The staple survived GitHub's CDN. The .pkg installs from any of the three locations without a Gatekeeper prompt on a clean Mac.
+
+### Runbook for future Q2 cycles
+
+`docs/RUNBOOK_DISTRIBUTION_v1.0.0.md` is the paste-along block for any future release. Pre-flight → tag → notes → release → upload → round-trip → USB → docs PR. Drop-in replacement of version strings is the only edit needed.
+
+### Outstanding Bucket 3 work
+
+| Item | Status |
+|---|---|
+| **PR #53 — installer branding** (Hero direction: `01_primary_shield_logo.png` as Finder icon, `04_long_horizontal_wordmark_logo.png` as installer background) | 🔴 OPEN, deferred |
+
+Branding will trigger a fresh notarization round trip (binary content changes), which means a new `v1.0.x` tag + new GitHub Release. Today's release stays as the canonical v1.0.0 baseline.
+
+*— end of 2026-04-28 distribution addendum*

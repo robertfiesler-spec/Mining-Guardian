@@ -389,3 +389,51 @@ If any of those hit, document the failure mode in this file and write PR #53.
 D-7 to Mac Mini install. The `.pkg` is one Apple decision away from being a real, signed, notarized, stapled, customer-ready installer. The codesign correctness work today was the kind of thing where the second fix is much shorter than the first because the first one taught you what `--deep` really means. Tomorrow we'll either be polishing branding (best case, PR #52) or chasing a third Apple complaint (less likely, but the diagnostic loop is now well-grooved: `notarytool log` → JSON → fix → push → re-submit). Bitcoin SHA-256 miners only. Postgres-as-truth.
 
 *— end of 2026-04-28 log*
+
+
+---
+
+## Addendum — afternoon: Q2 distribution shipped
+
+After the morning notarization win, the operator chose **Option 2 — Q2 distribution** over branding (which becomes its own future cycle, PR #53). Reasoning: tag/upload first while the binary is fresh and bit-perfect; branding will require a second full notarization round trip, so do it as its own clean cycle later.
+
+### Steps executed (all 9 of the distribution checklist)
+
+1. **Pre-flight** — confirmed `MiningGuardian-1.0.0-978ff61126ea.pkg` (392,562,726 bytes), `.pkg.sha256` = `c7030d69f56cf846014745c37eead0e5b79b10f0e29701d28ea1d550ceb765f8`, `spctl` still reports `accepted` + `source=Notarized Developer ID`. The staple held overnight (well, over coffee).
+2. **Tag** — created annotated tag `v1.0.0-978ff61126ea` on commit `978ff61126ea8acd21a41aa9d29293c9ec96dc0d` (the **build SHA**, not current `main`). Tag message embeds the SHA-256, both signing identity SHAs, and the accepted notarytool submission ID. Pushed to `origin`.
+3. **Release notes** — `docs/RELEASE_NOTES_v1.0.0.md` (171 lines). Covers: artifact metadata, signing chain, install instructions, what does NOT happen at install (zero internet calls), known issues (Lima 2.x VZ-only, Apple intermediate CAs in System keychain), provenance reproduction recipe, full notarization ledger.
+4. **Repo visibility** — confirmed repo was public, flipped to **private** via `gh repo edit --visibility private --accept-visibility-change-consequences` to honor the Q2 locked decision ("private GitHub Release"). Operator confirmed they were going to flip it back to private anyway.
+5. **GitHub Release** — `gh release create v1.0.0-978ff61126ea --notes-file docs/RELEASE_NOTES_v1.0.0.md --latest` on `robertfiesler-spec/Mining-Guardian`. Released as `latest`, not draft, not prerelease.
+6. **Asset upload** — `gh release upload` of the `.pkg` + `.sha256`. First upload succeeded in 2m22s. Operator paste-restarted (not realizing it had completed) and a second `--clobber` upload re-pushed the same bytes in 2m10s. Net effect: same release, freshly re-uploaded copy. Server-side `gh api` confirmed both assets `state: uploaded`, sizes match local exactly.
+7. **Round-trip verification** — created scratch dir `~/Downloads/mg_release_test/`, downloaded both assets fresh from the GitHub Release (1m34s download), re-ran `shasum -a 256 -c` (OK), re-ran `spctl -a -t install` on the downloaded copy (`accepted`, `source=Notarized Developer ID`). Critically: `xattr` on the downloaded file showed `com.apple.provenance` (Sequoia+ replacement for `com.apple.quarantine`) — meaning macOS did treat it as a real internet download, and Gatekeeper still trusted it. **The staple survived GitHub's CDN.**
+8. **USB fallback** — operator's USB stick "MG Install" was 8 GB FAT32. Reformatted to ExFAT in 5 sec via `diskutil eraseVolume ExFAT "MG Install" "/Volumes/MG Install"` (FAT32 has a 4 GB per-file cap that would bite future fatter releases; the stick was empty so nothing was lost). Wrote a 1,269-byte `INSTALL.txt` (heredoc, plain English: 5 install steps, the SHA, the spctl-expected output, the sudo install command, troubleshooting). Copied the .pkg + .sha256 onto the stick. Re-ran SHA-256 check on the stick copy (OK) and `spctl` on the stick copy (`accepted`).
+
+### Three independent install paths now exist
+
+1. Operator's local build folder — `~/Documents/GitHub/Mining-Guardian/build/...pkg`
+2. Private GitHub Release — round-trip verified
+3. USB stick "MG Install" — round-trip verified, with standalone INSTALL.txt
+
+A future Mac with no internet, no GitHub access, no operator memory can still install Mining Guardian. That was the whole point of having a USB fallback.
+
+### Heredoc paste lesson learned
+
+First pass at writing `INSTALL.txt` to the USB used a single ~80-line heredoc paste-block. Terminal's continuation-prompt state suggested the closing `EOF` token didn't land cleanly. Aborted with Ctrl+C and rebuilt the step as **three short paste-blocks** (write file, copy assets, verify). Worked first try. Future runbook entries should default to small blocks; long heredocs are paste-fragile.
+
+### USB filesystem note
+
+ExFAT is the right format for this stick. FAT32 caps per-file size at 4 GB — fine for our 374 MB .pkg today, but this installer will only get bigger as more Ollama models / vendored wheels land. ExFAT also AppleDouble-stores xattrs as `._*` sidecar files, which is harmless metadata noise (Mac creates, Mac reads, Windows/Linux ignore).
+
+### Submission ledger (final)
+
+| Submission ID | Source SHA | Result |
+|---|---|---|
+| `ce730e52-460e-4220-a790-2f50b41401fa` | `df936f3c2781` | Invalid — 6 unsigned inner Mach-O |
+| `63236a3b-6a0d-4944-bb43-48de27ad6cda` | `ad986a5dc738` | Invalid — Ollama.app seal broken |
+| **`2c4130a4-13e6-4783-9b06-b7969ccb36aa`** | **`978ff61126ea`** | **Accepted ✅** |
+
+### Closing note (afternoon)
+
+The full Bucket 3 chain — codesign correctness → notarization → staple → tag → release → upload → round-trip → USB — is now end-to-end shippable. The next time we touch this is either (a) PR #53 branding (icon.icns + installer background.png), which means a second notarization cycle of its own; or (b) a content release that actually changes the payload. Either way the runbook is now grooved deep enough that future-us can do it without thinking. Bitcoin SHA-256 miners only. Postgres-as-truth. Stay local.
+
+*— end of 2026-04-28 distribution addendum*
