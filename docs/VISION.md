@@ -1,20 +1,18 @@
 # Mining Guardian — Vision & Canonical Plan
 
-**Last synthesized:** April 9, 2026
-**Status:** Living document — update when any of the source docs change
-**Purpose:** Single source of truth for Mining Guardian's vision, architecture,
-and roadmap. Every new Claude session reads this FIRST before touching code.
+**Last synthesized:** 2026-04-29 (post 2026-04-29 repo doc sweep, on the eve of the 2026-04-30 Mac Mini install)
+**Status:** Living document — update when any source doc changes
+**Purpose:** Single source of truth for Mining Guardian's vision, architecture, and roadmap. Every new Claude session reads this FIRST after `CLAUDE.md`.
 
 This document synthesizes and consolidates:
 - `README.md` (architecture)
 - `AI_ROADMAP.md` (feature status)
 - `docs/CAPABILITIES.md` (what it does)
-- `docs/OPENCLAW_INTEGRATION.md` (conversational brain design)
-- `docs/CLOUDFLARE_MIGRATION.md` (Mac mini migration)
-- `docs/DAILY_LOG_CAPTURE_VISION.md` (regression detection)
-- `docs/OPEN_LOG_UPLOADER_VISION.md` (any-vendor ingestion)
-- `intelligence-catalog/seed-data/README.md` (research database — the legacy `intelligence/` directory is deprecated, see `intelligence/DEPRECATED.md`)
-- `installer/DEPLOYMENT.md` on `installer-build` branch (customer installer)
+- `docs/DECISIONS.md` (locked decisions, especially D-7 through D-14)
+- `docs/INTELLIGENCE_CATALOG_STATUS.md` (catalog wiring)
+- `docs/OPEN_LOG_UPLOADER_VISION.md` (any-vendor ingestion vision)
+- `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv` (the 321-miner SHA-256 seed)
+- `installer/macos-pkg/README.md` (the customer installer .pkg)
 
 If any of the above conflict with this doc, this doc is wrong — update it.
 
@@ -22,57 +20,27 @@ If any of the above conflict with this doc, this doc is wrong — update it.
 
 ## 1. The One-Paragraph Version
 
-Mining Guardian is an AI-powered autonomous fleet monitoring and remediation
-system for Bitcoin mining facilities. It ships as a single Mac mini running a
-docker-compose stack at each customer site, scans the fleet every hourutes via
-the BiXBiT AMS API, diagnoses problems with a two-tier LLM (local Qwen 2.5 32B
-for per-scan analysis + Claude Sonnet for weekly deep training), manages the
-full action lifecycle (detection → operator approval → execution → outcome
-verification → ticket creation → permanent suppression), and continuously
-learns from every scan, every operator decision, and every restart outcome.
-Each customer deployment exports its knowledge monthly and receives back a
-synthesized master knowledge file combining insights from every site, so every
-fleet makes every other fleet smarter over time. The conversational interface
-is a Slack bot (OpenClaw) that routes operator questions to the local LLM and
-Block Kit button clicks to the local approval API via Socket Mode, requiring
-zero public ingress at the customer site.
+Mining Guardian is an AI-powered autonomous fleet monitoring and remediation system for Bitcoin SHA-256 mining facilities. It ships as a single Mac Mini at each customer site running PostgreSQL 16 (operational + reference DBs colocated), Ollama (model selected at install time per available RAM — `llama3.2:3b` on 16 GB, `qwen2.5:14b-instruct-q4_K_M` on 24 GB+), and the Mining Guardian Python stack under launchd. It scans the fleet on the operator's schedule (default hourly) via the BiXBiT AMS API, diagnoses problems with a two-tier LLM (local Ollama for per-scan analysis + Claude Sonnet for opt-in weekly deep training), manages the full action lifecycle (detection → operator approval via Slack or the Web GUI Operator Console → execution → outcome verification → ticket creation → permanent suppression), and continuously learns by writing every operational outcome straight into the Mining Intelligence Catalog (D-14 live-reference architecture — no scheduled refresh, every read returns the catalog as it was at that moment). Each customer deployment can export catalog deltas for federated learning across sites, so every fleet makes every other fleet smarter over time. Approval and conversational control flow through Slack (Socket Mode, outbound-only) and the loopback-only Web GUI; remote operator access is via Tailscale to the Mini, with the data plane staying on the Mini.
 
-## 2. The Five Vision Anchors
+## 2. The Vision Anchors
 
 These are the immutable rules. They constrain every design decision.
 
-**1. The LLM IS the product.** The main feature of Mining Guardian is the LLM
-getting smarter over time. Every scan feeds it. Every denial refines it. Every
-week Claude deeply re-analyzes the fleet. Every month all customer deployments
-share knowledge. Any solution that removes the LLM from the operator's
-decision flow is the wrong solution.
+**1. The catalog is sacred.** The Mining Intelligence Catalog (`intelligence-catalog/`) is the single source of truth for everything known about Bitcoin SHA-256 ASIC miners — manufacturer specs, firmware quirks, failure patterns, war stories, repair-shop intelligence. The 321-miner SHA-256 seed is the floor; we only grow it. Any change that drops, divorces, or duplicates catalog data is the wrong change.
 
-**2. OpenClaw is the conversational brain, not a replacement target.** OpenClaw
-owns Slack Socket Mode, routes DMs and @mentions to the local LLM, and on the
-Mac mini will also route Block Kit button clicks back to the local approval
-API — all via outbound-only Socket Mode with no public ingress. Fix OpenClaw
-when it's broken; don't build around it.
+**2. The LLM IS the product.** The main feature of Mining Guardian is the LLM getting smarter over time. Every scan feeds it. Every denial refines it. Every operational outcome flows back into the catalog within ~100 ms (D-14). Any solution that removes the LLM from the operator's decision flow is the wrong solution.
 
-**3. The Mac mini is THE product.** The VPS, Cloudflare tunnels, systemd
-services, and `fieslerfamily.com` domains are all R&D scaffolding. The real
-product is a single Mac mini running docker-compose at a customer site with
-only outbound internet. The entire stack migrates between May 5–9 2026.
+**3. The Mac Mini is THE product.** The original VPS, Cloudflare tunnels, and `fieslerfamily.com` domains were R&D scaffolding (decommissioned for MG; only Bobby's facility-side dev infra remains). The real product is a single Mac Mini at the customer site under launchd with only outbound internet — Postgres on the Mini, Ollama on the Mini, the catalog on the Mini, the Web GUI on the Mini's loopback.
 
-**4. Scale-first, always.** Designed for 5,000+ miners per site, not 58. The
-cohort-based training architecture (`train_cohort.py`) is the reference: miners
-are grouped by hardware identity, analyzed as cohorts, with per-miner deep
-dives only for outliers. Cohort count grows sub-linearly with fleet size, so
-Claude API cost stays flat across mine sizes and local LLM workload stays
-manageable.
+**4. Scale-first, always.** Designed for 5,000+ miners per site, not 58. The cohort-based training architecture (`ai/train_cohort.py`) is the reference: miners are grouped by hardware identity, analyzed as cohorts, with per-miner deep dives only for outliers. Cohort count grows sub-linearly with fleet size, so Claude API cost stays flat across mine sizes and local LLM workload stays manageable.
 
-**5. Federated learning across customer sites.** Each customer Mac mini exports
-`knowledge.json` monthly. Bobby runs `combine_knowledge.py` (optionally with
-refinement passes through Claude + local LLM) to merge all site knowledge into
-`master_knowledge.json`, which is pushed back to every site. No internet
-required for the sync — USB or manual transfer works. Every customer's fleet
-makes every other customer's fleet smarter.
+**5. Federated learning across customer sites.** Each customer Mac Mini can export catalog deltas. Bobby merges site deltas (optionally with refinement passes through Claude + local LLM) into a master catalog snapshot, which is pushed back to every site. No public internet required for the sync — USB or manual transfer works. Every customer's fleet makes every other customer's fleet smarter.
 
-## 3. Target Architecture (what we're building toward)
+**6. Bitcoin SHA-256 only.** No altcoins, no GPU mining, no FPGA. The catalog scope, the parsers, the failure libraries — all SHA-256 ASIC.
+
+**7. Local-first, always.** No cloud-only dependencies. Claude API is opt-in and weekly-only. The Mini is fully functional without internet for the operational loop; only Slack notifications and the optional Claude training cycle require outbound connectivity.
+
+## 3. Target Architecture (the live shape as of the 2026-04-30 install)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -89,117 +57,89 @@ makes every other customer's fleet smarter.
 │                   │                                          │
 │  ┌────────────────┴──────────────────────────────────┐       │
 │  │           MAC MINI — Mining Guardian               │       │
-│  │            (docker-compose stack)                  │       │
+│  │              (launchd-managed services)            │       │
 │  │                                                    │       │
-│  │  ┌──────────────┐  ┌──────────────┐              │       │
-│  │  │ mining-      │  │  openclaw    │              │       │
-│  │  │ guardian     │◄─┤  (Socket     │              │       │
-│  │  │ (Python)     │  │   Mode)      │              │       │
-│  │  └──────┬───────┘  └──────┬───────┘              │       │
-│  │         │                 │                       │       │
-│  │  ┌──────┴─────────────────┴───────┐              │       │
-│  │  │  Shared volumes: guardian.db,   │              │       │
-│  │  │  knowledge.json, logs/          │              │       │
-│  │  └─────────────────────────────────┘              │       │
+│  │  ┌──────────────┐   ┌──────────────────────────┐  │       │
+│  │  │ scan daemon  │◄──┤ approval_api (8686, lo)  │  │       │
+│  │  │ core/mg.py   │   │ + Web GUI Operator       │  │       │
+│  │  │              │   │   Console                │  │       │
+│  │  └──────┬───────┘   └──────────────────────────┘  │       │
+│  │         │                                          │       │
+│  │  ┌──────┴───────────────────────────────────────┐ │       │
+│  │  │  PostgreSQL 16 on the Mini                    │ │       │
+│  │  │   - mining_guardian (operational)             │ │       │
+│  │  │   - intelligence_catalog (reference)          │ │       │
+│  │  │   D-14: live cross-reference, no TTL cache    │ │       │
+│  │  └────────────────────────────────────────────────┘│       │
 │  │                                                    │       │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  │       │
 │  │  │ prometheus  │  │   grafana   │  │ ollama   │  │       │
-│  │  │ (:9090)     │  │   (:3000)   │  │ Qwen 32B │  │       │
+│  │  │             │  │             │  │ (local)  │  │       │
 │  │  └─────────────┘  └─────────────┘  └──────────┘  │       │
 │  │                                                    │       │
-│  │  Dashboard (:8585)   Approval API (:8686 local)   │       │
+│  │  Dashboard (:8585 lo)   Approval API (:8686 lo)   │       │
 │  └──────────────────────┬─────────────────────────────┘       │
 │                         │                                    │
 │  Operator access:       │                                    │
-│    http://mac-mini-ip:3000 (Grafana)                        │
-│    http://mac-mini-ip:8585 (Dashboard)                      │
+│    Web GUI on the Mini's loopback                            │
+│    + Tailscale to the Mini for remote ops                    │
 └─────────────────────────┼────────────────────────────────────┘
                           │
            OUTBOUND ONLY (no public ingress):
-               ├── AMS API (or production AMS host)
+               ├── BiXBiT AMS (customer's AMS host)
                ├── slack.com (Socket Mode + chat.postMessage)
-               ├── api.anthropic.com (weekly training only)
+               ├── api.anthropic.com (opt-in weekly training only)
                ├── open-meteo.com (weather, free, no key)
-               └── Tailscale (optional, support access only)
+               └── Tailscale (operator support access only)
 ```
 
 ## 4. The Learning Loop (the main feature)
 
 This is the single most important mental model for this project.
 
-### 4a. Per-scan loop (every hourutes)
+### 4a. Per-scan loop (operator schedule, default hourly)
 
-1. **Scan** — Mining Guardian polls AMS via WebSocket, gets all miner state
-2. **Verify** — false-offline detection via direct TCP (port 4028)
-3. **Evaluate** — `_analyze_miner` runs the three-tier hashrate resolver +
-   thermal check (≥84°C only) + dead board check + offline decision tree
-4. **Store** — scan results written to `guardian.db` across 16 tables
-5. **Feed the LLM** — local Qwen 2.5 32B on ROBS-PC receives the scan,
-   analyzes it, writes findings into `knowledge.json`
-6. **Run the 8 AI features** in sequence in the main `loop()`:
+1. **Scan** — Mining Guardian polls AMS via WebSocket, gets all miner state.
+2. **Verify** — false-offline detection via direct TCP (port 4028 / 8443).
+3. **Evaluate** — `_analyze_miner` runs the three-tier hashrate resolver + thermal check (≥84°C only) + dead-board check + offline decision tree, **consulting the catalog** for `hardware.miner_models` specs, `ops.failure_patterns`, `hardware.model_known_issues`, and `market.war_stories` per D-14.
+4. **Store** — scan results written to the operational Postgres (`mining_guardian` DB).
+5. **Feed the LLM** — local Ollama receives the scan, analyzes it, writes findings; the analysis is logged to `public.llm_analysis`.
+6. **Run the AI features in sequence** in the main `loop()`:
    - Outcome checker (evaluate previous restarts)
    - HVAC correlator (facility stress score)
    - Predictor (12 pre-failure signals)
    - Action diversity (POWER_PROFILE_DOWN, ECO_MODE, POOL_FAILOVER, etc.)
    - Local LLM scan hook (background thread)
-7. **Post to Slack** — throttled to once per hour, includes scan summary +
-   crystal ball recommendations with approve/deny workflow
-8. **Overnight automation** — during 8pm-6am, LOW-risk actions auto-execute
-   without approval; 3+ FAILURE outcomes block auto-restart permanently
+7. **Post to Slack** + Web GUI — scan summary + crystal-ball recommendations with approve/deny workflow. Automation mode (`full_auto` / `semi_auto` / `manual`) gates which actions execute without approval.
+8. **Operator-defined overnight window** (default 10 p.m.–6 a.m.) — LOW-risk actions auto-execute when automation mode allows; 3+ FAILURE outcomes block auto-restart permanently.
+9. **D-14 feedback** — every operational write fires `NOTIFY catalog_feedback`. The `feedback_loop_daemon` LISTENs and folds the outcome into the catalog within ~100 ms.
 
 ### 4b. Per-action learning (every time an operator approves/denies)
 
-1. **APPROVE** → action executes via AMS → outcome checker evaluates success
-   over the next 2-3 scans → SUCCESS / FAILURE / PARTIAL label written to
-   `miner_restarts` table → updates per-miner fingerprint in `knowledge.json`
-   → updates fleet-wide success rate in confidence scorer
-2. **DENY** → two-step flow: operator replies DENY → Mining Guardian asks
-   "Why?" → operator's reason is captured in `action_audit_log` → local LLM
-   (via `llm_scan_hook.run_denial_processing_llm`) processes the reason into
-   an operational rule candidate → Sunday Claude training validates and
-   refines the rule → rule gets baked into future scan-time LLM prompts
+1. **APPROVE** → action executes via AMS → outcome checker evaluates success over the next 2–3 scans → SUCCESS / FAILURE / PARTIAL label written to `miner_restarts` → fired into the catalog (`ops.failure_patterns`, `hardware.model_known_issues`) via the D-14 NOTIFY → confidence scorer is updated.
+2. **DENY** → two-step flow: operator replies DENY → Mining Guardian asks "Why?" → operator's reason is captured in `action_audit_log` → local LLM (`ai/llm_scan_hook.run_denial_processing_llm`) processes the reason into an operational rule candidate → the optional Sunday Claude training validates and refines the rule → rule gets baked into future scan-time LLM prompts.
 
-### 4c. Weekly training (Sunday 3am)
+### 4c. Weekly training (Sunday 3 a.m., opt-in)
 
-**`train_cohort.py`** (the scale-first weekly trainer, replaces
-`train_comprehensive.py` which hit rate limits at miner #3).
+`ai/train_cohort.py` — the scale-first weekly trainer (replaces `train_comprehensive.py`, which hit rate limits at miner #3):
 
-1. **Cohort pass** — group all miners by `(model, firmware, chip_bin, pcb_version, cooling)`.
-   At 58 miners this produces ~10-15 cohorts. Send one Claude call per cohort
-   with per-cohort aggregates, restart outcome history, top problems, and
-   filtered local LLM observations.
-2. **Outlier pass** — miners >2σ below their cohort's hashrate mean or >2σ
-   above cohort's temp mean get individual deep analysis. Capped at 30
-   outliers per run.
-3. **Fleet synthesis pass** — one final Claude call with ALL cohort results,
-   ALL outlier results, ALL local LLM scan analyses from the past week,
-   operator rules, and cross-miner SQL correlations. Produces the weekly
-   executive report, fleet-wide patterns, predictive warnings, and refined
-   operator rules.
-4. **Storage** — every cohort/outlier/fleet result stored in `knowledge.json`
-   under `known_issues`, `cross_miner_analysis`, and `llm_scan_analyses`.
+1. **Cohort pass** — group all miners by `(model, firmware, chip_bin, pcb_version, cooling)`. At 58 miners this produces ~10–15 cohorts. One Claude call per cohort with per-cohort aggregates, restart outcome history, top problems, and filtered local LLM observations.
+2. **Outlier pass** — miners >2σ below their cohort's hashrate mean or >2σ above cohort's temp mean get individual deep analysis. Capped at 30 outliers per run.
+3. **Fleet synthesis pass** — one final Claude call with all cohort results, all outlier results, all local LLM scan analyses from the past week, operator rules, and cross-miner SQL correlations. Produces the weekly executive report, fleet-wide patterns, predictive warnings, and refined operator rules.
+4. **Storage** — every cohort/outlier/fleet result is written into the catalog (`market.war_stories`, `ops.failure_patterns`) and into `public.llm_analysis` on the operational side.
 
-This is the same code path that will run on customer Mac minis using Qwen 32B
-instead of Claude. The cohort approach makes the workload manageable at any
-scale — each Mac mini runs ~30 cohort analyses per training cycle regardless
-of whether the fleet is 50 or 5,000 miners.
+The same code path runs on customer Mac Minis using local Ollama instead of Claude when the customer has opted out of cloud training. The cohort approach makes the workload manageable at any scale — each Mac Mini runs ~30 cohort analyses per training cycle regardless of whether the fleet is 50 or 5,000 miners.
 
 ### 4d. Monthly federation (across customer sites)
 
-1. Each customer Mac mini runs `export_knowledge.py` monthly → produces
-   `site_<id>_knowledge.json`
-2. Bobby collects all site files (USB, email, any transfer method)
-3. Bobby runs `combine_knowledge.py` — merges all sites weighted by confidence,
-   produces `master_knowledge.json` with LLM synthesis
-4. **Refinement passes** (Bobby's requested enhancement): pipe the master
-   through Claude once for cleanup and once through the local LLM for
-   consistency checking before distribution
-5. Master gets pushed back to every customer site
-6. Each site's local LLM uses master knowledge as baseline context in every
-   scan-time prompt
+1. Each customer Mac Mini runs an export job → produces `site_<id>_catalog_delta.json`.
+2. Bobby collects all site files (USB, email, any transfer method).
+3. Bobby runs the catalog merge tool — merges all sites weighted by confidence, produces a master catalog snapshot with LLM synthesis.
+4. **Refinement passes**: pipe the master through Claude once for cleanup and once through the local LLM for consistency checking before distribution.
+5. Master catalog snapshot gets pushed back to every customer site (USB or manual transfer; no internet required).
+6. Each site's local LLM uses the master catalog as baseline context in every scan-time prompt.
 
-No internet is required for any step of this loop. Sneakernet works. Every
-customer's fleet makes every other customer's fleet smarter.
+No public internet is required for any step of this loop. Sneakernet works.
 
 ## 5. Fleet — Current State (R&D site USA 188)
 
@@ -215,76 +155,54 @@ customer's fleet makes every other customer's fleet smarter.
 | Antminer S21 Immersion (.22) | 1 | BiXBiT | Immersion | 208 (stock) → 360 (max) | 3 |
 | Antminer S21 Immersion (.23) | 1 | BiXBiT | Immersion | 217 (stock) → 347 (max) | 3 |
 
-**Temp thresholds (LOCKED operator rule):** No yellow tier. 84°C is the only
-threshold. Below 84°C is normal regardless of cooling type or cohort average.
+**Temp thresholds (LOCKED operator rule):** No yellow tier. 84°C is the only threshold. Below 84°C is normal regardless of cooling type or cohort average.
 
-**PDU access:** S21 Hydro and S21 Imm have AMS PDU outlets. S19J Pros do NOT
-have PDU outlets in AMS — offline remediation is restart → bad PSU ticket.
+**PDU access:** S21 Hydro and S21 Imm have AMS PDU outlets. S19J Pros do NOT have PDU outlets in AMS — offline remediation is restart → bad-PSU ticket.
 
 ## 6. System Components
 
-### 6a. Core daemon (`core/mining_guardian.py`, 5480 lines)
+### 6a. Core daemon (`core/mining_guardian.py`)
 
 The heart of the system. Contains:
 
 - `AMSClient` — cookie-based JWT auth, WebSocket read path, REST write path
 - `PolicyEngine` — rule-based finding evaluation
 - `RemediationPlanner` — builds action patches
-- `ApprovalInterface` — routes findings to operator
-- `OpenClawNotifier` — sends scan data to OpenClaw webhook
+- `ApprovalInterface` — routes findings to operator (Slack + Web GUI)
 - `RemediationCooldown` — prevents action spam
 - `WeatherCollector` — Open-Meteo weather
-- `GuardianDB` — 16-table SQLite schema with atomic writes and migrations
-- `SlackNotifier` — 6-channel routing with Block Kit support
+- `SlackNotifier` — channel routing with Block Kit support
 - `MiningGuardian` — the main orchestrator with `run_once()` and `loop()`
 
-The `loop()` method runs all 8 AI features in order after each scan.
+The `loop()` method runs all AI features in order after each scan and consults the catalog per D-14.
 
 ### 6b. AI layer (`ai/`)
 
 | File | Purpose |
 |---|---|
-| `train_cohort.py` | Scale-first weekly Claude training (main weekly entry point) |
-| `train_comprehensive.py` | Per-miner weekly trainer (deprecated at scale, used as helper by train_cohort) |
-| `weekly_train.py` | Cron entry — calls train_cohort + fingerprint_builder + hvac_correlator + predictor |
-| `combine_knowledge.py` | Federated multi-site knowledge merger |
-| `export_knowledge.py` | Monthly site knowledge export |
-| `knowledge_manager.py` | Persistent knowledge.json with atomic writes + context prompt builder |
-| `local_llm_analyzer.py` | Runs Qwen 2.5 32B after EVERY scan, processes denials into rules |
-| `claude_log_comparison.py` | Dual-model Claude pre/post restart comparison |
-| `backup_knowledge.py` | Daily 4am knowledge.json → GitHub backup |
-| `outcome_checker.py` | Feature 1 — restart outcome labeling |
-| `confidence_scorer.py` | Feature 2 — per-action confidence scoring |
-| `fingerprint_builder.py` | Feature 4 — per-miner behavioral fingerprints |
-| `hvac_correlator.py` | Feature 5 — HVAC/environment correlation |
-| `predictor.py` | Feature 6 — 12-signal pre-failure prediction |
-| `action_diversity.py` | Feature 8 — POWER_PROFILE_DOWN/UP, ECO_MODE, POOL_FAILOVER |
-| `ai_score.py` | Composite Knowledge Score calculator |
-| `llm_scan_hook.py` | Post-scan LLM hook dispatcher |
-| `deep_analysis_claude.py` | Ad-hoc Claude fleet analysis |
+| `train_cohort.py` | Scale-first weekly Claude training (opt-in main weekly entry point) |
+| `weekly_train.py` | Cron entry — calls `train_cohort` + `fingerprint_builder` + `hvac_correlator` + `predictor` |
+| `catalog_context.py` | Catalog client used by scan-time and AI paths (per D-14: no client-side cache, fail-loud) |
+| `daily_deep_dive.py` | The April 8 case-study path that consults the catalog and refines weekly |
+| `local_llm_analyzer.py` | Runs the local Ollama model after every scan; processes denials into rules |
+| `outcome_checker.py` | Restart outcome labeling (psycopg-native rewrite per D-3) |
+| `confidence_scorer.py` | Per-action confidence scoring |
+| `fingerprint_builder.py` | Per-miner behavioral fingerprints |
+| `hvac_correlator.py` | HVAC/environment correlation |
+| `predictor.py` | 12-signal pre-failure prediction |
+| `action_diversity.py` | POWER_PROFILE_DOWN/UP, ECO_MODE, POOL_FAILOVER |
 
-**8 AI features status** (as of April 9 2026):
-1. ✅ Outcome feedback loop — LIVE
-2. ✅ Confidence scoring — LIVE, gates autonomy
-3. ✅ Denial reason capture — LIVE, 11 reasons captured during 48hr test
-4. ✅ Miner fingerprinting v2 — LIVE, 58 profiles
-5. ✅ HVAC/environment correlation — LIVE
-6. ✅ Pre-failure prediction v2 — LIVE (12 signals including chain_events)
-7. ⏳ Repair shop data ingestion — blocked on dataset from James/ACS
-8. ✅ Action diversity — LIVE with POWER_PROFILE_UP fix
+### 6c. API layer (`approval_api/`, `api/`)
 
-### 6c. API layer (`api/`)
-
-| File | Port | Purpose |
+| Component | Port | Purpose |
 |---|---|---|
-| `dashboard_api.py` | 8585 | REST API + Prometheus /metrics + Retool endpoints + Grafana iframes + `/query/*` (for OpenClaw guardian-db skill) |
-| `approval_api.py` | 8686 | APPROVE/DENY/approve_selected + Slack interactive block_actions (local-bound) |
-| `slack_approval_listener.py` | — | Polls Slack threads for text APPROVE/DENY replies (will be replaced by OpenClaw routing) |
-| `slack_command_handler.py` | — | Conversational fleet intelligence bot (will migrate into OpenClaw) |
+| `approval_api` (FastAPI) | 8686 (lo) | Approve/deny + Web GUI Operator Console + automation-mode selector + operator-controlled schedules (PR #88, PR #90) |
+| `dashboard_api.py` | 8585 (lo) | REST + Prometheus `/metrics` + Grafana iframes |
+| `slack_command_handler.py` | — | Conversational fleet intelligence bot |
 | `slack_block_kit.py` | — | Block Kit message builder |
-| `slack_actions_handler.py` | — | DEPRECATED — requires public ingress, delete before May 5 |
 | `ams_alert_listener.py` | — | Listens for AMS alerts, queues urgent actions |
-| `ai_dashboard_api.py` | — | AI Intelligence Center dashboard |
+
+All HTTP surfaces bind to `127.0.0.1`. Remote access is via Tailscale to the Mini.
 
 ### 6d. Clients (`clients/`)
 
@@ -296,140 +214,68 @@ The `loop()` method runs all 8 AI features in order after each scan.
 | `immersion_client.py` | Fog Hashing Elite 1 immersion tank |
 | `pdu_client.py` | BiXBiT 2U+PDU client |
 
-### 6e. Database (16 tables in `guardian.db`)
+### 6e. Database — Postgres 16 on the Mini
 
-1. `scans` — scan history
-2. `miner_readings` — 27 fields per miner per scan
-3. `chain_readings` — per-board: rate, voltage, freq, consumption, HW errors, temp
-4. `pool_readings` — per-pool accepted/rejected shares
-5. `miner_state_readings` — hashrate tiers, device limits, minerStatus codes
-6. `miner_ams_extended` — AMS timestamp, map coords, PDU counter
-7. `miner_hardware` — board serial, chip die/bin, PCB/BOM version, PSU
-8. `log_metrics` — per-chip hashrate, PSU voltage, system health, chain events
-9. `miner_logs` — full raw miner.log files (30-day retention)
-10. `action_audit_log` — every action ever (permanent)
-11. `known_dead_boards` — dead board registry with ticket tracking
-12. `pending_approvals` — actions awaiting operator response (1 per miner max, 1hr expire)
-13. `miner_restarts` — every restart + outcome feedback
-14. `llm_analysis` — every LLM response with prompt, model, duration
-15. `hvac_readings` — supply/return/pressure/pump data
-16. `weather_readings` — outside temp and humidity
-17. `chip_readings` (stub) — ready for direct-API per-chip data
-18. `miner_baselines` — Tier 3 hashrate baseline learning state
-19. `facility_events` — HVAC correlator detected fleet-wide events
+Two databases in one Postgres instance, per D-14:
 
-(The exact count varies by version, but the schema is stable and migrations are
-handled in `GuardianDB._init_db`.)
+- **`mining_guardian` (operational):** scans, miner_readings, chain_readings, pool_readings, action_audit_log, miner_restarts, llm_analysis, hvac_readings, weather_readings, pending_approvals, known_dead_boards, system_settings, system_schedules.
+- **`intelligence_catalog` (reference):** `hardware.miner_models`, `hardware.manufacturers`, `hardware.model_known_issues`, `ops.failure_patterns`, `market.war_stories`, `knowledge.field_registry`, `knowledge.sources`. Seeded with the 321-miner SHA-256 catalog at install time.
 
-## 7. Hard Deadlines & Migration
+## 7. Deadlines & Install
 
-### May 3, 2026 — Customer installer work begins
-- Update the existing `installer/DEPLOYMENT.md` on the `installer-build` branch
-- Do NOT write a new installer plan — the 313-line spec from April 6 exists
-- Build the wizard, launchd plists, verify scripts per that spec
+### 2026-04-30 — Mac Mini install (live)
 
-### May 5–9, 2026 — Mac mini arrives
-- Containerize Mining Guardian (docker-compose)
-- Deploy to Mac mini
-- All Cloudflare tunnels off
-- All VPS services migrated
-- No public ingress at customer sites
-- Interactive Slack buttons route via OpenClaw Socket Mode → localhost approval API
-- Delete `api/slack_actions_handler.py`
-- `grep -rn 'fieslerfamily'` and resolve every hit
+- Operator runs the installer .pkg from PR #79 on a fresh Mac
+- Postgres 16 + the 5 catalog migrations (001–005) + Ollama + launchd plists for all services
+- Catalog seed loads (321 SHA-256 miners)
+- Smoke tests: scan loop, AMS reach, all services, Slack ping, Grafana datasource, Ollama smoke
+- If green: tag `v1.0.0`, write `docs/INSTALL_REPORT_2026-04-30.md`
+- If red: pre-defined rollback (re-run installer next day)
 
-### July 2026 — Intelligence catalog migrates to NAS
-- UGREEN NASync iDX6011 Pro arrives
-- Postgres + intelligence catalog moves from ROBS-PC to NAS
-- `pg_dump` → file copy → `pg_restore` (~20 minutes for 60GB)
+### Post-install (May 2026)
 
-## 8. Build Queue (in priority order)
+- Customer-facing doc refresh once we have post-install screenshots (Setup Manual, Program Instructions, Brochure)
+- Operator-controlled schedules (§10.7) tuning based on real-world cadence
+- Web GUI Operator Console (§10.1, §10.2) iteration
 
-### In progress or imminent
+## 8. Build Queue (in priority order, post-install)
 
-1. **Wire OpenClaw to guardian.db** via the `guardian-db` skill. The skill
-   files exist at `deploy/openclaw-skills/guardian-db/` and inside the
-   container at `/data/.openclaw/skills/guardian-db/`. The blocker is that
-   OpenClaw doesn't auto-discover user skills — `loadWorkspaceSkillEntries`
-   exists in the dist bundle but isn't being called for the `guardian-db`
-   path. Three paths forward: (a) find the config key, (b) install as bundled
-   skill via docker-compose volume mount, (c) read the OpenClaw docs directly.
-2. **Apply Grafana wordmark** to remaining 5 dashboards (2 min each, manual)
-3. **Set Slack channel icons** (manual via workspace UI, 90 sec per branding checklist)
-
-### Post-demo, high priority
-
-4. **Daily Log Capture & 14-day Rolling Baseline** (3-5 day build) — would have
-   caught the April 8 AH3880 firmware regression on the first post-update
-   scan. See `docs/DAILY_LOG_CAPTURE_VISION.md`. Build order: cron script →
-   firmware_changes table → regression detector → dual-model comparison →
-   backfill. HIGH PRIORITY.
-5. **weekly_train.py denial reason ingestion gap** — `train_comprehensive.py`
-   reads denial reasons but `weekly_train.py` does not. Fix before next
-   Sunday training.
-6. **Auradine firmware rollback** — waiting on vendor reply. Roll back .55
-   first, observe 24h, then .28.
-
-### Pre-Mac mini (by May 5)
-
-7. **OpenClaw `block_actions` handler** — forward button clicks to local
-   approval API via Socket Mode
-8. **`mg_` action_id prefix** in `api/slack_block_kit.py` so OpenClaw can
-   identify Mining Guardian buttons
-9. **Delete `api/slack_actions_handler.py`** (requires public ingress)
-10. **CORS audit** — `grep -rn 'fieslerfamily'` and resolve every hit
-11. **Customer installer wizard** — update and execute `installer/DEPLOYMENT.md`
-    on `installer-build` branch
-
-### Post-demo, medium priority
-
-12. **Open Log Uploader** (2-4 week build) — any-vendor any-format ingestion
-    engine. See `docs/OPEN_LOG_UPLOADER_VISION.md`. 4 phases, 10 open design
-    questions to resolve first.
-13. **Intelligence catalog Phase 1** on ROBS-PC — blocked on Thunderbolt SSD
-    enclosure delivery and WSL2/Docker virtualization conflict (Memory
-    Integrity likely). 30-min hard cap on WSL2 debug, fall back to native
-    Postgres via EnterpriseDB installer.
-14. **Monthly federation refinement pipeline** — add dual-pass refinement
-    (Claude + local LLM) to `combine_knowledge.py` for higher-quality master
-    knowledge synthesis.
-
-### Long-term / gated
-
-15. **Repair shop data ingestion** — 1M+ data points from James Scaggs/ACS,
-    ingestion worker pool, failure signature library. Blocked on dataset.
-16. **Container monitoring integration** — BiXBiT container system mapped
-    in `docs/CONTAINER_MONITORING.md`, waiting for live access grant.
-17. **Multi-site federated deployment** — scale beyond USA 188 to additional
-    customer sites.
-18. **Grafana alerting** — replaces Slack-based alerting over time.
+1. Address the Grafana 321-miner dropdown (deferred from earlier — verify dashboard reflects the full 321-miner catalog seed).
+2. Customer-facing doc refresh (Setup Manual, Program Instructions, Brochure §10.4 / §10.5 / §10.6 — blocked on screenshots from the live install).
+3. Repair-shop data ingestion (gated on the dataset arrival from James / ACS).
+4. Container monitoring activation (gated on BiXBiT API access).
+5. Open Log Uploader vision (`docs/OPEN_LOG_UPLOADER_VISION.md`) — multi-vendor log ingestion, post-MVP work.
+6. Federated catalog tooling (catalog merge tool + refinement passes).
+7. Grafana alerting that complements Slack notifications.
 
 ## 9. The Morning Kickoff Ritual
 
-Every Claude session for this project starts with this exact sequence. See the
-full version in `CLAUDE.md` under "Session Kickoff Protocol."
+Every Claude session for this project starts with the exact sequence in `CLAUDE.md` under "Session Kickoff Protocol." The ordered reading list is:
 
-1. Read `CLAUDE.md` (binding rules)
-2. Read `docs/VISION.md` (this file)
-3. Read `README.md` (current architecture)
-4. Read `AI_ROADMAP.md` (feature status + deadlines)
-5. Read most recent `docs/RESUME_HERE_*` or `HANDOFF_*` note
-6. Run `git status`, `git log --oneline -20`, `git branch -a`
-7. Come back with a 5-section report, no questions until it's delivered
+1. `CLAUDE.md` (binding rules)
+2. `docs/VISION.md` (this file)
+3. `docs/DECISIONS.md` (locked decisions)
+4. `README.md` (current architecture)
+5. `AI_ROADMAP.md` (feature status)
+6. `docs/ROADMAP_TO_MAC_MINI_2026-05-05.md` (historical install plan, superseded by the 2026-04-30 actual install)
+7. `REPAIR_LOG.md` (live regression log)
+8. `docs/LATENT_BUGS.md`
+9. `docs/MG_UNIFIED_TODO_LIST.md`
+10. Most recent `docs/SESSION_LOG_*` (now under `docs/archive/2026-04/`, historical only)
+11. Git state
+12. Open PRs
 
 ## 10. What This Product Is NOT
 
-- NOT a pool management system (out of scope, security policy)
-- NOT a miner settings manager (out of scope, security policy)
+- NOT a pool-management system (out of scope, security policy)
+- NOT a miner-settings manager (out of scope, security policy)
 - NOT a cloud-hosted SaaS (it's a local appliance)
 - NOT a hardened bunker (open and useful by default, tightenable by choice)
-- NOT a home lab (scope discipline — Mining Guardian + OpenClaw + what they need, nothing else)
-- NOT dependent on external AI services for daily operation (Claude API is
-  weekly-only; Qwen 32B runs locally)
-- NOT dependent on Slack being available (Slack is a notification layer, not
-  a control plane)
+- NOT a home lab (scope discipline — Mining Guardian + the catalog + what they need, nothing else)
+- NOT dependent on external AI services for daily operation (Claude API is opt-in and weekly-only; local Ollama runs the operational loop)
+- NOT dependent on Slack being available (Slack is a notification layer, not a control plane — the Web GUI Operator Console is the loopback control plane)
+- NOT multi-coin or non-SHA-256 (Bitcoin SHA-256 ASIC only)
 
 ---
 
-*This document exists so that no Claude session ever again asks "what is the
-vision for Mining Guardian?" The answer is above. Read it first.*
+*This document exists so that no Claude session ever again asks "what is the vision for Mining Guardian?" The answer is above. Read it first.*

@@ -225,6 +225,35 @@ This is the non-security half of the audit. It's about whether AI actually has d
 - **Effort:** 1.5-2 hours for the surgical removal + tests + commit
 - **When:** Tomorrow (Monday build day). Best done BEFORE installer rebuild so installer doesn't include OpenClaw refs.
 
+## 5.5. Sweep update 2026-04-29 PM — Section 5 closed
+
+All Section 5 work has landed. Status flips:
+
+| 5.2 step | Old status | New status | Reference |
+|---|---|---|---|
+| 1. `docker compose down` on `/docker/openclaw-5b5o` | 🔴 OPEN | ✅ DONE | Operational DB host shutdown — historical, not relevant on Mac Mini |
+| 2. `docker volume rm` on openclaw volumes | 🔴 OPEN | ✅ DONE | Same as #1 |
+| 3. Edit `core/mining_guardian.py` (drop `OpenClawNotifier` import + init + config key) | 🔴 OPEN | ✅ DONE | Removed during Section 5 surgical PR |
+| 4. Edit `core/overnight_automation.py` (drop `notify_openclaw()` + call site) | 🔴 OPEN | ✅ DONE | Same |
+| 5. Delete `notifiers/openclaw_notifier.py` | 🔴 OPEN | ✅ DONE | Same |
+| 6. Edit `core/models.py` (drop `openclaw_webhook_url` field) | 🔴 OPEN | ✅ DONE | Same |
+| 7. Delete `tests/test_openclaw_notifier.py` | 🔴 OPEN | ✅ DONE | Confirmed gone in 2026-04-29 doc-sweep test inventory (77 active tests, no openclaw test row) |
+| 8. Update `tests/conftest.py` if it references OpenClaw | 🔴 OPEN | ✅ DONE | Verified clean |
+| 9. Edit `api/slack_approval_listener.py` docstring (drop the "Socket Mode is owned by OpenClaw" line) | 🔴 OPEN | ✅ DONE | Verified clean |
+| 10. Run tests | 🔴 OPEN | ✅ DONE | 77/77 active tests pass |
+| 11. Commit `refactor: remove dead OpenClaw integration` | 🔴 OPEN | ✅ DONE | Merged to main pre-sweep |
+| 12. Delete `deploy/openclaw-skills/` directory | 🔴 OPEN | ✅ DONE | Removed in repo-doc-sweep Commit 2 (2026-04-29) |
+
+Doc-side cleanup (this sweep) also closes the **6.3 / 6.4** items that depended on Section 5:
+
+| 6.x item | Old status | New status |
+|---|---|---|
+| 6.3 "Slack listener docstring still says 'Socket Mode is owned by OpenClaw'" | 🔴 OPEN | ✅ DONE (docstring removed in Section 5 PR) |
+| 6.3 / 10 row "Bolt/Socket Mode migration (post-OpenClaw cleanup)" | 🔴 OPEN | 🟢 DEFERRED (still open as a **post-install** item; explicitly NOT on critical path — see 5.3) |
+| 6.4 row 6c "Remove false OpenClaw docstring after Section 5" | 🔴 OPEN | ✅ DONE |
+
+**OpenClaw is fully removed from the active tree.** Section 5 above is preserved verbatim as the historical record of how the removal was scoped and executed. Do not edit the original 5.1–5.4 narrative — append future deltas here in 5.5+.
+
 ---
 
 # SECTION 6 — Slack Connection Audit (your specific call-out)
@@ -331,7 +360,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | `chip_readings` table — 0 reads, 0 writes | H1 | 🔴 Drop OR wire to AMS per-chip extraction. Recommend drop. |
 | `log_collection_failures` table — 0 reads, 0 writes | H3 | 🔴 Drop OR wire. Recommend drop. |
 | `s19jpro_overheat_tracking` — model-specific hack | N2 | 🔴 Promote to generic `model_overheat_tracking` OR fold into `ops.failure_patterns` |
-| `guardian.db` (0 bytes) | observed | 🔴 Delete the empty SQLite stub at repo root |
+| `guardian.db` (0 bytes) | observed | ✅ DONE 2026-04-29 — empty stub deleted in earlier cleanup; verified absent in the 2026-04-29 doc-sweep tree audit |
 | `databases/*.db` — empty stubs | observed | 🔴 Delete (or move to `archive/sqlite_stubs/`) |
 | `migrations/migrate_sqlite_to_postgres.py` | DECISIONS.md #6 | 🟢 Has guard already (raise unless `MG_ALLOW_MIGRATION=1`). Defer deletion to post-Mac-Mini. |
 
@@ -340,7 +369,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | Item | Source | Action |
 |---|---|---|
 | `llm_analysis` (6r/3w, 1008 rows) | H4 | 🔴 Add precision/recall dashboard + prompt drift detection. Defer post-Mac-Mini. |
-| `miner_baselines` (4r/3w, VPS populated, catalog 0) | H5 | 🔴 Wire to cross-miner anomaly detection. Layer 3 of the 6-layer plan. |
+| `miner_baselines` (4r/3w, operational DB populated, catalog 0) | H5 | 🔴 Wire to cross-miner anomaly detection. Layer 3 of the 6-layer plan. (Note 2026-04-29: "VPS populated" wording dropped — the operational DB now lives on the Mac Mini per D-14; baseline rows are still those previously synced from the historical operational DB.) |
 | `pending_operator_reviews.json` | H6 | 🔴 Promote from JSON to DB-backed table. **Defer.** |
 | `discovery_log` not piped to enrichment | H7 | 🔴 Build promotion cron from `acknowledged=0` → deep enrichment queue. |
 | `knowledge.freshness_log` empty | H8 | 🔴 Wire freshness writes from enrichment watchers. |
@@ -411,10 +440,13 @@ This is what I'd tackle, in this order, if you asked me to drive it:
 12. **`restore_from_snapshot.sh`** script — 1.5 hr
 13. **Update DEPLOYMENT_CHECKLIST.md** — 30 min
 
-## 📅 Wednesday 2026-04-29 — Real Install on Mac Mini
-14. Run installer in customer mode with your existing creds
+## 📅 Wednesday 2026-04-29 — ~~Real Install on Mac Mini~~ — MOVED TO 2026-04-30
+
+> **Update 2026-04-29 PM:** The real install was rescheduled from Wednesday → Thursday 2026-04-30 to give a full day of repo polish (this sweep, PR triage, branch cleanup, security re-sweep, code cleanup, preflight, `v1.0.0-install-ready` tag). See ROADMAP_TO_MAC_MINI header banner for the canonical date. The four checklist items below remain the planned sequence — only the calendar date moved by one day.
+
+14. Run installer in customer mode with existing creds (~~Wed~~ Thu morning)
 15. Document every paper cut as we go
-16. Restore VPS data via `restore_from_snapshot.sh`
+16. ~~Restore VPS data via `restore_from_snapshot.sh`~~ — superseded. Per D-14, no live VPS data is being copied to the Mac Mini; the Mini stands up its own operational DB from migrations 001–005 + 321-row catalog seed. The `restore_from_snapshot.sh` script remains in the tree as an **optional** tool for any future operator who explicitly wants to re-import a historical operational-DB snapshot, but it is **not** part of the canonical Mac Mini install path.
 17. Live verification, swap DNS / cron / Slack notifier targets to Mac
 18. Begin 24-48 hr burn-in
 
@@ -676,7 +708,7 @@ Bucket 3 done. Remaining sprint priorities, restated:
 | 🔴 1 | Runtime invariant assertion | OPEN |
 | 🟡 2 | CI lint pipeline | OPEN |
 | 🟡 2 | B-7 migrations 002 | OPEN |
-| 🟡 2 | VPS PAT rotation (S-2 was emergency Sunday — confirm rotation cycle) | OPEN |
+| 🟡 2 | GitHub PAT rotation (S-2 was emergency Sunday — confirm rotation cycle. Renamed 2026-04-29: this rotation was for the GitHub Personal Access Token, not anything VPS-specific.) | OPEN |
 | 🟡 2 | Delete `cleanup_ams_logs.py` | OPEN |
 | 🟡 2 | **Grafana intelligence dashboard — miner dropdown is hard-coded, must auto-expand from DB** | OPEN — see § 15.6.1 |
 | 🟢 3 | .pkg branding | ✅ **DONE 2026-04-29** |
@@ -705,7 +737,7 @@ See `STUDY_NOTE_2026-04-30.docx` for tomorrow's review packet.
 3. Set `refresh: 2` ("On Time Range Change") so the dropdown re-queries the DB every time the dashboard loads. Alternative: `refresh: 1` ("On Dashboard Load") if cost is a concern.
 4. Set `multi: true` and `includeAll: true` so the operator can pick one, several, or all miners.
 5. Test: add a new test miner to the DB, reload the dashboard, confirm it appears without dashboard JSON edits.
-6. Provision the fix into `installer/grafana/dashboards/intelligence.json` (or wherever this dashboard lives) so the Mac Mini install gets the corrected version on first boot — do not just hot-fix the running Grafana on the VPS.
+6. Provision the fix into `installer/grafana/dashboards/intelligence.json` (or wherever this dashboard lives) so the Mac Mini install gets the corrected version on first boot — do not just hot-fix the running Grafana instance ad-hoc.
 
 **Effort estimate:** 30-60 min once we're at a Mac with Grafana access. Bucket 2 not Bucket 1 — does not block the Mini install, but should ship before any customer sees the dashboard.
 
