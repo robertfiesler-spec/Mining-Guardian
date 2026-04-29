@@ -14,8 +14,8 @@ pick up the fix without re-deriving the context.
 
 | ID  | Severity | Subject                                                           | Status     |
 |-----|----------|-------------------------------------------------------------------|------------|
-| B-1 | Low      | predictor.py NameError (~line 4619)                               | Not fixed  |
-| B-2 | Low      | mining_guardian.py NameError in `_escalate_board_issue` (~4040)   | Not fixed  |
+| B-1 | Low      | predictor.py NameError (~line 4619)                               | Fixed 2026-04-14 (Phase 1, `88b5b08`) |
+| B-2 | Low      | mining_guardian.py NameError in `_escalate_board_issue` (~4040)   | Fixed 2026-04-14 (Phase 1, `88b5b08`) |
 | B-3 | High     | `000_bootstrap_field_log_tables.sql` non-partitioned shape trap   | Not fixed  |
 | B-4 | High     | `mg_import.insert_raw_json` silently swallows ingestion errors    | Not fixed  |
 | B-5 | Medium   | `mg_import.py` raw_json index targets nonexistent column          | Patched out|
@@ -538,48 +538,59 @@ not declared).
 
 # Low-Severity Bugs
 
-## B-1 — `predictor.py` NameError (~line 4619)
+## B-1 — `predictor.py` NameError (~line 4619) — ✅ FIXED
 
 **Severity:** Low
-**Status:** Not triggered in 1,482 scans (as of 2026-04-13)
+**Status:** Fixed 2026-04-14 in Phase 1 (commit `88b5b08`). The prediction loop in `ai/predictor.py` was crashing immediately with a `NameError` because it referenced bare `miner_id` and `ip` variables that weren't in scope — they were keys on the `m` dict from the SQL query result. The exception was caught by a broad `except` block and logged at DEBUG level, so it looked like the predictor was running but finding no signals when in reality it never analyzed a single miner. Fix: corrected the references to `m["miner_id"]` and `m["ip"]`. See `docs/REPAIR_LOG.md` entry "2026-04-14 · Prediction loop was silently dead — NameError on miner_id/ip".
 **Discovered:** 2026-04-12 (code review)
-**Location:** `predictor.py` ~line 4619
+**Location:** `ai/predictor.py` (file is now 1,006 lines; original line ~4619 reference was pre-refactor)
 
-### Description
+### Verification (re-run any time)
 
-A variable is referenced before assignment on a code path that has never been
-exercised in production. Caught during the April 12 manual code review.
+```bash
+# B-1 fix is the m["miner_id"] / m["ip"] references inside the prediction loop
+grep -n 'm\["miner_id"\]\|m\["ip"\]' ai/predictor.py
+# Should return matches around lines 178–191 in the predict() function
+```
 
-### Fix Plan
+### Open follow-up (NOT in this PR)
 
-Fix when next editing the file. Add a unit test that exercises the code path
-to prevent regression.
+A regression unit test that injects a mocked DB cursor returning a row dict and asserts the predict path runs without `NameError` is still wanted (the original fix-plan asked for one). Tracked as Bucket 5 sub-task; deferred to a follow-up PR so this entry can be flipped without scope creep.
 
 ### References
 
-- `docs/REPAIR_LOG.md` 2026-04-12 entry
+- `docs/REPAIR_LOG.md` 2026-04-14 entry "Prediction loop was silently dead"
+- Phase 1 commit `88b5b08`
 
 ---
 
-## B-2 — `mining_guardian.py` NameError in `_escalate_board_issue` (~line 4040)
+## B-2 — `mining_guardian.py` NameError in `_escalate_board_issue` (~line 4040) — ✅ FIXED
 
 **Severity:** Low
-**Status:** Not triggered in 1,482 scans (as of 2026-04-13)
+**Status:** Fixed 2026-04-14 in Phase 1 (commit `88b5b08`). The `_escalate_board_issue()` method in `core/mining_guardian.py` referenced an `issue` variable that was never defined in its scope and crashed with `NameError` every time an escalation triggered. Like the predictor bug, the exception was caught silently. Fix: rewrote the function to use the parameters actually passed in (`miner_id`, `ip`, `model`, `dead_idx`, `reason`) consistently. The current implementation lives at `core/mining_guardian.py:1348`. See `docs/REPAIR_LOG.md` entry "2026-04-14 · Board escalation crashed on undefined `issue` variable".
 **Discovered:** 2026-04-12 (code review)
-**Location:** `mining_guardian.py` ~line 4040, `_escalate_board_issue`
+**Location:** `core/mining_guardian.py:1348` (file is now 2,638 lines; original line ~4040 reference was pre-refactor)
 
-### Description
+### Verification (re-run any time)
 
-NameError on a rarely-taken escalation branch. Same review as B-1.
+```bash
+# B-2 fix is that _escalate_board_issue uses its parameters consistently
+# and references no bare "issue" variable.
+grep -n -A 4 'def _escalate_board_issue' core/mining_guardian.py
+# Signature should read: (self, miner_id, ip, model, dead_idx, reason) — not "issue"
+# Confirm body is clean of the old bug:
+awk '/def _escalate_board_issue/,/^    def [a-zA-Z_][a-zA-Z_]*\(/' core/mining_guardian.py | grep -c '\bissue\b'
+# Should print 0 (no bare "issue" references inside the function body)
+```
 
-### Fix Plan
+### Open follow-up (NOT in this PR)
 
-Fix when next editing the file. Add a unit test that exercises the escalation
-branch to prevent regression.
+A regression unit test that exercises `_escalate_board_issue` with a mocked AMS client + DB and asserts it runs to completion is still wanted. Tracked as Bucket 5 sub-task; deferred to a follow-up PR so this entry can be flipped without scope creep.
 
 ### References
 
-- `docs/REPAIR_LOG.md` 2026-04-12 entry
+- `docs/REPAIR_LOG.md` 2026-04-14 entry "Board escalation crashed on undefined `issue` variable"
+- Phase 1 commit `88b5b08`
 
 ---
 
