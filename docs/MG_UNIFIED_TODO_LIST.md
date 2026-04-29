@@ -38,6 +38,24 @@
 
 **Bottom line of weekend so far:** 5 PRs merged, fleet running clean, outcome feedback loop alive after silent breakage since 2026-04-23.
 
+## 1.1 Tuesday 2026-04-28 — Customer docs + .pkg installer branding (PR #54)
+
+| Item | Status | Notes |
+|---|---|---|
+| Setup Manual PDF (12 pp) | 🟢 | `docs/customer/MiningGuardian_Setup_Manual.pdf` — install walkthrough, USB + GitHub paths, verify, first launch, troubleshooting |
+| Program Instructions PDF (10 pp) | 🟢 | `docs/customer/MiningGuardian_Program_Instructions.pdf` — daily-usage walkthrough |
+| Brochure PDF (4 pp) | 🟢 | `docs/customer/MiningGuardian_Brochure.pdf` — features + benefits + iPhone-app coming-soon callout |
+| ~~Terminal-wizard brand toolkit~~ REMOVED | ⚪ | Was based on rejected pre-D-13 architecture. Real installer is the signed/notarized native macOS .pkg shipped today (`MiningGuardian-1.0.0-978ff61126ea.pkg`, sha `c7030d69…65f8`, notarization `2c4130a4`) |
+| .pkg branding: style `welcome.html` + `conclusion.html` (navy + BTC orange + Apple system fonts) | 🟢 | `installer/macos-pkg/resources/` — done in PR #54, navy `#0A1428` + BTC orange `#F7931A` + electric blue `#3DA9FC`, no remote font CDN |
+| .pkg branding: add `background.png` (Installer.app sidebar — already referenced in `Distribution.xml` line 35) | 🟢 | 620×1111 PNG-8 (305 KB), Hero shield + crossed pickaxes + MINING GUARDIAN wordmark |
+| Rebuild + re-sign + re-notarize after branding lands | 🔴 | `make pkg` on Robert's Mac (Developer ID Installer Robert Fiesler ARJZ5FYU94 + notarytool) |
+| Optional: custom Finder icon for the `.pkg` file (icns) | 🔴 | Cosmetic — only shows in Finder before install |
+| Replace v1.0 dev screenshots with production UI shots | 🔴 | After dashboard ships; rebuild via `customer_docs/build_*.py` |
+| Update PDFs when iPhone app ships | 🔴 | Search build scripts for "Coming soon"; refresh callouts |
+
+**End-of-day status (4:15 PM CDT):** PR #54 is OPEN, MERGEABLE, CLEAN — single rebased commit `a2b1261` on top of main `9e24a94`. Eight files: 3 customer PDFs + `docs/customer/README.md` + `welcome.html` + `conclusion.html` + `background.png` + this TODO update. Awaiting merge + `make pkg` rebuild on Robert's Mac. The currently-distributed `.pkg` (`MiningGuardian-1.0.0-978ff61126ea.pkg`, sha `c7030d69…65f8`) on the USB stick "MG Install" and on the GitHub Release is the **unbranded** build — it stays in place until the rebuild produces a new `.pkg`, then we replace the file on the USB (do not erase) and clobber-upload to the Release. See `docs/RUNBOOK_PKG_REBUILD.md` (added in this PR) for paste-along blocks A–H.
+
+
 ---
 
 # SECTION 2 — Block-Ship Security Items (CRITICAL — must close before customer goes live)
