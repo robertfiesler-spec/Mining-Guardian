@@ -677,7 +677,8 @@ Bucket 3 done. Remaining sprint priorities, restated:
 | 🟡 2 | B-7 migrations 002 | OPEN |
 | 🟡 2 | VPS PAT rotation (S-2 was emergency Sunday — confirm rotation cycle) | OPEN |
 | 🟡 2 | Delete `cleanup_ams_logs.py` | OPEN |
-| 🟡 2 | **Grafana intelligence dashboard — miner dropdown is hard-coded, must auto-expand from DB** | OPEN — see § 15.6.1 |
+| 🟡 2 | **Grafana Intelligence Report — miner dropdown auto-expand** (`scripts/fix_intelligence_dropdown.py`) | FIXED 2026-04-29 PM — see § 15.6.1 |
+| 🟡 2 | **Provision all seven Grafana dashboards as code** | OPEN (NEW) — see § 15.6.2 |
 | 🟢 3 | .pkg branding | ✅ **DONE 2026-04-29** |
 | 🟢 4 | Power cycle 53476 | OPEN |
 | 🟢 4 | Inspect 53494 / 53521 / 53482 | OPEN |
@@ -685,30 +686,60 @@ Bucket 3 done. Remaining sprint priorities, restated:
 
 See `STUDY_NOTE_2026-04-30.docx` for tomorrow's review packet.
 
-### 15.6.1 Grafana miner-dropdown auto-expand bug (filed 2026-04-29)
+### 15.6.1 Grafana miner-dropdown auto-expand bug (filed 2026-04-29, fix shipped 2026-04-29 PM)
 
-**Symptom (operator-reported 2026-04-29):** The intelligence Grafana page has a fixed/hard-coded list of miner serial numbers in its template-variable dropdown. New miners discovered in the daily search runs do not appear, so not all miners actually present in the database are visible in the dashboard. Operator currently cannot select miners that exist in Postgres.
+**Symptom (operator-reported 2026-04-29 AM):** The Intelligence Report Grafana dashboard ([UID `intelligence_report_001`](https://grafana.fieslerfamily.com/d/intelligence_report_001/)) has a fixed/hard-coded list of miner serial numbers in its template-variable dropdown. New miners discovered in the daily search runs do not appear, so not all miners actually present in the database are visible. Operator could not select miners that exist in Postgres.
 
-**Root cause (likely):** The dashboard JSON has a `templating.list[]` entry of `type: "custom"` with a literal value list, instead of `type: "query"` driven by a SQL query against the canonical miners table.
+**Investigation findings (the morning study note got two things wrong — corrected here):**
 
-**Fix shape:**
-1. Identify the canonical miners table on Postgres (probably `miners` or `mining_miners` — confirm during fix; do **not** read from JSON catalog, that path is on its way out per C1).
-2. Replace the `custom` template variable with a `query` variable, definition roughly:
-   ```sql
-   SELECT DISTINCT serial_number AS __value, hostname AS __text
-   FROM miners
-   WHERE active = true
-   ORDER BY hostname;
-   ```
-   (exact column names TBD — verify against `\d miners` first).
-3. Set `refresh: 2` ("On Time Range Change") so the dropdown re-queries the DB every time the dashboard loads. Alternative: `refresh: 1` ("On Dashboard Load") if cost is a concern.
-4. Set `multi: true` and `includeAll: true` so the operator can pick one, several, or all miners.
-5. Test: add a new test miner to the DB, reload the dashboard, confirm it appears without dashboard JSON edits.
-6. Provision the fix into `installer/grafana/dashboards/intelligence.json` (or wherever this dashboard lives) so the Mac Mini install gets the corrected version on first boot — do not just hot-fix the running Grafana on the VPS.
+1. **No Grafana dashboard JSON is checked into the repo.** The morning note assumed `installer/grafana/dashboards/intelligence.json` existed. It does not. All dashboards live inside the running Grafana on the VPS and are managed by ad-hoc scripts in `scripts/` (e.g. `update_grafana_ai.py`, `check_grafana_board2.py`).
+2. **The Intelligence Report is the seventh dashboard, not in the six-dashboard branding list.** `scripts/branding/grafana_brand_dashboards.py` enumerates six core UIDs (Main, Fleet Overview, Per Miner, Board Health, AI & Learning, Pool Stats). `intelligence_report_001` was added later and is unmanaged by that script.
+3. **The canonical Postgres table is `miner_readings`, not `miners`.** Columns are `(miner_id, ip, model, scanned_at)` per `ai/predictive_eta.py:281`. There is no `active = true` flag — "active" means "seen recently", which we filter as `scanned_at > NOW() - INTERVAL '7 days'`.
 
-**Effort estimate:** 30-60 min once we're at a Mac with Grafana access. Bucket 2 not Bucket 1 — does not block the Mini install, but should ship before any customer sees the dashboard.
+**Fix shape (as actually shipped):**
 
-**Cross-reference:** Section 7.2 Phase 11 ("Grafana provisioning") and Section 7.3 7g ("Add Grafana provisioning yaml") already plan a Grafana provisioning yaml for the installer — this fix should land inside that provisioning yaml so it's never re-introduced.
+One self-contained Python script — `scripts/fix_intelligence_dropdown.py` — that:
+
+1. Connects to local Grafana (`http://localhost:3000` by default; override with `GRAFANA_URL`, `GRAFANA_API_KEY`, or `GRAFANA_USER`/`GRAFANA_PASS` env vars).
+2. Fetches the live `intelligence_report_001` dashboard, writes a timestamped backup to `/tmp/intelligence_report_001-BACKUP-<ts>.json`.
+3. Auto-detects the dashboard's primary panel datasource (Postgres or Prometheus) and builds the right kind of query variable for it. For Postgres: `SELECT DISTINCT miner_id AS "__value", COALESCE(NULLIF(ip, ''), miner_id) AS "__text" FROM miner_readings WHERE scanned_at > NOW() - INTERVAL '7 days' ORDER BY 2`. For Prometheus: `label_values(mining_guardian_fleet_online, miner)`.
+4. Forces `refresh: 2` ("On Time Range Change"), `multi: true`, `includeAll: true`, `sort: 1` (alpha asc).
+5. Three CLI modes: no flag = INSPECT (read-only), `--dry-run` = print unified diff, `--apply` = POST with `overwrite: true` and bump version.
+6. Idempotent: re-running `--apply` on an already-fixed dashboard is a no-op.
+
+**Operator commands (run on the VPS):**
+
+```bash
+cd ~/Documents/GitHub/Mining-Guardian
+git pull --ff-only
+python3 scripts/fix_intelligence_dropdown.py            # inspect, write backup
+python3 scripts/fix_intelligence_dropdown.py --dry-run  # preview the diff
+python3 scripts/fix_intelligence_dropdown.py --apply    # apply
+```
+
+Then `Cmd+Shift+R` on the dashboard to bust the in-memory cache.
+
+**Effort actual:** ~45 min total (investigation + script + PR), Bucket 2.
+
+### 15.6.2 Provision all seven Grafana dashboards as code (filed 2026-04-29 PM, NEW)
+
+**Why:** § 15.6.1 revealed there is **no source-controlled copy of any Grafana dashboard**. If the VPS is lost, every dashboard must be rebuilt from memory. This is also why the Mac Mini install cannot reproduce the customer-facing dashboards on first boot today.
+
+**Scope:**
+
+1. Set up Grafana provisioning under `installer/grafana/provisioning/dashboards/*.yaml` (sidecar-style, follows Grafana docs for filesystem-based provisioning).
+2. Export current JSON of all seven dashboards to `installer/grafana/dashboards/`:
+   - `bfi3t0krwak1sd` Main
+   - `efi3msabjg2kge` Fleet Overview
+   - `cfi3mt5a450xse` Per Miner
+   - `afi3p5mhapn9ce` Board Health
+   - `llm_learning_001` AI & Learning
+   - `afi3q9w5ishz4f` Pool Stats
+   - `intelligence_report_001` Intelligence Report (already corrected by § 15.6.1)
+3. Wire the macOS .pkg postinstall to drop the provisioning files into Grafana's data dir on first boot.
+4. Replace the ad-hoc `update_grafana_*.py` scripts with a single `scripts/grafana_export.py` (push live → file) and `scripts/grafana_import.py` (push file → live) so changes are always reviewed in PRs.
+
+**Effort estimate:** ~half a day. Bucket 2 — does not block Mini install but is required for any customer install reproducibility. Cross-reference Section 7.2 Phase 11 ("Grafana provisioning") and Section 7.3 7g.
 
 ## 15.7 Stale branches OK to delete
 
