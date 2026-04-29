@@ -484,6 +484,13 @@ class AlertListener:
                         logger.debug('Processed %d new notifications', new_count)
 
                 consecutive_errors = 0
+                # Bucket 9 §10.7: hot-reload poll interval from system_schedules
+                # each cycle so operators can retime from the Web GUI.
+                try:
+                    from api.system_schedules import get_interval_seconds
+                    self.poll_interval = get_interval_seconds("ams_alert_poll")
+                except Exception:
+                    pass  # keep current value
                 time.sleep(self.poll_interval)
 
             except KeyboardInterrupt:

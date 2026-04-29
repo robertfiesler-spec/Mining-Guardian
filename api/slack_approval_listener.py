@@ -495,7 +495,14 @@ class ApprovalListener:
 
             except Exception as e:
                 logger.error("Run loop error: %s", e)
-            time.sleep(POLL_INTERVAL)
+            # Bucket 9 §10.7: hot-reload poll interval from system_schedules
+            # each cycle so operators can retime from the Web GUI.
+            try:
+                from api.system_schedules import get_interval_seconds
+                _interval = get_interval_seconds("slack_listener_poll")
+            except Exception:
+                _interval = POLL_INTERVAL
+            time.sleep(_interval)
 
 
 if __name__ == "__main__":

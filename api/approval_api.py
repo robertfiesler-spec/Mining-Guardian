@@ -767,6 +767,46 @@ async def gui_deny(request: Request):
     return {"status": "denied", "count": denied}
 
 
+# ── Bucket 9 §10.7 — schedule endpoints ────────────────────────────────────
+# All in-process daemons hot-reload from `system_schedules` so changes
+# made via these endpoints take effect within one daemon cycle without
+# requiring `launchctl kickstart`.
+
+@app.get("/schedules")
+def list_schedules_endpoint(request: Request):
+    """Return all schedule rows so the GUI can render them."""
+    if not verify_internal(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    try:
+        from api.system_schedules import list_schedules
+        return {"schedules": list_schedules()}
+    except Exception as e:
+        logger.error("list_schedules failed: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/schedules/{job_key}")
+async def update_schedule_endpoint(job_key: str, request: Request):
+    """UPSERT a schedule row. Body: {enabled, schedule_type, start_hour,
+    start_minute, end_hour, end_minute, interval_seconds, days_of_week}.
+    """
+    if not verify_internal(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    operator = body.get("operator", "unknown")
+
+    try:
+        from api.system_schedules import update_schedule
+        row = update_schedule(job_key, body, operator)
+        return {"status": "updated", "job_key": job_key, "schedule": row}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        logger.error("update_schedule(%s) failed: %s", job_key, e)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 if __name__ == "__main__":
     print("Mining Guardian Approval API — http://localhost:8686")
     print("Web GUI operator console: http://localhost:8686/ui")
