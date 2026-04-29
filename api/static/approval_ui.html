@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mining Guardian — Operator Console</title>
+  <style>
+    /* Nexus palette, light mode. Kept inline so the UI serves as a single file
+       with zero external dependencies — works offline on the Mac Mini. */
+    :root {
+      --bg:          #F7F6F2;
+      --surface:     #F9F8F5;
+      --surface-alt: #FBFBF9;
+      --border:      #D4D1CA;
+      --text:        #28251D;
+      --text-muted:  #7A7974;
+      --text-faint:  #BAB9B4;
+      --primary:     #01696F;
+      --primary-hov: #0C4E54;
+      --error:       #A12C7B;
+      --warning:     #964219;
+      --success:     #437A22;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      font-size: 16px; line-height: 1.55; }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+    header.site { display: flex; align-items: baseline; justify-content: space-between;
+      border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+    header.site h1 { font-size: 24px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+    header.site .meta { color: var(--text-muted); font-size: 13px; }
+
+    section { background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px 24px; margin-bottom: 24px; }
+    section h2 { font-size: 18px; font-weight: 600; margin: 0 0 12px; }
+    section .hint { color: var(--text-muted); font-size: 13px; margin: 0 0 16px; }
+
+    /* Mode selector — three big tiles */
+    .mode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .mode-tile { background: var(--surface-alt); border: 1px solid var(--border);
+      border-radius: 6px; padding: 16px; cursor: pointer; text-align: left;
+      font: inherit; color: inherit; transition: border-color 0.15s, background 0.15s; }
+    .mode-tile:hover { border-color: var(--primary); }
+    .mode-tile.active { border-color: var(--primary); background: #EAF2F3; }
+    .mode-tile .name { font-weight: 600; font-size: 15px; display: block; margin-bottom: 6px; }
+    .mode-tile .desc { color: var(--text-muted); font-size: 13px; display: block; }
+    .mode-meta { margin-top: 12px; color: var(--text-muted); font-size: 12px; }
+    .mode-meta code { background: var(--surface-alt); padding: 1px 6px; border-radius: 3px; }
+
+    /* Approvals list */
+    .approval { background: var(--surface-alt); border: 1px solid var(--border);
+      border-radius: 6px; padding: 16px; margin-bottom: 12px; }
+    .approval-row { display: flex; justify-content: space-between; gap: 16px;
+      align-items: flex-start; }
+    .approval-meta { flex: 1; min-width: 0; }
+    .approval-meta .miner-id { font-weight: 600; font-size: 15px; }
+    .approval-meta .miner-id a { color: var(--primary); text-decoration: none; }
+    .approval-meta .miner-id a:hover { text-decoration: underline; }
+    .approval-meta .problem { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+    .approval-meta .created { color: var(--text-faint); font-size: 12px; margin-top: 4px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 12px; font-weight: 500; background: var(--surface); color: var(--text-muted); }
+    .badge.action { background: #EAF2F3; color: var(--primary); }
+
+    textarea.explanation { display: block; width: 100%; margin-top: 12px;
+      padding: 8px 10px; font: inherit; font-size: 14px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 4px; resize: vertical;
+      min-height: 44px; color: var(--text); }
+    textarea.explanation:focus { outline: none; border-color: var(--primary); }
+
+    .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    button.btn { font: inherit; font-size: 14px; font-weight: 500;
+      padding: 8px 16px; border-radius: 4px; cursor: pointer; border: 1px solid;
+      transition: background 0.15s, border-color 0.15s; }
+    button.btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+    button.btn.primary:hover { background: var(--primary-hov); border-color: var(--primary-hov); }
+    button.btn.danger { background: white; color: var(--error); border-color: var(--error); }
+    button.btn.danger:hover { background: var(--error); color: white; }
+    button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .empty { color: var(--text-muted); font-style: italic; padding: 12px 0; }
+    .status { margin-top: 8px; font-size: 13px; }
+    .status.ok    { color: var(--success); }
+    .status.err   { color: var(--error); }
+
+    footer { color: var(--text-faint); font-size: 12px; text-align: center;
+      margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); }
+    footer code { background: var(--surface-alt); padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="site">
+      <h1>Mining Guardian — Operator Console</h1>
+      <span class="meta" id="last-refresh">loading…</span>
+    </header>
+
+    <!-- Mode selector -->
+    <section>
+      <h2>Automation mode</h2>
+      <p class="hint">
+        <strong>Full Auto</strong> auto-executes low-risk restarts overnight.
+        <strong>Semi Auto</strong> queues every action for you to approve here or in Slack.
+        <strong>Manual</strong> never auto-executes — you review and run each action yourself.
+      </p>
+      <div class="mode-grid" id="mode-grid">
+        <button type="button" class="mode-tile" data-mode="FULL_AUTO">
+          <span class="name">Full Auto</span>
+          <span class="desc">Low-risk restarts run without approval. Dead-board and physical-cycle still require you.</span>
+        </button>
+        <button type="button" class="mode-tile" data-mode="SEMI_AUTO">
+          <span class="name">Semi Auto</span>
+          <span class="desc">Every action queues for approval. Nothing auto-executes.</span>
+        </button>
+        <button type="button" class="mode-tile" data-mode="MANUAL">
+          <span class="name">Manual</span>
+          <span class="desc">You approve and run actions one at a time. No background automation.</span>
+        </button>
+      </div>
+      <p class="mode-meta" id="mode-meta">Loading current mode…</p>
+      <p class="status" id="mode-status"></p>
+    </section>
+
+    <!-- Pending approvals -->
+    <section>
+      <h2>Pending approvals</h2>
+      <p class="hint">
+        Each pending action shows the miner, the problem detected, and the action proposed.
+        Add an explanation (recommended) before approving or denying — it's recorded in the audit log.
+      </p>
+      <div id="approvals-root">
+        <p class="empty">Loading…</p>
+      </div>
+      <button type="button" class="btn" id="refresh-btn" style="margin-top: 8px;">Refresh</button>
+      <p class="status" id="approvals-status"></p>
+    </section>
+
+    <footer>
+      Mining Guardian Operator Console · served by <code>approval_api.py</code> on port 8686.
+      Requires the <code>X-Internal-Secret</code> header — set <code>INTERNAL_API_SECRET</code>
+      in your local storage via the browser console before use.
+      <br />See <code>docs/WEB_GUI_OPERATOR_CONSOLE.md</code> for full setup.
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+
+      // Operator identity & secret. Both stored in localStorage so they survive
+      // reloads but never leave this browser. To set them:
+      //   localStorage.setItem('mg_operator', 'bobby')
+      //   localStorage.setItem('mg_internal_secret', '<secret>')
+      const OPERATOR = localStorage.getItem('mg_operator') || 'web_gui';
+      const SECRET   = localStorage.getItem('mg_internal_secret') || '';
+
+      function fetchJSON(url, opts) {
+        opts = opts || {};
+        opts.headers = Object.assign({
+          'Content-Type': 'application/json',
+          'X-Internal-Secret': SECRET,
+        }, opts.headers || {});
+        return fetch(url, opts).then(function (r) {
+          if (!r.ok) { throw new Error('HTTP ' + r.status + ' ' + r.statusText); }
+          return r.json();
+        });
+      }
+
+      function setStatus(el, text, kind) {
+        el.textContent = text;
+        el.className = 'status ' + (kind || '');
+      }
+
+      // ── Mode selector ─────────────────────────────────────────────────────
+      const modeGrid   = document.getElementById('mode-grid');
+      const modeMeta   = document.getElementById('mode-meta');
+      const modeStatus = document.getElementById('mode-status');
+
+      function renderMode(record) {
+        document.querySelectorAll('.mode-tile').forEach(function (btn) {
+          btn.classList.toggle('active', btn.dataset.mode === record.value);
+        });
+        const updated = new Date(record.updated_at);
+        modeMeta.innerHTML = 'Current: <code>' + record.value + '</code> · ' +
+          'set by <code>' + record.updated_by + '</code> at ' + updated.toLocaleString() + '.';
+      }
+
+      function loadMode() {
+        fetchJSON('/mode').then(renderMode).catch(function (e) {
+          modeMeta.textContent = 'Could not load mode: ' + e.message;
+        });
+      }
+
+      modeGrid.addEventListener('click', function (ev) {
+        const tile = ev.target.closest('.mode-tile');
+        if (!tile) { return; }
+        const mode = tile.dataset.mode;
+        setStatus(modeStatus, 'Setting mode to ' + mode + '…', '');
+        fetchJSON('/mode', {
+          method: 'POST',
+          body: JSON.stringify({ mode: mode, operator: OPERATOR }),
+        }).then(function (record) {
+          renderMode(record);
+          setStatus(modeStatus, 'Mode set to ' + record.value + '.', 'ok');
+        }).catch(function (e) {
+          setStatus(modeStatus, 'Failed: ' + e.message, 'err');
+        });
+      });
+
+      // ── Approvals list ────────────────────────────────────────────────────
+      const approvalsRoot   = document.getElementById('approvals-root');
+      const approvalsStatus = document.getElementById('approvals-status');
+      const refreshBtn      = document.getElementById('refresh-btn');
+      const lastRefresh     = document.getElementById('last-refresh');
+
+      function escHTML(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function renderApproval(row) {
+        const div = document.createElement('div');
+        div.className = 'approval';
+        div.dataset.threadTs = row.thread_ts || '';
+        div.dataset.minerId  = row.miner_id || '';
+        div.innerHTML =
+          '<div class="approval-row">' +
+            '<div class="approval-meta">' +
+              '<div class="miner-id">Miner ' + escHTML(row.miner_id) +
+                (row.ip ? ' · <a href="http://' + escHTML(row.ip) + '" target="_blank">' + escHTML(row.ip) + '</a>' : '') +
+              '</div>' +
+              '<div class="problem">' + escHTML(row.problem || '(no problem text)') + '</div>' +
+              '<div class="created">created ' + escHTML(row.created_at || '') + '</div>' +
+            '</div>' +
+            '<span class="badge action">' + escHTML(row.action_type || '?') + '</span>' +
+          '</div>' +
+          '<textarea class="explanation" placeholder="Why are you approving or denying this? (optional — recorded in audit log)" rows="2"></textarea>' +
+          '<div class="actions">' +
+            '<button type="button" class="btn primary" data-act="approve">Approve</button>' +
+            '<button type="button" class="btn danger"  data-act="deny">Deny</button>' +
+            '<span class="status"></span>' +
+          '</div>';
+        return div;
+      }
+
+      function loadApprovals() {
+        approvalsStatus.textContent = '';
+        return fetchJSON('/pending').then(function (rows) {
+          approvalsRoot.innerHTML = '';
+          if (!rows.length) {
+            approvalsRoot.innerHTML = '<p class="empty">No pending approvals. You\'re caught up.</p>';
+          } else {
+            rows.forEach(function (row) { approvalsRoot.appendChild(renderApproval(row)); });
+          }
+          lastRefresh.textContent = 'refreshed ' + new Date().toLocaleTimeString();
+        }).catch(function (e) {
+          approvalsRoot.innerHTML = '<p class="empty">Could not load pending approvals: ' + escHTML(e.message) + '</p>';
+        });
+      }
+
+      approvalsRoot.addEventListener('click', function (ev) {
+        const btn = ev.target.closest('button[data-act]');
+        if (!btn) { return; }
+        const card  = btn.closest('.approval');
+        const ta    = card.querySelector('textarea.explanation');
+        const local = card.querySelector('.actions .status');
+        const act   = btn.dataset.act;
+        const body  = {
+          thread_ts:   card.dataset.threadTs || null,
+          miner_id:    card.dataset.minerId || null,
+          user:        OPERATOR,
+          user_id:     'web_gui',
+          explanation: (ta.value || '').trim(),
+        };
+        card.querySelectorAll('button[data-act]').forEach(function (b) { b.disabled = true; });
+        setStatus(local, (act === 'approve' ? 'Approving' : 'Denying') + '…', '');
+        fetchJSON('/gui/' + act, {
+          method: 'POST',
+          body:   JSON.stringify(body),
+        }).then(function (res) {
+          setStatus(local,
+            (act === 'approve' ? 'Approved.' : 'Denied.') +
+            (res && res.count ? ' (' + res.count + ' action' + (res.count === 1 ? '' : 's') + ')' : ''),
+            'ok');
+          setTimeout(loadApprovals, 800);
+        }).catch(function (e) {
+          setStatus(local, 'Failed: ' + e.message, 'err');
+          card.querySelectorAll('button[data-act]').forEach(function (b) { b.disabled = false; });
+        });
+      });
+
+      refreshBtn.addEventListener('click', loadApprovals);
+
+      // Kick off initial load
+      loadMode();
+      loadApprovals();
+
+      // Auto-refresh approvals every 30 s
+      setInterval(loadApprovals, 30000);
+    })();
+  </script>
+</body>
+</html>

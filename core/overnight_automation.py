@@ -370,23 +370,69 @@ def log_skip(action: dict, reason: str) -> None:
     conn.close()
 
 
+def _get_automation_mode_safe() -> str:
+    """Read the current automation_mode from system_settings, defaulting to
+    FULL_AUTO on any failure so we never silently halt automation.
+
+    Bucket 9 §10.2 — the Web GUI lets the operator toggle FULL_AUTO / SEMI_AUTO /
+    MANUAL at runtime. We read it fresh each cycle (cycles are 5 min apart, and
+    operator mode changes should take effect within one cycle).
+    """
+    try:
+        # Add api/ to sys.path so we can import system_settings without installing.
+        api_dir = str(_ROOT / "api")
+        if api_dir not in sys.path:
+            sys.path.insert(0, api_dir)
+        from system_settings import get_automation_mode  # type: ignore
+        return get_automation_mode()
+    except Exception as exc:
+        logger.warning("Could not read automation_mode (defaulting to FULL_AUTO): %s", exc)
+        return "FULL_AUTO"
+
+
 def run_overnight_cycle() -> dict:
     """
-    Process all pending approvals and execute AUTO ones.
-    Returns a summary dict for reporting.
+    Process all pending approvals and execute AUTO ones — gated by the global
+    automation_mode setting from the Web GUI (Bucket 9 §10.2):
+
+      FULL_AUTO  — current behavior: AUTO classified actions auto-execute
+      SEMI_AUTO  — AUTO actions are downgraded to HOLD (queue for approval)
+      MANUAL     — every action is treated as MANUAL (queue for approval), no
+                   auto-execution at all
+
+    The per-action AUTO/HOLD/MANUAL classifier is still the source of truth for
+    RISK; mode is an operator-facing ceiling on top of it.
+
+    Returns a summary dict for reporting, including the mode that governed
+    this cycle so morning briefings can explain behavior changes.
     """
+    mode = _get_automation_mode_safe()
     pending  = get_pending_actions()
     executed = []
     held     = []
     manual   = []
+
+    if mode != "FULL_AUTO":
+        logger.info("Automation mode=%s — auto-execution %s",
+                    mode,
+                    "held for GUI approval" if mode == "SEMI_AUTO" else "disabled; all actions require manual approval")
 
     for action in pending:
         risk = classify_risk(action)
         ip   = action.get("ip", "%s")
         atype = action.get("action_type", "%s")
 
-        if risk == "AUTO":
-            logger.info("AUTO: %s → %s for %s", risk, atype, ip)
+        # Mode override: MANUAL forces everything to MANUAL; SEMI_AUTO demotes
+        # AUTO to HOLD (leaving HOLD and MANUAL untouched).
+        if mode == "MANUAL":
+            effective_risk = "MANUAL"
+        elif mode == "SEMI_AUTO" and risk == "AUTO":
+            effective_risk = "HOLD"
+        else:
+            effective_risk = risk
+
+        if effective_risk == "AUTO":
+            logger.info("AUTO: %s → %s for %s", effective_risk, atype, ip)
             result = execute_auto_action(action)
             executed.append({
                 "ip": ip, "model": action.get("model"),
@@ -394,19 +440,23 @@ def run_overnight_cycle() -> dict:
                 "map_location": action.get("map_location"),
             })
 
-        elif risk == "HOLD":
-            reason = "already restarted tonight" if get_restart_count_tonight(
-                str(action["miner_id"])) >= MAX_AUTO_RESTARTS_PER_NIGHT \
-                else "recent failure"
+        elif effective_risk == "HOLD":
+            if mode == "SEMI_AUTO" and risk == "AUTO":
+                reason = "semi-auto mode — queued for approval"
+            else:
+                reason = "already restarted tonight" if get_restart_count_tonight(
+                    str(action["miner_id"])) >= MAX_AUTO_RESTARTS_PER_NIGHT \
+                    else "recent failure"
             logger.info("HOLD: %s for %s — %s", atype, ip, reason)
             log_skip(action, reason)
             held.append({"ip": ip, "action": atype, "reason": reason})
 
         else:  # MANUAL
-            logger.info("MANUAL (skip): %s for %s", atype, ip)
-            manual.append({"ip": ip, "action": atype})
+            reason = "manual mode" if mode == "MANUAL" else "classifier MANUAL"
+            logger.info("MANUAL (skip): %s for %s — %s", atype, ip, reason)
+            manual.append({"ip": ip, "action": atype, "reason": reason})
 
-    return {"executed": executed, "held": held, "manual": manual}
+    return {"executed": executed, "held": held, "manual": manual, "mode": mode}
 
 
 def main():

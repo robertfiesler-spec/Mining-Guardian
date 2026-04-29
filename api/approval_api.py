@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
 # ── Path setup — add core/ so mining_guardian imports work ───────────────────
@@ -507,9 +508,266 @@ async def list_pending(request: Request):
         rows = conn.execute(
             "SELECT * FROM pending_approvals WHERE status = 'PENDING' ORDER BY created_at DESC"
         ).fetchall()
-    return [dict(r) for r in rows]
+    # Convert datetime fields to ISO strings so JSON serialization is clean for the GUI.
+    out = []
+    for r in rows:
+        row = dict(r)
+        for k in ("created_at", "responded_at"):
+            if k in row and row[k] is not None and not isinstance(row[k], str):
+                row[k] = row[k].isoformat()
+        out.append(row)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bucket 9 §10.1/§10.2 — Web GUI endpoints served from approval_api.py:8686.
+#
+# Three additions:
+#   1. `/ui` — serves api/static/approval_ui.html (single-page operator console)
+#   2. `/mode` GET/POST — read and set the global automation_mode setting
+#   3. `/gui/approve` and `/gui/deny` — per-miner approve/deny with explanation,
+#      consumed by the Web GUI. Mirror the Slack listener endpoints but accept
+#      a miner_id scope instead of only thread_ts, and capture the operator's
+#      free-form explanation in the audit log.
+#
+# Auth: all GUI endpoints require X-Internal-Secret. The HTML page itself does
+# NOT require auth — it's just a static file — but the browser-side JS sets the
+# header from localStorage (`mg_internal_secret`). The operator sets this once
+# per browser from devtools console before first use.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@app.get("/ui")
+async def web_gui():
+    """Serve the single-page operator console HTML."""
+    ui_path = _STATIC_DIR / "approval_ui.html"
+    if not ui_path.exists():
+        return Response(status_code=500,
+                        content=f"approval_ui.html missing at {ui_path}")
+    return FileResponse(str(ui_path), media_type="text/html")
+
+
+@app.get("/mode")
+async def get_mode(request: Request):
+    """Return the current automation_mode record for the Web GUI.
+    Response shape: {"key", "value", "updated_at", "updated_by"}."""
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
+    try:
+        from system_settings import get_setting_record, DEFAULT_AUTOMATION_MODE
+    except ImportError:
+        from api.system_settings import get_setting_record, DEFAULT_AUTOMATION_MODE  # type: ignore
+    rec = get_setting_record("automation_mode")
+    if rec is None:
+        # Never surface an error here — default to FULL_AUTO so the GUI is usable
+        # even before the migration has been applied. The UI shows which mode is
+        # in effect right now; `updated_by='system'` signals this is the default.
+        return JSONResponse({
+            "key": "automation_mode",
+            "value": DEFAULT_AUTOMATION_MODE,
+            "updated_at": datetime.utcnow().isoformat() + "Z",
+            "updated_by": "system",
+        })
+    if rec.get("updated_at") is not None and not isinstance(rec["updated_at"], str):
+        rec["updated_at"] = rec["updated_at"].isoformat()
+    return rec
+
+
+@app.post("/mode")
+async def set_mode(request: Request):
+    """Set the automation_mode. Body: {"mode": "FULL_AUTO|SEMI_AUTO|MANUAL", "operator": "bobby"}."""
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
+    try:
+        from system_settings import (
+            set_automation_mode, get_setting_record, ALLOWED_AUTOMATION_MODES,
+        )
+    except ImportError:
+        from api.system_settings import (  # type: ignore
+            set_automation_mode, get_setting_record, ALLOWED_AUTOMATION_MODES,
+        )
+    body = await request.json()
+    mode = body.get("mode", "")
+    operator = body.get("operator", "web_gui")
+    if mode not in ALLOWED_AUTOMATION_MODES:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"mode must be one of {sorted(ALLOWED_AUTOMATION_MODES)}"},
+        )
+    ok = set_automation_mode(mode, updated_by=f"web_gui:{operator}")
+    if not ok:
+        return JSONResponse(status_code=500, content={"error": "database write failed"})
+    rec = get_setting_record("automation_mode") or {
+        "key": "automation_mode", "value": mode,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "updated_by": f"web_gui:{operator}",
+    }
+    if rec.get("updated_at") is not None and not isinstance(rec["updated_at"], str):
+        rec["updated_at"] = rec["updated_at"].isoformat()
+    logger.info("Automation mode set to %s by %s", mode, operator)
+    return rec
+
+
+def _gui_find_pending(conn, miner_id: str, thread_ts: str):
+    """Find PENDING approvals for a given miner (preferred) or thread_ts.
+    The Web GUI passes miner_id from the per-row card; thread_ts is optional
+    fallback for compatibility."""
+    if miner_id:
+        return conn.execute(
+            "SELECT * FROM pending_approvals WHERE miner_id = %s AND status = 'PENDING'",
+            (miner_id,),
+        ).fetchall()
+    if thread_ts:
+        return conn.execute(
+            "SELECT * FROM pending_approvals WHERE thread_ts = %s AND status = 'PENDING'",
+            (thread_ts,),
+        ).fetchall()
+    return []
+
+
+@app.post("/gui/approve")
+async def gui_approve(request: Request):
+    """Per-miner approve from the Web GUI.
+    Body: {"miner_id": "...", "user": "...", "user_id": "web_gui", "explanation": "..."}
+    """
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
+    body = await request.json()
+    miner_id   = body.get("miner_id", "")
+    thread_ts  = body.get("thread_ts", "") or ""
+    user       = body.get("user", "web_gui")
+    user_id    = body.get("user_id", "web_gui")
+    explanation = (body.get("explanation") or "").strip()
+
+    if not miner_id and not thread_ts:
+        return JSONResponse(status_code=400, content={"error": "miner_id or thread_ts required"})
+
+    with _PgConnWrapper(DB_PATH) as conn:
+        pending = _gui_find_pending(conn, miner_id, thread_ts)
+        if not pending:
+            return {"status": "no_pending", "message": "No pending approvals for that miner"}
+
+        now = datetime.now().isoformat()
+        results = []
+        for row in pending:
+            action = dict(row)
+            conn.execute(
+                "UPDATE pending_approvals SET status = 'APPROVED', responded_at = %s WHERE id = %s",
+                (now, action["id"]),
+            )
+            note = f"Approved via Web GUI by {user}"
+            if explanation:
+                note += f": {explanation}"
+            conn.execute("""
+                INSERT INTO action_audit_log
+                (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken, decision, approved_by, slack_user_id, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (now, now[:10], action.get("scan_id"), action["miner_id"], action["ip"],
+                  action.get("model"), action["problem"], action["action_type"],
+                  "APPROVED", user, user_id, note))
+            results.append({
+                "miner_id": action["miner_id"], "ip": action["ip"],
+                "action": action["action_type"], "status": "APPROVED",
+            })
+            logger.info("APPROVED via Web GUI: %s for miner %s (%s) by %s — explanation=%r",
+                        action["action_type"], action["ip"], action.get("model"),
+                        user, explanation)
+        conn.commit()
+
+    # Execute the approved actions using the persistent guardian instance
+    try:
+        g = get_guardian()
+        if g is None:
+            raise RuntimeError("MiningGuardian failed to initialize — check config.json and AMS credentials")
+        for r in results:
+            issue = {"id": r["miner_id"], "ip": r["ip"], "model": r.get("model", "")}
+            if r["action"] == "RESTART":
+                g.execute_restart(issue)
+            elif r["action"] == "PDU_CYCLE":
+                g.execute_pdu_cycle(issue)
+            elif r["action"] == "RESTART_CHECK_BOARDS":
+                g.execute_board_restart(issue)
+    except Exception as e:
+        logger.error("Error executing Web GUI approved actions: %s", e)
+        return {"status": "approved_with_errors", "results": results, "error": str(e), "count": len(results)}
+
+    return {"status": "approved", "count": len(results), "results": results}
+
+
+@app.post("/gui/deny")
+async def gui_deny(request: Request):
+    """Per-miner deny from the Web GUI.
+    Body: {"miner_id": "...", "user": "...", "user_id": "web_gui", "explanation": "..."}
+    The explanation is stored verbatim in the audit log and, when long enough,
+    passed through the same knowledge-manager extraction the Slack /deny path uses.
+    """
+    if not verify_internal(request):
+        return Response(status_code=403, content="Forbidden")
+    body = await request.json()
+    miner_id    = body.get("miner_id", "")
+    thread_ts   = body.get("thread_ts", "") or ""
+    user        = body.get("user", "web_gui")
+    user_id     = body.get("user_id", "web_gui")
+    explanation = (body.get("explanation") or "").strip()
+
+    if not miner_id and not thread_ts:
+        return JSONResponse(status_code=400, content={"error": "miner_id or thread_ts required"})
+
+    with _PgConnWrapper(DB_PATH) as conn:
+        now = datetime.now().isoformat()
+        pending = _gui_find_pending(conn, miner_id, thread_ts)
+        denied = 0
+        for row in pending:
+            action = dict(row)
+            conn.execute(
+                "UPDATE pending_approvals SET status = 'DENIED', responded_at = %s WHERE id = %s",
+                (now, action["id"]),
+            )
+            note = f"Denied via Web GUI by {user}"
+            if explanation:
+                note += f": {explanation}"
+            conn.execute("""
+                INSERT INTO action_audit_log
+                (timestamp, date, scan_id, miner_id, ip, model, problem, action_taken, decision, approved_by, slack_user_id, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (now, now[:10], action.get("scan_id"), action["miner_id"], action["ip"],
+                  action.get("model"), action["problem"], action["action_type"],
+                  "DENIED", user, user_id, note))
+            denied += 1
+            logger.info("DENIED via Web GUI: %s for miner %s (%s) by %s — explanation=%r",
+                        action["action_type"], action["ip"], action.get("model"),
+                        user, explanation)
+        conn.commit()
+
+        # Mirror the Slack /deny path (DG-2 FIX): when the explanation is
+        # substantive, feed it to the KnowledgeManager so future decisions
+        # learn from it. Same classifier heuristics as the /deny endpoint.
+        if explanation and len(explanation) > 10:
+            try:
+                from ai.knowledge_manager import KnowledgeManager
+                km = KnowledgeManager()
+                category = "general"
+                dr_lower = explanation.lower()
+                if "temp" in dr_lower or "heat" in dr_lower:
+                    category = "temperature"
+                elif "offline" in dr_lower:
+                    category = "offline_logic"
+                elif "restart" in dr_lower:
+                    category = "restart_policy"
+                elif "wait" in dr_lower or "time" in dr_lower:
+                    category = "timing"
+                if any(w in dr_lower for w in ["should", "must", "dont", "never", "always"]):
+                    km.store_operator_rule(category, explanation, source="operator_denial_web_gui")
+            except Exception as e:
+                # Non-fatal — the denial itself has already been recorded.
+                logger.debug("Rule extraction failed: %s", e)
+
+    return {"status": "denied", "count": denied}
 
 
 if __name__ == "__main__":
     print("Mining Guardian Approval API — http://localhost:8686")
+    print("Web GUI operator console: http://localhost:8686/ui")
     uvicorn.run(app, host="127.0.0.1", port=8686)
