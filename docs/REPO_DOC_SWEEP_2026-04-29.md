@@ -30,7 +30,7 @@ Stale-term breakdown across all docs (post-PR #90):
 
 | Action | Count | What happens |
 |--------|-------|--------------|
-| **DELETE** | 19 | `git rm` — deprecated trees + one-shot resume notes. Git history retains them. |
+| **DELETE** | 24 | `git rm` — entire `intelligence/` dir (Bucket 7.1, never merged), entire `deploy/openclaw-skills/` dir (Bucket 4, never merged), 5 root-level one-shot resume notes. Git history retains them. Also patches `installer/macos-pkg/scripts/build_pkg.sh` to drop the deprecated `intelligence/***` rsync include. |
 | **ARCHIVE** | 36 | `git mv` to `docs/archive/2026-04/`. Stay searchable, out of active docs. |
 | **REWRITE** | 4 | Full content rewrite — root-level high-visibility files. |
 | **UPDATE** | 49 | Surgical edits — strip stale terms, keep doc structure. |
@@ -39,7 +39,7 @@ Stale-term breakdown across all docs (post-PR #90):
 ## Execution sequence (single PR, multiple commits)
 
 1. **Commit 1 (THIS commit):** Audit doc + inventory CSVs landed first as the record.
-2. **Commit 2:** DELETE — 19 files (`intelligence/`, `intelligence-catalog/`, `deploy/openclaw-skills/`, one-shot resume notes).
+2. **Commit 2:** DELETE — 24 files: entire `intelligence/` directory (12 files), entire `deploy/openclaw-skills/` directory (7 files), 5 root-level one-shot notes (`NEXT_SESSION.md`, 3× `RESUME_HERE_*`, `MORNING_KICKOFF_PROMPT.md`). Also: 1-line patch to `installer/macos-pkg/scripts/build_pkg.sh` (`intelligence/***` → `intelligence-catalog/***`). `intelligence-catalog/` is LIVE CODE (catalog API, watchers, 321 miner seed CSV) and is preserved.
 3. **Commit 3:** ARCHIVE — 36 files moved to `docs/archive/2026-04/`.
 4. **Commit 4–7:** REWRITE — 4 root-level files, one commit each (`README.md`, `CLAUDE.md`, `AI_ROADMAP.md`, `DEPLOYMENT_CHECKLIST.md`).
 5. **Commit 8–11:** UPDATE — 49 files batched by theme:
