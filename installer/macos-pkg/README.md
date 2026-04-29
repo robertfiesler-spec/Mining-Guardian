@@ -3,7 +3,7 @@
 **Branch:** `mg/mac-mini-installer`
 **Forked from:** `main` at `5e4f1ee` on 2026-04-28
 **Target hardware:** Mac Mini (sealed in box at user's office, 16 GB RAM)
-**Target install date:** May 5–9, 2026 (per cutover scope γ)
+**Target install date:** 2026-04-30 (per cutover scope γ; was May 5–9 at time of original draft)
 
 This directory holds the build inputs, scripts, and resources for the
 double-click macOS `.pkg` installer that stands up Mining Guardian on a
@@ -44,10 +44,12 @@ the box is 16 GB, so the default install path will land on `llama3.2:3b`.
 
 ### Cutover scope — Option γ
 
-The Mini replaces **both** the Hostinger VPS (187.124.247.182, Tailscale
-100.106.123.83) **and** the ROBS-PC catalog. After successful cutover:
+The Mini replaces **both** the Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83,
+decommissioned for MG as of 2026-04-30 install; Bobby still uses it for his own facility)
+**and** the ROBS-PC catalog. After successful cutover:
 
-- Cloudflare tunnels move off the VPS to the Mini
+- No Cloudflare tunnels — Mac Mini is local-first, loopback-only; the Cloudflare path
+  was not taken (see `docs/CLOUDFLARE_MIGRATION.md` — SUPERSEDED)
 - The PC Docker `mining-guardian-db` Postgres is decommissioned (data
   re-imported into the Mini's Postgres first; full backup retained on
   D: drive)
@@ -78,7 +80,7 @@ installer/macos-pkg/
 directory at `make pkg` time. It is **not** tracked in git — the repo-root
 `.gitignore` already excludes any `build/` directory, and the signed +
 notarized `.pkg` artifact is dropped on the operator's local disk and
-distributed out-of-band (USB drive for the May 5 install).
+distributed out-of-band (USB drive for the 2026-04-30 install).
 
 ---
 
@@ -118,7 +120,7 @@ Do not copy the private values into this repo. See
   and is bundled into the `.pkg` payload at build time, not stored here.
 - Postgres database dumps — those live on `D:\MiningGuardian\db-backups\`
   and are pulled at install time (or shipped on a separate USB drive for
-  the May 5 install if bandwidth at the office is unreliable).
+  the 2026-04-30 install if bandwidth at the office is unreliable).
 - Apple Developer secrets — see "Apple Developer / notarization" above.
 - Anything Bitcoin-altcoin or cloud-only — see Vision Anchors 6 and 7.
 

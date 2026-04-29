@@ -1,3 +1,14 @@
+> ## ⚠️ Status as of 2026-04-29 PM
+>
+> This document is preserved as a historical planning record (written 2026-04-28 morning). Key deltas since then:
+>
+> - **Mac Mini install date** moved to **2026-04-30** (was May 5–9 in this doc). Operator quote 2026-04-28 is still accurate: “rather be late and perfect than early and wrong” — date moved forward, not back.
+> - **VPS decommissioned for MG** as of 2026-04-30 install. The Hostinger VPS (`root@srv1549463` / 187.124.247.182 / Tailscale 100.106.123.83) is historical for MG; Bobby still uses it for his own facility.
+> - **Bucket 1 D-14 items** (drop cache, scan consults catalog, loud failure, C5 daemon, retire HTTP catalog) have been addressed in the 2026-04-29 doc sweep and subsequent PRs. Check `docs/MG_UNIFIED_TODO_LIST.md` for current status.
+> - **VPS GitHub PAT rotation** (Bucket 2) — completed 2026-04-29 per `docs/SESSION_LOG_2026-04-27.md` CRIT-1.
+>
+> The body below is preserved verbatim as the historical 2026-04-28 snapshot.
+
 # Remaining Work — 2026-04-28
 
 **Created:** 2026-04-28 (Tuesday, 8:15 AM CDT)

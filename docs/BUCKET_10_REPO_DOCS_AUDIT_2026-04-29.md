@@ -9,7 +9,7 @@
 
 ## 0. Why this audit exists
 
-Mining Guardian's `docs/` directory and repo root carry **104 Markdown files** as of main HEAD `7601b758` (post PR #59 + PR #79 merges). Roughly half of those are **dated session logs, handoffs, and one-off resume points** from the late-March / early-April push toward the Mac-Mini era. The repo has shipped past most of them — Bucket 6 closed today, Bucket 7 closed today, the PKG installer rewrite landed last week, the catalog schema is on the VPS — and the doc graveyard is now the single biggest source of "what is real?" friction whenever a new session starts.
+Mining Guardian's `docs/` directory and repo root carry **104 Markdown files** as of main HEAD `7601b758` (post PR #59 + PR #79 merges). Roughly half of those are **dated session logs, handoffs, and one-off resume points** from the late-March / early-April push toward the Mac-Mini era. The repo has shipped past most of them — Bucket 6 closed today, Bucket 7 closed today, the PKG installer rewrite landed last week, the catalog schema was on the VPS (historical — VPS decommissioned for MG as of Mac Mini install 2026-04-30) — and the doc graveyard is now the single biggest source of "what is real?" friction whenever a new session starts.
 
 This audit:
 

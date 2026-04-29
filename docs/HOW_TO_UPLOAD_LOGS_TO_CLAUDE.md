@@ -58,7 +58,7 @@ Claude will:
 1. Run `Filesystem:get_file_info` to confirm size + type
 2. Read the file (`Filesystem:read_text_file` for text, `bash_tool` + a
    helper script for PDFs/binary)
-3. For PDFs: copy to the VPS via `scp`, extract with pdfplumber
+3. For PDFs: copy to the operational DB host via `scp`, extract with pdfplumber (historically the VPS; now Mac Mini local-first)
 4. For zip/tar.gz: extract in-memory
 5. Detect miner type from content
 6. Run dual-model analysis (Qwen + Claude)
@@ -78,7 +78,7 @@ Claude will:
   Stock Antminer kern.log format
 - ✅ Dual-model analysis via Qwen 2.5 32B (local on Windows PC RTX 4090)
   AND Claude Sonnet 4.6 (Anthropic API)
-- ✅ Results stored permanently in `guardian.db` `miner_logs` table
+- ✅ Results stored permanently in `miner_logs` table (Postgres on Mac Mini; historical VPS era used SQLite `guardian.db`)
 - ✅ Analysis insights stored in `knowledge.json` for future training
 - ✅ Slack notification with side-by-side Qwen/Claude verdicts
 
@@ -110,7 +110,7 @@ What Bobby did on April 8, 2026 at 06:56 CDT:
 3. Claude:
    - Confirmed file via `Filesystem:get_file_info` (18.3 MB)
    - Copied to VPS via `scp` (because the PDF needed pdfplumber and
-     the local Mac didn't have it installed)
+     the local Mac didn't have it installed) — historical Apr 8 workflow; Mac Mini (2026-04-30 install) runs pdfplumber locally
    - Extracted text with pdfplumber: 12.3 MB / 197,667 lines
    - Computed parser fact sheet: 726 DVFS alarms, 53 PowerState alarms,
      44,901 Board 3 zero-voltage events, hashrate 0–555 TH/s avg 358
@@ -123,7 +123,7 @@ What Bobby did on April 8, 2026 at 06:56 CDT:
 
 **Total elapsed time from "go read it" to "here's the verdict": about 90
 seconds of LLM time + parsing time.** Most of the wall clock was spent
-copying the 18 MB PDF to the VPS over the SSH tunnel.
+copying the 18 MB PDF to the VPS over the SSH tunnel. (Historical Apr 8 note — VPS decommissioned for MG; Mac Mini is now the operational host.)
 
 ---
 

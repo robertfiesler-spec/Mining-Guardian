@@ -4,7 +4,7 @@
 
 I'm building the **Mining Intelligence Catalog**, a PostgreSQL reference database for my Bitcoin mining monitoring system called Mining Guardian. This database will be a **read-only reference** that Mining Guardian queries when it needs specifications, thresholds, repair patterns, or operational intelligence about miners it monitors.
 
-Mining Guardian currently runs on a VPS with SQLite for operational data (scan readings, restart history, predictions). The new PostgreSQL database will run on my Windows PC (ROBS-PC) initially, then migrate to a NAS in July 2026. Mining Guardian will query it over the network via Tailscale.
+Mining Guardian originally ran on a VPS with SQLite for operational data (scan readings, restart history, predictions) — **historical context: VPS decommissioned for MG as of Mac Mini install 2026-04-30; operational DB is now PostgreSQL on the Mac Mini.** The intelligence catalog PostgreSQL database ran on ROBS-PC (Windows PC) and is also migrating to the Mac Mini as part of cutover scope γ.
 
 ---
 

@@ -113,10 +113,11 @@ another kickstart — each daemon hot-reloads.
 
 ## Limitations / future work
 
-- **VPS cron jobs** (the 9 entries in `docs/CRON_RECONCILIATION.md`) are
-  out of scope for this PR. They run on `root@srv1549463`, not the Mac
-  Mini. A follow-up will let the customer app push schedule changes to
-  the VPS over SSH or ship a schedule-daemon to replace cron.
+- **Historical VPS cron jobs** (the 9 entries in `docs/CRON_RECONCILIATION.md`) are
+  out of scope for this PR. They ran on `root@srv1549463` (VPS decommissioned for MG
+  as of Mac Mini install 2026-04-30; Bobby still uses the VPS for his own facility).
+  Mac Mini uses launchd plists instead of cron. The Schedules tab above covers the
+  in-process Mac Mini daemons; legacy VPS cron is historical context only.
 - **`time_of_day` jobs** have no consumer in the v1 ship set — the schema
   and validation are in place so the next job (likely a daily intelligence
   report trigger) can use them without code changes.
