@@ -1,0 +1,132 @@
+{
+  "uid": "mg-fleet-overview",
+  "title": "Mining Guardian — Fleet Overview",
+  "tags": ["mining-guardian", "operational"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-24h", "to": "now"},
+  "editable": false,
+  "graphTooltip": 1,
+  "templating": {"list": []},
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#0A1428;border-radius:4px;\"><div><div style=\"color:#F7931A;font-size:22px;font-weight:700;letter-spacing:0.5px;\">MINING GUARDIAN</div><div style=\"color:#3DA9FC;font-size:13px;margin-top:2px;\">Fleet Overview &mdash; live operational telemetry</div></div><div style=\"color:#94a3b8;font-size:12px;text-align:right;\"><div>BiXBiT USA</div><div>1 Mac Mini &middot; 1 site</div></div></div>"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Miners online (latest scan)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 1}, {"color": "green", "value": 50}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT online AS \"Online\" FROM scans ORDER BY scanned_at DESC LIMIT 1;"}]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Miners offline (latest scan)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT offline AS \"Offline\" FROM scans ORDER BY scanned_at DESC LIMIT 1;"}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Issues flagged (latest scan)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 10}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT issues AS \"Issues\" FROM scans ORDER BY scanned_at DESC LIMIT 1;"}]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Fleet hashrate (TH/s — latest)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short",
+          "decimals": 1
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COALESCE(SUM(hashrate),0)::numeric(12,1) AS \"Total TH/s\" FROM miner_readings WHERE scan_id = (SELECT id FROM scans ORDER BY scanned_at DESC LIMIT 1);"}]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Online vs offline over time",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 7},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "lineWidth": 2, "fillOpacity": 12, "showPoints": "never", "spanNulls": true, "stacking": {"mode": "none"}, "axisPlacement": "auto"},
+          "unit": "short"
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "online"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#3DA9FC"}}]},
+          {"matcher": {"id": "byName", "options": "offline"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "#F7931A"}}]}
+        ]
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull", "mean", "max"]}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [{"refId": "A", "format": "time_series", "rawSql": "SELECT scanned_at AS \"time\", online, offline FROM scans WHERE $__timeFilter(scanned_at) ORDER BY scanned_at;"}]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Latest miner readings (top 50 by hashrate)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left", "displayMode": "auto", "filterable": true},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Hashrate (TH/s)"}, "properties": [{"id": "unit", "value": "short"}, {"id": "decimals", "value": 1}, {"id": "custom.align", "value": "right"}]},
+          {"matcher": {"id": "byName", "options": "Hashrate %"}, "properties": [{"id": "unit", "value": "percent"}, {"id": "decimals", "value": 1}, {"id": "custom.align", "value": "right"}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 80}, {"color": "green", "value": 95}]}}]},
+          {"matcher": {"id": "byName", "options": "Status"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}]}
+        ]
+      },
+      "options": {"showHeader": true, "footer": {"show": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT miner_id AS \"Miner\", ip AS \"IP\", model AS \"Model\", status AS \"Status\", hashrate AS \"Hashrate (TH/s)\", hashrate_pct AS \"Hashrate %\", temp_chip AS \"Chip Temp (C)\", issue AS \"Issue\" FROM miner_readings WHERE scan_id = (SELECT id FROM scans ORDER BY scanned_at DESC LIMIT 1) ORDER BY hashrate DESC NULLS LAST LIMIT 50;"}]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+# ============================================================
+# Mining Guardian — Grafana dashboard provider
+# BiXBiT USA  •  Bucket 6d  •  §7.3 row 7g
+#
+# File-based dashboard provisioning. Grafana watches
+# /usr/local/MiningGuardian/grafana/dashboards/*.json and reloads on change.
+#
+# Path is the runtime install path that setup.sh Phase 11 writes — it is
+# NOT this directory. The plist installer copies
+#   installer/macos-pkg/resources/grafana/dashboards/*.json
+#   →
+#   /usr/local/MiningGuardian/grafana/dashboards/*.json
+# at install time.
+#
+# `allowUiUpdates: false` enforces "the JSON file is truth" — operators can
+# edit dashboards in the browser to experiment, but changes are wiped on
+# the next `updateIntervalSeconds` tick. To make a change permanent, edit
+# the JSON in this repo and commit.
+# ============================================================
+apiVersion: 1
+
+providers:
+  - name: 'Mining Guardian'
+    orgId: 1
+    folder: 'Mining Guardian'
+    folderUid: mg
+    type: file
+    disableDeletion: false
+    editable: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /usr/local/MiningGuardian/grafana/dashboards
+      foldersFromFilesStructure: false

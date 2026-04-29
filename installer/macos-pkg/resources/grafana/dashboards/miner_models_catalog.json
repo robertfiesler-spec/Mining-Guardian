@@ -1,0 +1,158 @@
+{
+  "uid": "mg-miner-models-catalog",
+  "title": "Mining Guardian — Miner Models Catalog",
+  "tags": ["mining-guardian", "catalog", "hardware"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {"from": "now-7d", "to": "now"},
+  "editable": false,
+  "graphTooltip": 0,
+  "templating": {"list": []},
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#0A1428;border-radius:4px;\"><div><div style=\"color:#F7931A;font-size:22px;font-weight:700;letter-spacing:0.5px;\">MINING GUARDIAN</div><div style=\"color:#3DA9FC;font-size:13px;margin-top:2px;\">Miner Models Catalog &mdash; canonical hardware reference</div></div><div style=\"color:#94a3b8;font-size:12px;text-align:right;\"><div>BiXBiT USA</div><div>source: hardware.miner_models</div></div></div>"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Total models in catalog",
+      "datasource": {"type": "postgres", "uid": "mg_catalog_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COUNT(*) AS \"Models\" FROM hardware.miner_models;"}]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Manufacturers",
+      "datasource": {"type": "postgres", "uid": "mg_catalog_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COUNT(*) AS \"Manufacturers\" FROM hardware.manufacturers;"}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Air-cooled models",
+      "datasource": {"type": "postgres", "uid": "mg_catalog_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "#3DA9FC"},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COUNT(*) AS \"Air-cooled\" FROM hardware.miner_models WHERE cooling_type = 'air';"}]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Hydro/immersion models",
+      "datasource": {"type": "postgres", "uid": "mg_catalog_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "#F7931A"},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COUNT(*) AS \"Liquid-cooled\" FROM hardware.miner_models WHERE cooling_type IN ('hydro','immersion');"}]
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Models by manufacturer (top 15)",
+      "datasource": {"type": "postgres", "uid": "mg_catalog_pg"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 7},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "#F7931A"},
+          "custom": {"axisPlacement": "auto", "lineWidth": 1, "fillOpacity": 80}
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "legend": {"displayMode": "hidden"},
+        "tooltip": {"mode": "single", "sort": "none"},
+        "xField": "manufacturer"
+      },
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT m.canonical_name AS manufacturer, COUNT(mm.id)::int AS models FROM hardware.manufacturers m JOIN hardware.miner_models mm ON mm.manufacturer_id = m.id GROUP BY m.canonical_name ORDER BY models DESC LIMIT 15;"}]
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "Efficiency distribution (J/TH stock — buckets)",
+      "datasource": {"type": "postgres", "uid": "mg_catalog_pg"},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 7},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "#3DA9FC"},
+          "custom": {"axisPlacement": "auto", "lineWidth": 1, "fillOpacity": 80}
+        }
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.97,
+        "legend": {"displayMode": "hidden"},
+        "tooltip": {"mode": "single", "sort": "none"},
+        "xField": "bucket"
+      },
+      "targets": [{"refId": "A", "format": "table", "rawSql": "WITH buckets AS (SELECT CASE WHEN stock_efficiency_j_th < 18 THEN '<18' WHEN stock_efficiency_j_th < 22 THEN '18-22' WHEN stock_efficiency_j_th < 26 THEN '22-26' WHEN stock_efficiency_j_th < 30 THEN '26-30' WHEN stock_efficiency_j_th < 35 THEN '30-35' WHEN stock_efficiency_j_th < 50 THEN '35-50' ELSE '50+' END AS bucket FROM hardware.miner_models WHERE stock_efficiency_j_th IS NOT NULL) SELECT bucket, COUNT(*)::int AS models FROM buckets GROUP BY bucket ORDER BY CASE bucket WHEN '<18' THEN 1 WHEN '18-22' THEN 2 WHEN '22-26' THEN 3 WHEN '26-30' THEN 4 WHEN '30-35' THEN 5 WHEN '35-50' THEN 6 ELSE 7 END;"}]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Catalog — all models (sortable, filterable)",
+      "datasource": {"type": "postgres", "uid": "mg_catalog_pg"},
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 16},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left", "displayMode": "auto", "filterable": true},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Stock TH/s"}, "properties": [{"id": "unit", "value": "short"}, {"id": "decimals", "value": 1}, {"id": "custom.align", "value": "right"}]},
+          {"matcher": {"id": "byName", "options": "Stock W"}, "properties": [{"id": "custom.align", "value": "right"}]},
+          {"matcher": {"id": "byName", "options": "Stock J/TH"}, "properties": [{"id": "decimals", "value": 2}, {"id": "custom.align", "value": "right"}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 25}, {"color": "orange", "value": 35}, {"color": "red", "value": 50}]}}]},
+          {"matcher": {"id": "byName", "options": "Boards"}, "properties": [{"id": "custom.align", "value": "right"}]}
+        ]
+      },
+      "options": {"showHeader": true, "footer": {"show": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT m.canonical_name AS \"Manufacturer\", mm.canonical_name AS \"Model\", mm.cooling_type AS \"Cooling\", mm.hashboard_count AS \"Boards\", mm.stock_hashrate_th AS \"Stock TH/s\", mm.stock_power_w AS \"Stock W\", mm.stock_efficiency_j_th AS \"Stock J/TH\" FROM hardware.miner_models mm JOIN hardware.manufacturers m ON mm.manufacturer_id = m.id ORDER BY mm.stock_efficiency_j_th NULLS LAST, mm.canonical_name;"}]
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+{
+  "uid": "mg-scans-health",
+  "title": "Mining Guardian — Scans & Collection Health",
+  "tags": ["mining-guardian", "operational", "health"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-7d", "to": "now"},
+  "editable": false,
+  "graphTooltip": 1,
+  "templating": {"list": []},
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#0A1428;border-radius:4px;\"><div><div style=\"color:#F7931A;font-size:22px;font-weight:700;letter-spacing:0.5px;\">MINING GUARDIAN</div><div style=\"color:#3DA9FC;font-size:13px;margin-top:2px;\">Scans &amp; Collection Health &mdash; cadence and gaps</div></div><div style=\"color:#94a3b8;font-size:12px;text-align:right;\"><div>BiXBiT USA</div><div>last 7 days</div></div></div>"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Scans (last 24h)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 1}, {"color": "green", "value": 24}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COUNT(*) AS \"Scans\" FROM scans WHERE scanned_at > NOW() - INTERVAL '24 hours';"}]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Last scan age (minutes)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 30}, {"color": "red", "value": 120}]},
+          "unit": "m",
+          "decimals": 0
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(scanned_at)))/60 AS \"Minutes since last scan\" FROM scans;"}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Log collection failures (24h)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COUNT(*) AS \"Failures\" FROM log_collection_failures WHERE created_at > NOW() - INTERVAL '24 hours';"}]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Distinct miners with failures (7d)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 3},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 10}]},
+          "unit": "short"
+        }
+      },
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "center", "textMode": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT COUNT(DISTINCT miner_id) AS \"Miners\" FROM log_collection_failures WHERE created_at > NOW() - INTERVAL '7 days';"}]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Scan cadence (scans/hour)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 7},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "#3DA9FC"},
+          "custom": {"drawStyle": "bars", "lineWidth": 1, "fillOpacity": 70, "showPoints": "never", "axisPlacement": "auto"},
+          "unit": "short"
+        }
+      },
+      "options": {"legend": {"displayMode": "hidden"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [{"refId": "A", "format": "time_series", "rawSql": "SELECT date_trunc('hour', scanned_at) AS \"time\", COUNT(*) AS \"scans\" FROM scans WHERE $__timeFilter(scanned_at) GROUP BY 1 ORDER BY 1;"}]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Log collection failures over time",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 7},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "#F7931A"},
+          "custom": {"drawStyle": "bars", "lineWidth": 1, "fillOpacity": 70, "showPoints": "never", "axisPlacement": "auto"},
+          "unit": "short"
+        }
+      },
+      "options": {"legend": {"displayMode": "hidden"}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [{"refId": "A", "format": "time_series", "rawSql": "SELECT date_trunc('hour', created_at) AS \"time\", COUNT(*) AS \"failures\" FROM log_collection_failures WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1;"}]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Recent log collection failures (top 50)",
+      "datasource": {"type": "postgres", "uid": "mg_operational_pg"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left", "displayMode": "auto", "filterable": true},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Consecutive"}, "properties": [{"id": "custom.align", "value": "right"}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 3}, {"color": "red", "value": 5}]}}]}
+        ]
+      },
+      "options": {"showHeader": true, "footer": {"show": false}},
+      "targets": [{"refId": "A", "format": "table", "rawSql": "SELECT miner_id AS \"Miner\", ip AS \"IP\", model AS \"Model\", failure_date AS \"Date\", failure_reason AS \"Reason\", consecutive_failures AS \"Consecutive\", last_successful_log AS \"Last OK\", created_at AS \"Logged At\" FROM log_collection_failures ORDER BY created_at DESC LIMIT 50;"}]
+    }
+  ]
+}
