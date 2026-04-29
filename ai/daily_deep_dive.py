@@ -213,6 +213,24 @@ def query_qwen(prompt: str, label: str = "") -> Optional[str]:
     return response
 
 
+def _get_anthropic_api_key() -> Optional[str]:
+    """Get ANTHROPIC_API_KEY from env, falling back to .env file.
+
+    Cron starts with a clean environment, so reading .env is required.
+    Mirrors the pattern in ai/refinement_chain.py get_api_key().
+    """
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if key:
+        return key
+    env_path = _ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("ANTHROPIC_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
 def query_claude_for_fleet(prompt: str, label: str = "fleet synthesis") -> Optional[str]:
     """Call Claude API for fleet synthesis only (200K context, no truncation).
 
@@ -225,10 +243,9 @@ def query_claude_for_fleet(prompt: str, label: str = "fleet synthesis") -> Optio
     When the Mac Mini ships, fleet synthesis flips back to local Qwen plus
     a hierarchical (cohort -> fleet) chunking pass that fits in 32K.
     """
-    import os
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    api_key = _get_anthropic_api_key()
     if not api_key:
-        logger.error('Claude API key not set in ANTHROPIC_API_KEY — cannot run fleet synthesis')
+        logger.error('Claude API key not found in env or .env file — cannot run fleet synthesis')
         return None
 
     model = 'claude-sonnet-4-20250514'
