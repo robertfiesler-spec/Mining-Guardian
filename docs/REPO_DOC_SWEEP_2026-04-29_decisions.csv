@@ -1,0 +1,243 @@
+path,action,rationale,stale_hits
+docs/HANDOFF_2026_04_09_MIDMORNING.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,95
+docs/RESUME_HERE_2026_04_08_EVENING.md,DELETE,One-shot resume/kickoff prompts from April 8 sessions,72
+docs/MG_UNIFIED_TODO_LIST.md,UPDATE,"Docs file with 62 stale hits (sqlite=2, intel/=0, openclaw=23, vps=9)",62
+CLAUDE.md,REWRITE,Claude Code agent instructions — must be current,50
+AI_ROADMAP.md,REWRITE,Forward-looking roadmap — strip SQLite/OpenClaw,49
+REPAIR_LOG.md,ARCHIVE,Root-level historical — archive per user decision,46
+docs/DB_STATE_2026-04-23.md,ARCHIVE,Postgres migration complete — point-in-time doc,37
+docs/SESSION_HANDOFF_2026-04-24.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,37
+README.md,REWRITE,Top of repo — must reflect 2026-04-29 architecture,35
+docs/archive/OPENCLAW_INTEGRATION.md,KEEP,Already archived,29
+DEPLOYMENT_CHECKLIST.md,REWRITE,Customer-facing — final pass for Mac Mini install,27
+docs/POSTGRES_MIGRATION_PLAN_2026-04-23.md,ARCHIVE,Postgres migration complete — point-in-time doc,26
+docs/VISION.md,UPDATE,"Docs file with 24 stale hits (sqlite=1, intel/=2, openclaw=18, vps=2)",24
+docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md,UPDATE,"Docs file with 23 stale hits (sqlite=2, intel/=0, openclaw=1, vps=19)",23
+docs/archive/OPENCLAW_AUDIT_2026-04-23.md,KEEP,Already archived,23
+docs/RESUME_HERE_2026_04_08_0840.md,DELETE,One-shot resume/kickoff prompts from April 8 sessions,22
+docs/POSTGRES_MIGRATION_STATUS_2026-04-24.md,ARCHIVE,Postgres migration complete — point-in-time doc,18
+docs/SESSION_LOG_2026-04-24.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,18
+docs/SESSION_LOG_2026-04-27.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,16
+docs/RESUME_HERE_2026_04_08.md,DELETE,One-shot resume/kickoff prompts from April 8 sessions,15
+NEXT_SESSION.md,DELETE,One-shot resume note from old session,14
+docs/CAPABILITIES.md,UPDATE,"Docs file with 14 stale hits (sqlite=0, intel/=0, openclaw=9, vps=5)",14
+docs/CLOUDFLARE_MIGRATION.md,UPDATE,"Docs file with 14 stale hits (sqlite=0, intel/=0, openclaw=8, vps=6)",14
+docs/POSTGRES_STAGING_STATE_2026-04-23.md,ARCHIVE,Postgres migration complete — point-in-time doc,13
+intelligence/README.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,13
+docs/CATALOG_ORPHAN_TABLES_2026-04-28.md,UPDATE,"Docs file with 12 stale hits (sqlite=0, intel/=9, openclaw=2, vps=1)",12
+docs/GRAFANA_PROMETHEUS_PLAN.md,UPDATE,"Docs file with 11 stale hits (sqlite=3, intel/=0, openclaw=0, vps=8)",11
+docs/MONDAY_INTELLIGENCE_CATALOG_PLAN.md,UPDATE,"Docs file with 11 stale hits (sqlite=0, intel/=5, openclaw=0, vps=5)",11
+docs/ROADMAP_TO_MAC_MINI_2026-05-05.md,UPDATE,"Docs file with 11 stale hits (sqlite=1, intel/=0, openclaw=6, vps=3)",11
+docs/SESSION_REPORT_2026-04-23.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,10
+docs/SESSION_LOG_2026-04-09.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,9
+docs/SESSION_LOG_2026-04-26.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,9
+docs/DEMO_DAY_HANDOFF_2026_04_08.md,UPDATE,"Docs file with 8 stale hits (sqlite=0, intel/=0, openclaw=0, vps=7)",8
+docs/SESSION_LOG_2026-04-22.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,8
+SESSION_COMPLETE.md,ARCHIVE,Root-level historical — archive per user decision,7
+docs/DB_STATE_2026-04-22.md,ARCHIVE,Postgres migration complete — point-in-time doc,7
+docs/POSTGRES_MIGRATION_STATUS_2026-04-23.md,ARCHIVE,Postgres migration complete — point-in-time doc,7
+.claude/commands/wrap-up.md,UPDATE,.claude tooling with 6 stale hits,6
+docs/INTELLIGENCE_CATALOG_STATUS.md,UPDATE,"Docs file with 6 stale hits (sqlite=0, intel/=2, openclaw=0, vps=3)",6
+docs/LATENT_BUGS.md,UPDATE,"Docs file with 6 stale hits (sqlite=0, intel/=0, openclaw=0, vps=6)",6
+intelligence/docs/intelligence_catalog_design_notes.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,6
+docs/CORS_LOCKDOWN_PLAN.md,UPDATE,"Docs file with 5 stale hits (sqlite=0, intel/=0, openclaw=4, vps=1)",5
+docs/DECISIONS.md,UPDATE,"Docs file with 5 stale hits (sqlite=3, intel/=0, openclaw=1, vps=0)",5
+docs/HVAC_SYSTEMS.md,UPDATE,"Docs file with 5 stale hits (sqlite=0, intel/=0, openclaw=0, vps=5)",5
+docs/SESSION_NOTE_2026-04-29_grafana_dropdown.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,5
+docs/archive/OPENCLAW_GUARDIAN_DB_STATUS.md,KEEP,Already archived,5
+intelligence-catalog/FIELD_INTELLIGENCE_PIPELINE.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,5
+docs/BUCKET_10_REPO_DOCS_AUDIT_2026-04-29.md,UPDATE,"Docs file with 4 stale hits (sqlite=0, intel/=0, openclaw=0, vps=1)",4
+docs/HOW_TO_UPLOAD_LOGS_TO_CLAUDE.md,UPDATE,"Docs file with 4 stale hits (sqlite=0, intel/=0, openclaw=0, vps=3)",4
+docs/MORNING_KICKOFF_PROMPT.md,DELETE,One-shot resume/kickoff prompts from April 8 sessions,4
+docs/OUTSIDE_INIT_DB_AUDIT_2026-04-23.md,ARCHIVE,Postgres migration complete — point-in-time doc,4
+docs/SESSION_LOG_2026-04-28.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,4
+docs/SESSION_NOTE_2026-04-29_operator_schedules.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,4
+intelligence/DEPRECATED.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,4
+.claude/commands/create-plan.md,UPDATE,.claude tooling with 3 stale hits,3
+docs/CRON_RECONCILIATION.md,UPDATE,"Docs file with 3 stale hits (sqlite=0, intel/=0, openclaw=0, vps=3)",3
+docs/DAILY_DEEP_DIVE_DESIGN.md,UPDATE,"Docs file with 3 stale hits (sqlite=0, intel/=0, openclaw=0, vps=3)",3
+docs/OPERATOR_SCHEDULES.md,UPDATE,"Docs file with 3 stale hits (sqlite=0, intel/=0, openclaw=0, vps=3)",3
+docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md,UPDATE,"Docs file with 3 stale hits (sqlite=0, intel/=0, openclaw=0, vps=2)",3
+docs/SESSION_LOG_2026-04-13.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,3
+docs/TESTING.md,UPDATE,"Docs file with 3 stale hits (sqlite=2, intel/=0, openclaw=1, vps=0)",3
+.claude/agents/orchestrator.md,UPDATE,.claude tooling with 2 stale hits,2
+.claude/commands/next.md,UPDATE,.claude tooling with 2 stale hits,2
+.claude/commands/plan.md,UPDATE,.claude tooling with 2 stale hits,2
+.claude/hooks/README.md,UPDATE,.claude tooling with 2 stale hits,2
+AUDIT_SUMMARY_2026-04-13.md,ARCHIVE,Point-in-time April 13 status,2
+archive/session_artifacts/tmp_repair_entry.md,KEEP,Already in archive/,2
+archive/session_artifacts/tmp_repair_entry2.md,KEEP,Already in archive/,2
+docs/CONTAINER_MONITORING.md,UPDATE,"Docs file with 2 stale hits (sqlite=0, intel/=0, openclaw=2, vps=0)",2
+docs/CRON_SCHEDULE.md,UPDATE,"Docs file with 2 stale hits (sqlite=0, intel/=0, openclaw=0, vps=2)",2
+docs/LOG_COLLECTION_ARCHITECTURE.md,UPDATE,"Docs file with 2 stale hits (sqlite=0, intel/=0, openclaw=0, vps=2)",2
+docs/PERPLEXITY_PROMPT_MINING_INTELLIGENCE_CATALOG.md,UPDATE,"Docs file with 2 stale hits (sqlite=1, intel/=0, openclaw=0, vps=1)",2
+docs/REMAINING_WORK_2026-04-28.md,UPDATE,"Docs file with 2 stale hits (sqlite=0, intel/=0, openclaw=0, vps=2)",2
+docs/SESSION_COMPLETE_2026-04-13.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,2
+docs/SESSION_LOG_2026-04-10-late-night.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,2
+docs/SESSION_LOG_2026-04-10.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,2
+docs/SESSION_LOG_2026-04-21.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,2
+docs/WEB_GUI_OPERATOR_CONSOLE.md,UPDATE,"Docs file with 2 stale hits (sqlite=0, intel/=0, openclaw=0, vps=2)",2
+installer/macos-pkg/README.md,UPDATE,2 stale hits,2
+mg_import_tool/README.md,UPDATE,2 stale hits,2
+.claude/WORKFLOW.md,UPDATE,.claude tooling with 1 stale hits,1
+.claude/agents/architect.md,UPDATE,.claude tooling with 1 stale hits,1
+.claude/agents/security-reviewer.md,UPDATE,.claude tooling with 1 stale hits,1
+.claude/commands/init.md,UPDATE,.claude tooling with 1 stale hits,1
+.claude/commands/security-check.md,UPDATE,.claude tooling with 1 stale hits,1
+.claude/commands/verify-visual.md,UPDATE,.claude tooling with 1 stale hits,1
+.claude/rules/suggest-commands.md,UPDATE,.claude tooling with 1 stale hits,1
+deploy/openclaw-skills/guardian-db/SKILL.md,DELETE,OpenClaw removed in Bucket 4 — leftover skill files,1
+docs/API_REFERENCE.md,UPDATE,"Docs file with 1 stale hits (sqlite=0, intel/=0, openclaw=1, vps=0)",1
+docs/BIXBIT_DIRECT_API.md,UPDATE,"Docs file with 1 stale hits (sqlite=0, intel/=0, openclaw=0, vps=0)",1
+docs/CORE_DATABASE_AUDIT_2026-04-23.md,ARCHIVE,Postgres migration complete — point-in-time doc,1
+docs/OPEN_LOG_UPLOADER_VISION.md,UPDATE,"Docs file with 1 stale hits (sqlite=0, intel/=0, openclaw=0, vps=0)",1
+docs/PERPLEXITY_PROMPT_MINING_INTELLIGENCE_CATALOG_V2.md,UPDATE,"Docs file with 1 stale hits (sqlite=1, intel/=0, openclaw=0, vps=0)",1
+docs/REPAIR.md,UPDATE,"Docs file with 1 stale hits (sqlite=0, intel/=0, openclaw=0, vps=1)",1
+docs/RUNBOOK_BUCKET_3_RECONCILIATION_2026-04-29.md,UPDATE,"Docs file with 1 stale hits (sqlite=0, intel/=0, openclaw=0, vps=0)",1
+docs/SESSION_LOG_2026-04-10-afternoon.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,1
+docs/SESSION_LOG_2026-04-29.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,1
+docs/SESSION_NOTE_2026-04-29_web_gui_mode_selector.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,1
+docs/SESSION_SUMMARY_2026-04-13-afternoon.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,1
+intelligence-catalog/LIVING_CATALOG.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,1
+intelligence-catalog/research/MINER_CATALOG_RESEARCH_NOTES.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,1
+.claude/agents/README.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/build-error-resolver.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/code-reviewer.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/deployer.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/doc-updater.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/e2e-runner.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/planner.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/refactor-cleaner.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/tdd-guide.md,KEEP,.claude tooling — no stale terms,0
+.claude/agents/visual-verifier.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/ai-loop-test.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/ai-loop.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/catchup.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/check-agent-readiness.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/checkpoint.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/compliance-check.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/create-commit.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/create-pr.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/create-skill.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/create-todo.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/dashboard.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/debug-browser.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/debug.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/deploy.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/design-check.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/deslop.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/docs-check.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/dogfood.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/evolve.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/guide.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/iterate.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/kickoff.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/learn.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/log-skill.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/memory-clean.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/mode.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/monitor.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/multitask.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/orchestrate.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/pipeline.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/plan-status.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/pre-commit-check.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/pre-pr-check.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/rams.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/remind.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/review.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/scrap.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/status.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/summarize.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/tasks-cleanup.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/tdd.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/techdebt.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/token-budget.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/update-toolkit.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/verify.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/version.md,KEEP,.claude tooling — no stale terms,0
+.claude/commands/worktree.md,KEEP,.claude tooling — no stale terms,0
+.claude/hooks/tests/README.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/agents.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/code-style.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/command-aliases.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/confirm-target.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/design-system/_index.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/design-system/accessibility.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/design-system/components.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/design-system/foundations.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/design-system/page-patterns.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/design-system/spacing-patterns.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/error-handling.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/git-workflow.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/performance.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/reuse-first.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/security.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/testing.md,KEEP,.claude tooling — no stale terms,0
+.claude/rules/typescript.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/accessibility/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/accessibility/references/aria-patterns.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/accessibility/references/wcag-checklist.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/continuous-learning/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/data-fetching/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/design-system/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/dogfood/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/dogfood/references/browser-auth.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/dogfood/references/issue-taxonomy.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/dogfood/templates/dogfood-report-template.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/migration-safety/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/napkin/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/pyramid-summary/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/react-patterns/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/security/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/testing/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/ui-design/SKILL.md,KEEP,.claude tooling — no stale terms,0
+.claude/skills/ui-design/references/vercel-guidelines.md,KEEP,.claude tooling — no stale terms,0
+archive/README.md,KEEP,No stale terms detected,0
+branding/BRANDING.md,KEEP,No stale terms detected,0
+deploy/openclaw-skills/guardian-db/references/schema.md,DELETE,OpenClaw removed in Bucket 4 — leftover skill files,0
+docs/AI_DATA_AUDIT_2026-04-10.md,KEEP,No stale terms detected,0
+docs/AMS_API.md,KEEP,No stale terms detected,0
+docs/AMS_INTEGRATION.md,KEEP,No stale terms detected,0
+docs/AURADINE_API.md,KEEP,No stale terms detected,0
+docs/AURADINE_ROLLBACK_STATUS.md,KEEP,No stale terms detected,0
+docs/COMPLETE_AI_AUDIT_2026-04-10.md,KEEP,No stale terms detected,0
+docs/COMPLETE_AI_AUDIT_V2_2026-04-10.md,KEEP,No stale terms detected,0
+docs/CONFIDENCE_SCORING.md,KEEP,No stale terms detected,0
+docs/CONTAINER_SENSOR_REFERENCE.md,KEEP,No stale terms detected,0
+docs/DAILY_LOG_CAPTURE_VISION.md,KEEP,No stale terms detected,0
+docs/DG1_FIX_READY_TO_APPLY.md,KEEP,No stale terms detected,0
+docs/DIRECT_LOG_COLLECTION.md,KEEP,No stale terms detected,0
+docs/EMPTY_STUB_TABLES.md,KEEP,No stale terms detected,0
+docs/FEEDBACK_LOOP_FIXES.md,KEEP,No stale terms detected,0
+docs/FINGERPRINTS_VS_PROFILES.md,KEEP,No stale terms detected,0
+docs/HVAC_ARCHITECTURE.md,KEEP,No stale terms detected,0
+docs/INTELLIGENCE_REPORT_API.md,KEEP,No stale terms detected,0
+docs/OPERATOR_GUIDE.md,KEEP,No stale terms detected,0
+docs/OPERATOR_RULES.md,KEEP,No stale terms detected,0
+docs/OVERNIGHT_TEST_STATUS_2026-04-13.md,ARCHIVE,Point-in-time April 13 status,0
+docs/PROFILE_MAP_QUESTIONS.md,KEEP,No stale terms detected,0
+docs/REFINED_INSIGHTS_DESIGN.md,KEEP,No stale terms detected,0
+docs/RELEASE_NOTES_v1.0.0.md,KEEP,No stale terms detected,0
+docs/RUNBOOK_2026-04-27_afternoon.md,KEEP,No stale terms detected,0
+docs/RUNBOOK_2026-04-28_pkg_build.md,KEEP,No stale terms detected,0
+docs/RUNBOOK_DISTRIBUTION_v1.0.0.md,KEEP,No stale terms detected,0
+docs/RUNBOOK_PKG_REBUILD.md,KEEP,No stale terms detected,0
+docs/SECURITY.md,KEEP,No stale terms detected,0
+docs/SESSION_LOG_2026-04-12.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,0
+docs/SESSION_LOG_2026-04-16.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,0
+docs/SESSION_LOG_2026-04-17.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,0
+docs/SESSION_LOG_2026-04-18.md,ARCHIVE,Historical session log — move to docs/archive/2026-04/,0
+docs/SLACK_BRANDING_CHECKLIST.md,KEEP,No stale terms detected,0
+docs/TROUBLESHOOTING.md,KEEP,No stale terms detected,0
+docs/UNUSED_DATA_OPPORTUNITIES.md,KEEP,No stale terms detected,0
+docs/WAREHOUSE_MECHANICAL.md,KEEP,No stale terms detected,0
+docs/WHATSMINER_API.md,KEEP,No stale terms detected,0
+docs/customer/README.md,KEEP,No stale terms detected,0
+installer/macos-pkg/KEYS_AND_SECRETS.md,KEEP,No stale terms detected,0
+intelligence-catalog/research/asicminervalue_all_sha256.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,0
+intelligence-catalog/research/bitmain_all_variants.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,0
+intelligence-catalog/research/canaan_all_variants.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,0
+intelligence-catalog/research/microbt_all_variants.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,0
+intelligence-catalog/seed-data/README.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,0
+intelligence/docs/intelligence_catalog_gap_analysis.md,DELETE,Deprecated tree (Bucket 7.1) — never executed PR cleanup,0
