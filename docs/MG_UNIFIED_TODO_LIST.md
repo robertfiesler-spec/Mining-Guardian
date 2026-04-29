@@ -313,7 +313,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | 7a | Inventory current `setup.sh` vs reality (Track I-1) | 30 min |
 | 7b | Write 8 plist templates in `deploy/launchd/` | 1 hour |
 | 7c | Rewrite `setup.sh` (Track I-2) | 4-5 hours |
-| 7d | Build `restore_from_snapshot.sh` (separate) | 1.5 hours |
+| 7d | ✅ DONE 2026-04-29 (PR — Bucket 6c) — `scripts/restore_from_snapshot.sh` (572 lines, 8 phases, --tarball/--skip-postgres-restore/--skip-grafana-restore/--dry-run, paste-along VPS tarball-build hints at bottom). Verify: `wc -l scripts/restore_from_snapshot.sh` and `git ls-tree HEAD scripts/restore_from_snapshot.sh` (mode 100755). | ✅ |
 | 7e | Sandbox test on fresh user account / macOS VM | 1 hour |
 | 7f | Update `DEPLOYMENT_CHECKLIST.md` | 30 min |
 | 7g | Add Grafana provisioning yaml (datasource + dashboards) | 1.5 hours |
