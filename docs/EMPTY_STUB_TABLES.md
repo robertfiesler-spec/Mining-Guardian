@@ -31,7 +31,8 @@
 **Purpose:** Track S19J Pro miners that have exceeded 84°C, enforce Operator Rule #6 (one restart attempt, then aging hardware).  
 **Schema:** Created April 13, 2026 (commit 7e7c6d8). Fields: miner_id, ip, first_seen, restart_attempted, restart_helped, marked_aging.  
 **Activation Trigger:** When any S19J Pro reaches chip_temp ≥ 84°C.  
-**Current State:** ACTIVE but not yet triggered. All S19J Pros currently running below 84°C.
+**Current State:** ACTIVE but not yet triggered. All S19J Pros currently running below 84°C.  
+**Phase 1 handler archived 2026-04-29:** The original SQLite-coupled handler `core/s19jpro_overheat_handler.py` was orphan code (zero callers, see `docs/POSTGRES_MIGRATION_STATUS_2026-04-24.md`). It has been moved to `archive/sqlite_phase1/s19jpro_overheat_handler.py` for reference (Bucket 7.3, PR #84). When Operator Rule #6 is wired into the live Postgres-backed code path, use `psycopg2` against this table — do NOT revive the archived SQLite handler. See `archive/sqlite_phase1/README.md` for state-machine semantics.
 
 ## Recommendation
 
