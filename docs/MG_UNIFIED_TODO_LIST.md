@@ -154,61 +154,33 @@ Add `-s` flag to all password prompts. Echo newline after. **5 min.**
 
 This is the non-security half of the audit. It's about whether AI actually has data to think with.
 
-> ## ✅ Reconciliation note — 2026-04-29 (Wednesday)
->
-> All four C-items below (C4, C1, C3, C5) are **CLOSED**. They were shipped Monday 2026-04-27 (PRs #13, #15, #16, #22) but the corresponding rows in this file were never flipped. Per `docs/SESSION_LOG_2026-04-27.md` line 402: *"Wednesday is now empty. The original Wednesday roadmap items — four manufacturer parsers, the C5 feedback loop, and the catalog API verification — all landed on Monday."*
->
-> See **§ 4.6 below** for closure evidence per item, and `docs/RUNBOOK_BUCKET_3_RECONCILIATION_2026-04-29.md` for the verification commands an operator can run on the live ROBS-PC catalog DB to confirm the 317-row state.
->
-> The historical text of §§ 4.1–4.5 is preserved verbatim below for audit trail per the over-document doctrine.
-
-## 4.1. C4 — Run seed SQL against catalog Postgres ✅ DONE 2026-04-27 (PR #13, merge sha `d9aca73`)
-- **Symptom (historical, 2026-04-26):** `seed-data/seed_miner_models.sql` was never executed. 313-row baseline seed missing.
-- **Impact (historical):** 208 catalog tables, only 5 have data. AI sees nothing.
+## 4.1. C4 — Run seed SQL against catalog Postgres 🔴 OPEN
+- **Symptom:** `seed-data/seed_miner_models.sql` was never executed. 313-row baseline seed missing.
+- **Impact:** 208 catalog tables, only 5 have data. AI sees nothing.
 - **Fix:** One `psql -f` invocation. Truly 30 seconds.
 - **Effort:** 30 seconds. Unblocks C1.
-- **What shipped (PR #13, 2026-04-27):** `scripts/seed_catalog.sh` — idempotent wrapper around `seed_miner_models.sql` with row-count guard, schema-presence check, post-flight verification, `--force` escape hatch. Live catalog DB verified at **317 rows = 313 seeded + 4 base** (`docs/SESSION_LOG_2026-04-27.md` L290, L658).
 
-## 4.2. C1 — Catalog split-brain: enrichment writes JSON, API reads Postgres ✅ DONE 2026-04-27 (PR #15, merge sha `e0ba593`)
-- **Symptom (historical):** Every AI lookup returns empty. 21 SQL queries, 0 rows.
-- **Decision (locked, D-12):** Path A — dual-write Postgres + JSON with Postgres-as-truth.
+## 4.2. C1 — Catalog split-brain: enrichment writes JSON, API reads Postgres 🔴 OPEN
+- **Symptom:** Every AI lookup returns empty. 21 SQL queries, 0 rows.
+- **Decision needed:** Path A (dual-write Postgres + JSON, recommended) vs B (rewrite API to read JSON) vs C (sync job)
 - **Effort:** 4-6 hours
 - **Blocks:** All AI quality. Until this is fixed, every Qwen analysis is uninformed.
-- **What shipped (PR #15, 2026-04-27):** `intelligence-catalog/db/dual_writer.py` + Postgres-as-truth dual-write intake; psycopg2 UUID adapter registered in PR #16 follow-up. Catalog API now reads Postgres (verified by `intelligence-catalog/tools/verify_catalog_api_coverage.py`).
 
-## 4.3. C3 — 5 background watchers write JSON, never to catalog DB ✅ DONE 2026-04-27 (PR #16, merge sha `817973e`)
+## 4.3. C3 — 5 background watchers write JSON, never to catalog DB 🔴 OPEN
 - Aggregator (4cc981c0), Manufacturer (920d0231), Firmware (aa676933), Community (c8c4678d), Deep Enrichment (ebb3af70)
 - All save to `cron_tracking/<watcher>/latest_findings.json` — these JSON files don't move to the Mac Mini
 - **Fix:** Rewrite each watcher to UPSERT into catalog Postgres
 - **Effort:** 3-4 hours
 - **Tied to C1 fix path.**
-- **What shipped (PR #16, 2026-04-27):** `intelligence-catalog/watchers/manufacturer_watcher.py` framework + per-manufacturer parsers for **Bitmain, MicroBT, Canaan, Auradine, Bitdeer** (5 of 5 — the previous 5-watcher list above was the *old* JSON-cron-tracking architecture; the new architecture replaces those with one per-manufacturer parser dispatched by `manufacturer_watcher.py`). Live watcher run produced 10 model proposals, 42 alias proposals, 1 manufacturer proposal in `staging.*` (`docs/SESSION_LOG_2026-04-27.md` L289). Idempotent re-run produced zero new rows.
 
-## 4.4. C5 — Operational→Catalog feedback loop missing ✅ DONE 2026-04-27 (PR #22, merge sha `7105632`)
+## 4.4. C5 — Operational→Catalog feedback loop missing 🔴 OPEN
 - Layer 5 of the 6-layer plan.
 - No code mines `action_audit_log` / `llm_analysis` / `miner_restarts` to upsert `ops.failure_patterns`, `market.war_stories`, `hardware.model_known_issues`
 - **Effort:** 2-3 hours
 - **Can slip post-Mac-Mini.**
-- **What shipped (PR #22, 2026-04-27):** `intelligence-catalog/db/feedback_loop.py` (725 LOC) + 13 unit tests in `intelligence-catalog/db/tests/test_feedback_loop.py`. Three sync paths (`sync_action_audit_to_failure_patterns`, `sync_llm_analysis_to_war_stories`, `sync_miner_restarts_to_known_issues`) all fail-soft and orchestrated by `run_full_feedback_loop(dry_run=False)`. Every C5 write attributed to source `bobby_operational` (`a0000000-0000-0000-0000-00000000000f`, tier2). Daemon launcher fix shipped 2026-04-29 in PR #80 (Bucket 7.5).
 
-## 4.5. C2 — Installer does not install Postgres / Docker / catalog API ✅ DONE 2026-04-29 (Bucket 6 — PRs #74/#75/#76/#77/#79)
-**This is the installer rebuild itself. See Section 7.** Closed today: `scripts/setup.sh` v2 (PR #75), 5 LaunchDaemons + 8 launcher wrappers (PR #74), restore-from-snapshot (PR #76), Grafana provisioning (PR #77), DEPLOYMENT_CHECKLIST rewrite (PR #79).
-
-## 4.6. Verification on the live catalog DB (operator step, runtime)
-
-The code-side work is closed. The remaining step is **runtime verification on the actual ROBS-PC catalog DB** (and later on the customer Mac Mini), which Bobby runs once at his machine. Commands and expected outputs are captured in `docs/RUNBOOK_BUCKET_3_RECONCILIATION_2026-04-29.md`. Summary of what to confirm:
-
-- `hardware.miner_models` row count = **317** (313 seed + 4 base)
-- `hardware.manufacturers` = **16**
-- `knowledge.sources` = **23**
-- `mg.model_family_aliases` = **1,494**
-- `hardware.model_aliases` = **12,852**
-- `bash scripts/seed_catalog.sh` returns exit 0 with the message `"Already seeded (>= 313 rows). Skipping."` (idempotency proof)
-- `pytest intelligence-catalog/db/tests/test_feedback_loop.py` — 13/13 pass
-- `pytest intelligence-catalog/db/tests/test_dual_writer.py` — all pass
-- `pytest intelligence-catalog/watchers/tests/` — all 5 parser test files pass
-
-After Bobby runs and confirms, this section can be closed entirely (move to SECTION 1 "Already Done" or archive into a closing note). Until then, leaving §§4.1–4.5 here as DONE-with-verification-pending.
+## 4.5. C2 — Installer does not install Postgres / Docker / catalog API 🔴 OPEN
+**This is the installer rebuild itself. See Section 7.**
 
 ---
 
@@ -412,6 +384,7 @@ These are the **answers**, not the work. Listed for reference so nothing contrad
 | 10.4 | Setup Manual (beginner-friendly, with images) | Sunday user msg | 🔴 Post-Mac-Mini |
 | 10.5 | Program Instructions doc (beginner-friendly) | Sunday user msg | 🔴 Post-Mac-Mini |
 | 10.6 | 8-10 page Product Brochure (with images) | Sunday user msg | 🔴 Post-Mac-Mini |
+| 10.7 | Operator schedule control — retime overnight window + interval daemons from Web GUI | 2026-04-29 user msg | ✅ **DONE 2026-04-29 PM** — `system_schedules` table (migration 005) + `/schedules` GET/POST + Schedules tab in `approval_ui.html` + hot-reload in 4 daemons. 23/23 tests pass. See `docs/OPERATOR_SCHEDULES.md`. |
 
 ---
 
@@ -705,8 +678,7 @@ Bucket 3 done. Remaining sprint priorities, restated:
 | 🟡 2 | B-7 migrations 002 | OPEN |
 | 🟡 2 | VPS PAT rotation (S-2 was emergency Sunday — confirm rotation cycle) | OPEN |
 | 🟡 2 | Delete `cleanup_ams_logs.py` | OPEN |
-| 🟡 2 | **Grafana Intelligence Report — miner dropdown auto-expand** (`scripts/fix_intelligence_dropdown.py`) | FIXED 2026-04-29 PM — see § 15.6.1 |
-| 🟡 2 | **Provision all seven Grafana dashboards as code** | OPEN (NEW) — see § 15.6.2 |
+| 🟡 2 | **Grafana intelligence dashboard — miner dropdown is hard-coded, must auto-expand from DB** | OPEN — see § 15.6.1 |
 | 🟢 3 | .pkg branding | ✅ **DONE 2026-04-29** |
 | 🟢 4 | Power cycle 53476 | OPEN |
 | 🟢 4 | Inspect 53494 / 53521 / 53482 | OPEN |
@@ -714,60 +686,30 @@ Bucket 3 done. Remaining sprint priorities, restated:
 
 See `STUDY_NOTE_2026-04-30.docx` for tomorrow's review packet.
 
-### 15.6.1 Grafana miner-dropdown auto-expand bug (filed 2026-04-29, fix shipped 2026-04-29 PM)
+### 15.6.1 Grafana miner-dropdown auto-expand bug (filed 2026-04-29)
 
-**Symptom (operator-reported 2026-04-29 AM):** The Intelligence Report Grafana dashboard ([UID `intelligence_report_001`](https://grafana.fieslerfamily.com/d/intelligence_report_001/)) has a fixed/hard-coded list of miner serial numbers in its template-variable dropdown. New miners discovered in the daily search runs do not appear, so not all miners actually present in the database are visible. Operator could not select miners that exist in Postgres.
+**Symptom (operator-reported 2026-04-29):** The intelligence Grafana page has a fixed/hard-coded list of miner serial numbers in its template-variable dropdown. New miners discovered in the daily search runs do not appear, so not all miners actually present in the database are visible in the dashboard. Operator currently cannot select miners that exist in Postgres.
 
-**Investigation findings (the morning study note got two things wrong — corrected here):**
+**Root cause (likely):** The dashboard JSON has a `templating.list[]` entry of `type: "custom"` with a literal value list, instead of `type: "query"` driven by a SQL query against the canonical miners table.
 
-1. **No Grafana dashboard JSON is checked into the repo.** The morning note assumed `installer/grafana/dashboards/intelligence.json` existed. It does not. All dashboards live inside the running Grafana on the VPS and are managed by ad-hoc scripts in `scripts/` (e.g. `update_grafana_ai.py`, `check_grafana_board2.py`).
-2. **The Intelligence Report is the seventh dashboard, not in the six-dashboard branding list.** `scripts/branding/grafana_brand_dashboards.py` enumerates six core UIDs (Main, Fleet Overview, Per Miner, Board Health, AI & Learning, Pool Stats). `intelligence_report_001` was added later and is unmanaged by that script.
-3. **The canonical Postgres table is `miner_readings`, not `miners`.** Columns are `(miner_id, ip, model, scanned_at)` per `ai/predictive_eta.py:281`. There is no `active = true` flag — "active" means "seen recently", which we filter as `scanned_at > NOW() - INTERVAL '7 days'`.
+**Fix shape:**
+1. Identify the canonical miners table on Postgres (probably `miners` or `mining_miners` — confirm during fix; do **not** read from JSON catalog, that path is on its way out per C1).
+2. Replace the `custom` template variable with a `query` variable, definition roughly:
+   ```sql
+   SELECT DISTINCT serial_number AS __value, hostname AS __text
+   FROM miners
+   WHERE active = true
+   ORDER BY hostname;
+   ```
+   (exact column names TBD — verify against `\d miners` first).
+3. Set `refresh: 2` ("On Time Range Change") so the dropdown re-queries the DB every time the dashboard loads. Alternative: `refresh: 1` ("On Dashboard Load") if cost is a concern.
+4. Set `multi: true` and `includeAll: true` so the operator can pick one, several, or all miners.
+5. Test: add a new test miner to the DB, reload the dashboard, confirm it appears without dashboard JSON edits.
+6. Provision the fix into `installer/grafana/dashboards/intelligence.json` (or wherever this dashboard lives) so the Mac Mini install gets the corrected version on first boot — do not just hot-fix the running Grafana on the VPS.
 
-**Fix shape (as actually shipped):**
+**Effort estimate:** 30-60 min once we're at a Mac with Grafana access. Bucket 2 not Bucket 1 — does not block the Mini install, but should ship before any customer sees the dashboard.
 
-One self-contained Python script — `scripts/fix_intelligence_dropdown.py` — that:
-
-1. Connects to local Grafana (`http://localhost:3000` by default; override with `GRAFANA_URL`, `GRAFANA_API_KEY`, or `GRAFANA_USER`/`GRAFANA_PASS` env vars).
-2. Fetches the live `intelligence_report_001` dashboard, writes a timestamped backup to `/tmp/intelligence_report_001-BACKUP-<ts>.json`.
-3. Auto-detects the dashboard's primary panel datasource (Postgres or Prometheus) and builds the right kind of query variable for it. For Postgres: `SELECT DISTINCT miner_id AS "__value", COALESCE(NULLIF(ip, ''), miner_id) AS "__text" FROM miner_readings WHERE scanned_at > NOW() - INTERVAL '7 days' ORDER BY 2`. For Prometheus: `label_values(mining_guardian_fleet_online, miner)`.
-4. Forces `refresh: 2` ("On Time Range Change"), `multi: true`, `includeAll: true`, `sort: 1` (alpha asc).
-5. Three CLI modes: no flag = INSPECT (read-only), `--dry-run` = print unified diff, `--apply` = POST with `overwrite: true` and bump version.
-6. Idempotent: re-running `--apply` on an already-fixed dashboard is a no-op.
-
-**Operator commands (run on the VPS):**
-
-```bash
-cd ~/Documents/GitHub/Mining-Guardian
-git pull --ff-only
-python3 scripts/fix_intelligence_dropdown.py            # inspect, write backup
-python3 scripts/fix_intelligence_dropdown.py --dry-run  # preview the diff
-python3 scripts/fix_intelligence_dropdown.py --apply    # apply
-```
-
-Then `Cmd+Shift+R` on the dashboard to bust the in-memory cache.
-
-**Effort actual:** ~45 min total (investigation + script + PR), Bucket 2.
-
-### 15.6.2 Provision all seven Grafana dashboards as code (filed 2026-04-29 PM, NEW)
-
-**Why:** § 15.6.1 revealed there is **no source-controlled copy of any Grafana dashboard**. If the VPS is lost, every dashboard must be rebuilt from memory. This is also why the Mac Mini install cannot reproduce the customer-facing dashboards on first boot today.
-
-**Scope:**
-
-1. Set up Grafana provisioning under `installer/grafana/provisioning/dashboards/*.yaml` (sidecar-style, follows Grafana docs for filesystem-based provisioning).
-2. Export current JSON of all seven dashboards to `installer/grafana/dashboards/`:
-   - `bfi3t0krwak1sd` Main
-   - `efi3msabjg2kge` Fleet Overview
-   - `cfi3mt5a450xse` Per Miner
-   - `afi3p5mhapn9ce` Board Health
-   - `llm_learning_001` AI & Learning
-   - `afi3q9w5ishz4f` Pool Stats
-   - `intelligence_report_001` Intelligence Report (already corrected by § 15.6.1)
-3. Wire the macOS .pkg postinstall to drop the provisioning files into Grafana's data dir on first boot.
-4. Replace the ad-hoc `update_grafana_*.py` scripts with a single `scripts/grafana_export.py` (push live → file) and `scripts/grafana_import.py` (push file → live) so changes are always reviewed in PRs.
-
-**Effort estimate:** ~half a day. Bucket 2 — does not block Mini install but is required for any customer install reproducibility. Cross-reference Section 7.2 Phase 11 ("Grafana provisioning") and Section 7.3 7g.
+**Cross-reference:** Section 7.2 Phase 11 ("Grafana provisioning") and Section 7.3 7g ("Add Grafana provisioning yaml") already plan a Grafana provisioning yaml for the installer — this fix should land inside that provisioning yaml so it's never re-introduced.
 
 ## 15.7 Stale branches OK to delete
 
@@ -789,28 +731,3 @@ Stale experiments — **do NOT delete without asking**:
 - `pre-prod-audit-2026-04-25` (diverged 47 / 294)
 
 *— end of 2026-04-29 update*
-
----
-
-# SECTION 16 — Update 2026-04-29 (late) — Bucket 10 repo-docs audit
-
-## 16.1 Bucket 10 — Full repo documentation cleanup sweep
-
-| Step | Status | Notes |
-|---|---|---|
-| Bucket 10 audit + planning doc | 🟡 IN PROGRESS — PLAN PUBLISHED | `docs/BUCKET_10_REPO_DOCS_AUDIT_2026-04-29.md` (this PR) inventories all 104 `*.md` files at root + `docs/`, reference-counts each, tiers them A/B/C, and proposes the move/citation-update plan |
-| Bucket 10 execute (move + cite) | 🔴 OPEN | Follow-up PR after Bobby resolves the 8 verify-first cases listed in §9 of the audit doc. Net moves ~25–30 files, citation updates ~15–20 lines |
-
-## 16.2 What this audit found
-
-- **104 markdown files total** at root (8) + `docs/` (96)
-- **15 files with 0 incoming references** → Tier A archive-immediately
-- **20 files with 1 incoming reference** → Tier B-1 (most cite only `CLAUDE.md`'s tracker tables — drop the row + archive)
-- **13 files with 2 incoming references** → Tier B-2 (mostly KEEP — vendor APIs and active runbooks)
-- **56 files with 3+ refs** → Tier C keep
-
-## 16.3 Doctrine
-
-- Archive ≠ delete. Move to `docs/_archive/2026-04/` so files stay in repo history and on disk.
-- Per "comprehensive + over-document always": only the explicitly-superseded and the dated session/handoff files leave the active doc tree. Vendor API docs, design specs, runbooks, and any file referenced from Python source stay.
-- 8 borderline files flagged verify-first for Bobby — defer until reviewed.
