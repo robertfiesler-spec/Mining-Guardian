@@ -235,3 +235,118 @@ Commit. Done.
 ---
 
 *Written 2026-04-28. Pair with `docs/RUNBOOK_DISTRIBUTION_v1.0.0.md` (which covers the first-time chain) and `docs/SESSION_LOG_2026-04-28.md` (which covers the day this runbook was forged).*
+
+---
+
+## Addendum 2026-04-29 — Installer.app WebKit lockdowns (Branded UI gotchas)
+
+Added after the 2026-04-29 branding-rebuild session, where five `make pkg` rebuilds were burned learning these the hard way. If you are touching anything in `installer/macos-pkg/resources/` (the welcome HTML, conclusion HTML, or sidebar `background.png`), read this section before opening a PR — it will save you four notarization rounds.
+
+The lockdowns below are **not documented by Apple**. They were discovered empirically during the PR #54 → PR #58 visual-debug arc. Each lockdown silently breaks a different cascade — the .pkg builds, signs, notarizes, and staples cleanly through every one of them; only the visual check after `open <pkg>` reveals the bug. Plan accordingly.
+
+### Lockdown #1 — `html`/`body` `background` is forced transparent
+
+Installer.app's internal WebKit stylesheet overrides any `background-color` or `background` you set on the `html` or `body` element. It silently strips them and lets the Installer.app chrome show through (which is white, not your designed dark color).
+
+**Symptom:** Welcome / conclusion panel shows white background where you painted dark; text colors that assumed your dark background now look wrong (selection-blue blocks, broken contrast).
+
+**Workaround:** Paint your background on an **inner div**, not on `html` or `body`. Or design for the white-default and use only inner colored elements (callouts, code pills, eyebrows).
+
+```css
+/* WRONG — Installer.app strips this */
+body { background: #0A1428; color: #fff; }
+
+/* RIGHT — paint the wrapper div */
+body { padding: 32px; }
+.page {
+  background: #0A1428;
+  color: #fff;
+  padding: 24px;
+  border-radius: 8px;
+}
+```
+
+(The PR #55 attempt used a `.page` wrapper as the fix for Lockdown #1 — it succeeded at painting the navy background but immediately ran into Lockdown #2.)
+
+### Lockdown #2 — CSS custom properties don't survive for `color`
+
+`var(--x)` for `color` declarations works fine in standalone WebKit (Safari preview, `open file://welcome.html`) but **does not** work inside Installer.app. Installer.app injects an internal stylesheet that resets `color` after page load, breaking the cascade that CSS variables rely on.
+
+**Symptom:** All text appears in the same color as the background — invisible. Eyebrows, headings, body, code, links — everything. The background paint works (Lockdown #1 worked-around), but text is gone.
+
+**Workaround:** Use **literal hex values** for every `color` declaration, with `!important`. No CSS variables for color. Other property types (e.g. `background`, `border-color`, `padding`) survive variables fine — only `color` is reset.
+
+```css
+/* WRONG — works in Safari, breaks in Installer.app */
+:root { --text: #0A1428; }
+body { color: var(--text); }
+
+/* RIGHT — literal hex, !important */
+body { color: #0A1428 !important; }
+h1, h2, h3 { color: #0A1428 !important; }
+.eyebrow { color: #F7931A !important; }
+code { color: #0A1428 !important; }
+```
+
+### Lockdown #3 — Sidebar PNG nav-zone tone
+
+Installer.app paints its own step-list nav text overlay in the **top ~50%** of the sidebar (the strip running down the left side of the installer window). The labels are "Introduction / License / Destination Select / Installation Type / Installation / Summary". The active step is rendered in a brighter blue (readable on most backgrounds), but the inactive steps are rendered in a **dim/muted dark navy** that requires a **light or medium-tone background** to be readable.
+
+If your `background.png` puts dark artwork (like a navy Hero shield) in that top zone, the inactive nav steps disappear into the artwork.
+
+**Symptom:** "Introduction" is readable but the five inactive steps below it look completely missing or render as faint shadow. Active-step navigation works during install, but a static screenshot shows what looks like a one-step installer.
+
+**Workaround:** Design `background.png` (620×1111) in two zones:
+
+| Y range | Treatment |
+|---|---|
+| 0..540 | **Light or medium-tone** background. `#F1F4F9` (light cool grey) → `#E1E8F2` is a known-good gradient. Reserve this zone — no artwork, no dark colors. |
+| 540..600 | Feather/transition zone — alpha-blend the seam color into the artwork below. 60px is enough to avoid a hard horizontal line. |
+| 600..1111 | Your branding artwork — Hero shield, wordmark, etc. Can be as dark as you want; nav text doesn't reach this zone. |
+
+`Distribution.xml` should keep `<background ... alignment="bottomleft" scaling="proportional"/>` — that anchors the artwork to the bottom regardless of the sidebar's actual rendered height, which keeps the feather seam stable across macOS versions.
+
+### Visual-check protocol
+
+Because all three lockdowns build/notarize cleanly, the only way to catch them is to actually open the .pkg and look:
+
+```zsh
+open ~/Documents/GitHub/Mining-Guardian/build/MiningGuardian-1.0.0-<sha>.pkg
+```
+
+Take a screenshot of the welcome screen. Verify:
+
+1. **Right pane:** background is the color you intended (Lockdown #1 check), all text is readable in the colors you intended (Lockdown #2 check)
+2. **Sidebar:** all six nav steps clearly visible — "Introduction" + the five inactive ones (Lockdown #3 check)
+3. **Sidebar artwork:** anchored at the bottom, no hard horizontal seam where it meets the light zone
+
+Click "Continue" once and re-screenshot the License panel — same sidebar, but the active-step highlight has moved. This catches any seam issue that only shows up at certain nav positions.
+
+**Cancel out — do not actually install** during visual checks. We're testing the rendered Installer.app UI, not the install flow itself.
+
+### When to repeat the rebuild cycle
+
+If any of the three checks fails: fix the file, push as a new PR (single-file binary swap if it's `background.png`, or HTML edit if it's welcome/conclusion), merge, and run `make pkg` again. Each rebuild + notary round-trip is ~6-10 min. Budget 4-5 cycles the first time you touch any branded surface; budget 1 cycle once the lockdowns are internalized.
+
+### Files in this lockdown family
+
+| File | Lockdown surface | Test |
+|---|---|---|
+| `installer/macos-pkg/resources/welcome.html` | #1, #2 | right-pane visual check on welcome screen |
+| `installer/macos-pkg/resources/conclusion.html` | #1, #2 | right-pane visual check after install (or simulated by clicking through to Summary) |
+| `installer/macos-pkg/resources/background.png` | #3 | sidebar nav-zone visual check |
+| `installer/macos-pkg/resources/Distribution.xml` | none of the three; controls layout/scaling/alignment of the above | — |
+
+### Provenance for this addendum
+
+Discovered during PR #54 → PR #58 (2026-04-29). Five `make pkg` rebuilds, five notary submissions (all Accepted by Apple — these were visual not signing rejections):
+
+| # | Submission ID | Build SHA | Lockdown that broke it |
+|---|---|---|---|
+| 1 | `9f34a1ea-a5df-4d28-bbed-e4ca74170765` | `2f3bff5a8e28` (PR #54) | #1 — body bg stripped |
+| 2 | `6b6596c0-67f8-44da-bb5d-9346e1e90f2c` | `5ba091d561fa` (PR #55) | #2 — `var(--text)` reset |
+| 3 | `03f4a5c7-0798-4d06-9366-66fc5d1e6c18` | `e0e4bbe114f1` (PR #56) | #3 — sidebar nav-zone (right pane finally clean) |
+| 4 | `e549d551-f0be-492a-a95c-8caa43a9c238` | `fb5b7038988c` (PR #57) | #3 — flat dark navy too dark for inactive nav |
+| 5 | `6813ec95-7abc-4768-bd06-fe4f1acdf777` | `0f849bd217cc` (PR #58) | none — clean |
+
+Full chronological narrative in `docs/SESSION_LOG_2026-04-29.md`.

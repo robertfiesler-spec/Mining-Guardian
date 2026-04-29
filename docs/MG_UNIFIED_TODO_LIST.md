@@ -597,3 +597,136 @@ The staple survived GitHub's CDN. The .pkg installs from any of the three locati
 Branding will trigger a fresh notarization round trip (binary content changes), which means a new `v1.0.x` tag + new GitHub Release. Today's release stays as the canonical v1.0.0 baseline.
 
 *— end of 2026-04-28 distribution addendum*
+
+
+---
+
+# SECTION 15 — Update 2026-04-29 (Wednesday) — .pkg branding shipped
+
+Added after the Wednesday branding-rebuild session. **Does not invalidate Sections 1–14** — focused delta on Bucket 3's final piece (the branded macOS Installer.app UI). For full session detail see `SESSION_LOG_2026-04-29.md`. For the lockdowns we discovered (so future maintainers don't burn the same five rebuilds), see `RUNBOOK_PKG_REBUILD.md` § "Addendum 2026-04-29 — Installer.app WebKit lockdowns".
+
+## 15.1 Status flips
+
+| Bucket 3 line item | Old status (after 2026-04-28 PM) | New status (2026-04-29) |
+|---|---|---|
+| **PR #54** — installer branding (Hero direction) | 🔴 OPEN, deferred | ✅ DONE (merged + superseded by #56–#58 visual fixes) |
+| Branded Installer.app UI (welcome / conclusion / sidebar) | not started | ✅ DONE — build `0f849bd217cc` |
+| GitHub Release for branded build | n/a | ✅ DONE — `v1.0.0-0f849bd217cc` is **Latest** |
+| USB stick "MG Install" — branded build | held the unbranded `978ff61126ea` | ✅ DONE — replaced with `0f849bd217cc`, INSTALL.txt rewritten, ejected |
+| Round-trip verify from GitHub on a fresh download | n/a | ✅ PASS (`shasum -c` OK + `spctl -a -t install` accepted) |
+| Old release `v1.0.0-978ff61126ea` | Latest | demoted to Pre-release (kept for audit trail) |
+
+**Bucket 3 is closed.** Every remaining .pkg-related thing is now a downstream Bucket 1 / Bucket 4 task (real Mac Mini install + customer rollout), not a build-pipeline task.
+
+## 15.2 PRs merged this session
+
+| PR | SHA | Subject | Build verdict |
+|---|---|---|---|
+| #54 | `2f3bff5a8e28` | Initial branded welcome + conclusion HTML + sidebar background + brand PDFs + docs | white-bg bug (Lockdown #1) |
+| #55 | `5ba091d561fa` | `.page` wrapper attempt to fix Lockdown #1 | navy-on-navy (Lockdown #2) |
+| #56 | `e0e4bbe114f1` | Light-theme rebuild — literal hex `!important`, drop CSS variables | right pane locked in; sidebar nav still hidden (Lockdown #3) |
+| #57 | `fb5b7038988c` | Sidebar PNG: top 50% reserved as flat dark navy | active step OK, inactive too dim |
+| #58 | `0f849bd217cc` | Sidebar PNG: top zone switched to light blue-grey gradient | **clean — all six nav steps readable, shipped** |
+
+Five PRs, five `make pkg` rebuilds, five notary submissions (every one Accepted by Apple — these were visual not signing rejections). Detailed ledger in § 15.4.
+
+## 15.3 Three Installer.app WebKit lockdowns we discovered
+
+Documented in full in `RUNBOOK_PKG_REBUILD.md` § Addendum 2026-04-29. Brief tag:
+
+1. **`html`/`body` `background` is forced transparent.** Workaround: paint inner divs only.
+2. **CSS custom properties don't survive for `color`.** Workaround: literal hex `!important`.
+3. **Sidebar PNG nav-zone must be light-toned.** Workaround: reserve top 50% (y=0..540) as `#F1F4F9`→`#E1E8F2` gradient, feather y=540..600, artwork in bottom 50%.
+
+If you touch anything in `installer/macos-pkg/resources/` in the future, read the addendum first. It will save you four rebuilds.
+
+## 15.4 Notarization submission ledger (this session)
+
+| # | Submission ID | Build SHA | Outcome |
+|---|---|---|---|
+| 1 | `9f34a1ea-a5df-4d28-bbed-e4ca74170765` | `2f3bff5a8e28` (PR #54) | Apple Accepted; visual reject (Lockdown #1) |
+| 2 | `6b6596c0-67f8-44da-bb5d-9346e1e90f2c` | `5ba091d561fa` (PR #55) | Apple Accepted; visual reject (Lockdown #2) |
+| 3 | `03f4a5c7-0798-4d06-9366-66fc5d1e6c18` | `e0e4bbe114f1` (PR #56) | Apple Accepted; right pane good, sidebar reject (Lockdown #3) |
+| 4 | `e549d551-f0be-492a-a95c-8caa43a9c238` | `fb5b7038988c` (PR #57) | Apple Accepted; partial sidebar fix |
+| 5 | **`6813ec95-7abc-4768-bd06-fe4f1acdf777`** | **`0f849bd217cc` (PR #58)** | **Apple Accepted; visual clean — shipped** |
+
+Cumulative project total (since 2026-04-28): 8 notarization submissions, 5 visual-clean visuals, 1 shipped artifact, 0 Apple-side rejections.
+
+## 15.5 Distribution artifacts (current source of truth)
+
+| Asset | Location | SHA-256 |
+|---|---|---|
+| `MiningGuardian-1.0.0-0f849bd217cc.pkg` | Private GitHub Release `v1.0.0-0f849bd217cc` (Latest) + USB "MG Install" + `~/Documents/GitHub/Mining-Guardian/build/` | `1e65fe7827ffba2c8cd4daa0c2a42218bb156798521278fd0e567b0cef53a646` |
+| `.pkg.sha256` sidecar (basename format) | Same three locations | n/a |
+| `INSTALL.txt` (USB-only) | `/Volumes/MG Install/INSTALL.txt` | n/a (rewritten 2026-04-29) |
+
+Tag: `v1.0.0-0f849bd217cc` → commit `0f849bd217ccba0ecceeda652550e131d7cd71a3` (PR #58 merge).
+
+Release URL: [robertfiesler-spec/Mining-Guardian releases v1.0.0-0f849bd217cc](https://github.com/robertfiesler-spec/Mining-Guardian/releases/tag/v1.0.0-0f849bd217cc)
+
+## 15.6 What's next (carry-over to 2026-04-30 and beyond)
+
+Bucket 3 done. Remaining sprint priorities, restated:
+
+| Bucket | Item | Status |
+|---|---|---|
+| 🔴 1 | D-14 PR 5/5 (final Bucket 1 piece) | ⏸ BLOCKED on Mini physical install |
+| 🔴 1 | Backfill 124 missing `raw_json` rows | OPEN |
+| 🔴 1 | Runtime invariant assertion | OPEN |
+| 🟡 2 | CI lint pipeline | OPEN |
+| 🟡 2 | B-7 migrations 002 | OPEN |
+| 🟡 2 | VPS PAT rotation (S-2 was emergency Sunday — confirm rotation cycle) | OPEN |
+| 🟡 2 | Delete `cleanup_ams_logs.py` | OPEN |
+| 🟡 2 | **Grafana intelligence dashboard — miner dropdown is hard-coded, must auto-expand from DB** | OPEN — see § 15.6.1 |
+| 🟢 3 | .pkg branding | ✅ **DONE 2026-04-29** |
+| 🟢 4 | Power cycle 53476 | OPEN |
+| 🟢 4 | Inspect 53494 / 53521 / 53482 | OPEN |
+| 🟢 4 | HVAC | OPEN |
+
+See `STUDY_NOTE_2026-04-30.docx` for tomorrow's review packet.
+
+### 15.6.1 Grafana miner-dropdown auto-expand bug (filed 2026-04-29)
+
+**Symptom (operator-reported 2026-04-29):** The intelligence Grafana page has a fixed/hard-coded list of miner serial numbers in its template-variable dropdown. New miners discovered in the daily search runs do not appear, so not all miners actually present in the database are visible in the dashboard. Operator currently cannot select miners that exist in Postgres.
+
+**Root cause (likely):** The dashboard JSON has a `templating.list[]` entry of `type: "custom"` with a literal value list, instead of `type: "query"` driven by a SQL query against the canonical miners table.
+
+**Fix shape:**
+1. Identify the canonical miners table on Postgres (probably `miners` or `mining_miners` — confirm during fix; do **not** read from JSON catalog, that path is on its way out per C1).
+2. Replace the `custom` template variable with a `query` variable, definition roughly:
+   ```sql
+   SELECT DISTINCT serial_number AS __value, hostname AS __text
+   FROM miners
+   WHERE active = true
+   ORDER BY hostname;
+   ```
+   (exact column names TBD — verify against `\d miners` first).
+3. Set `refresh: 2` ("On Time Range Change") so the dropdown re-queries the DB every time the dashboard loads. Alternative: `refresh: 1` ("On Dashboard Load") if cost is a concern.
+4. Set `multi: true` and `includeAll: true` so the operator can pick one, several, or all miners.
+5. Test: add a new test miner to the DB, reload the dashboard, confirm it appears without dashboard JSON edits.
+6. Provision the fix into `installer/grafana/dashboards/intelligence.json` (or wherever this dashboard lives) so the Mac Mini install gets the corrected version on first boot — do not just hot-fix the running Grafana on the VPS.
+
+**Effort estimate:** 30-60 min once we're at a Mac with Grafana access. Bucket 2 not Bucket 1 — does not block the Mini install, but should ship before any customer sees the dashboard.
+
+**Cross-reference:** Section 7.2 Phase 11 ("Grafana provisioning") and Section 7.3 7g ("Add Grafana provisioning yaml") already plan a Grafana provisioning yaml for the installer — this fix should land inside that provisioning yaml so it's never re-introduced.
+
+## 15.7 Stale branches OK to delete
+
+Confirmed zero-ahead, content already in `main`:
+
+- `fix/typo-rename-mining-guardian-2026-04-26`
+- 4× `hotfix/cr-*-2026-04-2[56]`
+- `openclaw-integration`
+- `docs/customer-docs-and-installer-branding` (PR #54 source — superseded)
+- `feature/installer-page-wrapper` (PR #55 source — superseded)
+- `feature/installer-light-theme` (PR #56 source — superseded)
+- `fix/installer-sidebar-background-nav-zone` (PR #57 source — superseded)
+- `fix/installer-sidebar-light-top-zone` (PR #58 source — current main)
+
+Stale experiments — **do NOT delete without asking**:
+
+- `feature/fast-cohort-analysis` (diverged 2 ahead / 202 behind)
+- `feature/intelligence-catalog` (diverged 21 / 294)
+- `pre-prod-audit-2026-04-25` (diverged 47 / 294)
+
+*— end of 2026-04-29 update*
