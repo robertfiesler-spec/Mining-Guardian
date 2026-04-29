@@ -61,7 +61,7 @@ psql -U guardian_admin -d mining_guardian -f sql/seed/002_mg_family_aliases_tier
 
 **Ordering matters:** 000 must run before 002 because 002 expects `knowledge.field_log_miner_identity` to exist so it can add resolver-stamp columns. If you skip 000, `mg_import.py`'s own runtime bootstrap block will create the tables anyway on first connection — but the formal migration path is what a fresh environment should use.
 
-**Note:** there is no `001_initial_schema.sql` in this tool. The repo-level `migrations/001_initial_schema.sql` at the project root is the VPS Mining Guardian Postgres schema (monolithic `public.*` tables) and is unrelated to the catalog.
+**Note:** there is no `001_initial_schema.sql` in this tool. The repo-level `migrations/001_initial_schema.sql` at the project root is the Mining Guardian Postgres schema (monolithic `public.*` tables, originally the VPS operational schema — historical; now deployed on Mac Mini as of 2026-04-30) and is unrelated to the catalog.
 
 ### 4. Run the tool
 

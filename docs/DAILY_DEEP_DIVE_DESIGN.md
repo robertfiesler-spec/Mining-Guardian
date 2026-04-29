@@ -1,8 +1,16 @@
 # Daily Deep Dive — Design Doc
 
+> ## ⚠️ Status as of 2026-04-29 PM
+>
+> **Host changed from VPS to Mac Mini.** This doc was written on April 9, 2026, when the script was initially deployed to the historical Hostinger VPS (decommissioned for MG). As of the 2026-04-30 Mac Mini install:
+> - The script runs on the **Mac Mini** (not the VPS).
+> - The `LLM_URL` will be `http://localhost:11434` if Ollama runs on the Mac Mini, or `http://100.110.87.1:11434` (ROBS-PC Tailscale) if ROBS-PC is still the Qwen host.
+> - The script path is `/Users/BigBobby/Documents/GitHub/Mining-Guardian/ai/daily_deep_dive.py` (not `/root/Mining-Guardian/`).
+> - VPS references in the Invocation, May Migration, and Troubleshooting sections below are historical context.
+
 **File:** `ai/daily_deep_dive.py`
 **Created:** April 9, 2026 (commit `da1edbd`)
-**Status:** Code deployed to VPS, cron not yet active, first manual run pending (awaiting completion of today's daily log sweep)
+**Status:** Deployed to operational DB host (Mac Mini as of 2026-04-30; was on historical VPS, decommissioned for MG), cron not yet active, first manual run pending.
 **Author:** Mining Guardian afternoon log pipeline sprint
 
 ## Purpose
@@ -246,17 +254,17 @@ The script runs single-process, sequential per-miner. No thread pool. No concurr
 - **Does not replace the per-scan Qwen analysis.** `ai/local_llm_analyzer.py` still runs every hour from the scan loop, producing reactive quick-check analyses that feed into `knowledge['llm_scan_analyses']`. The deep dive is ADDITIVE, not a replacement.
 - **Does not modify the restart comparison dual-model pipeline.** Pre/post restart comparisons still happen at the moment of each restart via `_run_post_action_log_comparison` and still flow into `knowledge['known_issues']` with the `compare:*` prefix. The deep dive reads from different sources and produces a different output.
 
-## May Migration (Mac Mini Arrival)
+## Mac Mini Migration (2026-04-30 install)
 
 The daily deep dive is **PERMANENT**. Unlike the `TEMP_MAY_REMOVE` restart comparison merge block, the daily deep dive stays on forever and its output keeps flowing into the Sunday Claude training stream indefinitely.
 
-On May arrival, two things happen to the deep dive:
-1. The script moves from VPS (`/root/Mining-Guardian/`) to the Mac mini deployment path.
-2. The `LLM_URL` config value changes from `http://100.110.87.1:11434` (ROBS-PC Tailscale) to `http://localhost:11434` (Mac mini's own Ollama). This is a config change, not a code change.
+On Mac Mini install (2026-04-30), two things happen to the deep dive:
+1. The script runs on the Mac Mini at `/Users/BigBobby/Documents/GitHub/Mining-Guardian/ai/daily_deep_dive.py` (was on historical VPS at `/root/Mining-Guardian/`, decommissioned for MG).
+2. The `LLM_URL` config value: if Ollama runs on the Mac Mini use `http://localhost:11434`; if ROBS-PC remains the Qwen host use `http://100.110.87.1:11434` (ROBS-PC Tailscale). This is a config change, not a code change.
 
 Nothing else changes. The logic stays identical.
 
-The pre/post restart comparison merge in `train_cohort.py` (the `TEMP_MAY_REMOVE` block) goes away on May arrival per operator rule, but the daily deep dive merge (separate block, not wrapped in TEMP markers) stays.
+The pre/post restart comparison merge in `train_cohort.py` (the `TEMP_MAY_REMOVE` block) goes away on Mac Mini arrival per operator rule, but the daily deep dive merge (separate block, not wrapped in TEMP markers) stays.
 
 ## Known Limitations & Future Work
 
@@ -267,7 +275,7 @@ The pre/post restart comparison merge in `train_cohort.py` (the `TEMP_MAY_REMOVE
 
 ## Troubleshooting
 
-**"Qwen HTTP error 500" or "Qwen connection error":** ROBS-PC is not reachable via Tailscale, or Ollama is down, or Qwen model is not loaded. SSH to the VPS, `curl http://100.110.87.1:11434/api/tags` to check if Ollama is up. `curl http://100.110.87.1:11434/api/show -d '{"name":"qwen2.5:32b-instruct-q4_K_M"}'` to check if the model is available.
+**"Qwen HTTP error 500" or "Qwen connection error":** ROBS-PC is not reachable via Tailscale, or Ollama is down, or Qwen model is not loaded. From the Mac Mini (operational host as of 2026-04-30), run `curl http://100.110.87.1:11434/api/tags` to check if Ollama on ROBS-PC is up, or `curl http://localhost:11434/api/tags` if Ollama runs locally on the Mac Mini. `curl http://100.110.87.1:11434/api/show -d '{"name":"qwen2.5:32b-instruct-q4_K_M"}'` to check if the model is available. (Historical note: this troubleshooting step previously said "SSH to the VPS" — the VPS is decommissioned for MG; run these from the Mac Mini instead.)
 
 **"Miner X returned no files":** The miner's daily baseline collection failed or timed out. Check the guardian log for `Fresh log:` entries around the time the deep dive ran. If the 10-minute cap is firing for specific miners repeatedly, those miners need AMS-side investigation (see miner 53482 as the canonical example from April 9).
 

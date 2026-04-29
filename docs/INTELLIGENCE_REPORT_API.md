@@ -1,7 +1,9 @@
 # Intelligence Report API
 
+> **Status (2026-04-29 sweep):** Historical reference. This file describes the API as it ran on the VPS against the historical `guardian.db` SQLite snapshot. The VPS is decommissioned for Mining Guardian as of 2026-04-30 (Bobby still uses it for his own facility). Going forward the Intelligence Report API runs on the Mac Mini and reads from the **PostgreSQL `mining_guardian`** database — not SQLite. SQLite is **not live**; the historical `guardian.db` is preserved as a snapshot only. Endpoint shapes, slug format, and Grafana wiring below are still accurate; data-source priorities and ports will be re-anchored post-install.
+
 ## Overview
-The Intelligence Report API serves searchable miner intelligence reports for any Bitcoin SHA-256 miner model in the catalog. It combines data from the Intelligence Catalog (PostgreSQL), enrichment research (CSV), miner specs (JSON), and fleet operational data (guardian.db) to generate comprehensive reports.
+The Intelligence Report API serves searchable miner intelligence reports for any Bitcoin SHA-256 miner model in the catalog. It combines data from the Intelligence Catalog (PostgreSQL — going forward the canonical source) and historical fleet operational data captured during the VPS era (preserved in the `guardian.db` snapshot) to generate comprehensive reports.
 
 ## Service Details
 - **Port**: 8590
@@ -54,8 +56,8 @@ GET /api/report/{slug}/html
 1. **miner_specs.json** — 46 models with variants and rated specs (used by AMS/scan system)
 2. **unified_miner_index.json** — 235 models merged from all sources
 3. **miner_enrichment_master.csv** — 277 models with detailed research data
-4. **guardian.db** — Live fleet data (only for deployed models)
-5. **Intelligence Catalog** (PostgreSQL) — Future: direct queries when API available
+4. **guardian.db** — Historical VPS-era fleet snapshot (read-only; not live). Used only for deployed models that were operational during the VPS era.
+5. **Intelligence Catalog** (PostgreSQL on Mac Mini, post-2026-04-30) — Canonical source going forward; direct queries replace the SQLite snapshot path
 
 ## Grafana Dashboard
 - **UID**: `intelligence_report_001`

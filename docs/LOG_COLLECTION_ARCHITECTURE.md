@@ -28,7 +28,7 @@ There are exactly two places where logs get written to the `miner_logs` table. B
 ### Path 1 — Daily baseline sweep (1pm cron)
 
 **Script:** `scripts/direct_collect_logs.py`
-**Trigger:** `0 13 * * *` daily cron entry on the VPS
+**Trigger:** `0 13 * * *` daily cron (on Mac Mini via launchd; historical: cron entry on the VPS)
 **Scope:** every currently-online miner in the most recent scan that has `hashrate_medium > 0`
 **Storage:** `miner_logs` rows with `health_status = 'daily_baseline'`
 **Existing docs:** see `DIRECT_LOG_COLLECTION.md` for the cron-specific details (this doc avoids duplication)
@@ -154,7 +154,7 @@ This means:
 
 ## Concurrency and rate limits
 
-**Path 1 (cron):** uses `ThreadPoolExecutor(max_workers=5)`. 5 parallel workers hitting 5 different miner IPs — no single miner gets more than 1 concurrent request. Miners handle this fine. VPS egress is never the bottleneck (this is LAN-scale traffic over Tailscale).
+**Path 1 (cron):** uses `ThreadPoolExecutor(max_workers=5)`. 5 parallel workers hitting 5 different miner IPs — no single miner gets more than 1 concurrent request. Miners handle this fine. Network egress is never the bottleneck (this is LAN-scale traffic from the Mac Mini; historical: VPS egress over Tailscale).
 
 **Path 2 (pre/post restart):** single-threaded, synchronous. Runs on the main mining-guardian thread or a background remediation thread depending on the caller. No concurrency concerns because restart events are sequential and one-at-a-time.
 

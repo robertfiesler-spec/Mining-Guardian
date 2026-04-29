@@ -2,7 +2,9 @@
 
 **Created:** April 13, 2026
 
-## Official Cron Schedule (VPS)
+## Official Cron Schedule (historical — VPS era, Apr 13, 2026)
+
+> **Note (2026-04-29 PM):** These cron entries ran on the VPS (`root@srv1549463`). The VPS has been decommissioned for Mining Guardian as of the Mac Mini install (2026-04-30). The operational DB host is now the Mac Mini. This schedule is preserved as a historical record.
 
 From session continuity prompt (current as of Apr 13):
 
@@ -19,8 +21,8 @@ From session continuity prompt (current as of Apr 13):
 ```
 
 ## Mac launchd (every 5 min)
-- com.bixbit.hvac-collector → pushes HVAC to VPS
+- com.bixbit.hvac-collector → pushed HVAC to VPS (historical — now Mac Mini is the operational DB host)
 
-## Total: 9 VPS cron + 1 Mac launchd = 10 scheduled jobs
+## Total: 9 cron jobs (historical VPS) + 1 Mac launchd = 10 scheduled jobs
 
 See docs/CRON_SCHEDULE.md for detailed explanations.

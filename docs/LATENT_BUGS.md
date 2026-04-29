@@ -255,6 +255,8 @@ needs to converge before this index can be restored:
 **Expanded scope (verified 2026-04-28 on `main` @ `9ff9925`):** 8 `deploy/*.service` files + 13 currently-active docs. Full breakdown below.
 **Fix scope (PR-2, 2026-04-28):** 65 path-string hits across 17 files were replaced with `Mining-Guardian`. 8 hits across 4 files were retained as historical / warning references (see updated allowed-exception table).
 
+> **2026-04-29 PM context:** The Hostinger VPS (srv1549463 / 187.124.247.182) is decommissioned for Mining Guardian as of the 2026-04-30 Mac Mini install. References to "freshly-provisioned VPS" in this bug entry are historical context — the VPS was the deployment target when B-6 was discovered. The Mac Mini is now the operational host. The `deploy/*.service` systemd units remain in the repo as historical reference; the Mac Mini uses launchd `.plist` files instead.
+
 ### Description
 
 On Sunday 2026-04-26, the VPS directory was renamed from `/root/Mining-Gaurdian/`

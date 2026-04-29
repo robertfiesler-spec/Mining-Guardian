@@ -244,7 +244,7 @@ All 21 AI proposals reviewed with operator decisions logged.
 | /Data/Plant/CWP2_Fdbk | CW Pump 2 Speed (%) |
 | /Data/Plant/CT1VSDFdbk | CT Fan Speed (%) |
 
-**Note:** VPS cannot reach 192.168.189.x directly - requires ROBS-PC Tailscale route.
+**Note (historical):** VPS could not reach 192.168.189.x directly — required ROBS-PC Tailscale route. VPS decommissioned for MG as of Mac Mini install 2026-04-30; Mac Mini has direct LAN access to 192.168.189.x.
 
 **Git Commit:** aa4830e
 

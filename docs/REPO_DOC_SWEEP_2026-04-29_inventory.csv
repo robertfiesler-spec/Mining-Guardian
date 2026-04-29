@@ -1,0 +1,243 @@
+path,size_bytes,last_commit_date,sqlite_hits,intelligence_dir_hits,openclaw_hits,vps_hits,todo_open_hits,phase1_hits,total_stale_hits,suggested_tier
+docs/HANDOFF_2026_04_09_MIDMORNING.md,20393,2026-04-29,1,0,74,19,0,1,95,ARCHIVE (historical)
+docs/RESUME_HERE_2026_04_08_EVENING.md,24803,2026-04-29,1,3,57,8,0,3,72,DELETE (one-shot)
+docs/MG_UNIFIED_TODO_LIST.md,41718,2026-04-29,2,0,23,9,24,4,62,UPDATE (has stale terms)
+CLAUDE.md,53971,2026-04-29,8,2,18,22,0,0,50,"REWRITE (root-level, high visibility)"
+AI_ROADMAP.md,38653,2026-04-29,4,4,26,10,0,5,49,"REWRITE (root-level, high visibility)"
+REPAIR_LOG.md,112525,2026-04-29,23,0,2,14,0,7,46,"REWRITE (root-level, high visibility)"
+docs/DB_STATE_2026-04-23.md,8484,2026-04-29,8,0,0,27,0,2,37,ARCHIVE (migration done)
+docs/SESSION_HANDOFF_2026-04-24.md,25883,2026-04-29,6,0,14,16,0,1,37,ARCHIVE (historical)
+README.md,35680,2026-04-29,5,2,14,12,0,2,35,"REWRITE (root-level, high visibility)"
+docs/archive/OPENCLAW_INTEGRATION.md,10092,2026-04-29,0,0,28,0,0,1,29,ARCHIVE-EXISTING
+DEPLOYMENT_CHECKLIST.md,16700,2026-04-29,2,0,0,24,0,1,27,"REWRITE (root-level, high visibility)"
+docs/POSTGRES_MIGRATION_PLAN_2026-04-23.md,14001,2026-04-29,9,0,8,3,0,6,26,ARCHIVE (migration done)
+docs/VISION.md,22764,2026-04-29,1,2,18,2,0,1,24,UPDATE (has stale terms)
+docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md,11909,2026-04-29,2,0,1,19,0,1,23,UPDATE (has stale terms)
+docs/archive/OPENCLAW_AUDIT_2026-04-23.md,4005,2026-04-29,0,0,22,1,0,0,23,ARCHIVE-EXISTING
+docs/RESUME_HERE_2026_04_08_0840.md,6789,2026-04-29,0,0,17,5,0,0,22,DELETE (one-shot)
+docs/POSTGRES_MIGRATION_STATUS_2026-04-24.md,10830,2026-04-29,11,0,0,0,0,7,18,ARCHIVE (migration done)
+docs/SESSION_LOG_2026-04-24.md,23050,2026-04-29,6,0,2,2,0,8,18,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-27.md,54397,2026-04-29,0,3,8,5,0,0,16,ARCHIVE (historical)
+docs/RESUME_HERE_2026_04_08.md,5532,2026-04-29,0,0,12,2,0,1,15,DELETE (one-shot)
+NEXT_SESSION.md,8753,2026-04-29,8,0,0,6,0,0,14,DELETE (one-shot)
+docs/CAPABILITIES.md,9664,2026-04-29,0,0,9,5,0,0,14,UPDATE (has stale terms)
+docs/CLOUDFLARE_MIGRATION.md,4402,2026-04-29,0,0,8,6,0,0,14,UPDATE (has stale terms)
+docs/POSTGRES_STAGING_STATE_2026-04-23.md,5835,2026-04-29,7,0,0,5,0,1,13,ARCHIVE (migration done)
+intelligence/README.md,10758,2026-04-29,1,1,0,4,0,7,13,DELETE (deprecated tree)
+docs/CATALOG_ORPHAN_TABLES_2026-04-28.md,24253,2026-04-29,0,9,2,1,0,0,12,UPDATE (has stale terms)
+docs/GRAFANA_PROMETHEUS_PLAN.md,5869,2026-04-29,3,0,0,8,0,0,11,UPDATE (has stale terms)
+docs/MONDAY_INTELLIGENCE_CATALOG_PLAN.md,15901,2026-04-29,0,5,0,5,0,1,11,UPDATE (has stale terms)
+docs/ROADMAP_TO_MAC_MINI_2026-05-05.md,11485,2026-04-29,1,0,6,3,0,1,11,UPDATE (has stale terms)
+docs/SESSION_REPORT_2026-04-23.md,7495,2026-04-29,5,0,0,5,0,0,10,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-09.md,26343,2026-04-29,0,0,4,5,0,0,9,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-26.md,10174,2026-04-29,1,0,3,3,0,2,9,ARCHIVE (historical)
+docs/DEMO_DAY_HANDOFF_2026_04_08.md,14480,2026-04-29,0,0,0,7,0,1,8,UPDATE (has stale terms)
+docs/SESSION_LOG_2026-04-22.md,8946,2026-04-29,3,0,0,0,0,5,8,ARCHIVE (historical)
+SESSION_COMPLETE.md,3971,2026-04-29,2,0,1,4,0,0,7,"REWRITE (root-level, high visibility)"
+docs/DB_STATE_2026-04-22.md,4060,2026-04-29,6,0,0,1,0,0,7,ARCHIVE (migration done)
+docs/POSTGRES_MIGRATION_STATUS_2026-04-23.md,6554,2026-04-29,3,0,0,4,0,0,7,ARCHIVE (migration done)
+.claude/commands/wrap-up.md,8352,2026-04-29,0,0,0,0,6,0,6,REVIEW (.claude tooling)
+docs/INTELLIGENCE_CATALOG_STATUS.md,4795,2026-04-29,0,2,0,3,0,1,6,UPDATE (has stale terms)
+docs/LATENT_BUGS.md,25180,2026-04-29,0,0,0,6,0,0,6,UPDATE (has stale terms)
+intelligence/docs/intelligence_catalog_design_notes.md,26024,2026-04-29,1,0,0,5,0,0,6,DELETE (deprecated tree)
+docs/CORS_LOCKDOWN_PLAN.md,2201,2026-04-29,0,0,4,1,0,0,5,UPDATE (has stale terms)
+docs/DECISIONS.md,14616,2026-04-29,3,0,1,0,0,1,5,UPDATE (has stale terms)
+docs/HVAC_SYSTEMS.md,5553,2026-04-29,0,0,0,5,0,0,5,UPDATE (has stale terms)
+docs/SESSION_NOTE_2026-04-29_grafana_dropdown.md,4861,2026-04-29,0,0,0,5,0,0,5,ARCHIVE (historical)
+docs/archive/OPENCLAW_GUARDIAN_DB_STATUS.md,1627,2026-04-29,0,0,5,0,0,0,5,ARCHIVE-EXISTING
+intelligence-catalog/FIELD_INTELLIGENCE_PIPELINE.md,23534,2026-04-29,3,0,0,0,0,2,5,DELETE (deprecated tree)
+docs/BUCKET_10_REPO_DOCS_AUDIT_2026-04-29.md,18014,2026-04-29,0,0,0,1,2,1,4,ARCHIVE (point-in-time)
+docs/HOW_TO_UPLOAD_LOGS_TO_CLAUDE.md,6228,2026-04-29,0,0,0,3,0,1,4,UPDATE (has stale terms)
+docs/MORNING_KICKOFF_PROMPT.md,7160,2026-04-29,0,0,1,3,0,0,4,DELETE (one-shot)
+docs/OUTSIDE_INIT_DB_AUDIT_2026-04-23.md,5684,2026-04-29,4,0,0,0,0,0,4,ARCHIVE (migration done)
+docs/SESSION_LOG_2026-04-28.md,37428,2026-04-29,0,0,1,3,0,0,4,ARCHIVE (historical)
+docs/SESSION_NOTE_2026-04-29_operator_schedules.md,6659,2026-04-29,0,0,0,4,0,0,4,ARCHIVE (historical)
+intelligence/DEPRECATED.md,2800,2026-04-29,0,3,1,0,0,0,4,DELETE (deprecated tree)
+.claude/commands/create-plan.md,39031,2026-04-29,0,0,0,0,0,3,3,REVIEW (.claude tooling)
+docs/CRON_RECONCILIATION.md,735,2026-04-29,0,0,0,3,0,0,3,UPDATE (has stale terms)
+docs/DAILY_DEEP_DIVE_DESIGN.md,18990,2026-04-29,0,0,0,3,0,0,3,UPDATE (has stale terms)
+docs/OPERATOR_SCHEDULES.md,5740,2026-04-29,0,0,0,3,0,0,3,UPDATE (has stale terms)
+docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md,6670,2026-04-29,0,0,0,2,0,1,3,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-13.md,5061,2026-04-29,0,0,0,3,0,0,3,ARCHIVE (historical)
+docs/TESTING.md,2656,2026-04-29,2,0,1,0,0,0,3,UPDATE (has stale terms)
+.claude/agents/orchestrator.md,11363,2026-04-29,0,0,0,0,0,2,2,REVIEW (.claude tooling)
+.claude/commands/next.md,6120,2026-04-29,0,0,0,0,2,0,2,REVIEW (.claude tooling)
+.claude/commands/plan.md,4476,2026-04-29,0,0,0,0,0,2,2,REVIEW (.claude tooling)
+.claude/hooks/README.md,6147,2026-04-29,0,0,0,0,2,0,2,REVIEW (.claude tooling)
+AUDIT_SUMMARY_2026-04-13.md,6554,2026-04-29,0,0,2,0,0,0,2,ARCHIVE (point-in-time)
+archive/session_artifacts/tmp_repair_entry.md,1993,2026-04-29,0,0,1,1,0,0,2,ARCHIVE-EXISTING
+archive/session_artifacts/tmp_repair_entry2.md,4209,2026-04-29,0,0,0,2,0,0,2,ARCHIVE-EXISTING
+docs/CONTAINER_MONITORING.md,6158,2026-04-29,0,0,2,0,0,0,2,UPDATE (has stale terms)
+docs/CRON_SCHEDULE.md,4954,2026-04-29,0,0,0,2,0,0,2,UPDATE (has stale terms)
+docs/LOG_COLLECTION_ARCHITECTURE.md,13175,2026-04-29,0,0,0,2,0,0,2,UPDATE (has stale terms)
+docs/PERPLEXITY_PROMPT_MINING_INTELLIGENCE_CATALOG.md,7442,2026-04-29,1,0,0,1,0,0,2,UPDATE (has stale terms)
+docs/REMAINING_WORK_2026-04-28.md,11905,2026-04-29,0,0,0,2,0,0,2,UPDATE (has stale terms)
+docs/SESSION_COMPLETE_2026-04-13.md,4497,2026-04-29,0,0,0,1,0,1,2,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-10-late-night.md,4439,2026-04-29,0,0,0,0,0,2,2,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-10.md,3886,2026-04-29,0,0,0,2,0,0,2,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-21.md,3562,2026-04-29,0,0,1,0,0,1,2,ARCHIVE (historical)
+docs/WEB_GUI_OPERATOR_CONSOLE.md,7742,2026-04-29,0,0,0,2,0,0,2,UPDATE (has stale terms)
+installer/macos-pkg/README.md,6300,2026-04-29,0,0,0,2,0,0,2,REVIEW
+mg_import_tool/README.md,36431,2026-04-29,0,0,0,2,0,0,2,REVIEW
+.claude/WORKFLOW.md,17086,2026-04-29,0,0,0,0,0,1,1,REVIEW (.claude tooling)
+.claude/agents/architect.md,4900,2026-04-29,0,0,0,0,0,1,1,REVIEW (.claude tooling)
+.claude/agents/security-reviewer.md,1219,2026-04-29,0,0,0,0,1,0,1,REVIEW (.claude tooling)
+.claude/commands/init.md,6173,2026-04-29,1,0,0,0,0,0,1,REVIEW (.claude tooling)
+.claude/commands/security-check.md,12388,2026-04-29,0,0,0,0,1,0,1,REVIEW (.claude tooling)
+.claude/commands/verify-visual.md,7140,2026-04-29,0,0,0,0,1,0,1,REVIEW (.claude tooling)
+.claude/rules/suggest-commands.md,797,2026-04-29,0,0,0,0,1,0,1,REVIEW (.claude tooling)
+deploy/openclaw-skills/guardian-db/SKILL.md,7543,2026-04-29,0,0,1,0,0,0,1,DELETE (openclaw)
+docs/API_REFERENCE.md,436,2026-04-29,0,0,1,0,0,0,1,UPDATE (has stale terms)
+docs/BIXBIT_DIRECT_API.md,8308,2026-04-29,0,0,0,0,0,1,1,UPDATE (has stale terms)
+docs/CORE_DATABASE_AUDIT_2026-04-23.md,8662,2026-04-29,1,0,0,0,0,0,1,ARCHIVE (migration done)
+docs/OPEN_LOG_UPLOADER_VISION.md,21561,2026-04-29,0,0,0,0,0,1,1,UPDATE (has stale terms)
+docs/PERPLEXITY_PROMPT_MINING_INTELLIGENCE_CATALOG_V2.md,17352,2026-04-29,1,0,0,0,0,0,1,UPDATE (has stale terms)
+docs/REPAIR.md,7714,2026-04-29,0,0,0,1,0,0,1,UPDATE (has stale terms)
+docs/RUNBOOK_BUCKET_3_RECONCILIATION_2026-04-29.md,8394,2026-04-29,0,0,0,0,1,0,1,UPDATE (has stale terms)
+docs/SESSION_LOG_2026-04-10-afternoon.md,4501,2026-04-29,0,0,0,1,0,0,1,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-29.md,29756,2026-04-29,0,0,0,1,0,0,1,ARCHIVE (historical)
+docs/SESSION_NOTE_2026-04-29_web_gui_mode_selector.md,5988,2026-04-29,0,0,0,1,0,0,1,ARCHIVE (historical)
+docs/SESSION_SUMMARY_2026-04-13-afternoon.md,489,2026-04-29,0,0,1,0,0,0,1,ARCHIVE (historical)
+intelligence-catalog/LIVING_CATALOG.md,8146,2026-04-29,0,0,0,1,0,0,1,DELETE (deprecated tree)
+intelligence-catalog/research/MINER_CATALOG_RESEARCH_NOTES.md,7839,2026-04-29,0,0,0,0,0,1,1,DELETE (deprecated tree)
+.claude/agents/README.md,3845,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/build-error-resolver.md,6332,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/code-reviewer.md,1152,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/deployer.md,5204,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/doc-updater.md,1217,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/e2e-runner.md,6731,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/planner.md,1403,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/refactor-cleaner.md,1223,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/tdd-guide.md,1216,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/agents/visual-verifier.md,7140,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/ai-loop-test.md,2374,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/ai-loop.md,14266,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/catchup.md,825,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/check-agent-readiness.md,12004,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/checkpoint.md,3449,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/compliance-check.md,18086,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/create-commit.md,6916,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/create-pr.md,5829,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/create-skill.md,11786,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/create-todo.md,3832,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/dashboard.md,5864,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/debug-browser.md,12423,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/debug.md,16403,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/deploy.md,8061,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/design-check.md,8599,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/deslop.md,2866,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/docs-check.md,15700,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/dogfood.md,3186,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/evolve.md,5275,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/guide.md,12540,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/iterate.md,34555,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/kickoff.md,5963,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/learn.md,5974,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/log-skill.md,1659,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/memory-clean.md,4711,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/mode.md,2749,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/monitor.md,2967,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/multitask.md,21716,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/orchestrate.md,5144,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/pipeline.md,4989,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/plan-status.md,4722,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/pre-commit-check.md,12425,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/pre-pr-check.md,26367,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/rams.md,8157,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/remind.md,3364,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/review.md,3355,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/scrap.md,3289,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/status.md,6415,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/summarize.md,9081,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/tasks-cleanup.md,7973,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/tdd.md,4595,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/techdebt.md,9601,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/token-budget.md,3319,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/update-toolkit.md,4480,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/verify.md,5854,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/version.md,3083,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/commands/worktree.md,3812,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/hooks/tests/README.md,1051,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/agents.md,1135,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/code-style.md,641,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/command-aliases.md,711,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/confirm-target.md,409,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/design-system/_index.md,2799,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/design-system/accessibility.md,2274,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/design-system/components.md,2426,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/design-system/foundations.md,4377,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/design-system/page-patterns.md,3841,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/design-system/spacing-patterns.md,3025,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/error-handling.md,919,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/git-workflow.md,449,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/performance.md,926,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/reuse-first.md,722,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/security.md,940,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/testing.md,765,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/rules/typescript.md,726,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/accessibility/SKILL.md,6065,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/accessibility/references/aria-patterns.md,9623,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/accessibility/references/wcag-checklist.md,2834,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/continuous-learning/SKILL.md,3807,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/data-fetching/SKILL.md,7081,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/design-system/SKILL.md,5191,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/dogfood/SKILL.md,14624,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/dogfood/references/browser-auth.md,9005,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/dogfood/references/issue-taxonomy.md,3626,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/dogfood/templates/dogfood-report-template.md,1470,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/migration-safety/SKILL.md,6243,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/napkin/SKILL.md,4919,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/pyramid-summary/SKILL.md,11290,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/react-patterns/SKILL.md,5076,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/security/SKILL.md,7589,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/testing/SKILL.md,8608,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/ui-design/SKILL.md,6119,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+.claude/skills/ui-design/references/vercel-guidelines.md,4344,2026-04-29,0,0,0,0,0,0,0,REVIEW (.claude tooling)
+archive/README.md,1386,2026-04-29,0,0,0,0,0,0,0,ARCHIVE-EXISTING
+branding/BRANDING.md,11590,2026-04-29,0,0,0,0,0,0,0,REVIEW
+deploy/openclaw-skills/guardian-db/references/schema.md,4943,2026-04-29,0,0,0,0,0,0,0,DELETE (openclaw)
+docs/AI_DATA_AUDIT_2026-04-10.md,8852,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (point-in-time)
+docs/AMS_API.md,8529,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/AMS_INTEGRATION.md,9153,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/AURADINE_API.md,6488,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/AURADINE_ROLLBACK_STATUS.md,438,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/COMPLETE_AI_AUDIT_2026-04-10.md,9171,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (point-in-time)
+docs/COMPLETE_AI_AUDIT_V2_2026-04-10.md,15662,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (point-in-time)
+docs/CONFIDENCE_SCORING.md,6774,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/CONTAINER_SENSOR_REFERENCE.md,6616,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/DAILY_LOG_CAPTURE_VISION.md,11744,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/DG1_FIX_READY_TO_APPLY.md,223,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/DIRECT_LOG_COLLECTION.md,4037,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/EMPTY_STUB_TABLES.md,2371,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/FEEDBACK_LOOP_FIXES.md,4203,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/FINGERPRINTS_VS_PROFILES.md,938,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/HVAC_ARCHITECTURE.md,7878,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/INTELLIGENCE_REPORT_API.md,2635,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/OPERATOR_GUIDE.md,306,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/OPERATOR_RULES.md,4653,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/OVERNIGHT_TEST_STATUS_2026-04-13.md,3186,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (point-in-time)
+docs/PROFILE_MAP_QUESTIONS.md,4712,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/REFINED_INSIGHTS_DESIGN.md,7890,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/RELEASE_NOTES_v1.0.0.md,6793,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/RUNBOOK_2026-04-27_afternoon.md,9363,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/RUNBOOK_2026-04-28_pkg_build.md,13093,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/RUNBOOK_DISTRIBUTION_v1.0.0.md,11198,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/RUNBOOK_PKG_REBUILD.md,15845,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/SECURITY.md,3881,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/SESSION_LOG_2026-04-12.md,7135,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-16.md,5492,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-17.md,3456,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (historical)
+docs/SESSION_LOG_2026-04-18.md,3408,2026-04-29,0,0,0,0,0,0,0,ARCHIVE (historical)
+docs/SLACK_BRANDING_CHECKLIST.md,2066,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/TROUBLESHOOTING.md,340,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/UNUSED_DATA_OPPORTUNITIES.md,927,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/WAREHOUSE_MECHANICAL.md,870,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/WHATSMINER_API.md,9198,2026-04-29,0,0,0,0,0,0,0,REVIEW
+docs/customer/README.md,1756,2026-04-29,0,0,0,0,0,0,0,REVIEW
+installer/macos-pkg/KEYS_AND_SECRETS.md,3758,2026-04-29,0,0,0,0,0,0,0,REVIEW
+intelligence-catalog/research/asicminervalue_all_sha256.md,59993,2026-04-29,0,0,0,0,0,0,0,DELETE (deprecated tree)
+intelligence-catalog/research/bitmain_all_variants.md,17481,2026-04-29,0,0,0,0,0,0,0,DELETE (deprecated tree)
+intelligence-catalog/research/canaan_all_variants.md,18142,2026-04-29,0,0,0,0,0,0,0,DELETE (deprecated tree)
+intelligence-catalog/research/microbt_all_variants.md,29572,2026-04-29,0,0,0,0,0,0,0,DELETE (deprecated tree)
+intelligence-catalog/seed-data/README.md,4825,2026-04-29,0,0,0,0,0,0,0,DELETE (deprecated tree)
+intelligence/docs/intelligence_catalog_gap_analysis.md,17268,2026-04-29,0,0,0,0,0,0,0,DELETE (deprecated tree)

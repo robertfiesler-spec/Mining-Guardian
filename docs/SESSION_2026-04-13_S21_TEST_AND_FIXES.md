@@ -1,3 +1,7 @@
+> ## ⚠️ Historical session log from 2026-04-13
+>
+> VPS references in this document reflect that day’s architecture. Current state is **Mac Mini local-first** (D-14, install 2026-04-30). The VPS (`root@srv1549463` / 187.124.247.182 / Tailscale 100.106.123.83) has been decommissioned for Mining Guardian; Bobby still uses it for his own facility. Body preserved verbatim as a historical record.
+
 # SESSION LOG — April 13, 2026
 ## S21 Immersion Stock Test Status + Critical Fixes
 

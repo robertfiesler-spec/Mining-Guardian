@@ -2,7 +2,7 @@
 
 **Purpose:** Non-terminal, browser-based approve/deny interface for Mining Guardian with a global automation mode selector. Served by `approval_api.py` on port 8686 at `/ui`. Delivers Bucket 9 §10.1 (Web GUI) and §10.2 (mode selector).
 
-**Scope:** Operator-side — runs on the Mac Mini (or VPS) that already hosts `approval_api.py`. No new services, no new ports. Zero JavaScript dependencies, single static HTML file, works offline.
+**Scope:** Operator-side — runs on the Mac Mini that hosts `approval_api.py`. No new services, no new ports. Zero JavaScript dependencies, single static HTML file, works offline. (Historical: also ran on the VPS; VPS decommissioned for MG as of 2026-04-30.)
 
 ---
 
@@ -56,7 +56,7 @@ The existing `/approve` / `/deny` / `/approve_selected` endpoints are untouched 
 
 `migrations/004_system_settings.sql` creates `public.system_settings (key, value, updated_at, updated_by)` and seeds `automation_mode = 'FULL_AUTO'`. Idempotent — re-running is safe.
 
-Apply on the VPS / Mac Mini:
+Apply on the Mac Mini (historical: also applied on the VPS):
 
 ```bash
 psql -U guardian_app -d mining_guardian -f migrations/004_system_settings.sql
@@ -101,7 +101,7 @@ The gate **fails open** — if `system_settings` is unreachable, the function lo
 ## Security
 
 - **Auth:** all data endpoints require the `X-Internal-Secret` header matching `INTERNAL_API_SECRET` from `.env`. This is the same header the Slack approval listener uses — no new secret to rotate.
-- **CORS:** unchanged — restricted to `slack.fieslerfamily.com`, `dashboard.fieslerfamily.com`, `localhost:8585`. The GUI at `localhost:8686/ui` is same-origin with the API, so CORS doesn't apply to it.
+- **CORS:** unchanged — historically restricted to `slack.fieslerfamily.com`, `dashboard.fieslerfamily.com`, `localhost:8585` (VPS-era allowed origins). The GUI at `localhost:8686/ui` is same-origin with the API on Mac Mini (loopback-only), so CORS doesn't apply to it. The fieslerfamily origins are historical; see `docs/CORS_LOCKDOWN_PLAN.md` for current lockdown state.
 - **Binding:** `approval_api.py` binds to `127.0.0.1:8686` only (per §3.3 S-8 hardening work). The GUI is reachable from the host machine only — not exposed to the local network.
 - **Audit trail:** every mode change and every approve/deny writes to `system_settings.updated_by` and `action_audit_log.notes` respectively, with the operator name captured from `localStorage`.
 

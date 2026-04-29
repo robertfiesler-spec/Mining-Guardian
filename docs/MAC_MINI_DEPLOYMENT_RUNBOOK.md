@@ -1,17 +1,25 @@
 # Mac Mini Deployment Runbook
 
-**Target date:** Monday 2026-04-27 (hardware ETA)
-**Purpose:** step-by-step procedure for moving Mining Guardian from the Hostinger VPS (187.124.247.182) to a local Mac Mini on the Fort Worth facility LAN.
-**Status:** runbook documented, dry run not yet executed.
+> ## ⚠️ Status as of 2026-04-29 PM
+>
+> **Install date: 2026-04-30.** This runbook is canonical; only the date reference shifts (was 2026-04-27, briefly 2026-05-05, now locked at 2026-04-30).
+>
+> **DB approach:** The Mac Mini stands up its own operational Postgres DB from migrations 001–005 + the 321-row catalog seed. There is no live data copy from the VPS — the VPS is decommissioned for Mining Guardian (Bobby still uses it for his own facility). The optional `restore_from_snapshot.sh` path remains available for any operator who explicitly wants to import a historical operational-DB snapshot from the pre-Mac-Mini era.
+>
+> **Cloudflare:** NOT used. The locked decision is Mac Mini local-first, loopback-only services. All Cloudflare tunnel references in this runbook describe the pre-Mac-Mini VPS era (historical context); they do not describe the 2026-04-30 install. See `MG_UNIFIED_TODO_LIST.md` and `ROADMAP_TO_MAC_MINI_2026-05-05.md`.
+
+**Target date:** 2026-04-30 (install date, locked)
+**Purpose:** step-by-step procedure for deploying Mining Guardian on a local Mac Mini on the Fort Worth facility LAN (superseding the historical Hostinger VPS / srv1549463 era).
+**Status:** runbook canonical, install scheduled 2026-04-30.
 
 ---
 
 ## Why we're moving
 
-The VPS was always staging. Production on a Mac Mini means:
+The Hostinger VPS (187.124.247.182 / srv1549463, historical) was always staging. Production on a Mac Mini means:
 
 - Local LAN access to AMS at 192.168.188.x, miners at 192.168.188.x / 192.168.189.x, HVAC controllers at 192.168.188.235 and 192.168.189.235, the Amshub Pi at 192.168.188.30 — no Tailscale dependency for anything on-site.
-- No public ingress. The three Cloudflare tunnels (dashboard.fieslerfamily.com, slack.fieslerfamily.com, grafana.fieslerfamily.com) get torn down.
+- No public ingress. The three Cloudflare tunnels that existed on the historical VPS (dashboard.fieslerfamily.com, slack.fieslerfamily.com, grafana.fieslerfamily.com) are not used in the Mac Mini architecture — services bind to loopback only.
 - Local LLM (Qwen on ROBS-PC) stays primary, no Claude API in the hot path. Claude API still used for weekly training and cohort refinement only.
 - Target: 1 Mac Mini per container, scales to 120–240 miners per instance.
 
@@ -23,9 +31,9 @@ These are independent of hardware and can be done any time before Monday.
 
 ### 1. Fresh-install dry run (CRITICAL)
 
-Spin up a scratch Postgres DB and verify all 8 services come up cleanly against an empty schema. This catches any missing CREATE TABLE IF NOT EXISTS or migration gaps **before** they become a Monday fire.
+Spin up a scratch Postgres DB and verify all 8 services come up cleanly against an empty schema. This catches any missing CREATE TABLE IF NOT EXISTS or migration gaps **before** they become an install-day fire.
 
-    ssh root@187.124.247.182
+> **Note:** The historical dry-run steps below were written for the pre-Mac-Mini VPS era (root@srv1549463 / 187.124.247.182). On the Mac Mini install (2026-04-30), run these same commands locally on the Mac Mini against its own Postgres instance — substitute `localhost` for `187.124.247.182` and use the Mac Mini user context.
 
     # Create scratch DB
     sudo -u postgres psql <<SQL
@@ -68,9 +76,11 @@ Spin up a scratch Postgres DB and verify all 8 services come up cleanly against 
 - 'column does not exist' → migration has an older schema than the code expects; reconcile against \\d <tablename> on live
 - 'permission denied' → owner/grant issue on the DB, re-check OWNER guardian_app and GRANT ALL
 
-### 2. Knowledge snapshot to bring across
+### 2. Knowledge snapshot (optional — historical VPS snapshot path)
 
-Before leaving the VPS, export the state that Mac Mini needs on day 1:
+> **2026-04-29 PM update:** The Mac Mini install (2026-04-30) starts from migrations 001–005 + the 321-row catalog seed. No live data copy from the VPS is required or expected — the VPS is decommissioned for MG. The steps below are the `restore_from_snapshot.sh` optional path, preserved for any operator who explicitly wants to import a pre-Mac-Mini operational-DB snapshot.
+
+To export the historical VPS state (optional):
 
     cd /root/Mining-Guardian
     set -a; source .env; set +a
@@ -89,14 +99,15 @@ Before leaving the VPS, export the state that Mac Mini needs on day 1:
     # .env (will edit paths/hosts for Mac Mini)
     cp .env /tmp/env_\$(date +%Y%m%d).txt
 
-Transfer these files to a USB drive or Bobby's Mac before Monday.
+Transfer these files to a USB drive or Bobby's Mac before the install date if using the optional snapshot restore path.
 
-### 3. Cloudflare tunnel shutdown preparation
+### 3. Cloudflare tunnel shutdown (historical VPS — already superseded)
 
-Do NOT shut down the VPS tunnels until the Mac Mini is up and verified. But have the shutdown command ready:
+> **2026-04-29 PM:** The Cloudflare tunnel path is NOT taken in the Mac Mini architecture. The locked decision is loopback-only services. The commands below are historical record of the VPS-era tunnel teardown. No action needed for the 2026-04-30 install.
 
-    systemctl stop cloudflared
-    systemctl disable cloudflared
+    # Historical VPS tunnel shutdown (decommissioned for MG — do NOT run for Mac Mini install):
+    # systemctl stop cloudflared
+    # systemctl disable cloudflared
     # Tunnels can also be deleted via Cloudflare dashboard afterward.
 
 ---
@@ -130,19 +141,26 @@ Do NOT shut down the VPS tunnels until the Mac Mini is up and verified. But have
     set -a; source ~/.mining-guardian/secrets.env; set +a
     : "${MG_DB_PASSWORD:?MG_DB_PASSWORD must be set before running Phase 2}"
 
-    # Create role and DB matching VPS setup
+    # Create role and DB (canonical Mac Mini setup — guardian_app, db mining_guardian)
     psql postgres <<SQL
     CREATE ROLE guardian_app WITH LOGIN PASSWORD '${MG_DB_PASSWORD}';
     CREATE DATABASE mining_guardian OWNER guardian_app;
     GRANT ALL PRIVILEGES ON DATABASE mining_guardian TO guardian_app;
     SQL
 
-    # Load from VPS dump (brought over on USB)
-    gunzip /path/to/mining_guardian_YYYYMMDD.sql.gz
+    # Standard path: apply migrations 001-005 + 321-row catalog seed
+    # (no VPS dump required — the VPS is decommissioned for MG)
     PGPASSWORD="$MG_DB_PASSWORD" psql -h localhost -U guardian_app \\
-        mining_guardian < /path/to/mining_guardian_YYYYMMDD.sql
+        mining_guardian -f migrations/001_initial_schema.sql
+    # ... apply migrations 002-005 in order ...
+    # ... run scripts/seed_catalog.sh to load 321-row Bitcoin SHA-256 catalog ...
 
-    # Verify row counts match VPS
+    # Optional snapshot restore path (only if operator explicitly wants pre-Mac-Mini history):
+    # gunzip /path/to/mining_guardian_YYYYMMDD.sql.gz
+    # PGPASSWORD="$MG_DB_PASSWORD" psql -h localhost -U guardian_app \\
+    #     mining_guardian < /path/to/mining_guardian_YYYYMMDD.sql
+
+    # Verify DB is up
     PGPASSWORD="$MG_DB_PASSWORD" psql -h localhost -U guardian_app mining_guardian \\
         -c 'SELECT COUNT(*) FROM scans, miner_readings, hvac_readings, llm_analysis;'
 
@@ -155,12 +173,13 @@ Do NOT shut down the VPS tunnels until the Mac Mini is up and verified. But have
 
 ### Phase 4: .env (5 min)
 
-Copy the VPS .env template, edit for Mac Mini paths:
+Create a fresh .env on the Mac Mini (use the repo's `.env.example` as template; the historical VPS `.env` is a starting reference but paths and hosts differ):
 
-- PYTHONPATH: /Users/BigBobby/Documents/GitHub/Mining Gaurdian
-- GUARDIAN_PG_HOST: localhost (same)
-- GUARDIAN_PG_DBNAME: mining_guardian (same)
-- OLLAMA_URL: http://100.110.87.1:11434/api/generate (same — ROBS-PC on Tailscale)
+- PYTHONPATH: /Users/BigBobby/Documents/GitHub/Mining-Guardian
+- GUARDIAN_PG_HOST: localhost
+- GUARDIAN_PG_DBNAME: mining_guardian
+- GUARDIAN_PG_USER: guardian_app
+- OLLAMA_URL: http://100.110.87.1:11434/api/generate (ROBS-PC on Tailscale — or http://localhost:11434 if running Ollama on Mac Mini)
 - ECLYPSE_USER / ECLYPSE_PASS: same (HVAC BAS creds)
 - AMS credentials: same
 
@@ -187,9 +206,9 @@ Template plists should live in deploy/macos/ (create these during dry-run prep �
 
 ### Phase 6: cron migration (10 min)
 
-macOS cron works the same as Linux cron but env handling is different. crontab -e, paste VPS crontab, adjust paths:
+macOS cron works the same as Linux cron but env handling is different. crontab -e, use the historical VPS crontab as a reference, adjust paths:
 
-- `/root/Mining-Guardian` → `/Users/BigBobby/Documents/GitHub/Mining-Guardian`
+- `/root/Mining-Guardian` (historical VPS path) → `/Users/BigBobby/Documents/GitHub/Mining-Guardian`
 - PYTHONPATH accordingly
 - venv/bin/python path
 
@@ -223,10 +242,10 @@ Check that HVAC wrote two rows (warehouse + s19jpro), AMS got ~55 miners, and th
 
 Once Mac Mini has logged >=1 clean scan + HVAC write + Slack message:
 
-1. Stop all 8 services on VPS
-2. Stop Cloudflare tunnel: systemctl stop cloudflared && systemctl disable cloudflared
+1. Stop all 8 services on the historical VPS (if any are still running — VPS is decommissioned for MG but Bobby may keep it for his own facility)
+2. Cloudflare tunnels: NOT applicable — the Mac Mini install is loopback-only, no Cloudflare. If any historical VPS tunnels remain active they can be torn down via the Cloudflare dashboard.
 3. Confirm Mac Mini is handling all scan cycles for >=1 hour
-4. VPS can stay up idle for 7 days as a hot spare, then be decommissioned
+4. VPS stays up for Bobby's own facility use — it is not deleted, only decommissioned for Mining Guardian
 
 ---
 
@@ -234,11 +253,13 @@ Once Mac Mini has logged >=1 clean scan + HVAC write + Slack message:
 
 **GUARDIAN_PG_DBNAME vs GUARDIAN_PG_DB** — the code standardized on GUARDIAN_PG_DBNAME as of 2026-04-24. Do not introduce the shorter variant when writing new code.
 
-**Repo paths after the 2026-04-26 rename (PR #1)** — the VPS path is `/root/Mining-Guardian/` (no typo, no space) and the Mac clone is `/Users/BigBobby/Documents/GitHub/Mining-Guardian/` (no typo, no space, hyphenated). The historical typo path `/root/Mining-Gaurdian/` and the historical space-and-typo Mac path `/Users/BigBobby/Documents/GitHub/Mining Gaurdian/` are both retired. The OLD-20260428 backup of the historical Mac clone gets deleted Wed 2026-04-29.
+**Repo paths after the 2026-04-26 rename (PR #1)** — the historical VPS path was `/root/Mining-Guardian/` (no typo, no space). The Mac Mini canonical path is `/Users/BigBobby/Documents/GitHub/Mining-Guardian/` (no typo, no space, hyphenated). The historical typo path `/root/Mining-Gaurdian/` and the historical space-and-typo Mac path `/Users/BigBobby/Documents/GitHub/Mining Gaurdian/` are both retired. The OLD-20260428 backup of the historical Mac clone gets deleted Wed 2026-04-29.
 
-**Cloudflare tunnels stop BEFORE VPS services stop**, not after. If you stop VPS services first, the tunnels return 502s and Slack/Retool users see errors. Correct order: stop tunnels → confirm Mac Mini is primary → stop VPS services.
+**Cloudflare tunnels (historical VPS context only):** The Mac Mini install does NOT use Cloudflare. If any VPS-era tunnels remain active and must be torn down, do so from the Cloudflare dashboard — stopping them before stopping VPS services avoids 502 errors to any remaining Slack/Retool users of the historical VPS setup.
 
 **ROBS-PC must stay on and awake.** It advertises 192.168.188.0/24 and 192.168.189.0/24 as Tailscale routes AND hosts the local LLM at 100.110.87.1:11434. If it sleeps, HVAC polling fails from any non-LAN location, and all LLM calls fail. Mac Mini on local LAN removes the Tailscale dependency for HVAC/miners but NOT for the LLM. If ROBS-PC becomes unreliable, the fallback is to run Ollama on the Mac Mini itself (slower — M-series GPU is weaker than an RTX 4090).
+
+**Note on ROBS-PC vs historical VPS:** ROBS-PC (192.168.188.47 on LAN, Tailscale 100.110.87.1) is Bobby's personal workstation — separate from the historical Hostinger VPS (srv1549463 / 187.124.247.182 / Tailscale 100.106.123.83). ROBS-PC is not decommissioned; the VPS is decommissioned for MG.
 
 **Amshub Pi is NOT a systemd service.** The AMS hub runs in a tmux session named 'hub' on 192.168.188.30 (bixbit/bixbit). Do NOT install a systemd unit without coordination with the Pi's programmer. If the Pi needs restart, ssh bixbit@192.168.188.30, tmux attach -t hub, restart the binary, Ctrl+B d to detach.
 
@@ -248,19 +269,14 @@ Once Mac Mini has logged >=1 clean scan + HVAC write + Slack message:
 
 ## Emergency rollback
 
-If Mac Mini has a fatal problem post-cutover, roll back within 24h:
+If Mac Mini has a fatal problem post-install, the rollback path is to restore from the pre-install operational-DB snapshot (see Phase 2 optional snapshot path) on a fresh Mac Mini or replacement hardware. The historical VPS (srv1549463 / 187.124.247.182) is decommissioned for MG and should NOT be used as a rollback target.
 
-    # On VPS (assuming still idle)
-    systemctl start cloudflared
-    for svc in mining-guardian dashboard-api approval-api slack-listener \\
-               slack-commands overnight-automation mining-guardian-alerts; do
-        systemctl start "\$svc"
-    done
+> **Historical VPS rollback note (pre-Mac-Mini era):** The old runbook described restarting cloudflared + 8 systemd services on the VPS as a rollback. That path no longer applies — the VPS is decommissioned for MG. Preserved here as context only.
 
-**Data divergence:** Mac Mini wrote some rows the VPS does not have. Options:
+**Data divergence (if snapshot was used):** Mac Mini wrote some rows the snapshot does not have. Options:
 
-1. Accept the gap (simpler) — Mac Mini data is orphaned, re-migrate later
-2. pg_dump from Mac Mini and pg_restore selected tables to VPS (complex)
+1. Accept the gap (simpler) — re-import from live data sources after rollback
+2. pg_dump from Mac Mini and pg_restore selected tables to fresh Postgres (complex)
 
 For <24h of rollback, option 1 is almost always right.
 
@@ -273,5 +289,5 @@ Documented separately; not part of the deploy itself:
 - Archive orphaned SQLite files (core/database.py, etc.) to archive/phase1_sqlite_YYYY-MM-DD/
 - Remove the SQLite fallback cache in clients/hvac_client.py (eliminates 'no such table' stderr noise)
 - Add the suggested idx_hvac_readings_system_recorded index for Grafana performance
-- Build slack_actions_handler.py replacement that routes through OpenClaw (VPS-only today; needs alt for pure-local Mac Mini operation)
+- Build slack_actions_handler.py replacement that routes through OpenClaw (the historical VPS-era version used Cloudflare tunnel inbound; Mac Mini needs the OpenClaw Socket Mode path per CLOUDFLARE_MIGRATION.md)
 - Multi-container federation design (when a 2nd site comes online)

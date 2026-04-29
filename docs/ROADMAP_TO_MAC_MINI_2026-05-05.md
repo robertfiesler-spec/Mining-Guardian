@@ -1,10 +1,13 @@
 # Roadmap to Mac Mini Install — 2026-05-05
 
-**Status:** ACTIVE master plan
+**Status:** SUPERSEDED — historical plan-of-record
 **Created:** 2026-04-26
-**Install date (locked):** Monday 2026-05-05
-**Cutover gate:** Customer-grade (see exit criteria below)
+**Install date originally locked for:** Monday 2026-05-05
+**Install date as of 2026-04-29:** Thursday **2026-04-30** — the operator pulled the install in once the cutover gate criteria went green (OpenClaw removed in PR #69 superseded by sweep, web GUI shipped in PR #88, operator schedules shipped in PR #90, catalog populated, installer .pkg ready in PR #79). The day-by-day plan below ran ahead of schedule.
+**Cutover gate:** Customer-grade — all 8 exit criteria green as of 2026-04-29 EOD.
 **Working style:** Slow and steady, step by step, late-and-perfect over early-and-wrong
+
+> **Reading this on or after 2026-04-30?** This file is preserved for the audit trail. For the actual install runbook see `DEPLOYMENT_CHECKLIST.md` and `installer/macos-pkg/README.md`. For what shipped and when, see `docs/MG_UNIFIED_TODO_LIST.md`.
 
 ---
 
@@ -198,14 +201,15 @@ For D1 and D2, recommend agent picks based on least-risk; operator confirmed "yo
 
 ---
 
-## Out of scope (do NOT touch before 05-05)
+## Out of scope (do NOT touch before 05-05) — outcome as of 2026-04-29
 
-- OpenClaw branch experimental work
-- Web GUI for `approval_api.py:8686` (operator backlog, post-cutover)
-- Mode selector (Full Auto / Semi Auto / Manual) GUI (operator backlog, post-cutover)
-- Bolt/Socket Mode Slack migration (defer)
-- `migrate_to_postgres.py` deletion (already guarded, defer)
+- ~~OpenClaw branch experimental work~~ — moot. OpenClaw is fully removed from the codebase as of the 2026-04-29 doc sweep.
+- ~~Web GUI for `approval_api.py:8686` (operator backlog, post-cutover)~~ — shipped in PR #88 (§10.1, §10.2).
+- ~~Mode selector (Full Auto / Semi Auto / Manual) GUI (operator backlog, post-cutover)~~ — shipped in PR #88.
+- Operator-controlled schedules (§10.7) — shipped in PR #90.
+- Bolt/Socket Mode Slack migration — still deferred.
+- `migrate_to_postgres.py` deletion — still deferred (guarded by `MG_ALLOW_MIGRATION=1`, see D-6).
 
 ---
 
-*Last updated: 2026-04-26.*
+*Last meaningful update of the day-by-day plan: 2026-04-26. Historical-status header refreshed: 2026-04-29.*

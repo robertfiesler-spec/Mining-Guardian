@@ -146,8 +146,8 @@ Command history for the container:
 ## Mining Guardian Integration Plan
 
 ### When to build
-- When live container access is available for validation
-- After OpenClaw is installed (container alerts may be better handled as a separate OpenClaw agent)
+- When live container access is available for validation in the customer's BiXBiT workspace
+- Container alerts can be wired into the existing Approval API + Slack notifier rather than a separate agent
 
 ### What to monitor per scan
 Priority sensors to pull every scan:

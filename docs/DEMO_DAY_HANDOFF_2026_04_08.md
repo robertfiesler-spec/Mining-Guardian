@@ -1,5 +1,11 @@
 # Demo Day Handoff — April 8 2026 08:15 CDT
 
+## Status as of 2026-04-29 PM
+
+> This is a historical handoff document from 2026-04-08 (~3 weeks pre-install). Preserved verbatim as a historical record. The architecture described here (VPS / Cloudflare tunnels / ROBS-PC as primary host) has since been superseded by the Mac Mini local-first decision. For current state see `MG_UNIFIED_TODO_LIST.md` and `ROADMAP_TO_MAC_MINI_2026-05-05.md`.
+
+---
+
 **Status:** Ready for demo (timing TBD per Bobby).
 **All critical work completed and verified.**
 

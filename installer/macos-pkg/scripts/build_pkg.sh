@@ -189,7 +189,7 @@ step_4_assemble_payload() {
         --include 'monitoring/***' \
         --include 'api/***' \
         --include 'ai/***' \
-        --include 'intelligence/***' \
+        --include 'intelligence-catalog/***' \
         --include 'mg_import_tool/***' \
         --include 'docs/***' \
         --include 'branding/***' \

@@ -88,7 +88,7 @@
 
 ### LLM Routing
 - **Qwen 2.5 32B Q4:** Runs on ROBS-PC (Tailscale 100.110.87.1:11434) RTX 4090
-- **Claude Sonnet API:** Cloud API for Pass 2 and Pass 4 (API key in VPS .env)
+- **Claude Sonnet API:** Cloud API for Pass 2 and Pass 4 (API key in Mac Mini `.env`; historical VPS era kept it in VPS `.env`)
 
 ### Log Locations
 | Log | Path |
@@ -105,7 +105,7 @@
 
 ## Notes
 
-- All times are CDT (VPS timezone)
+- All times are CDT (Mac Mini timezone; historical: VPS timezone)
 - Deep dive uses Qwen (local GPU) - fastest for per-miner analysis
 - Claude used for cohort analysis and final knowledge merge
 - Hourly benchmark tracks system performance

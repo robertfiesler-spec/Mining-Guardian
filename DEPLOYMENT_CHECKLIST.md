@@ -2,9 +2,9 @@
 
 **Target:** customer Mac Mini (macOS 14+, Apple Silicon, 16 GB RAM, ≥50 GB free)
 **Installer:** signed/notarized `MiningGuardian-1.0.0-<sha>.pkg`
-**Last updated:** 2026-04-29 (Bucket 6f)
+**Last updated:** 2026-04-29 (repo doc sweep — supersedes Bucket 6f)
 
-> **For VPS / systemd-era checklist (April 15 2026 historical baseline), see Appendix A at the bottom of this file.** The sections above describe the current Mac-Mini-era deployment using `scripts/setup.sh` v2 and the macOS LaunchDaemon model.
+> **The Mac Mini install is a fresh, standalone deployment.** The customer Mini stands up its own Postgres operational DB and catalog DB during `scripts/setup.sh`; there is no migration step. The historical VPS / systemd-era checklist (April 15 2026 baseline) is preserved in **Appendix A** at the bottom of this file for reference only — do not follow it on a Mac Mini install.
 
 ---
 
@@ -13,17 +13,15 @@
 - [ ] All four installer PRs merged to `main`:
   - PR #74 — Bucket 6a: 5 LaunchDaemon plists + 8 launcher wrappers
   - PR #75 — Bucket 6b: `scripts/setup.sh` v2 (15 phases)
-  - PR #76 — Bucket 6c: `scripts/restore_from_snapshot.sh` (8 phases)
+  - PR #76 — Bucket 6c: `scripts/restore_from_snapshot.sh` (8 phases — kept for historical / lab use only; not part of the customer fresh-install path)
   - PR #77 — Bucket 6d: Grafana provisioning bundle + `scripts/install_grafana_provisioning.sh`
-- [ ] Bucket 5.7 / B-7 staging migrations committed to `migrations/` (PR #73 runbook executed on VPS)
-- [ ] Bucket 3.2 catalog schema deployed to VPS (PR #68 runbook executed)
-- [ ] `MG_DB_PASSWORD` for this Mac generated (32-char, distinct from VPS): use `openssl rand -base64 24`
+- [ ] Migrations 001–005 present in `migrations/` and applied automatically by `setup.sh` Phase 5 (operational + catalog schemas, including the 313-row miner_models seed)
+- [ ] `MG_DB_PASSWORD` generated for this Mac (32-char): `openssl rand -base64 24`
 - [ ] `CATALOG_API_KEY` generated: `openssl rand -hex 32`
 - [ ] AMS API username + password handed to operator
 - [ ] Slack bot token + signing secret + target channel ID available
 - [ ] Site name decided (lowercase-with-hyphens, e.g. `bixbit-fairfax-1`)
 - [ ] USB stick "MG Install" available with `MiningGuardian-1.0.0-<sha>.pkg` (do not erase the stick — replace files only)
-- [ ] If migrating from VPS: snapshot tarball built per `scripts/restore_from_snapshot.sh` header
 
 ---
 
@@ -185,32 +183,11 @@ cd /usr/local/MiningGuardian
 
 ---
 
-## 3. Restore-from-snapshot path (only when migrating from VPS)
+## 3. Restore-from-snapshot path (lab / historical only)
 
-```bash
-# On VPS — build tarball (paste-along blocks at bottom of restore_from_snapshot.sh):
-ssh root@srv1549463
-TS=$(date +%Y%m%d_%H%M%S); DEST=/tmp/mg_snapshot_srv1549463_${TS}.tar.gz
-# … (see scripts/restore_from_snapshot.sh header for the full tarball-build sequence)
+The customer Mac Mini install is **fresh** — `setup.sh` provisions empty operational and catalog Postgres databases, applies migrations 001–005, and seeds the catalog from `intelligence-catalog/seed-data/` during Phase 5. No snapshot restore is required.
 
-# On Mac — copy + dry-run:
-scp root@100.110.87.1:/tmp/mg_snapshot_srv1549463_*.tar.gz ~/Downloads/
-cd /usr/local/MiningGuardian
-zsh scripts/restore_from_snapshot.sh --tarball=~/Downloads/mg_snapshot_*.tar.gz --dry-run
-
-# If dry-run plan looks correct, real restore:
-zsh scripts/restore_from_snapshot.sh --tarball=~/Downloads/mg_snapshot_*.tar.gz
-```
-
-- [ ] `restore_from_snapshot.sh --dry-run` prints 8-phase plan + manifest details with no errors
-- [ ] Real restore exits 0
-- [ ] Postgres row counts match VPS (within seconds of snapshot creation):
-  - `SELECT COUNT(*) FROM scans` — matches VPS
-  - `SELECT COUNT(*) FROM miner_readings` — matches VPS
-  - `SELECT COUNT(*) FROM hardware.miner_models` — 313
-- [ ] `.env.bak.<ts>` and `grafana.db.bak.<ts>` exist (originals preserved)
-- [ ] `launchctl list | grep com.miningguardian | wc -l` still 9 (services kickstarted by Phase 8 of restore)
-- [ ] All 3 Grafana dashboards still render
+`scripts/restore_from_snapshot.sh` is preserved for lab use (e.g., re-deploying the proof-of-concept site against an existing operational dataset) and is documented in the script header. It is **not** part of the customer install path. If you find yourself reading this section on a customer install, skip ahead — you do not need it.
 
 ---
 
@@ -226,7 +203,7 @@ zsh scripts/restore_from_snapshot.sh --tarball=~/Downloads/mg_snapshot_*.tar.gz
 | Slack ping received | ☐ | |
 | `.env` mode 600, no default secrets | ☐ | |
 | Tailscale up (if applicable) | ☐ | |
-| Restore-from-snapshot tested (if migrating) | ☐ | |
+
 
 **Operator name:** ________________________
 **Mac Mini hostname:** ________________________

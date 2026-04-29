@@ -1,5 +1,7 @@
 # Intelligence Catalog — Living Database Architecture
 
+> **Status (2026-04-29 sweep):** Architectural reference. The Intelligence Catalog itself remains the canonical Bitcoin SHA-256 miner database (PostgreSQL `mining_guardian.intelligence_catalog.*`) and **all five layers below describe the going-forward architecture** — but the operational substrate moves from VPS to Mac Mini at the 2026-04-30 cutover. Specifically: (a) Layer 2's `discovery_log` table now lives in PostgreSQL on the Mac Mini, not in the VPS-era `guardian.db` SQLite snapshot; (b) cron schedules below describe the design — actual launchd plists ship with the installer; (c) anywhere this file says "VPS guardian.db," treat it as the **historical SQLite snapshot** (not live). Single-source-of-truth statement at line 150 has been corrected accordingly.
+
 > "A living learning thing. Always evolving and expanding."
 
 The Intelligence Catalog is designed to grow automatically. No new miner model, firmware version, or spec change should ever go unnoticed. This document describes the five-layer system that keeps the catalog current and makes it the most comprehensive Bitcoin SHA-256 miner database on the planet.
@@ -46,7 +48,7 @@ Four scheduled tasks run every morning and compare the outside world against our
 
 The Mining Guardian scan loop monitors miners via AMS (BiXBiT or other controllers). When it encounters something it hasn't seen before, it logs it automatically.
 
-### discovery_log Table (guardian.db)
+### discovery_log Table (PostgreSQL `mining_guardian.discovery_log` post-2026-04-30; historically in VPS `guardian.db` SQLite snapshot)
 Every unknown model or firmware version gets recorded with:
 - `device_name` — raw name from AMS
 - `firmware_version` — firmware string
@@ -147,7 +149,7 @@ Bobby can request a deep dive on any specific model at any time. Also processes 
 - **Every variant matters** — m63, m63s, m63+, m63s+ are all different models
 - **Bitcoin SHA-256 ONLY** — No other algorithms
 - **Auto-discovery is a hard requirement** — Unknown fields get registered, never skipped
-- **Single source of truth** — ROBS-PC PostgreSQL is the golden copy, VPS guardian.db is operational
+- **Single source of truth** — Mac Mini PostgreSQL `mining_guardian` is the operational and canonical database (post-2026-04-30). The VPS-era `guardian.db` SQLite file is preserved as a historical snapshot only; SQLite is **not live**.
 
 ---
 
@@ -166,4 +168,4 @@ Bobby can request a deep dive on any specific model at any time. Also processes 
 | `catalog_enrichment_schedule.json` | 7-day model rotation schedule |
 | `catalog_enrichment_tiers.json` | Tier 1/2/3 model assignments |
 | `intelligence-catalog/tools/catalog_updater.py` | Auto-updater CLI tool |
-| `guardian.db → discovery_log` | Auto-discovered models/firmware from fleet |
+| PostgreSQL `mining_guardian.discovery_log` (post-2026-04-30; historical: VPS `guardian.db` snapshot) | Auto-discovered models/firmware from fleet |

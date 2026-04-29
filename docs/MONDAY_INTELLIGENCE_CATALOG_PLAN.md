@@ -1,7 +1,9 @@
 # Mining Intelligence Catalog — Monday Build Plan
 
 > **⚠️ DEPRECATED ARCHITECTURE — historical reference only.**
-> This document describes the original April 2026 plan to host the catalog on **ROBS-PC** with a Thunderbolt 4 SSD enclosure. That architecture was superseded on 2026-04-27 by the **Mac Mini** plan. The canonical schema and seed now live in `intelligence-catalog/seed-data/` (not `intelligence/`). The legacy `intelligence/` directory is deprecated — see `intelligence/DEPRECATED.md`. For the current architecture see `intelligence-catalog/seed-data/README.md` and `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`. The instructions below are kept for historical traceability and should not be followed for the May 5 customer install.
+> This document describes the original April 2026 plan to host the catalog on **ROBS-PC** with a Thunderbolt 4 SSD enclosure. That architecture was superseded on 2026-04-27 by the **Mac Mini** plan. The canonical schema and seed now live in `intelligence-catalog/seed-data/` (not `intelligence/`). The legacy `intelligence/` directory is deprecated — see `intelligence/DEPRECATED.md`. For the current architecture see `intelligence-catalog/seed-data/README.md` and `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`. The instructions below are kept for historical traceability and should not be followed for the **2026-04-30** customer install (install date was previously referenced as May 5 in this doc; the locked date is now 2026-04-30).
+>
+> **Status as of 2026-04-29 PM:** VPS connectivity references in this doc (Phase 6, "Test VPS Connectivity") are historical context only — the VPS (srv1549463 / 187.124.247.182) is decommissioned for Mining Guardian. The ROBS-PC references describe the original plan that was superseded by Mac Mini. The catalog Postgres now lives on the Mac Mini at port 5432, user `guardian_app`, db `mining_guardian`. Do not follow the Phase 6 VPS connectivity test for the 2026-04-30 install. See `CATALOG_ORPHAN_TABLES_2026-04-28.md` for current catalog status.
 
 **Date:** April 10, 2026 (created for Monday April 13 session)
 **Status:** READY TO BUILD
@@ -455,3 +457,20 @@ When the UGREEN NASync arrives:
 ---
 
 *This plan created April 10, 2026 for Monday April 13 execution.*
+
+---
+
+## Appendix — Sweep update 2026-04-29 PM
+
+| Item | Original plan | Actual outcome (2026-04-29) |
+|---|---|---|
+| Catalog host | ROBS-PC (Windows 11, Docker/Postgres) | ✅ Mac Mini (macOS, Homebrew Postgres 17, port 5432) |
+| Catalog user | `miner_intel` | ✅ `guardian_app` (canonical across all MG services) |
+| Catalog DB name | `miner_intelligence` | ✅ `mining_guardian` (single unified DB) |
+| Schema files | `intelligence/schema/001_initial.sql` | ✅ `intelligence-catalog/seed-data/` (canonical, 321-row seed) |
+| `intelligence/` directory | Active | ✅ Deprecated and deleted (2026-04-29 doc-sweep Commit 2) |
+| VPS connectivity test (Phase 6) | VPS → ROBS-PC:5432 | ❌ Not applicable — VPS decommissioned for MG; catalog is local to Mac Mini |
+| Install date | Monday April 13 (ROBS-PC) | ✅ 2026-04-30 (Mac Mini) |
+| `intelligence/README.md` reference | Active architecture doc | ✅ Redirected to `intelligence-catalog/seed-data/README.md` |
+
+**Net:** This entire document is historical. The ROBS-PC + VPS architecture was evaluated and not taken. The catalog lives on the Mac Mini, started from migrations 001–005 + 321-row Bitcoin SHA-256 seed. See `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md` for current table status.

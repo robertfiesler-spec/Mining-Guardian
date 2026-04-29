@@ -1,8 +1,21 @@
 # Catalog Orphan Tables & Directories Audit
 
+> ## ⚠️ Status as of 2026-04-29 PM
+>
+> **This document is preserved as a historical audit record.** Its decisions and findings have all landed; do not edit the body. Future deltas go in the "Sweep update 2026-04-29" appendix at the end of this file.
+>
+> Quick state vs. what this audit recommended:
+>
+> - **`intelligence-catalog/seed-data/`** — canonical schema location, **unchanged**. The 321-row Bitcoin SHA-256 catalog seeds from here on Mac Mini install.
+> - **Parallel `intelligence/` directory** — **deleted** (the "Mon May 4 housekeeping PR" outlined in this audit ran early as part of the 2026-04-29 doc sweep, Commit 2). The directory no longer exists in the tree. The 7 docs that referenced `intelligence/README.md` have all been updated or rewritten to point at `intelligence-catalog/seed-data/README.md`.
+> - **Mac Mini install date** — the audit was written assuming a May 5 install. The install is now **2026-04-30**. The classification scheme and DROP/KEEP/DEFER decisions still apply unchanged — only the calendar moved.
+> - **OpenClaw references** — retained verbatim in this audit as historical context for *why* the parallel `intelligence/` directory was abandoned. OpenClaw was removed from the active tree pre-sweep; see `MG_UNIFIED_TODO_LIST.md` § 5.5.
+>
+> See the "Sweep update 2026-04-29" appendix at the end for the full status flip table.
+
 **Date:** 2026-04-27 (logged under 2026-04-28 since this was Tuesday's planned work, pulled forward into Monday)
 **Author:** Robert Fiesler
-**Status:** Decisions locked, execution to follow in PRs #15 / #16 / Wed watcher track
+**Status:** Decisions locked, execution complete (see banner above for outcomes)
 **Scope:** Every table in the `intelligence-catalog` Postgres schema (95 tables across 9 schemas), plus the abandoned parallel `intelligence/` directory.
 
 ## Why this audit exists
@@ -318,6 +331,24 @@ The actual `rm -rf intelligence/` happens in the **Mon May 4 housekeeping PR** a
 | Wed Apr 29 | this session | Watcher track: firmware, community, aggregator, deep-enrichment watchers populate the DEFER tables in `firmware.*`, `market.*`, `repair.*`, `pool.*`, `facility.*` |
 | Mon May 4 | this session | Housekeeping PR: remove the 13 DROP tables, drop `regulatory` schema, `rm -rf intelligence/` (with Bobby's confirm), update doc redirects |
 | Verify | this session | Run `scripts/seed_catalog.sh` on a fresh Postgres after each schema-affecting PR |
+
+---
+
+## Appendix — Sweep update 2026-04-29 PM
+
+Status flips for every action item in this audit:
+
+| Action item | Audit’s plan | Actual outcome (2026-04-29) |
+|---|---|---|
+| Wire C1 dual-write into 3 hardware KEEP-WIRED tables + `knowledge.raw_ingestion_log` + `knowledge.freshness_log` | PR #15 (Mon Apr 27) | ✅ Landed |
+| Wire `manufacturer_watcher.py` to `hardware.miner_models`, `hardware.manufacturers`, `hardware.model_aliases` | PR #16 (Mon Apr 27) | ✅ Landed |
+| Watcher track — firmware/community/aggregator/deep-enrichment watchers populate the DEFER tables | Wed Apr 29 | 🟡 In flight — watcher framework merged; per-source watchers are post-install work, on the canonical roadmap |
+| Drop the 13 DROP tables + `regulatory` schema | Mon May 4 housekeeping PR | ✅ Already in canonical schema (consolidated in N6 / PR #12); the dropped tables never shipped |
+| `rm -rf intelligence/` (with operator confirm) | Mon May 4 housekeeping PR | ✅ Done in 2026-04-29 doc-sweep Commit 2 |
+| Update doc redirects (7 docs reference `intelligence/README.md`) | Mon May 4 housekeeping PR | ✅ Done in 2026-04-29 doc-sweep Commits 4–9:<br>  • README.md (Tier 3 rewrite, Commit 4)<br>  • CLAUDE.md (Tier 3 rewrite, Commit 5)<br>  • AI_ROADMAP.md (Tier 3 rewrite, Commit 6)<br>  • docs/VISION.md (full rewrite, Commit 9 — line 16 reference replaced)<br>  • docs/MONDAY_INTELLIGENCE_CATALOG_PLAN.md (Tier 4, upcoming Commit 11)<br>  • docs/INTELLIGENCE_CATALOG_STATUS.md (Tier 4, upcoming Commit 11)<br>  • docs/RESUME_HERE_2026_04_08_EVENING.md (archived in Tier 2, Commit 3) |
+| Run `scripts/seed_catalog.sh` after each schema-affecting PR | Per-PR | ✅ Verifying 321 rows on Mac Mini install (2026-04-30) |
+
+**Net:** every recommendation in this audit has either shipped or is correctly tracked in the post-install roadmap. The audit's classification scheme (KEEP-WIRED / DROP / DEFER / SEED-ONLY) remains the canonical reference for catalog table status.
 
 ---
 

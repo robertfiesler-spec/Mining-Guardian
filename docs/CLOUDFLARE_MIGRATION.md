@@ -1,6 +1,12 @@
 # Cloudflare Migration — Hard Deadline
 
-**Deadline:** May 5-9, 2026 (Mac Mini arrival window)
+## ⚠️ SUPERSEDED — Cloudflare path NOT taken
+
+> The locked decision is Mac Mini local-first, loopback-only services. This document is preserved as a historical record of an evaluated-and-rejected alternative architecture. Do not implement; do not reference as canonical. See `MG_UNIFIED_TODO_LIST.md` and `ROADMAP_TO_MAC_MINI_2026-05-05.md`.
+
+---
+
+**Original deadline:** May 5-9, 2026 (Mac Mini arrival window) — superseded by 2026-04-30 install date
 
 ## Why this matters
 
