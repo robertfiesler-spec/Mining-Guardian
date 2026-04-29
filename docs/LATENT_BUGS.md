@@ -21,6 +21,7 @@ pick up the fix without re-deriving the context.
 | B-5 | Medium   | `mg_import.py` raw_json index targets nonexistent column          | Patched out|
 | B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Fixed in PR-2 (path strings); 4 narrative references retained as allowed-exception; PR-3 CI lint added 2026-04-29 (PR #72) |
 | B-7 | Medium   | Live migrations `002_layer2` + staging not committed to the repo  | 📘 Runbook landed (2026-04-29) — VPS exec pending |
+| B-8 | High     | 3 silent NameError bugs (missing imports): `core/models.py` Tuple, `notifiers/approval_interface.py` os, `notifiers/slack_notifier.py` requests | ✅ Fixed 2026-04-29 (pre-install pyflakes sweep) |
 
 ---
 
@@ -629,6 +630,55 @@ A regression unit test that exercises `_escalate_board_issue` with a mocked AMS 
 
 - `docs/REPAIR_LOG.md` 2026-04-14 entry "Board escalation crashed on undefined `issue` variable"
 - Phase 1 commit `88b5b08`
+
+---
+
+## B-8 — 3 silent NameError bugs (missing imports) — ✅ FIXED
+
+**Severity:** High (any path that exercises these modules crashes immediately)
+
+**Status:** Fixed 2026-04-29 in the pre-install pyflakes sweep on freshly merged main (post PR #83). The fixes are tiny one-line import additions; no behavior change for callers, the affected code paths now actually run instead of crashing on first reference.
+
+**Discovery date:** 2026-04-29 (pyflakes scan during install-day prep)
+
+**Locations:**
+
+1. `core/models.py:183` — `RemediationCooldown._last_remediated: Dict[Tuple[str, str], datetime]` referenced `Tuple` without importing it.
+   - **Fix:** added `Tuple` to the existing `from typing import Any, Dict, List, Optional` line.
+2. `notifiers/approval_interface.py:25` — `ApprovalInterface.request_approval` calls `os.isatty(0)` without importing `os`.
+   - **Fix:** added `import os` to the module imports.
+3. `notifiers/slack_notifier.py` (lines 88, 170, 242, 559) — `SlackNotifier` calls `requests.post(...)` and `requests.get(...)` without importing `requests`.
+   - **Fix:** added `import requests` to the module imports.
+
+**Why these went unnoticed:**
+Like B-1 and B-2, the calling sites were wrapped in broad `try/except Exception:` blocks that silently swallowed `NameError`. The code paths registered as a no-op rather than a crash. The webhook fallback in `slack_notifier.py` (the `requests.post` at line 88) had likely never fired because the SDK path was the default; the user-info lookup at line 170 also lived inside a `try/except`.
+
+**Evidence:**
+```
+$ pyflakes core/models.py notifiers/approval_interface.py notifiers/slack_notifier.py
+core/models.py:183:37: undefined name 'Tuple'
+notifiers/approval_interface.py:25:16: undefined name 'os'
+notifiers/slack_notifier.py:88:17: undefined name 'requests'
+notifiers/slack_notifier.py:170:20: undefined name 'requests'
+notifiers/slack_notifier.py:242:17: undefined name 'requests'
+notifiers/slack_notifier.py:559:24: undefined name 'requests'
+```
+
+**Verification (post-fix):**
+```
+$ pyflakes core/models.py notifiers/approval_interface.py notifiers/slack_notifier.py | grep "undefined name"
+(no output — all clean)
+$ python3 -m py_compile core/models.py notifiers/approval_interface.py notifiers/slack_notifier.py
+(syntax OK)
+```
+
+**Why pyflakes ran now:** This is the install-day-eve final pass. The three modules had been touched many times during the SQLite-to-Postgres flip and the post-extraction module split (April 21, 2026, when models, notifiers, and approval logic were carved out of the monolith), but no one had run a static-analysis sweep across the whole tree. With every PR now merged into `main`, the sweep ran on a clean slate and surfaced the leftovers.
+
+### References
+
+- pyflakes 3.4.0 scan, 2026-04-29 21:14 UTC
+- Same swallow-NameError pattern documented for B-1 and B-2 above
+- Module-extraction history: 2026-04-21 monolith decomposition
 
 ---
 
