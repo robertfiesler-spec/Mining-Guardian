@@ -334,6 +334,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | `guardian.db` (0 bytes) | observed | 🔴 Delete the empty SQLite stub at repo root |
 | `databases/*.db` — empty stubs | observed | 🔴 Delete (or move to `archive/sqlite_stubs/`) |
 | `migrations/migrate_sqlite_to_postgres.py` | DECISIONS.md #6 | 🟢 Has guard already (raise unless `MG_ALLOW_MIGRATION=1`). Defer deletion to post-Mac-Mini. |
+| `intelligence/` directory (12 files, ~250 KB) — unpatched duplicates of `intelligence-catalog/seed-data/` schemas + Docker-era tuning | DEPRECATED.md (2026-04-27) | ✅ DONE 2026-04-29 (PR — Bucket 7.1) — entire `intelligence/` directory deleted: 10 blobs (3 schema duplicates with the 7 latent bugs PR #12 already fixed in canonical copies, the Docker compose, the postgres-tuning.conf for ROBS-PC, the deprecated README + DEPRECATED.md tombstone, the 244-page paper PDF duplicate, the schema_inventory.json, the .env.example, and 2 docs/ markdowns). Pre-flight verified zero code refs (grep across `*.py *.sh *.yml *.yaml *.toml *.json` returned 0). Authority + full inventory: `docs/RUNBOOK_BUCKET_7.1_INTELLIGENCE_DIR_REMOVAL.md`. Closes 8.2 row N6 ("4 versions of catalog schema in repo") in the same commit. |
 
 ## 8.2. Underused (audit-flagged but live)
 
@@ -346,7 +347,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | `knowledge.freshness_log` empty | H8 | 🔴 Wire freshness writes from enrichment watchers. |
 | `alert_listener_seen` / `cooldown` (1r/1w) | N1 | 🟢 Probably OK — leave alone. |
 | 123 empty `knowledge.research_*` tables | N5 | 🟢 Auto-create on import. Fine to leave. |
-| 4 versions of catalog schema in repo | N6 | 🔴 Consolidate into one canonical schema before Mac Mini |
+| 4 versions of catalog schema in repo | N6 | ✅ DONE 2026-04-29 (PR — Bucket 7.1) — the 3 unpatched duplicates under `intelligence/database/` were the divergent versions; deleted with the full `intelligence/` directory in this PR. Canonical schema is now uniquely `intelligence-catalog/seed-data/intelligence_catalog_schema.sql` (+ v2 + v3 additions). |
 | Grafana intelligence report uses JSON catalog | N7 | 🔴 Re-point to Postgres after C1 lands |
 
 ## 8.3. Effort
