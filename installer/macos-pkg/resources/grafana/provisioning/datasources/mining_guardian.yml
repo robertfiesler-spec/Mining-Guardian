@@ -1,0 +1,71 @@
+# ============================================================
+# Mining Guardian — Grafana datasource provisioning
+# BiXBiT USA  •  Bucket 6d  •  §7.3 row 7g / docs/MG_UNIFIED_TODO_LIST.md
+#
+# Two Postgres datasources, both bound to 127.0.0.1 (S-13):
+#   1. Mining Guardian (operational) — `mining_guardian` DB
+#        Tables: scans, miner_readings, miner_logs, miner_restarts,
+#                miner_baselines, weather_readings, hvac_readings,
+#                chain_readings, chip_readings, pool_readings,
+#                action_audit_log, log_metrics, log_collection_failures,
+#                known_dead_boards, miner_hardware, llm_analysis,
+#                ams_notifications, …  (see migrations/001_initial_schema.sql)
+#
+#   2. Mining Guardian Catalog — `mining_guardian_catalog` DB
+#        Schemas: hardware.* (miner_models, manufacturers, chips, …),
+#                 firmware.*, ops.*, knowledge.*
+#        (see intelligence-catalog/seed-data/intelligence_catalog_schema.sql
+#         + v2/v3 additions, deployed via PR #68 Bucket 3.2 runbook)
+#
+# Password is read from the env var GUARDIAN_PG_PASSWORD which setup.sh
+# Phase 11 exports from .env. NEVER hardcode credentials here.
+#
+# Idempotency: `editable: false` blocks GUI edits — the file is the source
+# of truth. Re-running setup.sh / restore_from_snapshot.sh re-applies cleanly.
+#
+# Rotation: change MG_DB_PASSWORD in .env, then `brew services restart grafana`.
+# ============================================================
+apiVersion: 1
+
+datasources:
+  - name: Mining Guardian (operational)
+    uid: mg_operational_pg
+    type: postgres
+    access: proxy
+    url: 127.0.0.1:5432
+    database: mining_guardian
+    user: guardian_app
+    secureJsonData:
+      password: "${GUARDIAN_PG_PASSWORD}"
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    isDefault: true
+    editable: false
+
+  - name: Mining Guardian Catalog
+    uid: mg_catalog_pg
+    type: postgres
+    access: proxy
+    url: 127.0.0.1:5432
+    database: mining_guardian_catalog
+    user: guardian_app
+    secureJsonData:
+      password: "${GUARDIAN_PG_PASSWORD}"
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+      maxOpenConns: 3
+      maxIdleConns: 1
+      connMaxLifetime: 14400
+    isDefault: false
+    editable: false
+
+# Anything *not* listed here that already exists in Grafana on this Mac will
+# be deleted on next provisioning load. We are intentionally NOT setting
+# `deleteDatasources` — adding/removing must be a code change reviewed in PR.
