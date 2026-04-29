@@ -1,5 +1,7 @@
 # Mining Intelligence Catalog — Comprehensive Database Design Prompt
 
+> **HISTORICAL — design-phase prompt sent to Perplexity (April 2026).** Kept verbatim as the source-of-record for the catalog schema brainstorm. The architecture sections below describe the original Windows / ROBS-PC design intent. The live catalog now runs on PostgreSQL 16 on the Mac Mini under `intelligence-catalog/` (operational + reference DBs colocated, no SQLite, no Tailscale data plane). For the current architecture see `README.md`, `CLAUDE.md`, and `docs/INTELLIGENCE_CATALOG_STATUS.md`.
+
 ## Context for the AI
 
 I'm building the **Mining Intelligence Catalog**, a PostgreSQL database that will become the **single source of truth for everything known about Bitcoin ASIC miners**. This isn't just a spec sheet lookup — it's a knowledge base that captures manufacturer data, real-world operational experience, community feedback, repair intelligence, firmware quirks, and lessons learned from thousands of deployments.
@@ -496,8 +498,8 @@ If this becomes community-driven:
 ## Technical Requirements
 
 ### Database Engine
-- **PostgreSQL 16** on Windows (ROBS-PC initially, NAS in July 2026)
-- Accessible via Tailscale at `100.110.87.1`
+- **PostgreSQL 16** on the Mac Mini (live as of the 2026-04-30 install). Earlier design intent (above) considered ROBS-PC + a NAS migration; that path was retired when the install consolidated onto the Mini.
+- Accessed locally via `localhost:5432`; remote operator access is via Tailscale to the Mini, but the catalog data plane stays on the loopback.
 
 ### Schema Features Needed
 - **JSONB columns** for semi-structured data (API specs, symptoms, etc.)
@@ -567,7 +569,7 @@ WHERE services @> ARRAY['hashboard_repair']
 - knowledge.json refined_insights
 - knowledge.json patterns
 - knowledge.json known_issues
-- miner_hardware table from guardian.db
+- `hardware.miner_models` table in the catalog (formerly `miner_hardware` in the legacy local DB)
 - Action audit log outcomes
 
 ### Repair Shop Data (Tier 3 - High Volume)
@@ -643,7 +645,7 @@ WHERE services @> ARRAY['hashboard_repair']
 - Must work on **Windows PostgreSQL 16** initially
 - Will migrate to **NAS** (Linux-based) in July 2026
 - Network access via **Tailscite** VPN
-- Current data lives in **SQLite** (guardian.db) and **JSON** (knowledge.json, config.json)
+- Original (April 2026) starting point: data lived in a legacy local DB plus **JSON** (`knowledge.json`, `config.json`). Migration to PostgreSQL was completed before the Mac Mini install.
 
 ---
 

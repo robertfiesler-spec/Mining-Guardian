@@ -10,7 +10,7 @@ This is the canonical log of decisions that are committed and not subject to re-
 - **Date locked:** 2026-04-24
 - **Decided by:** Operator (Bobby) + agent
 - **Decision:** New operational Postgres password is `tX-fhG#iJdm{V?>uuZ35G-Y)O5<UeN=5` (192-bit). Stored in `.env` files only, chmod 600. Never committed to git in any form.
-- **Why:** Old password `MiningGuardian2026!` had leaked across at least 29 source locations including `docs/SESSION_HANDOFF_2026-04-24.md`. Hard-rotation required.
+- **Why:** Old password `MiningGuardian2026!` had leaked across at least 29 source locations including `docs/SESSION_HANDOFF_2026-04-24.md` (now archived under `docs/archive/2026-04/`). Hard-rotation required.
 - **Implementation status (as of 2026-04-26):** 🔴 Pending — applies during CRIT-1 purge on Monday 2026-04-27.
 
 ---
@@ -47,7 +47,7 @@ This is the canonical log of decisions that are committed and not subject to re-
 - **Decided by:** Operator + agent
 - **Decision:**
   - 5a: `mg_import` HTML password input value attribute = `""` (empty). No pre-fill.
-  - 5b: `docs/SESSION_HANDOFF_2026-04-24.md` keeps the literal old password for historical accuracy AND adds a top-of-file note explaining it's been rotated and is non-functional.
+  - 5b: `docs/archive/2026-04/SESSION_HANDOFF_2026-04-24.md` (archived 2026-04-29) keeps the literal old password for historical accuracy AND has a top-of-file note explaining it's been rotated and is non-functional.
   - 5c: Run `grep` for the old password literal one more time at apply time to catch anything new that leaked between then and now.
 - **Why:** Avoids accidentally pre-filling a known string while preserving forensic value of the handoff doc.
 - **Implementation status (as of 2026-04-26):** 🔴 Pending CRIT-1.
