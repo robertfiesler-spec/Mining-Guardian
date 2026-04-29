@@ -317,6 +317,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | 7e | Sandbox test on fresh user account / macOS VM | 1 hour |
 | 7f | Update `DEPLOYMENT_CHECKLIST.md` | 30 min |
 | 7g | Add Grafana provisioning yaml (datasource + dashboards) | 1.5 hours |
+| 7h | ✅ DONE 2026-04-29 (PR — Bucket 6 final close-out) — `installer/macos-pkg/scripts/postinstall.sh` refreshed for the 9-service install matrix. Grew `PLIST_LABELS` from 4 → 9 (added slack-listener, slack-commands, overnight-automation, alerts, intelligence-report). Replaced `step_generate_launcher_wrappers` (4 inline cat-heredocs) with `step_install_launcher_wrappers` that copies the 8 canonical wrappers from `installer/macos-pkg/resources/launchd/launchers/` (PR #74) into `${MG_INSTALL_ROOT}/bin/`, then keeps the lone `feedback_loop_daemon_launcher.sh` heredoc for parity with PR #41 payload. Replaced the triple-explicit `install -m 0644 …` plist copies with a loop over `PLIST_LABELS` (8 from `resources/launchd/`, 9th from `payload/deploy/`). Added exit code 37 ("launcher wrapper or plist source missing in payload"). Receipt JSON gains `service_count` field. Verify on Mac sandbox: `sudo /var/log/mining-guardian/install-postinstall.log` shows 9 "INFO bootstrapped …" lines + 9 "INFO installed launcher: …" lines + `launchctl print system/com.miningguardian.scanner` (and the other 8 labels) returns mode=Running. | ✅ |
 
 **Total build day: ~10-11 hours, may bleed into Tuesday morning.**
 
