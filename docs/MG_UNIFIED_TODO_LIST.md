@@ -62,54 +62,80 @@
 
 These are the **gates** between today and a real customer install. Not all need to land before the Mac Mini personal cutover, but ALL need to land before this code ever runs on a paying customer's hardware.
 
-## 2.1. S-2 — Revoke leaked GitHub PAT 🔴 EMERGENCY
+> **2026-04-29 reality-check (this PR):** The bulk of §2 was already shipped earlier in code but the TODO had not been updated. As of this commit, S-1, S-2, S-3, S-4, S-6, and S-12 are all ✅ DONE. The remaining open items in the security buckets are S-5, S-7, S-8, S-9, S-10, S-11, S-13, S-14 (§3). Every "DONE" claim in this section now includes an inline `grep` you can run to verify the assertion at HEAD.
 
-- **Where:** `docs/SECURITY.md:80` — token `<REDACTED — revoked 2026-04-24, full literal scrubbed 2026-04-27>` is still committed in cleartext
-- **Action:** One-click revoke at https://github.com/settings/tokens, then commit `[REDACTED — token revoked YYYY-MM-DD]` over the literal
-- **Effort:** 2 minutes
-- **Why it's #1:** Anyone who reads the repo has the token. If the repo is ever public or leaked, it's already compromised. **Do this within the hour.**
+## 2.1. S-2 — Revoke leaked GitHub PAT ✅ DONE
 
-## 2.2. S-1 / CRIT-1 — Purge `MiningGuardian2026!` from 29 source locations 🟡 PARTIAL
+- **Action taken:** Token revoked at GitHub on 2026-04-24; the cleartext literal in `docs/SECURITY.md:80` was scrubbed 2026-04-27 and replaced with `[REDACTED — token revoked 2026-04-24]`.
+- **Verification:**
+  ```bash
+  grep -rn "ghp_\|github_pat_" --include="*.md" --include="*.py" --include="*.sh" .
+  # → zero matches
+  ```
 
-- **Where:** Currently still 29 hits in live `Mining-Guardian/` repo across:
-  - `intelligence-catalog/catalog-api/catalog_api.py:45`
-  - `intelligence-catalog/docker-compose.yml:34`
-  - `mg_import_tool/mg_import.py` (~24 sites)
-  - `scripts/migrate_to_postgres.py:29`
-  - HTML form `value=` attribute at `mg_import.py:5381`
-- **Action plan:** CRIT-1 manifest at `mg_pre_prod/manifests/CRIT-1_password_purge_manifest.md` — already specifies the surgical patch
-- **Decision locked:** New password is `tX-fhG#iJdm{V?>uuZ35G-Y)O5<UeN=5` (192 bits entropy). Goes into env files only. HTML form value becomes `""`.
-- **Effort:** 2-3 hours
-- **Blocks:** Mac Mini cutover (running with leaked password = bad day-1 customer story)
+## 2.2. S-1 / CRIT-1 — Purge `MiningGuardian2026!` from 29 source locations ✅ DONE
 
-## 2.3. S-3 — `mg_import` Flask app: no auth + binds to 0.0.0.0 🔴 OPEN
+**Reality check 2026-04-29 (during top-to-bottom execution):** This was already done in code, the TODO was stale. All four critical code sites read `MG_DB_PASSWORD` from the environment with crash-on-missing semantics. The HTML form `value=` attribute is empty. The remaining 9 hits in the repo are all doc-only historical context (DECISIONS.md, this file, ROADMAP, SESSION_HANDOFF_2026-04-24.md, manifests describing the original finding).
 
-- **Where:** `mg_import_tool/mg_import.py:6163, 6178`
-- **Risk:** Any LAN device can hit `POST /api/run-sql` and run `DROP DATABASE`
-- **Fix path (per CRIT-3 manifest):**
-  1. Default bind `127.0.0.1`, `--allow-host` flag for opt-in
-  2. Startup-generated session token written to local file, required in header
-  3. 8-hour session TTL (`MG_IMPORT_SESSION_TTL_SECONDS=28800`) — locked
-- **Effort:** 1-2 hours
-- **Blocks:** Anything that runs `mg_import` on the Mac Mini
+- **Code sites verified env-based:**
+  - `mg_import_tool/mg_import.py:57` — `os.environ.get("MG_DB_PASSWORD")` + crash-on-missing message
+  - `scripts/migrate_to_postgres.py:30` — env-based
+  - `intelligence-catalog/catalog-api/catalog_api.py:49` — env-based
+  - `intelligence-catalog/docker-compose.yml` — env-based via `${MG_DB_PASSWORD}`
+- **Decision locked (still authoritative):** New password is `tX-fhG#iJdm{V?>uuZ35G-Y)O5<UeN=5` (192 bits entropy). Goes into env files only. HTML form value is `""`.
+- **Verification:**
+  ```bash
+  # zero hits in code (only doc-only historical references):
+  grep -rn "MiningGuardian2026!" --include="*.py" --include="*.yml" \
+    --include="*.yaml" --include="*.sh" --include="*.sql"
+  # → no matches
 
-## 2.4. S-4 — Postgres credentials passed in HTTP GET query strings 🔴 OPEN
+  # env-based reads in place:
+  grep -n "MG_DB_PASSWORD" mg_import_tool/mg_import.py | head
+  ```
 
-- **Where:** `mg_import_tool/mg_import.py:3618-3619, 3922-3923, 4285-4286, 4328-4329`
-- **Risk:** Password lands in every web log, browser history, proxy cache
-- **Fix:** Drop all `request.args.get('password', ...)` calls. Use `DB_PASSWORD` env var only.
-- **Effort:** 30 minutes
-- **Note:** Folds into CRIT-1 cleanup naturally
+## 2.3. S-3 / CRIT-3 — `mg_import` Flask app: no auth + binds to 0.0.0.0 ✅ DONE
 
-## 2.5. S-6 — Catalog API default key is publicly known string 🔴 OPEN
+**Reality check 2026-04-29:** Already shipped in `mg_import_tool/mg_import.py`. Default bind is `127.0.0.1`, session token + `@require_login` decorator are applied to every privileged route, and 8-hour session TTL is enforced via `MG_IMPORT_SESSION_TTL_SECONDS=28800` (locked).
 
-- **Where:** `intelligence-catalog/catalog-api/catalog_api.py:46`, `ai/catalog_context.py:29`
-- **Symptom:** `os.getenv("CATALOG_API_KEY", "CHANGE_ME_TO_A_REAL_SECRET")` silently authenticates if env var unset
-- **Fix path (per CRIT-6 manifest):**
-  1. Crash-on-startup if key is missing or default
-  2. `setup.sh` generates unique token via `openssl rand -hex 32`, writes to `.env`
-  3. Use `hmac.compare_digest()` (also closes S-12)
-- **Effort:** 30 minutes
+- **Verified in code:**
+  - `mg_import.py:6553-6580` — CRIT-3 default-loopback comment, bind reads `MG_IMPORT_BIND` (default `127.0.0.1`), with explicit `0.0.0.0` warning when overridden
+  - `mg_import.py:145-154` — TTL parsed from `MG_IMPORT_SESSION_TTL_SECONDS` (default 28800), validated ≥60s
+  - `mg_import.py:189` — `require_login` decorator definition
+  - `mg_import.py:254` — `hmac.compare_digest` for session-token comparison (defeats timing oracles)
+  - `mg_import_tool/tests/test_crit3_auth.py` — coverage exists
+- **Verification:**
+  ```bash
+  grep -n "require_login\|MG_IMPORT_SESSION_TTL\|MG_IMPORT_BIND" mg_import_tool/mg_import.py | head -20
+  grep -c "@require_login" mg_import_tool/mg_import.py
+  # → many; every privileged route is gated
+  ```
+
+## 2.4. S-4 — Postgres credentials passed in HTTP GET query strings ✅ DONE
+
+**Fixed 2026-04-29 in PR #62 (`fix/s4-drop-password-querystring-2026-04-29`).** All four sites in `mg_import_tool/mg_import.py` (`_get_conn_params_from_args`, `unresolved_sample`, `browse_tables`, `browse_rows`) had their `request.args.get('password')` fallback removed. Password now comes only from `MG_DB_PASSWORD` via `_db_password()` (which already crashes on missing env, courtesy CRIT-1).
+
+- **The other four querystring overrides** (`host`, `port`, `database`, `user`) are intentionally **not** changed in PR #62 — narrower blast radius, `@require_login` already gates these routes. Tracked separately under Bucket 2 hardening.
+- **Verification:**
+  ```bash
+  grep -n "request.args.get('password')" mg_import_tool/mg_import.py
+  # → zero matches
+  ```
+
+## 2.5. S-6 / CRIT-6 — Catalog API default key is publicly known string ✅ DONE
+
+**Reality check 2026-04-29:** Already shipped. The catalog-api now refuses to start when the API key is missing, empty, or set to the literal `CHANGE_ME_TO_A_REAL_SECRET`, and uses `hmac.compare_digest` for token comparison (also closes S-12).
+
+- **Verified in code:**
+  - `intelligence-catalog/catalog-api/catalog_api.py:56-72` — startup rejects None / `""` / `CHANGE_ME_TO_A_REAL_SECRET`, length ≥ 32 enforced
+  - `intelligence-catalog/catalog-api/catalog_api.py:148-158` — auth uses `hmac.compare_digest(submitted, API_KEY)` (constant-time)
+  - `intelligence-catalog/catalog-api/test_crit6_hardening.py` — coverage exists, including a source-level assert that `hmac.compare_digest` appears
+- **Still TODO inside Bucket 6 (installer rebuild):** `setup.sh` should generate the token via `openssl rand -hex 32` and write it to `.env`. Tracked there.
+- **Verification:**
+  ```bash
+  grep -n "CHANGE_ME_TO_A_REAL_SECRET\|hmac.compare_digest" \
+    intelligence-catalog/catalog-api/catalog_api.py
+  ```
 
 ---
 
@@ -136,8 +162,8 @@ Strip `error: str(exc)` from response, keep only `error: "Internal server error"
 ## 3.6. S-11 — Path traversal in `/reports/{filename}` 🔴 OPEN
 Add resolved-path containment check against `reports_dir`. Block null-byte and `..` patterns. **20 min.**
 
-## 3.7. S-12 — Token comparison uses `!=` (timing attack) 🔴 OPEN
-Replace `parts[1] != API_KEY` with `not hmac.compare_digest(parts[1], API_KEY)`. **5 min.** (Closes alongside S-6.)
+## 3.7. S-12 — Token comparison uses `!=` (timing attack) ✅ DONE
+Closed alongside S-6 (see §2.5). `intelligence-catalog/catalog-api/catalog_api.py:148-158` uses `hmac.compare_digest(submitted, API_KEY)`. Verified 2026-04-29.
 
 ## 3.8. S-13 — Hardcoded Tailscale IPs (100.110.87.1) as fallback 🟡 PARTIAL
 - 12 hits remain in code (down from earlier — partially addressed)
