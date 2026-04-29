@@ -3377,17 +3377,58 @@ def mobile_dashboard():
 
 @app.get("/reports/{filename}")
 async def get_report(filename: str):
-    """Download a generated PDF report."""
+    """Download a generated PDF report.
+
+    S-11 hardening (2026-04-29): the previous version trusted the filename
+    path component as-is, so a request to `/reports/..%2F..%2Fetc%2Fpasswd`
+    would resolve to a file outside `reports/` and (because FastAPI returns
+    FileResponse for any readable file) leak it. The fix:
+
+      1. Reject filenames containing path separators or NUL bytes outright.
+      2. Reject anything that is not a bare `<name>.pdf` (no `..`, no `/`).
+      3. After resolving, assert the resolved path is contained within the
+         resolved reports directory. (Belt-and-suspenders against symlinks
+         placed inside `reports/`.)
+
+    Anything that fails the checks gets the same generic `404 Report not
+    found` response — no information leakage about whether the file exists
+    elsewhere on disk.
+    """
     from pathlib import Path
-    reports_dir = Path(__file__).parent.parent / "reports"
-    file_path = reports_dir / filename
-    
-    if not file_path.exists() or not file_path.suffix == ".pdf":
-        return {"error": "Report not found"}
-    
+    from fastapi import HTTPException
+
+    reports_dir = (Path(__file__).parent.parent / "reports").resolve()
+
+    # 1. Cheap structural rejection. Catches `..`, absolute paths, NUL
+    #    bytes, embedded slashes, backslashes, and anything that isn't a
+    #    plain `<stem>.pdf`. We deliberately do NOT echo the filename back
+    #    in the error — keeps the response opaque.
+    if (
+        not filename
+        or "\x00" in filename
+        or "/" in filename
+        or "\\" in filename
+        or filename.startswith(".")
+        or not filename.lower().endswith(".pdf")
+    ):
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    candidate = (reports_dir / filename).resolve()
+
+    # 2. Containment check. After resolution, the candidate must live
+    #    inside reports_dir. Path.is_relative_to is 3.9+, which we already
+    #    require elsewhere.
+    try:
+        candidate.relative_to(reports_dir)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    if not candidate.is_file() or candidate.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=404, detail="Report not found")
+
     return FileResponse(
-        path=str(file_path),
-        filename=filename,
+        path=str(candidate),
+        filename=candidate.name,
         media_type="application/pdf"
     )
 
