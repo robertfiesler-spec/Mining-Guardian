@@ -3988,13 +3988,21 @@ nav a{margin-right:1.5rem;}
 # ---------------------------------------------------------------------------
 
 def _get_conn_params_from_args():
-    """Extract DB connection params from query args or use defaults."""
+    """Extract DB connection params from query args or use defaults.
+
+    S-4 (CRIT-1 follow-up, 2026-04-29): the password is *always* read from
+    the MG_DB_PASSWORD env var via _db_password(). It must never be accepted
+    via request.args because (a) it would land in every web log, browser
+    history entry, and proxy cache the request touched, and (b) the
+    Postgres-as-truth invariant means the only legitimate password is the
+    one the process started with.
+    """
     return {
         'host':     request.args.get('host', 'localhost'),
         'port':     request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user':     request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password') or _db_password(),
+        'password': _db_password(),
     }
 
 
@@ -4302,12 +4310,13 @@ def unresolved_sample():
         limit = min(int(request.args.get('limit', 50)), 500)
     except (ValueError, TypeError):
         limit = 50
+    # S-4: password is env-only; never accepted from request.args.
     conn_params = {
         'host':     request.args.get('host', 'localhost'),
         'port':     request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user':     request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password') or _db_password(),
+        'password': _db_password(),
     }
     try:
         conn = psycopg2.connect(
@@ -4667,12 +4676,13 @@ def browse_tables():
     """Return list of tables in the knowledge schema with row counts."""
     if not PSYCOPG2_AVAILABLE:
         return jsonify({'success': False, 'error': 'psycopg2 not installed', 'tables': []})
+    # S-4: password is env-only; never accepted from request.args.
     conn_params = {
         'host': request.args.get('host', 'localhost'),
         'port': request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user': request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password') or _db_password()
+        'password': _db_password()
     }
     try:
         conn = psycopg2.connect(
@@ -4711,12 +4721,13 @@ def browse_rows():
     if not re.match(r'^[a-zA-Z0-9_]+$', table_name):
         return jsonify({'success': False, 'error': 'Invalid table name', 'rows': [], 'columns': []})
 
+    # S-4: password is env-only; never accepted from request.args.
     conn_params = {
         'host': request.args.get('host', 'localhost'),
         'port': request.args.get('port', '5432'),
         'database': request.args.get('database', 'mining_guardian'),
         'user': request.args.get('user', 'guardian_admin'),
-        'password': request.args.get('password') or _db_password()
+        'password': _db_password()
     }
     try:
         conn = psycopg2.connect(
