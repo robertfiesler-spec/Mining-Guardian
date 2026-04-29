@@ -328,8 +328,8 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 
 | Item | Source | Action |
 |---|---|---|
-| `chip_readings` table — 0 reads, 0 writes | H1 | 🔴 Drop OR wire to AMS per-chip extraction. Recommend drop. |
-| `log_collection_failures` table — 0 reads, 0 writes | H3 | 🔴 Drop OR wire. Recommend drop. |
+| `chip_readings` table — 0 reads, 0 writes | H1 | ✅ DONE 2026-04-29 (PR — Bucket 7.2) — dropped via `migrations/004_drop_dead_stubs.sql` (`DROP INDEX IF EXISTS idx_chip_miner; DROP TABLE IF EXISTS chip_readings;`). CREATE block removed from `migrations/001_initial_schema.sql` (replaced with comment pointer). VPS Postgres confirmed 0 rows pre-drop on 2026-04-29; no FK dependents, no views, no live writers in non-archive code. SQLite-era references in `core/database.py` + `core/database_router.py` intentionally left for the SQLite-retirement bucket. Authority + verify-after-merge: `docs/RUNBOOK_BUCKET_7.2_DROP_DEAD_STUBS.md`. |
+| `log_collection_failures` table — 0 reads, 0 writes | H3 | ✅ DONE 2026-04-29 (PR — Bucket 7.2) — dropped via the same migration `004_drop_dead_stubs.sql` (`DROP INDEX IF EXISTS idx_log_failures_miner, idx_log_failures_date; DROP TABLE IF EXISTS log_collection_failures;`). CREATE block removed from `migrations/001_initial_schema.sql`. VPS Postgres confirmed 0 rows pre-drop; failure events are surfaced through `discovery_log` + Slack notifier path instead. |
 | `s19jpro_overheat_tracking` — model-specific hack | N2 | 🔴 Promote to generic `model_overheat_tracking` OR fold into `ops.failure_patterns` |
 | `guardian.db` (0 bytes) | observed | 🔴 Delete the empty SQLite stub at repo root |
 | `databases/*.db` — empty stubs | observed | 🔴 Delete (or move to `archive/sqlite_stubs/`) |

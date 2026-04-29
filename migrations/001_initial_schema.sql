@@ -251,21 +251,10 @@ CREATE TABLE IF NOT EXISTS pool_readings (
 
 CREATE INDEX IF NOT EXISTS idx_pool_miner ON pool_readings(miner_id, scanned_at);
 
-CREATE TABLE IF NOT EXISTS chip_readings (
-    id          SERIAL PRIMARY KEY,
-    scan_id     INTEGER NOT NULL REFERENCES scans(id),
-    scanned_at  TIMESTAMP WITH TIME ZONE NOT NULL,
-    miner_id    TEXT NOT NULL,
-    ip          TEXT,
-    board_index INTEGER NOT NULL,
-    chip_index  INTEGER NOT NULL,
-    freq_mhz    REAL,
-    voltage_mv  REAL,
-    temp_c      REAL,
-    source      TEXT DEFAULT 'direct_api'
-);
-
-CREATE INDEX IF NOT EXISTS idx_chip_miner ON chip_readings(miner_id, scanned_at);
+-- NOTE: chip_readings table removed in Bucket 7.2 (2026-04-29).
+-- Was a planned-but-never-shipped per-chip extraction path. Audit
+-- finding H1 (0 reads / 0 writes). See migrations/004_drop_dead_stubs.sql
+-- for the forward-migration drop on already-deployed nodes.
 
 CREATE TABLE IF NOT EXISTS miner_state_readings (
     id               SERIAL PRIMARY KEY,
@@ -386,20 +375,11 @@ CREATE TABLE IF NOT EXISTS alert_listener_cooldown (
 -- TRACKING TABLES
 -- ============================================
 
-CREATE TABLE IF NOT EXISTS log_collection_failures (
-    id                    SERIAL PRIMARY KEY,
-    miner_id              TEXT NOT NULL,
-    ip                    TEXT,
-    model                 TEXT,
-    failure_date          DATE NOT NULL,
-    failure_reason        TEXT,
-    consecutive_failures  INTEGER DEFAULT 1,
-    last_successful_log   TEXT,
-    created_at            TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_log_failures_miner ON log_collection_failures(miner_id);
-CREATE INDEX IF NOT EXISTS idx_log_failures_date ON log_collection_failures(failure_date);
+-- NOTE: log_collection_failures table removed in Bucket 7.2 (2026-04-29).
+-- Was a planned-but-never-shipped log-pull failure tracker. Audit
+-- finding H3 (0 reads / 0 writes). Failures are surfaced through
+-- discovery_log + Slack notifier path instead. See
+-- migrations/004_drop_dead_stubs.sql for the forward-migration drop.
 
 CREATE TABLE IF NOT EXISTS s19jpro_overheat_tracking (
     id                   SERIAL PRIMARY KEY,
