@@ -6,6 +6,7 @@
 #
 # ============================================================================
 # Bucket 6 final close-out (2026-04-29) — 9-service refresh
+# Bucket 7.5 follow-up (2026-04-29) — fix feedback_loop_daemon launcher path
 # ----------------------------------------------------------------------------
 # This file was originally PR #45 (4 services). Bucket 6 grew the install
 # matrix to 9 services to match what the Mac-Mini production node actually
@@ -24,11 +25,15 @@
 #   plist from deploy/                                         (1 plist)
 #       com.miningguardian.feedback-loop-daemon  (PR #41)
 #
-# Launcher wrappers (8) are sourced verbatim from
-# installer/macos-pkg/resources/launchd/launchers/*.sh — written by Bucket 6a
-# (PR #74). The 9th wrapper (feedback_loop_daemon_launcher.sh) ships with the
-# feedback-loop-daemon plist's payload from PR #41 and is generated inline at
-# the bottom of step_install_launcher_wrappers (single remaining heredoc).
+# Launcher wrappers (9) are ALL sourced from canonical files in git — zero
+# inline heredocs:
+#   8 wrappers from installer/macos-pkg/resources/launchd/launchers/*.sh
+#     (written by PR #74 / Bucket 6a)
+#   1 wrapper from deploy/feedback_loop_daemon_launcher.sh
+#     (canonical D-14 PR 4b; invokes daemon by file path to dodge the
+#      hyphenated-package import issue — the daemon lives at
+#      intelligence-catalog/db/feedback_loop_daemon.py and `python -m`
+#      cannot import a package whose top-level dir contains a hyphen).
 # ============================================================================
 #
 # Job: bring the freshly-laid-down Mining Guardian install up to a
@@ -272,13 +277,22 @@ step_install_ollama_and_pull_model() {
 }
 
 step_install_launcher_wrappers() {
-    # Bucket 6 refresh: 8 wrappers ship verbatim from the .pkg payload
-    # (the canonical copies that live in
-    # installer/macos-pkg/resources/launchd/launchers/ in git, written
-    # by PR #74 / Bucket 6a). The 9th — feedback_loop_daemon_launcher.sh
-    # — is generated inline below for parity (the feedback-loop-daemon
-    # plist + payload originally landed in PR #41 before the 8-wrapper
-    # convention existed).
+    # Bucket 6 refresh: all 9 wrappers ship verbatim from the .pkg
+    # payload as canonical files in git — NO inline heredocs:
+    #
+    #   8 wrappers from installer/macos-pkg/resources/launchd/launchers/
+    #     (PR #74 / Bucket 6a)
+    #   1 wrapper from deploy/feedback_loop_daemon_launcher.sh
+    #     (PR #41, the canonical D-14 PR 4b launcher).
+    #
+    # The deploy/ launcher is the correct one because it invokes the
+    # daemon by file path
+    # (/usr/local/MiningGuardian/intelligence-catalog/db/feedback_loop_daemon.py),
+    # which sidesteps the directory-with-hyphen Python import problem.
+    # An earlier draft of this function used an inline heredoc that ran
+    # `python -m intelligence.feedback_loop_daemon` — that module path
+    # never existed (the file lives at intelligence-catalog/db/, not
+    # intelligence/). Bucket 7.5 corrects that by pulling from deploy/.
     local bin="${MG_INSTALL_ROOT}/bin"
     install -d -m 0755 "$bin"
 
@@ -297,19 +311,16 @@ step_install_launcher_wrappers() {
         log "INFO installed launcher: ${f}"
     done
 
-    # 9th wrapper — feedback_loop_daemon. Inline heredoc preserves the
-    # exact PR #41 contents; promotes to resources/launchd/launchers/
-    # in a future cleanup pass (Bucket 10 territory).
-    cat > "${bin}/feedback_loop_daemon_launcher.sh" <<'EOF'
-#!/bin/bash
-set -euo pipefail
-cd /usr/local/MiningGuardian
-[[ -r .env ]] && set -a && . ./.env && set +a
-exec /usr/local/MiningGuardian/venv/bin/python -m intelligence.feedback_loop_daemon
-EOF
-    chmod 0755 "${bin}/feedback_loop_daemon_launcher.sh"
-    chown "${SUDO_USER:-${USER}}:staff" "${bin}/feedback_loop_daemon_launcher.sh"
-    log "INFO installed launcher: feedback_loop_daemon_launcher.sh (inline)"
+    # 9th wrapper — feedback_loop_daemon, copied from the deploy/ tree
+    # (canonical D-14 PR 4b launcher; uses file path to dodge the
+    # hyphenated-package import issue).
+    local fbd_src="${MG_PKG_PAYLOAD}/deploy/feedback_loop_daemon_launcher.sh"
+    local fbd_dst="${bin}/feedback_loop_daemon_launcher.sh"
+    if [[ ! -r "$fbd_src" ]]; then
+        fail 37 "feedback_loop_daemon launcher missing in payload: ${fbd_src}"
+    fi
+    install -m 0755 -o "${SUDO_USER:-${USER}}" -g staff "$fbd_src" "$fbd_dst"
+    log "INFO installed launcher: feedback_loop_daemon_launcher.sh (from deploy/)"
 
     chown -R "${SUDO_USER:-${USER}}:staff" "$bin"
     log "INFO installed 9 launcher wrappers in ${bin}"
