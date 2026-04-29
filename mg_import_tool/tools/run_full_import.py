@@ -56,6 +56,10 @@ Exit codes
     0  — every archive processed without error
     1  — at least one archive failed; check the log
     2  — fatal pre-flight failure (no archives found, DB unreachable)
+    3  — every archive processed but the B-4 raw_json invariant was
+         violated (raw_json_count < imports_count * --raw-json-min-ratio).
+         Indicates a regression of the silent-swallow bug; see
+         `docs/LATENT_BUGS.md` B-4.
 """
 from __future__ import annotations
 
@@ -248,6 +252,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                    help='Skip archives already present in field_log_imports.')
     p.add_argument('--no-layer2', action='store_true',
                    help='Disable Layer 2 post-processing.')
+    p.add_argument('--raw-json-min-ratio', type=float, default=0.95,
+                   help='B-4 invariant: assert raw_json_count >= imports_count * RATIO '
+                        'after every non-dry-run import. Default 0.95. Set to 0 to '
+                        'disable, or use --no-raw-json-check.')
+    p.add_argument('--no-raw-json-check', action='store_true',
+                   help='Skip the B-4 raw_json invariant check entirely. Equivalent '
+                        'to --raw-json-min-ratio 0. Use only if you know what you '
+                        'are doing.')
     return p
 
 
@@ -278,6 +290,78 @@ def _discover_archives(archives_dir: Path,
     if limit is not None and limit > 0:
         found = found[:limit]
     return found
+
+
+def _raw_json_invariant_check(conn_params: dict,
+                              min_ratio: float,
+                              log: logging.Logger) -> tuple[bool, int, int]:
+    """B-4 runtime invariant: raw_json_count >= imports_count * min_ratio.
+
+    Background
+    ----------
+    The 2026-04-27 live import surfaced B-4 (`docs/LATENT_BUGS.md`):
+    `mg_import.insert_raw_json` was silently swallowing every per-archive
+    failure with `except Exception: pass`, so the import driver reported
+    "all archives processed" while the raw-JSON table was starved
+    (3 raw-JSON rows for 127 successful imports). The swallow was fixed
+    on 2026-04-28 in the canonical writer rewrite (B-4 status: Fixed),
+    but the *invariant assertion* — the cheap end-of-run sanity check
+    that catches a future regression of the same shape — was deferred.
+    This is that assertion.
+
+    Behaviour
+    ---------
+    Reads the current row counts from `knowledge.field_log_imports` and
+    `knowledge.field_log_raw_json` and returns ``(ok, imports_count,
+    raw_json_count)``. ``ok`` is False when ``raw_json_count <
+    imports_count * min_ratio`` AND ``imports_count > 0``. With
+    ``imports_count == 0`` (e.g. dry-run, fresh DB) the check is a no-op
+    and returns ``(True, 0, 0)``.
+
+    The check is read-only — it never modifies the DB. On any DB error
+    it logs a warning, returns ``(True, -1, -1)``, and lets the import
+    succeed; this matches the existing failure-tolerant pattern used by
+    `_load_existing_filenames` (a missing table or unreachable DB should
+    not flip a successful import into a failure on its own).
+    """
+    import psycopg2  # type: ignore
+    pg_kwargs = {
+        'host':     conn_params.get('host', 'localhost'),
+        'port':     int(conn_params.get('port', 5432)),
+        'dbname':   conn_params.get('database', 'mining_guardian'),
+        'user':     conn_params.get('user', 'guardian_admin'),
+        'password': conn_params.get('password'),
+        'connect_timeout': 5,
+    }
+    try:
+        with psycopg2.connect(**pg_kwargs) as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT count(*) FROM knowledge.field_log_imports')
+                imports_count = int(cur.fetchone()[0] or 0)
+                cur.execute('SELECT count(*) FROM knowledge.field_log_raw_json')
+                raw_json_count = int(cur.fetchone()[0] or 0)
+    except Exception as exc:
+        log.warning('B-4 invariant check skipped — DB unreadable: %s', exc)
+        return (True, -1, -1)
+
+    if imports_count == 0:
+        log.info('B-4 invariant check: imports_count=0 — skipping (no-op).')
+        return (True, 0, 0)
+
+    threshold = imports_count * min_ratio
+    ok = raw_json_count >= threshold
+    if ok:
+        log.info('B-4 invariant OK: raw_json=%d >= imports=%d * %.2f (=%.1f)',
+                 raw_json_count, imports_count, min_ratio, threshold)
+    else:
+        log.error(
+            'B-4 INVARIANT VIOLATION: raw_json=%d < imports=%d * %.2f (=%.1f). '
+            'This usually means insert_raw_json() is silently swallowing errors '
+            'again — see docs/LATENT_BUGS.md B-4. Re-run with verbose logging on '
+            'the importer and check ERROR-level lines.',
+            raw_json_count, imports_count, min_ratio, threshold,
+        )
+    return (ok, imports_count, raw_json_count)
 
 
 def _load_existing_filenames(conn_params: dict) -> set[str]:
@@ -461,6 +545,19 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:
             log.warning('write_import_run failed: %s', exc)
 
+    # ── B-4 raw_json invariant check ───────────────────────────────────────
+    # Catches a regression of the silent-swallow bug (`docs/LATENT_BUGS.md` B-4).
+    invariant_ok = True
+    if not args.dry_run and not args.no_raw_json_check and args.raw_json_min_ratio > 0:
+        invariant_ok, _imp_count, _raw_count = _raw_json_invariant_check(
+            conn_params, args.raw_json_min_ratio, log
+        )
+    elif args.dry_run:
+        log.info('B-4 invariant check skipped (dry-run).')
+    elif args.no_raw_json_check or args.raw_json_min_ratio == 0:
+        log.warning('B-4 invariant check disabled by flag — silent-swallow regressions '
+                    'will not be caught at end of run.')
+
     elapsed_total = time.monotonic() - t0
     log.info('=' * 70)
     log.info('FULL IMPORT COMPLETE in %.1fs', elapsed_total)
@@ -469,9 +566,15 @@ def main(argv: list[str] | None = None) -> int:
     log.info('  Failed    : %d', files_failed)
     log.info('  Statements: %d', total_statements)
     log.info('  Rows      : %d', total_rows)
+    log.info('  B-4 inv\'t: %s', 'OK' if invariant_ok else 'VIOLATED')
     log.info('=' * 70)
 
-    return 0 if files_failed == 0 else 1
+    if files_failed > 0:
+        return 1
+    if not invariant_ok:
+        # Exit code 3 to distinguish invariant-violation from per-archive failure.
+        return 3
+    return 0
 
 
 if __name__ == '__main__':

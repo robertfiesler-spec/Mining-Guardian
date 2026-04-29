@@ -114,7 +114,17 @@ resolve the runtime divergence.
 
 **Backfill of 124 rows missing from the 2026-04-27 import:** out of scope for this PR. Tracked as a Bucket-1 follow-up — needs the on-disk archives and a one-shot script that walks them through the new canonical writer.
 
-**Runtime invariant assertion** (`raw_json_count >= imports_count * 0.95` at end of `run_full_import.py`): out of scope for this PR. Tracked as a Bucket-1 follow-up.
+**Runtime invariant assertion** (`raw_json_count >= imports_count * 0.95` at end of `run_full_import.py`): ✅ **Done 2026-04-29** in PR #71 (Bucket 5). The driver now ends every non-dry-run import with a read-only count check that compares `knowledge.field_log_raw_json` against `knowledge.field_log_imports` and exits with code 3 (distinct from the existing code 1 = per-archive failure) if `raw_json_count < imports_count * --raw-json-min-ratio` (default 0.95). Configurable via `--raw-json-min-ratio` and `--no-raw-json-check`. The check is read-only and tolerant of a missing/unreachable DB — a transient error logs a warning and lets the import succeed, matching the existing pattern in `_load_existing_filenames`. See `_raw_json_invariant_check()` in `mg_import_tool/tools/run_full_import.py`.
+
+**Verification (re-run any time):**
+
+```bash
+# The invariant check function is present in the driver:
+grep -n '_raw_json_invariant_check\|raw_json_min_ratio\|B-4 invariant\|B-4 INVARIANT VIOLATION' \
+  mg_import_tool/tools/run_full_import.py
+# Should return: function definition (~line 291), CLI flags (~250-260), exit-code branch (~570),
+#                summary line (~565), and the OK/VIOLATION log lines (~350-359).
+```
 **Discovered:** 2026-04-27 (PR #25 addendum #3)
 **Location:** `mg_import_tool/mg_import.py` — `insert_raw_json()` function
 
