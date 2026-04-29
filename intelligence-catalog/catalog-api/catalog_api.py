@@ -670,7 +670,41 @@ def _build_cache_key(request: ScanBundleRequest) -> str:
 @app.get("/api/v1/health")
 @limiter.limit(RATE_LIMIT_HEALTH)
 async def health(request: Request):
-    """Health check — verifies service status and DB connectivity."""
+    """Public health check — minimal information for unauthenticated callers.
+
+    S-5 hardening (2026-04-29): the previous version of this endpoint returned
+    `total_tables` and a per-schema row-count breakdown. That leaked the
+    catalog's schema layout to anyone who could reach the port (which, with
+    S-3 fixed, is loopback-by-default — but defense in depth still matters).
+    The verbose payload is now only available on `/api/v1/health/detail`,
+    which requires a valid bearer token. The unauthenticated `/health` keeps
+    a tiny, opaque payload suitable for load-balancer / liveness probes.
+    """
+    db_ok = False
+    try:
+        rows = _query("SELECT 1 AS ok")
+        if rows:
+            db_ok = True
+    except Exception as exc:
+        logger.error("Health check DB query failed: %s", exc)
+
+    return {
+        "status": "healthy" if db_ok else "degraded",
+        "database": "connected" if db_ok else "disconnected",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/v1/health/detail")
+@limiter.limit(RATE_LIMIT_HEALTH)
+async def health_detail(request: Request, _auth: None = Depends(verify_token)):
+    """Authenticated, verbose health — returns table counts per schema.
+
+    Same payload the old unauthenticated `/health` used to return. Useful for
+    operators and dashboards that need to confirm the seed-data load worked.
+    Requires the catalog API key (same Bearer token as scan-bundle / model
+    lookup).
+    """
     db_ok = False
     db_tables = 0
     schema_rows = []
@@ -688,7 +722,7 @@ async def health(request: Request):
             db_ok = True
             db_tables = rows[0].get("cnt", 0)
     except Exception as exc:
-        logger.error("Health check DB query failed: %s", exc)
+        logger.error("Health-detail DB query failed: %s", exc)
 
     schema_breakdown = {r["table_schema"]: r["cnt"] for r in schema_rows}
     return {
@@ -895,11 +929,20 @@ async def get_miner_knowledge(
 # ---------------------------------------------------------------------------
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Catch-all error handler — never crash, always return useful error."""
+    """Catch-all error handler — never crash, never leak.
+
+    S-10 hardening (2026-04-29): the previous version returned `str(exc)` to
+    the client. That leaks internal exception messages (which often contain
+    SQL fragments, file paths, environment variable names, or stack-trace
+    hints — anything an attacker can use to map the system). The full
+    exception is still logged server-side at ERROR level with `exc_info=True`
+    so operators retain full debuggability; the client only sees a generic
+    failure message.
+    """
     logger.error("Unhandled exception: %s", exc, exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"error": str(exc), "code": "INTERNAL_ERROR", "detail": "An unexpected error occurred"},
+        content={"error": "Internal server error", "code": "INTERNAL_ERROR"},
     )
 
 
