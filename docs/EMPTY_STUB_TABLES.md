@@ -1,7 +1,9 @@
 # Empty Stub Tables in guardian.db
 
+> **Status (2026-04-29 sweep):** Historical record. This file documents stub-table decisions made on the **VPS-era `guardian.db` SQLite snapshot**. As of the 2026-04-30 cutover, Mining Guardian runs on the Mac Mini against PostgreSQL `mining_guardian`; SQLite is **not live**. The activation plans below described future SQLite work that will not happen — the equivalent PostgreSQL tables (`chip_readings_partitioned`, `miner_baselines`, `s19jpro_overheat_tracking`) are tracked separately in MG_UNIFIED_TODO_LIST.md. The body below is preserved for historical context.
+
 **Created:** April 13, 2026  
-**Purpose:** Document the 3 empty tables in the schema and their future activation plans.
+**Purpose (historical):** Document the 3 empty tables in the SQLite snapshot schema and their future activation plans (as understood pre-Mac-Mini cutover).
 
 ## Summary
 

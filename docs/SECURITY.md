@@ -1,23 +1,25 @@
 # Mining Guardian Security Documentation
 
-## Last Updated: April 21, 2026
+> **Status (2026-04-29 sweep):** Historical security record for the **VPS era**. The VPS is decommissioned for Mining Guardian as of 2026-04-30 (Bobby still uses it for his own facility). The bindings, Cloudflare tunnel routing, and rate-limit table below describe the VPS deployment — not the Mac Mini deployment. Mac-Mini-era security posture (loopback-only, local-network only, no Cloudflare tunnels for MG services) is documented in the post-install runbook and `docs/SECURITY_MAC_MINI.md` (to be authored post-cutover). Rate-limit values, secrets management policy, and CORS allowlist policy below are still useful as a baseline. Body preserved verbatim for historical record.
+
+## Last Updated: April 21, 2026 (VPS era)
 
 ---
 
-## Security Hardening Checklist
+## Security Hardening Checklist (VPS era — historical)
 
-### 1. Network Exposure
+### 1. Network Exposure (VPS era — historical)
 
 | Service | Port | Binding | Status |
 |---------|------|---------|--------|
-| Dashboard API | 8585 | 127.0.0.1 | ✅ Secure |
-| Approval API | 8686 | 127.0.0.1 | ✅ Secure |
-| Prometheus | 9090 | 127.0.0.1 | ✅ FIXED Apr 21 |
-| Grafana | 3000 | 127.0.0.1 | ✅ FIXED Apr 21 |
+| Dashboard API | 8585 | 127.0.0.1 | ✅ Secure (VPS) |
+| Approval API | 8686 | 127.0.0.1 | ✅ Secure (VPS) |
+| Prometheus | 9090 | 127.0.0.1 | ✅ FIXED Apr 21 (VPS) |
+| Grafana | 3000 | 127.0.0.1 | ✅ FIXED Apr 21 (VPS) |
 
-**Access Method:** All services accessible via Cloudflare tunnels only.
+**Access Method (VPS era):** All services were accessible via Cloudflare tunnels only. Mac Mini deployment does not use Cloudflare tunnels for MG services — local network access only.
 
-**Changes Made (Apr 21 2026):**
+**Changes Made (Apr 21 2026 — VPS):**
 - Prometheus: Changed `/etc/systemd/system/prometheus.service` from `--web.listen-address=0.0.0.0:9090` to `127.0.0.1:9090`
 - Grafana: Uncommented and set `http_addr = 127.0.0.1` in `/etc/grafana/grafana.ini`
 
@@ -73,7 +75,7 @@ allow_origins=[
 ]
 ```
 
-### 6. Known Issues / Resolved
+### 6. Known Issues / Resolved (VPS era)
 
 #### GitHub Secret Alert (Apr 5-21, 2026)
 - **Issue:** GitHub PAT committed in `git hub paswords.rtfd/TXT.rtf`

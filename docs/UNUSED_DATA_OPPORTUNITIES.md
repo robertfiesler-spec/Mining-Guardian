@@ -1,6 +1,8 @@
 # Unused Data Opportunities in guardian.db
 
-**Created:** April 13, 2026
+> **Status (2026-04-29 sweep):** Historical reference. This list catalogs unused datasets discovered on the **VPS-era `guardian.db` SQLite snapshot** as of April 13, 2026. SQLite is **not live** post-2026-04-30; equivalent datasets exist in PostgreSQL `mining_guardian` on the Mac Mini going forward. Row counts below reflect the historical SQLite snapshot, not current state.
+
+**Created:** April 13, 2026 (historical record — VPS era)
 
 ## High-Value Datasets (10 opportunities)
 
