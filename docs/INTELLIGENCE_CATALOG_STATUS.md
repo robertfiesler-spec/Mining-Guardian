@@ -1,20 +1,30 @@
 # Mining Intelligence Catalog Status
 
+> ## ⚠️ Status as of 2026-04-29 PM
+>
+> **Architecture superseded.** This document describes the April 13–16, 2026 status when the catalog was hosted on ROBS-PC (192.168.188.47) and the Intelligence Report API ran on the historical Hostinger VPS (srv1549463 / 187.124.247.182). Both are now superseded:
+> - The catalog Postgres lives on the **Mac Mini** (port 5432, user `guardian_app`, db `mining_guardian`, install date 2026-04-30).
+> - Grafana lives on the **Mac Mini** (localhost:3000, loopback-only).
+> - The VPS is **decommissioned for Mining Guardian** (Bobby still uses it for his own facility).
+> - The canonical schema is in `intelligence-catalog/seed-data/` (not `intelligence/` — that directory is deprecated). The legacy `intelligence/` directory is deprecated; see `intelligence/DEPRECATED.md` and `intelligence-catalog/seed-data/README.md`.
+>
+> The body below is preserved as a historical status snapshot from April 16, 2026.
+
 **Created:** April 13, 2026
-**Last Updated:** April 16, 2026
-**Phase 1 Target:** ROBS-PC (192.168.188.47) — LIVE
-**Phase 2 Target:** UGREEN NAS (July 2026)
+**Last Updated:** April 16, 2026 (body); banner updated 2026-04-29 PM
+**Phase 1 Target (historical):** ROBS-PC (192.168.188.47) — superseded by Mac Mini
+**Phase 2 Target:** Mac Mini (2026-04-30, locked) — then UGREEN NAS (July 2026)
 
-## Current Status: OPERATIONAL
+## Current Status (historical — as of April 16, 2026): OPERATIONAL on ROBS-PC
 
-PostgreSQL 16 is live on ROBS-PC with the full Intelligence Catalog:
+PostgreSQL 16 was live on ROBS-PC with the full Intelligence Catalog:
 - **165 tables** across 10 schemas (knowledge, hardware, firmware, ops, market, repair, pool, facility, regulatory, seed)
 - **1,712+ columns**, **320+ indexes**, **115+ triggers**
 - **226 Bitcoin SHA-256 miner models** indexed (slug-deduplicated from 235 raw entries)
 - **Auto-discovery system**: 4 tables ensure no data point is ever lost
-- **Grafana datasource connected** — PostgreSQL on ROBS-PC:5432
+- **Grafana datasource connected** — PostgreSQL on ROBS-PC:5432 (historical; now Mac Mini)
 
-## Intelligence Report API — v2.1.0 (Live on VPS)
+## Intelligence Report API — v2.1.0 (historical — was on VPS, now decommissioned for MG)
 
 A REST API serving searchable miner intelligence reports to Grafana. Major rewrite from v1.0 (542 lines) to v2.0 (1,352+ lines) to v2.1 (live data + correction rules).
 
@@ -26,7 +36,7 @@ A REST API serving searchable miner intelligence reports to Grafana. Major rewri
 - **Correction rules engine:** `intelligence-catalog/data/correction_rules.json` — pattern-matching rules applied at startup to fix known data issues (regex, contains, endswith matching)
 - **9 report sections:** Header/Overview, Key Specifications, Variants & Revisions, Known Issues & Failure Patterns, Firmware & Software, Repair & Maintenance, Profitability Analysis (live BTC), Cooling & Environment, Fleet Intelligence
 - **Grafana dashboard:** `intelligence_report_001` — searchable text input + dropdown, full HTML report rendering
-- **Status:** DEPLOYED and RUNNING on VPS
+- **Status:** DEPLOYED and RUNNING on VPS (historical — VPS decommissioned for MG as of 2026-04-30 Mac Mini install)
 
 ### Correction Rules (v2.1)
 
@@ -60,7 +70,7 @@ See `docs/INTELLIGENCE_REPORT_API.md` for full endpoint documentation.
 
 ## Next Steps
 
-- [x] Deploy Intelligence Report API on VPS (port 8590) — DONE (v2.1.0, April 16)
+- [x] Deploy Intelligence Report API on VPS (port 8590) — DONE (v2.1.0, April 16) (historical — VPS decommissioned for MG)
 - [x] Live BTC price + network difficulty in profitability section — DONE (v2.1.0)
 - [x] Correction rules engine for known data issues — DONE (v2.1.0)
 - [ ] Weekend database knowledge review — Bobby will review and correct model data during flights
@@ -72,11 +82,14 @@ See `docs/INTELLIGENCE_REPORT_API.md` for full endpoint documentation.
 
 ## Architecture Vision
 
+> **2026-04-29 PM update:** The vision below was written for the ROBS-PC-as-master era. The current locked architecture has the catalog on the Mac Mini (not ROBS-PC as master). The Mac Mini is not a "READ copy" — it IS the operational DB. Future multi-site architecture (multiple Mac Minis, NAS backup) is on the roadmap.
+
 The Intelligence Catalog is a living, learning system:
-- ROBS-PC = MASTER golden copy
-- Customer Mac minis get READ copies updated monthly
-- All customers get full catalog access (all miner models, not just their fleet)
-- 1 Mac mini per 1-2 containers, max ~500 miners
+- **Mac Mini** = operational DB host (2026-04-30 install, port 5432, user `guardian_app`, db `mining_guardian`)
+- Customer Mac Minis get full catalog access (all miner models, not just their fleet)
+- 1 Mac Mini per 1-2 containers, max ~500 miners
 - NAS migration July 2026, cloud backup on top
+
+*(Historical note: ROBS-PC was the Phase 1 master — that architecture was evaluated and superseded by Mac Mini.)*
 
 See `intelligence-catalog/seed-data/README.md` for full architecture documentation. The legacy `intelligence/` directory is deprecated as of 2026-04-27 — see `intelligence/DEPRECATED.md` and `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`.

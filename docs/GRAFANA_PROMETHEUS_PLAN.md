@@ -18,18 +18,22 @@ rather than retrofitting under pressure at scale (10 sites, 500+ miners).
 
 ## Target Architecture
 
+> **2026-04-29 PM note:** The architecture below (Central VPS + Cloudflare Tunnel) is the historical evaluated plan. The locked architecture is Grafana + Prometheus on the Mac Mini (loopback-bound). The multi-site federation vision (multiple Mac Minis → central Prometheus) remains valid long-term but is not part of the 2026-04-30 install.
+
 ```
-Each Site (Mac Mini)
+# Locked 2026-04-30 architecture:
+Mac Mini (site)
   ├── Mining Guardian → /metrics endpoint (Prometheus format)
-  └── Prometheus Node Exporter (optional OS-level metrics)
+  ├── Prometheus (localhost:9090) — scrapes localhost:8585/metrics
+  └── Grafana (localhost:3000, loopback-only)
 
-Central VPS
-  ├── Prometheus        — scrapes all sites, stores time-series data
-  ├── Grafana           — reads Prometheus, serves all dashboards
-  └── Mining Guardian   — orchestration layer (unchanged)
-
-Cloudflare Tunnel
-  └── grafana.fieslerfamily.com → VPS Grafana port
+# Historical evaluated plan (NOT taken — VPS/Cloudflare path superseded):
+# Central VPS
+#   ├── Prometheus        — scrapes all sites, stores time-series data
+#   ├── Grafana           — reads Prometheus, serves all dashboards
+#   └── Mining Guardian   — orchestration layer (unchanged)
+# Cloudflare Tunnel
+#   └── grafana.fieslerfamily.com → VPS Grafana port
 ```
 
 When site 2 is added: one new stanza in prometheus.yml.
@@ -80,9 +84,12 @@ pip install prometheus-client
 - Auto-updated every scan cycle (every hour)
 - Prometheus scrapes it every 30s
 
-### Step 2 — Install Prometheus on VPS
+### Step 2 — Install Prometheus on Mac Mini
+
+> **2026-04-29 PM:** Prometheus runs on the Mac Mini itself (homebrew install), not on a central VPS. Config below is updated for the loopback-only Mac Mini context.
+
 ```yaml
-# /etc/prometheus/prometheus.yml
+# /usr/local/etc/prometheus/prometheus.yml (Mac Mini, homebrew)
 scrape_configs:
   - job_name: 'mining_guardian_usa_188'
     scrape_interval: 30s
@@ -92,7 +99,7 @@ scrape_configs:
     labels:
       site: 'usa_188'
 
-  # Future — add one stanza per new site:
+  # Future multi-site — add one stanza per new Mac Mini:
   # - job_name: 'mining_guardian_site2'
   #   static_configs:
   #     - targets: ['site2-tailscale-ip:8585']
@@ -100,8 +107,11 @@ scrape_configs:
   #     site: 'site2_name'
 ```
 
-### Step 3 — Install Grafana on VPS
-- Add Prometheus as datasource
+### Step 3 — Install Grafana on Mac Mini
+
+> **2026-04-29 PM:** Grafana runs on the Mac Mini, loopback-bound (localhost:3000). Access via browser on the Mac Mini or via Tailscale if remote access is needed. No Cloudflare tunnel; no public DNS.
+
+- Add Prometheus (localhost:9090) as datasource
 - Build dashboards:
   - Fleet overview — online/offline, total hashrate, power draw, issue count
   - Per-miner hashrate trends — 7-day sparklines per miner
@@ -110,7 +120,7 @@ scrape_configs:
   - Power efficiency — TH/s per kW per miner (finds underperformers)
   - Flag history — which miners flagged most over any time window
   - Dead board tracker — timeline of board failures by miner
-- Expose via Cloudflare tunnel: grafana.fieslerfamily.com
+- Access: `http://localhost:3000` on Mac Mini (operator-only, loopback-bound)
 
 ### Step 4 — Replace Retool chart iFrames
 - Keep Retool for stat tiles and data tables (it's good at those)
@@ -124,11 +134,13 @@ scrape_configs:
 
 ---
 
-## Resource Requirements (VPS — 32GB RAM, 8 vCPU)
+## Resource Requirements (Mac Mini)
 - Prometheus: ~200-500MB RAM, minimal CPU
 - Grafana: ~200-400MB RAM, minimal CPU
-- Total overhead: ~700MB-900MB — well within headroom
-- Both run as systemd services alongside existing 7 services
+- Total overhead: ~700MB-900MB — well within Mac Mini headroom
+- Both run as launchd services (macOS) alongside the 8 Mining Guardian launchd services
+
+> **Historical note:** The original plan assumed a central VPS (32GB RAM, 8 vCPU). That plan was evaluated and not taken — the locked decision is Mac Mini local-first.
 
 ---
 
@@ -152,15 +164,20 @@ Prometheus is purely a visualization layer on top.
 
 ## Multi-Site Vision
 
-```
-BiXBiT Customer Site 1 (USA)
-  └── Mac Mini → /metrics → Prometheus (central VPS)
+> **2026-04-29 PM:** For the 2026-04-30 single-site install, Prometheus and Grafana run on the Mac Mini locally. Central aggregation to a VPS is a future design decision not yet implemented. The architecture below reflects the evaluated long-term vision.
 
+```
+# 2026-04-30 (current, locked):
+BiXBiT Customer Site 1 (USA)
+  └── Mac Mini → /metrics → Prometheus (localhost on Mac Mini)
+                                     └── Grafana (localhost:3000, loopback-only)
+
+# Future multi-site vision (not yet implemented — historical evaluated plan referenced central VPS):
 BiXBiT Customer Site 2 (future)
-  └── Mac Mini → /metrics → Prometheus (central VPS)
+  └── Mac Mini → /metrics → Prometheus (central aggregator, TBD)
 
 BiXBiT Customer Site N
-  └── Mac Mini → /metrics → Prometheus (central VPS)
+  └── Mac Mini → /metrics → Prometheus (central aggregator, TBD)
 
 Grafana
   └── Variable: site = {usa, site2, siteN}

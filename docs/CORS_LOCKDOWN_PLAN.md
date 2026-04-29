@@ -1,10 +1,14 @@
 # CORS Lockdown Plan for Mac Mini Migration
 
-**Created:** April 13, 2026  
-**Deadline:** May 5–9, 2026 (Mac mini arrival)  
-**Status:** AUDIT COMPLETE, CHANGES NOT YET APPLIED
+> ## ⚠️ Status as of 2026-04-29 PM
+>
+> **Install date is 2026-04-30** (was May 5–9 when this doc was written). The Mac Mini is loopback-only, no Cloudflare. The Target State (Mac Mini Production) section below remains the locked plan. The Current State section describes the historical VPS/Cloudflare R&D configuration (decommissioned for MG).
 
-## Current State (VPS R&D Phase)
+**Created:** April 13, 2026  
+**Deadline:** 2026-04-30 (Mac Mini install, locked)  
+**Status:** AUDIT COMPLETE, CHANGES APPLY AT INSTALL
+
+## Current State (historical — VPS R&D Phase, decommissioned for MG)
 
 ### dashboard_api.py
 ```python
@@ -80,7 +84,7 @@ origins = [
 
 ## Related Work
 
-- See docs/CLOUDFLARE_MIGRATION.md for tunnel removal checklist
+- See docs/CLOUDFLARE_MIGRATION.md (marked SUPERSEDED — Cloudflare path NOT taken; this doc's Target State already reflects the correct loopback-only approach)
 - See AI_ROADMAP.md "Migration to Mac Mini" section
 
 ---

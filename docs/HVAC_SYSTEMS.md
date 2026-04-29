@@ -1,6 +1,10 @@
 # HVAC Systems Documentation
 
-**Last Updated:** 2026-04-21
+> ## ⚠️ Status as of 2026-04-29 PM
+>
+> **Data collection host changed.** This document was written when HVAC data was collected via the Hostinger VPS (historical, decommissioned for MG) using ROBS-PC as a Tailscale proxy. As of the 2026-04-30 Mac Mini install, HVAC data is collected directly by the Mac Mini on the facility LAN — no VPS, no Tailscale relay required. References to "VPS" in the Network Access and Data Collection sections below are historical context. The Mac Mini has direct LAN access to 192.168.188.235 and 192.168.189.235.
+
+**Last Updated:** 2026-04-21 (body); banner updated 2026-04-29 PM
 
 ## Overview
 
@@ -104,13 +108,15 @@ POST https://192.168.189.235/eclypse/dgapi
 - Outside Air: varies
 
 ### Network Access Note
-**IMPORTANT:** VPS cannot reach 192.168.189.x directly.
-This subnet routes through ROBS-PC Tailscale (100.110.87.1).
 
-Options for data collection:
+> **2026-04-29 PM:** The Mac Mini (2026-04-30 install) has direct facility LAN access to 192.168.189.235. No VPS relay or ROBS-PC Tailscale proxy needed. The historical options below are preserved for context.
+
+**Historical (VPS era — decommissioned for MG):** VPS could not reach 192.168.189.x directly; this subnet required routing through ROBS-PC Tailscale (100.110.87.1).
+
+Historical data collection options (VPS era):
 1. Call from ROBS-PC and push to VPS
 2. Proxy through ROBS-PC Tailscale route
-3. Mac Mini (when arrives) with facility network access
+3. ✅ Mac Mini (2026-04-30 install) with direct facility LAN access — this is the locked path
 
 ### ⚠️ CT Fan Note
 **The S19J Pro container CT fans are manually set to 100%.**
@@ -126,14 +132,14 @@ Options for data collection:
 
 ### Warehouse (192.168.188.235)
 - **Client**: clients/hvac_client.py (BACnet polling)
-- **Access**: VPS can reach via ROBS-PC Tailscale route
+- **Access**: Mac Mini (2026-04-30) has direct facility LAN access. Historical: VPS could reach via ROBS-PC Tailscale route.
 
 ### S19J Pro Container (192.168.189.235)
 - **Client**: clients/av2_plant_client.py (DGLux API)
-- **Access**: Requires ROBS-PC or facility network access
+- **Access**: Mac Mini (2026-04-30) has direct facility LAN access to 192.168.189.235. Historical: required ROBS-PC or facility network access.
 - **API**: Subscription-based polling via POST /eclypse/dgapi
 
-### VPS API Endpoints
+### API Endpoints (operational DB on Mac Mini)
 - **POST /api/hvac/ingest** - Receives data from collectors
 - **GET /api/hvac/latest** - Returns latest readings per system
 
@@ -179,6 +185,6 @@ hvac_system = 's19jpro' if model.startswith('S19JPro') else 'warehouse'
 Both systems use the same Eclypse BAS credentials:
 - Username: BigStar
 - Password: BigSt@r2020
-- Stored in: VPS .env (ECLYPSE_USER, ECLYPSE_PASS)
+- Stored in: Mac Mini `.env` (ECLYPSE_USER, ECLYPSE_PASS). Historical: was in VPS `.env` (VPS decommissioned for MG).
 
 ---
