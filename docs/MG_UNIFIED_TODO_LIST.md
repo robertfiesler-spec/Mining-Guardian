@@ -406,8 +406,8 @@ These are the **answers**, not the work. Listed for reference so nothing contrad
 
 | # | Item | Source | Status |
 |---|---|---|---|
-| 10.1 | Web GUI on `approval_api.py:8686` for approve/deny with explanation field | Sunday user msg | 🔴 Backlog (not for build day) |
-| 10.2 | Mode selector: Full Auto / Semi Auto / Manual on the same web GUI | Sunday user msg | 🔴 Backlog |
+| 10.1 | Web GUI on `approval_api.py:8686` for approve/deny with explanation field | Sunday user msg | ✅ **DONE 2026-04-29 PM** — see `docs/WEB_GUI_OPERATOR_CONSOLE.md`, `api/static/approval_ui.html`, new `/ui` `/gui/approve` `/gui/deny` endpoints |
+| 10.2 | Mode selector: Full Auto / Semi Auto / Manual on the same web GUI | Sunday user msg | ✅ **DONE 2026-04-29 PM** — `system_settings` table (migration 004) + `/mode` GET/POST + `run_overnight_cycle` mode ceiling. 10/10 tests pass. |
 | 10.3 | Grafana provisioning section in installer | Sunday user msg | 🟢 In Section 7.2 phase 11 |
 | 10.4 | Setup Manual (beginner-friendly, with images) | Sunday user msg | 🔴 Post-Mac-Mini |
 | 10.5 | Program Instructions doc (beginner-friendly) | Sunday user msg | 🔴 Post-Mac-Mini |
