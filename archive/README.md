@@ -17,6 +17,13 @@ One-time fix and patch scripts from April 10-12, 2026:
 - `patch_insights.py`, `patch_log_report_*.py` - Various patches
 - `component_audit.py`, `research_audit.py` - Audit scripts
 
+### sqlite_phase1/
+Phase 1 (SQLite-era) modules that were never imported by the live Postgres-era
+codebase. Currently contains `s19jpro_overheat_handler.py` (archived 2026-04-29
+in Bucket 7.3, PR #84). See `archive/sqlite_phase1/README.md` for full context
+and implementation guidance for the eventual Postgres-backed wiring of
+Operator Rule #6.
+
 ### session_artifacts/
 Temporary files created during Claude sessions:
 - `fire_qwen_digest.py` - Qwen digest trigger script
@@ -30,4 +37,4 @@ Temporary files created during Claude sessions:
 ## Note
 These files are not part of the active codebase. If you need to reference them, copy them elsewhere first.
 
-Last updated: April 12, 2026
+Last updated: April 29, 2026 (added sqlite_phase1/ for Bucket 7.3)
