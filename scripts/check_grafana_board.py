@@ -1,34 +1,41 @@
 #!/usr/bin/env python3
-"""Check Grafana Board Health dashboard variable config."""
-import json, sys, urllib.request
+"""Check Grafana Board Health dashboard variable config.
 
-url = "http://localhost:3000/api/dashboards/uid/board-health"
-req = urllib.request.Request(url)
-import base64
-creds = base64.b64encode(b"admin:002300rf").decode()
-req.add_header("Authorization", f"Basic {creds}")
+Credentials read from GRAFANA_PASSWORD / GRAFANA_USER / GRAFANA_URL env vars.
+See `scripts/_grafana_auth.py` for the contract.
+"""
+import json
+import sys
+import urllib.request
 
+from _grafana_auth import grafana_basic_auth_header, grafana_url
+
+GRAFANA = grafana_url()
+AUTH_HEADER = grafana_basic_auth_header()
+
+
+def _get(path):
+    req = urllib.request.Request(f"{GRAFANA}{path}")
+    req.add_header("Authorization", AUTH_HEADER)
+    return json.loads(urllib.request.urlopen(req, timeout=10).read())
+
+
+url = f"{GRAFANA}/api/dashboards/uid/board-health"
 try:
-    resp = urllib.request.urlopen(req, timeout=10)
-    d = json.loads(resp.read())
-except Exception as e:
+    d = _get("/api/dashboards/uid/board-health")
+except Exception:
     # Try alternate UIDs
+    d = None
     for uid in ["board-health", "board_health", "boardhealth"]:
         try:
-            req2 = urllib.request.Request(f"http://localhost:3000/api/dashboards/uid/{uid}")
-            req2.add_header("Authorization", f"Basic {creds}")
-            resp = urllib.request.urlopen(req2, timeout=10)
-            d = json.loads(resp.read())
+            d = _get(f"/api/dashboards/uid/{uid}")
             print(f"Found with uid: {uid}")
             break
-        except:
+        except Exception:
             continue
-    else:
+    if d is None:
         # List all dashboards
-        req3 = urllib.request.Request("http://localhost:3000/api/search?type=dash-db")
-        req3.add_header("Authorization", f"Basic {creds}")
-        resp = urllib.request.urlopen(req3, timeout=10)
-        dashes = json.loads(resp.read())
+        dashes = _get("/api/search?type=dash-db")
         print("All dashboards:")
         for dd in dashes:
             print(f"  uid={dd.get('uid')}  title={dd.get('title')}")

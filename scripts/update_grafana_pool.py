@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
-import json, urllib.request, base64
+"""Rebuild the Mining Guardian Pool Stats dashboard.
+
+Credentials read from GRAFANA_PASSWORD / GRAFANA_USER / GRAFANA_URL env vars.
+See `scripts/_grafana_auth.py` for the contract.
+"""
+import json
+import urllib.request
+
+from _grafana_auth import grafana_basic_auth_header, grafana_url
 
 UID = "afi3q9w5ishz4f"
-GRAFANA = "http://localhost:3000"
-CREDS = base64.b64encode(b"admin:002300rf").decode()
+GRAFANA = grafana_url()
+AUTH_HEADER = grafana_basic_auth_header()
 DS = {"type": "prometheus", "uid": "efi3m84mbf668b"}
+
 
 def api(method, path, data=None):
     url = f"{GRAFANA}{path}"
     body = json.dumps(data).encode() if data else None
     req = urllib.request.Request(url, data=body, method=method)
-    req.add_header("Authorization", f"Basic {CREDS}")
+    req.add_header("Authorization", AUTH_HEADER)
     req.add_header("Content-Type", "application/json")
     return json.loads(urllib.request.urlopen(req, timeout=15).read())
+
 
 existing = api("GET", f"/api/dashboards/uid/{UID}")
 folder_id = existing.get("meta", {}).get("folderId", 0)

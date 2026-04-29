@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Check Grafana Board Health dashboard variable config."""
-import json, urllib.request, base64
+"""Check a specific Grafana dashboard variable config by UID.
 
-uid = "afi3p5mhapn9ce"
-url = f"http://localhost:3000/api/dashboards/uid/{uid}"
-req = urllib.request.Request(url)
-creds = base64.b64encode(b"admin:002300rf").decode()
-req.add_header("Authorization", f"Basic {creds}")
+Credentials read from GRAFANA_PASSWORD / GRAFANA_USER / GRAFANA_URL env vars.
+See `scripts/_grafana_auth.py` for the contract.
+"""
+import json
+import urllib.request
+
+from _grafana_auth import grafana_basic_auth_header, grafana_url
+
+GRAFANA = grafana_url()
+AUTH_HEADER = grafana_basic_auth_header()
+UID = "afi3p5mhapn9ce"
+
+req = urllib.request.Request(f"{GRAFANA}/api/dashboards/uid/{UID}")
+req.add_header("Authorization", AUTH_HEADER)
 
 resp = urllib.request.urlopen(req, timeout=10)
 d = json.loads(resp.read())
