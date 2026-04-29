@@ -19,7 +19,7 @@ pick up the fix without re-deriving the context.
 | B-3 | High     | `000_bootstrap_field_log_tables.sql` non-partitioned shape trap   | Not fixed  |
 | B-4 | High     | `mg_import.insert_raw_json` silently swallows ingestion errors    | Not fixed  |
 | B-5 | Medium   | `mg_import.py` raw_json index targets nonexistent column          | Patched out|
-| B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Fixed in PR-2 (path strings); 4 narrative references retained as allowed-exception |
+| B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Fixed in PR-2 (path strings); 4 narrative references retained as allowed-exception; PR-3 CI lint added 2026-04-29 (PR #72) |
 | B-7 | Medium   | Live migrations `002_layer2` + staging not committed to the repo  | Not fixed  |
 
 ---
@@ -348,19 +348,27 @@ A CI lint (Optional PR-3) must whitelist all seven files above plus the
 These are dated handoff / log files that capture what was true on the day they
 were written. Editing them would falsify the historical record.
 
+**2026-04-29 update (PR #91 doc sweep):** the `docs/SESSION_LOG_*`,
+`docs/HANDOFF_*`, `docs/SESSION_HANDOFF_*`, and `docs/DB_STATE_*` files
+were relocated into `docs/archive/2026-04/` as part of the install-eve doc
+sweep. The lint allow-list now uses a `docs/archive/` directory prefix to
+cover all of them in one entry. `docs/RESUME_HERE_2026_04_08_EVENING.md`
+was removed entirely during the same sweep (its content was superseded by
+the Mac Mini runbook), so it no longer needs an allow-list entry.
+
 | File | Hits |
 |---|---|
 | `NEXT_SESSION.md` (post-banner body, banner-superseded by PR #31) | 5 |
-| `docs/SESSION_LOG_2026-04-09.md` | 2 |
-| `docs/SESSION_LOG_2026-04-16.md` | 1 |
+| `docs/archive/2026-04/SESSION_LOG_2026-04-09.md` | 2 |
+| `docs/archive/2026-04/SESSION_LOG_2026-04-16.md` | 1 |
 | `docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md` | 6 |
-| `docs/SESSION_HANDOFF_2026-04-24.md` | 2 |
-| `docs/RESUME_HERE_2026_04_08_EVENING.md` | 9 |
-| `docs/HANDOFF_2026_04_09_MIDMORNING.md` | 7 |
+| `docs/archive/2026-04/SESSION_HANDOFF_2026-04-24.md` | 2 |
+| `docs/archive/2026-04/HANDOFF_2026_04_09_MIDMORNING.md` | 7 |
 | `docs/DEMO_DAY_HANDOFF_2026_04_08.md` | 2 |
-| `docs/DB_STATE_2026-04-22.md` | 2 |
-| `docs/DB_STATE_2026-04-23.md` | 7 |
+| `docs/archive/2026-04/DB_STATE_2026-04-22.md` | 2 |
+| `docs/archive/2026-04/DB_STATE_2026-04-23.md` | 7 |
 | `docs/S15_APPLIED.txt` | 1 |
+| `docs/archive/**` (catch-all for all archived handoffs / session logs) | n/a |
 
 #### Leave-as-frozen-by-design scope
 
@@ -411,8 +419,47 @@ allowed-exception list.
 
 **Optional PR-3 — CI lint** that fails on `Mining-Gaurdian` outside the
 seven-file allowed-exception list above plus the
-`archive/installer-build-20260428` tag. Not yet opened. This guarantees
-the typo cannot regress.
+`archive/installer-build-20260428` tag. ✅ **Done 2026-04-29** in PR #72
+(Bucket 5). Implemented as `scripts/lint_mining_gaurdian_typo.sh` plus a
+GitHub Actions workflow `.github/workflows/lint.yml` that runs the
+script on every push and PR. The script:
+
+- greps `Mining-Gaurdian` across the working tree (excluding `.git`)
+- filters out an explicit allow-list anchored to repo-relative paths
+- prints every disallowed hit with its line numbers, exits 1
+- has a `--list` flag for unfiltered hit listing during local audits
+- self-includes both the script and the workflow in the allow-list (both
+  must contain the typo string by necessity — the script greps for it,
+  the workflow names the job after it)
+
+**2026-04-29 PM allow-list refresh (in this same PR #72):** the doc-sweep
+(PR #91) merged earlier the same day moved the `SESSION_LOG_*`, `HANDOFF_*`,
+`SESSION_HANDOFF_*`, and `DB_STATE_*` files into `docs/archive/2026-04/`
+and deleted `RESUME_HERE_2026_04_08_EVENING.md`. The allow-list was
+updated in lockstep: individual stale path entries replaced with a
+`^\./docs/archive/` directory prefix; `^\./\.github/workflows/lint\.yml$`
+added for the workflow self-reference. Lint re-verified clean (62 hits,
+all inside the allow-list) before merge.
+
+The allow-list is kept in lockstep with this entry's `Allowed-exception
+scope` and `Leave-as-historical-record scope` tables; any new entry must
+be added to BOTH the table here and the lint script's `ALLOWED_PATTERNS`
+in the same PR. The lint script's header documents this convention.
+
+**Verification (re-run any time):**
+
+```bash
+# Confirm the lint runs clean against the current working tree:
+scripts/lint_mining_gaurdian_typo.sh
+# Should exit 0 with: "B-6 lint: clean (all NN hits are inside the allowed-exception list)."
+
+# Confirm the regression guard fires on a deliberately-bad file:
+echo '# Mining-Gaurdian regression test marker' > /tmp/lint_canary.md
+cp /tmp/lint_canary.md ./tests_lint_canary.md
+scripts/lint_mining_gaurdian_typo.sh ; echo "exit=$?"
+# Should exit 1 with the disallowed-hits report.
+rm -f tests_lint_canary.md /tmp/lint_canary.md
+```
 
 **Optional PR-4** — One-line historical note at the top of
 `docs/CRON_SCHEDULE.md` explaining the 2026-04-26 rename. Not yet opened

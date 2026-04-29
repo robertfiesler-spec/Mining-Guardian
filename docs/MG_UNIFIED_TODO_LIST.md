@@ -706,7 +706,7 @@ Bucket 3 done. Remaining sprint priorities, restated:
 | 🔴 1 | D-14 PR 5/5 (final Bucket 1 piece) | ⏸ BLOCKED on Mini physical install |
 | 🔴 1 | Backfill 124 missing `raw_json` rows | OPEN |
 | 🔴 1 | Runtime invariant assertion | OPEN |
-| 🟡 2 | CI lint pipeline | OPEN |
+| 🟡 2 | CI lint pipeline | ✅ **DONE 2026-04-29** — `scripts/lint_mining_gaurdian_typo.sh` + `.github/workflows/lint.yml` (PR #72, B-6 regression guard). Allow-list refreshed for post-PR-#91 archive layout (62 hits all inside list). |
 | 🟡 2 | B-7 migrations 002 | OPEN |
 | 🟡 2 | GitHub PAT rotation (S-2 was emergency Sunday — confirm rotation cycle. Renamed 2026-04-29: this rotation was for the GitHub Personal Access Token, not anything VPS-specific.) | OPEN |
 | 🟡 2 | Delete `cleanup_ams_logs.py` | OPEN |

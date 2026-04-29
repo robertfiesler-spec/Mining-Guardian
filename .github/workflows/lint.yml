@@ -1,0 +1,38 @@
+name: lint
+
+# Repo-wide lint workflow. Runs on every push and PR. Currently enforces:
+#   - B-6: `Mining-Gaurdian` typo regression guard. The repo-wide rename to
+#     `Mining-Guardian` happened on 2026-04-26 and the path-string cleanup
+#     landed on 2026-04-28 (PR-2 under docs/LATENT_BUGS.md B-6). This job
+#     keeps the typo from sneaking back into a non-allow-listed file.
+#
+# To add a new file to the allow-list, edit BOTH:
+#   - docs/LATENT_BUGS.md B-6 allowed-exception table
+#   - scripts/lint_mining_gaurdian_typo.sh ALLOWED_PATTERNS
+# in the same PR. The lint script's header documents this.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Default to read-only — this workflow only inspects files.
+permissions:
+  contents: read
+
+jobs:
+  mining_gaurdian_typo:
+    name: B-6 — Mining-Gaurdian typo regression guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history not needed; the lint is a flat tree grep.
+          fetch-depth: 1
+
+      - name: Run B-6 typo lint
+        run: |
+          chmod +x scripts/lint_mining_gaurdian_typo.sh
+          scripts/lint_mining_gaurdian_typo.sh
