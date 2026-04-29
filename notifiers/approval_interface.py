@@ -5,6 +5,7 @@ Extracted from mining_guardian.py on April 21, 2026
 Handles manual approval requests for remediation actions.
 """
 
+import os
 import logging
 from typing import Any
 

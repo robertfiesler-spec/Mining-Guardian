@@ -9,6 +9,7 @@ including fleet alerts, scan reports, and HVAC status updates.
 import os
 import json
 import logging
+import requests
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
