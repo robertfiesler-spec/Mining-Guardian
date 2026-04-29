@@ -4,60 +4,40 @@
 <meta charset="utf-8"/>
 <title>Welcome — Mining Guardian</title>
 <style>
-  /* Mining Guardian — Installer.app welcome screen
-     Brand tokens locked to match customer PDFs (Setup Manual, Program
-     Instructions, Brochure) and the .pkg sidebar background.png:
-       NAVY     #0A1428      ELEC_BLUE  #3DA9FC
-       SURFACE  #11203B      BTC_ORANGE #F7931A
-       BORDER   #1F3A66      TEXT       #E6ECF5
-       TEXT_MU  #A8B5CC
+  /* Mining Guardian — Installer.app welcome screen (v3, light theme)
 
-     Constraints:
-       - Apple Installer.app sandboxes this HTML; no remote JS/CSS/fonts.
-       - Use Apple system fonts (-apple-system) for offline-clean rendering.
-       - Keep total HTML under ~10 KB; inline CSS only.
-       - Page must read in both light and dark Aqua.
-       - Installer.app forces html/body transparent so system chrome
-         shows through; we paint navy on a .page wrapper instead. */
-  :root {
-    color-scheme: light dark;
-    --navy:       #0A1428;
-    --surface:    #11203B;
-    --border:     #1F3A66;
-    --elec:       #3DA9FC;
-    --btc:        #F7931A;
-    --text:       #E6ECF5;
-    --text-muted: #A8B5CC;
-  }
+     Designed for Apple Installer.app's locked-down WebKit:
+       - No CSS custom properties (Installer.app's internal stylesheet
+         breaks the cascade so var(--x) for color is unreliable)
+       - No background paint on html/body (Installer.app forces
+         transparent)
+       - Light theme so Installer.app default chrome blends naturally
+       - All text colors literal hex with !important to defeat any
+         Installer.app color reset
+       - Apple system fonts only — no remote anything
+
+     Brand palette (literal hex, locked):
+       NAVY        #0A1428   (headers + body text)
+       NAVY_DEEP   #050A14   (footer hairline)
+       BTC_ORANGE  #F7931A   (eyebrow, accent rule, bullets, emphasis)
+       LINK        #1F6FEB   (URLs / links — readable on white)
+       CODE_BG     #F1F4F9   (inline code fill)
+       CODE_BORDER #D6DEE9   (inline code border)
+       MUTED       #56688A   (lede text, footer note)
+  */
   html, body {
     margin: 0;
     padding: 0;
-    /* Installer.app forces html/body transparent. Color set anyway as a
-       fallback for any preview tooling that does honor it. */
-    background: var(--navy);
-    color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
                  "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    min-height: 100%;
+    color: #0A1428 !important;
   }
-  /* The actual painted surface — Installer.app respects this. */
-  .page {
-    background: var(--navy);
-    color: var(--text);
-    padding: 28px 32px 24px 32px;
-    min-height: 100vh;
-    box-sizing: border-box;
-  }
-  .page * { color: inherit; }
-  .page h1, .page h2, .page p, .page li,
-  .page .lede, .page .callout, .page .footer-note {
-    background: transparent;
-  }
+  body { padding: 28px 32px 24px 32px; }
   .eyebrow {
-    color: var(--btc);
+    color: #F7931A !important;
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 1.4px;
@@ -69,10 +49,10 @@
     font-weight: 700;
     letter-spacing: -0.3px;
     margin: 0 0 4px 0;
-    color: #ffffff;
+    color: #0A1428 !important;
   }
   .lede {
-    color: var(--text-muted);
+    color: #56688A !important;
     font-size: 13px;
     margin: 0 0 18px 0;
     max-width: 540px;
@@ -80,7 +60,7 @@
   .accent-rule {
     height: 2px;
     width: 56px;
-    background: var(--btc);
+    background: #F7931A;
     border-radius: 1px;
     margin: 0 0 20px 0;
   }
@@ -89,7 +69,7 @@
     font-weight: 700;
     letter-spacing: 0.6px;
     text-transform: uppercase;
-    color: var(--elec);
+    color: #0A1428 !important;
     margin: 18px 0 8px 0;
   }
   ul {
@@ -101,55 +81,57 @@
     position: relative;
     padding-left: 18px;
     margin: 0 0 6px 0;
-    color: var(--text);
+    color: #0A1428 !important;
   }
   ul li::before {
     content: "";
     position: absolute;
     left: 2px;
-    top: 8px;
-    width: 6px;
-    height: 6px;
+    top: 7px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: var(--btc);
-    box-shadow: 0 0 6px rgba(247, 147, 26, 0.55);
+    background: #F7931A;
   }
-  code, .page code {
+  p { color: #0A1428 !important; }
+  strong { color: #0A1428 !important; font-weight: 700; }
+  code {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    background: var(--surface);
-    color: var(--elec);
-    border: 1px solid var(--border);
+    background: #F1F4F9;
+    color: #0A1428 !important;
+    border: 1px solid #D6DEE9;
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 12px;
     white-space: nowrap;
   }
   .callout {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--btc);
+    background: #FFF6E8;
+    border: 1px solid #F4D8A8;
+    border-left: 3px solid #F7931A;
     border-radius: 6px;
     padding: 12px 14px;
     margin: 16px 0;
-    color: var(--text);
+    color: #0A1428 !important;
     font-size: 12.5px;
   }
-  .callout strong { color: var(--btc); }
+  .callout strong { color: #B66A0A !important; }
   .footer-note {
     margin-top: 22px;
     padding-top: 14px;
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
+    border-top: 1px solid #D6DEE9;
+    color: #56688A !important;
     font-size: 11px;
     line-height: 1.45;
   }
   .footer-note .badge {
     display: inline-block;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--elec);
+    background: #F1F4F9;
+    border: 1px solid #D6DEE9;
+    color: #0A1428 !important;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 10px;
+    font-weight: 600;
     padding: 1px 6px;
     border-radius: 3px;
     margin-right: 4px;
@@ -157,7 +139,6 @@
 </style>
 </head>
 <body>
-<div class="page">
 
 <p class="eyebrow">Mining Guardian &middot; v1.0</p>
 <h1>Welcome</h1>
@@ -205,6 +186,5 @@
   fully offline Mac without Gatekeeper warnings.
 </div>
 
-</div><!-- /.page -->
 </body>
 </html>

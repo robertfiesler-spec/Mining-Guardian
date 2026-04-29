@@ -4,48 +4,20 @@
 <meta charset="utf-8"/>
 <title>Mining Guardian — Installed</title>
 <style>
-  /* Mining Guardian — Installer.app conclusion screen
-     Same brand tokens as welcome.html. See welcome.html for the locked
-     palette and constraints. Installer.app forces html/body transparent
-     so we paint navy on a .page wrapper instead. */
-  :root {
-    color-scheme: light dark;
-    --navy:       #0A1428;
-    --surface:    #11203B;
-    --border:     #1F3A66;
-    --elec:       #3DA9FC;
-    --btc:        #F7931A;
-    --green:      #4ADE80;
-    --text:       #E6ECF5;
-    --text-muted: #A8B5CC;
-  }
+  /* Mining Guardian — Installer.app conclusion screen (v3, light theme)
+     Same constraints as welcome.html v3. See welcome.html for palette
+     and design rationale. */
   html, body {
     margin: 0;
     padding: 0;
-    /* Installer.app forces html/body transparent. Color set anyway as a
-       fallback for any preview tooling that does honor it. */
-    background: var(--navy);
-    color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
                  "Helvetica Neue", Helvetica, Arial, sans-serif;
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
-    min-height: 100%;
+    color: #0A1428 !important;
   }
-  /* The actual painted surface — Installer.app respects this. */
-  .page {
-    background: var(--navy);
-    color: var(--text);
-    padding: 28px 32px 24px 32px;
-    min-height: 100vh;
-    box-sizing: border-box;
-  }
-  .page * { color: inherit; }
-  .page h1, .page h2, .page p, .page li,
-  .page .lede, .page .footer-note {
-    background: transparent;
-  }
+  body { padding: 28px 32px 24px 32px; }
   .check-row {
     display: flex;
     align-items: center;
@@ -59,15 +31,14 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: var(--green);
-    color: var(--navy);
+    background: #1FAE5C;
+    color: #ffffff !important;
     font-weight: 800;
     font-size: 13px;
     line-height: 1;
-    box-shadow: 0 0 10px rgba(74, 222, 128, 0.45);
   }
   .eyebrow {
-    color: var(--btc);
+    color: #F7931A !important;
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 1.4px;
@@ -79,80 +50,81 @@
     font-weight: 700;
     letter-spacing: -0.3px;
     margin: 0 0 4px 0;
-    color: #ffffff;
+    color: #0A1428 !important;
+  }
+  .lede {
+    color: #56688A !important;
+    font-size: 13px;
+    margin: 0 0 16px 0;
+    max-width: 540px;
   }
   .accent-rule {
     height: 2px;
     width: 56px;
-    background: var(--btc);
+    background: #F7931A;
     border-radius: 1px;
-    margin: 8px 0 18px 0;
-  }
-  .lede {
-    color: var(--text-muted);
-    font-size: 13px;
     margin: 0 0 18px 0;
-    max-width: 540px;
   }
   h2 {
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.6px;
     text-transform: uppercase;
-    color: var(--elec);
-    margin: 18px 0 8px 0;
+    color: #0A1428 !important;
+    margin: 16px 0 6px 0;
   }
+  p { color: #0A1428 !important; }
+  strong { color: #0A1428 !important; font-weight: 700; }
   .quick-grid {
     display: grid;
-    grid-template-columns: 140px 1fr;
+    grid-template-columns: 130px 1fr;
     gap: 6px 14px;
     margin: 0 0 6px 0;
   }
   .quick-grid .label {
-    color: var(--text-muted);
+    color: #56688A !important;
     font-size: 12px;
   }
   .quick-grid .val {
-    color: var(--text);
+    color: #0A1428 !important;
     font-size: 12px;
   }
-  code, .url, .page code, .page .url {
+  code, .url {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border);
+    background: #F1F4F9;
+    color: #0A1428 !important;
+    border: 1px solid #D6DEE9;
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 12px;
   }
-  .url, .page .url { color: var(--elec); }
+  .url { color: #1F6FEB !important; }
   pre {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--elec);
+    background: #F1F4F9;
+    border: 1px solid #D6DEE9;
+    border-left: 3px solid #1F6FEB;
     border-radius: 6px;
     padding: 10px 12px;
     margin: 8px 0 14px 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 11.5px;
-    color: var(--text);
+    color: #0A1428 !important;
     overflow-x: auto;
     white-space: pre;
   }
-  pre .cmd { color: var(--btc); }
+  pre .cmd { color: #B66A0A !important; font-weight: 700; }
   .footer-note {
     margin-top: 18px;
     padding-top: 12px;
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
+    border-top: 1px solid #D6DEE9;
+    color: #56688A !important;
     font-size: 11px;
     line-height: 1.5;
   }
-  .footer-note strong { color: var(--text); }
+  .footer-note strong { color: #0A1428 !important; }
 </style>
 </head>
 <body>
-<div class="page">
 
 <div class="check-row">
   <span class="check-pill">&#10003;</span>
@@ -182,7 +154,7 @@
 </div>
 
 <h2>Verifying the four services</h2>
-<p style="margin: 0 0 6px 0; color: var(--text-muted); font-size: 12px;">From <strong style="color: var(--text);">Terminal.app</strong>:</p>
+<p style="margin: 0 0 6px 0; color: #56688A; font-size: 12px;">From <strong style="color: #0A1428;">Terminal.app</strong>:</p>
 <pre><span class="cmd">sudo</span> launchctl print system/com.miningguardian.scanner
 <span class="cmd">sudo</span> launchctl print system/com.miningguardian.dashboard-api
 <span class="cmd">sudo</span> launchctl print system/com.miningguardian.approval-api
@@ -204,6 +176,5 @@
   Setup Manual that came with this installer.
 </div>
 
-</div><!-- /.page -->
 </body>
 </html>
