@@ -16,7 +16,9 @@
        - Apple Installer.app sandboxes this HTML; no remote JS/CSS/fonts.
        - Use Apple system fonts (-apple-system) for offline-clean rendering.
        - Keep total HTML under ~10 KB; inline CSS only.
-       - Page must read in both light and dark Aqua. */
+       - Page must read in both light and dark Aqua.
+       - Installer.app forces html/body transparent so system chrome
+         shows through; we paint navy on a .page wrapper instead. */
   :root {
     color-scheme: light dark;
     --navy:       #0A1428;
@@ -30,6 +32,8 @@
   html, body {
     margin: 0;
     padding: 0;
+    /* Installer.app forces html/body transparent. Color set anyway as a
+       fallback for any preview tooling that does honor it. */
     background: var(--navy);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
@@ -37,9 +41,20 @@
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    min-height: 100%;
   }
-  body {
+  /* The actual painted surface — Installer.app respects this. */
+  .page {
+    background: var(--navy);
+    color: var(--text);
     padding: 28px 32px 24px 32px;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  .page * { color: inherit; }
+  .page h1, .page h2, .page p, .page li,
+  .page .lede, .page .callout, .page .footer-note {
+    background: transparent;
   }
   .eyebrow {
     color: var(--btc);
@@ -99,14 +114,15 @@
     background: var(--btc);
     box-shadow: 0 0 6px rgba(247, 147, 26, 0.55);
   }
-  code {
+  code, .page code {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     background: var(--surface);
-    color: var(--text);
+    color: var(--elec);
     border: 1px solid var(--border);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 12px;
+    white-space: nowrap;
   }
   .callout {
     background: var(--surface);
@@ -141,6 +157,7 @@
 </style>
 </head>
 <body>
+<div class="page">
 
 <p class="eyebrow">Mining Guardian &middot; v1.0</p>
 <h1>Welcome</h1>
@@ -188,5 +205,6 @@
   fully offline Mac without Gatekeeper warnings.
 </div>
 
+</div><!-- /.page -->
 </body>
 </html>

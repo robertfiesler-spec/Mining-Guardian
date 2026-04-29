@@ -6,7 +6,8 @@
 <style>
   /* Mining Guardian — Installer.app conclusion screen
      Same brand tokens as welcome.html. See welcome.html for the locked
-     palette and constraints. */
+     palette and constraints. Installer.app forces html/body transparent
+     so we paint navy on a .page wrapper instead. */
   :root {
     color-scheme: light dark;
     --navy:       #0A1428;
@@ -21,6 +22,8 @@
   html, body {
     margin: 0;
     padding: 0;
+    /* Installer.app forces html/body transparent. Color set anyway as a
+       fallback for any preview tooling that does honor it. */
     background: var(--navy);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
@@ -28,9 +31,20 @@
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    min-height: 100%;
   }
-  body {
+  /* The actual painted surface — Installer.app respects this. */
+  .page {
+    background: var(--navy);
+    color: var(--text);
     padding: 28px 32px 24px 32px;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  .page * { color: inherit; }
+  .page h1, .page h2, .page p, .page li,
+  .page .lede, .page .footer-note {
+    background: transparent;
   }
   .check-row {
     display: flex;
@@ -102,7 +116,7 @@
     color: var(--text);
     font-size: 12px;
   }
-  code, .url {
+  code, .url, .page code, .page .url {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     background: var(--surface);
     color: var(--text);
@@ -111,7 +125,7 @@
     border-radius: 4px;
     font-size: 12px;
   }
-  .url { color: var(--elec); }
+  .url, .page .url { color: var(--elec); }
   pre {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -138,6 +152,7 @@
 </style>
 </head>
 <body>
+<div class="page">
 
 <div class="check-row">
   <span class="check-pill">&#10003;</span>
@@ -189,5 +204,6 @@
   Setup Manual that came with this installer.
 </div>
 
+</div><!-- /.page -->
 </body>
 </html>
