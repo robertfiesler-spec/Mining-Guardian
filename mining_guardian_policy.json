@@ -348,7 +348,7 @@
     },
     "flag_for_operator_review": {
       "type": "notification",
-      "description": "Raise alert in OpenClaw or operations dashboard for human review."
+      "description": "Raise alert in the operations dashboard or notifier channel for human review."
     },
     "skip_actions": {
       "type": "control",

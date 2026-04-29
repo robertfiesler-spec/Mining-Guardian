@@ -98,7 +98,6 @@ cat > "$CONFIG_FILE" << EOF
   "ams_email": "env:AMS_EMAIL",
   "ams_password": "env:AMS_PASSWORD",
   "ams_workspace_id": "env:AMS_WORKSPACE_ID",
-  "openclaw_webhook_url": null,
   "slack_webhook_url": "env:SLACK_WEBHOOK_URL",
   "dry_run": true,
   "scan_interval_seconds": $SCAN_INTERVAL,

@@ -210,46 +210,50 @@ This is the non-security half of the audit. It's about whether AI actually has d
 
 ---
 
-# SECTION 5 — OpenClaw Removal (HIGH-10 from audit, N4 from findings)
+# SECTION 5 — OpenClaw Removal (HIGH-10 from audit, N4 from findings) — ✅ DONE 2026-04-29 (Bucket 4 / PR #69)
 
-## 5.1. Why now (post Sunday sprint, before Mac Mini install)
+## 5.1. Status: ✅ COMPLETE
 
-- OpenClaw is **silent no-op already** — every `send_scan()` returns immediately because `webhook_url=None`
-- Removing it has zero behavioral impact, just deletes dead code
-- It IS still referenced in 10 files (currently in code, not just archive)
-- Don't migrate dead code to the Mac Mini
+OpenClaw was a silent no-op already (every `send_scan()` returned immediately because `webhook_url=None`). Removal has zero behavioral impact and was needed before Mac Mini installer rebuild so dead code is not shipped.
 
-## 5.2. The exact removal checklist (from `mg/docs/OPENCLAW_AUDIT_2026-04-23.md`)
+## 5.2. Reality-check vs. original audit checklist
 
-🔴 **All of these are open** (just verified — `OpenClaw` strings still present in 10 active source files):
+When Bucket 4 was opened, a fresh audit revealed most of the original 12-item OpenClaw audit checklist had **already been done in earlier weeks** but the unified TODO never reflected it (same drift pattern PR #63 captured for S-1/S-3/S-6/S-12). The actual remaining work was much smaller than the checklist suggested.
 
-1. 🔴 `cd /docker/openclaw-5b5o && docker compose down` (VPS, kills the dead container)
-2. 🔴 Optional: `docker volume rm` on openclaw volumes
-3. 🔴 Edit `core/mining_guardian.py`:
-   - Remove `from notifiers.openclaw_notifier import OpenClawNotifier` (line ~74)
-   - Remove `self.notifier = OpenClawNotifier(config.openclaw_webhook_url)` (line ~84)
-   - Remove `openclaw_webhook_url` key from example config template (line ~2608)
-4. 🔴 Edit `core/overnight_automation.py`:
-   - Remove `notify_openclaw()` function (lines 375-405)
-   - Remove call site at line 477
-5. 🔴 Delete `notifiers/openclaw_notifier.py`
-6. 🔴 Edit `core/models.py`: remove `openclaw_webhook_url` field from config dataclass (lines 63, 95)
-7. 🔴 Delete `tests/test_openclaw_notifier.py`
-8. 🔴 Update `tests/conftest.py` if it references OpenClaw
-9. 🔴 Edit `api/slack_approval_listener.py` docstring — drop the "Socket Mode is owned by OpenClaw" note (no longer true)
-10. 🔴 Run tests (should still pass — nothing real used the notifier)
-11. 🔴 Commit: `refactor: remove dead OpenClaw integration`
-12. 🔴 Delete `deploy/openclaw-skills/` directory (catalog-bridge inside it)
+| # | Original audit item | Actual state when Bucket 4 opened | Action taken in PR #69 |
+|---|---|---|---|
+| 1 | `docker compose down` on VPS openclaw-5b5o | VPS-side action — out of repo scope | (operator runs on VPS; no repo change needed) |
+| 2 | `docker volume rm` openclaw volumes | VPS-side, optional | (operator runs on VPS; no repo change needed) |
+| 3 | `core/mining_guardian.py` import + init + config template | Already clean — no `OpenClaw` strings remained | No change needed |
+| 4 | `core/overnight_automation.py` `notify_openclaw()` + call site | Already clean | No change needed |
+| 5 | Delete `notifiers/openclaw_notifier.py` | File no longer existed | No change needed |
+| 6 | `core/models.py` config dataclass field | Already clean | No change needed |
+| 7 | Delete `tests/test_openclaw_notifier.py` | File no longer existed | No change needed |
+| 8 | `tests/conftest.py` references | Already clean | No change needed |
+| 9 | `api/slack_approval_listener.py` docstring | Already clean | No change needed |
+| 10 | Run tests | n/a — no code changes to behaviour | Confirmed no functional code touched |
+| 11 | Commit | — | PR #69 |
+| 12 | Delete `deploy/openclaw-skills/` directory | 7 files still present, zero importers | **Deleted** in PR #69 |
+| extra | `intelligence/docker-compose.yml` comment naming OpenClaw | Stale comment | Replaced with neutral wording + Bucket-4 breadcrumb |
+| extra | `mining_guardian_policy.json` line 351 description | Stale description | Replaced: "Raise alert in the operations dashboard or notifier channel for human review" |
+| extra | `.env.example` 5-line OpenClaw stub | Stale stub block | Replaced with Bucket-4 breadcrumb explaining old `OPENCLAW_*` env vars are obsolete |
+| extra | `scripts/setup.sh` line 101 `"openclaw_webhook_url": null,` in generated config-template heredoc | Stale config-template line | **Removed** in PR #69 |
 
-## 5.3. Optional follow-up (NOT for this PR)
+## 5.3. Verification (re-run any time)
 
-- Switch `slack_approval_listener.py` and `slack_command_handler.py` from REST polling → Bolt/Socket Mode (cleaner now that OpenClaw isn't holding the socket).
-- **Effort:** 4-6 hours separately. Defer.
+```bash
+# Should return only the four intentional Bucket-4 historical breadcrumbs in
+# .env.example and intelligence/docker-compose.yml — nothing in code.
+grep -ri "openclaw" . \
+  --exclude-dir=archive --exclude-dir=mg_pre_prod --exclude-dir=mg_rename_dryrun \
+  --exclude-dir=docs --exclude-dir=.git --exclude-dir=__pycache__ --exclude-dir=.venv \
+  --exclude="*.md" --exclude="*.pyc" --exclude=".coverage"
+```
 
-## 5.4. Effort + when
+## 5.4. Optional follow-up (NOT in this PR)
 
-- **Effort:** 1.5-2 hours for the surgical removal + tests + commit
-- **When:** Tomorrow (Monday build day). Best done BEFORE installer rebuild so installer doesn't include OpenClaw refs.
+- Switch `slack_approval_listener.py` and `slack_command_handler.py` from REST polling → Bolt/Socket Mode. Tracked in Bucket 2 / Section 6.
+- **Effort:** 4-6 hours separately. Already partially completed in earlier Bucket 2 work; remainder lives in installer rebuild (Bucket 6).
 
 ## 5.5. Sweep update 2026-04-29 PM — Section 5 closed
 
