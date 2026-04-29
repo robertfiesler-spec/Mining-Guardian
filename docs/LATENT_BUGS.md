@@ -20,7 +20,7 @@ pick up the fix without re-deriving the context.
 | B-4 | High     | `mg_import.insert_raw_json` silently swallows ingestion errors    | Not fixed  |
 | B-5 | Medium   | `mg_import.py` raw_json index targets nonexistent column          | Patched out|
 | B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Fixed in PR-2 (path strings); 4 narrative references retained as allowed-exception; PR-3 CI lint added 2026-04-29 (PR #72) |
-| B-7 | Medium   | Live migrations `002_layer2` + staging not committed to the repo  | Not fixed  |
+| B-7 | Medium   | Live migrations `002_layer2` + staging not committed to the repo  | 📘 Runbook landed (2026-04-29) — VPS exec pending |
 
 ---
 
@@ -485,10 +485,10 @@ rm -f tests_lint_canary.md /tmp/lint_canary.md
 
 ---
 
-## B-7 — Live migrations `002_layer2` + staging not committed to the repo
+## B-7 — Live migrations `002_layer2` + staging not committed to the repo  📘 Runbook landed (2026-04-29)
 
 **Severity:** Medium
-**Status:** Not fixed
+**Status:** 📘 Paste-along VPS runbook landed in PR (2026-04-29); commit-execution itself happens VPS-side per runbook (operator must SSH to root@srv1549463, `pg_dump --schema-only`, diff against operator candidates, then commit the canonical files + `migrations/README.md` and flip this entry to ✅ Fixed in the same commit).
 **Discovered:** 2026-04-28 (this session, post-import audit)
 **Location:** `migrations/` — should contain `002_layer2_*.sql` and the staging
 migration; currently contains only `001_initial_schema.sql` and
@@ -543,6 +543,34 @@ not declared).
 - `docs/SESSION_LOG_2026-04-27.md` — addendum #3
 - PR #25 (squashed as `6f0b5a2`)
 - `docs/DECISIONS.md` D-1 (Postgres-as-canonical)
+- `docs/RUNBOOK_BUCKET_5.7_COMMIT_LIVE_MIGRATIONS.md` — paste-along VPS runbook (2026-04-29)
+
+### Doc-side Fix Landed — 2026-04-29
+
+The paste-along VPS runbook now lives at
+`docs/RUNBOOK_BUCKET_5.7_COMMIT_LIVE_MIGRATIONS.md`. It walks the operator through
+pre-flight, mandatory snapshot, `pg_dump --schema-only` extraction of layer-2 +
+staging, byte-level diff against any operator-side candidate `.sql` files, a
+decision table for which artefact to commit (candidate vs. live-extracted),
+canonical commit paths (`migrations/002_layer2_<suffix>.sql` and
+`migrations/004_staging_<suffix>.sql` — slot 003 is already taken by
+`003_c5_notify_triggers.sql`, so the staging migration lands at slot 004),
+`migrations/README.md` apply-order boilerplate, and the exact LATENT_BUGS.md
+flip the operator must include in the same commit to mark this entry ✅ Fixed.
+
+Verification (the runbook itself is now committed to the repo):
+
+```bash
+ls docs/RUNBOOK_BUCKET_5.7_COMMIT_LIVE_MIGRATIONS.md
+# docs/RUNBOOK_BUCKET_5.7_COMMIT_LIVE_MIGRATIONS.md
+
+grep -c 'B-7' docs/LATENT_BUGS.md
+# >= 3   (index row + detail header + this section)
+```
+
+When the operator runs the runbook on the VPS and pushes the resulting
+migrations + `README.md`, this entry flips from 📘 to ✅ in the same commit per
+the `work.projects.mining_guardian.todo_sync` convention.
 
 ---
 
