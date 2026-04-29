@@ -90,12 +90,48 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger("mining_guardian")
 
 
+# S-9 hardening (2026-04-29): the Auradine factory default is literally
+# admin/admin and previously this client silently used those values when
+# AURADINE_USER / AURADINE_PASS were unset. That meant a misconfigured
+# install would happily try to log into every miner with the factory
+# default — and on a fleet where the operator has rotated the password,
+# this generates spurious auth-failure noise that masks real issues.
+#
+# New behavior:
+#   - DEFAULT_USER / DEFAULT_PASS read from env exactly as before.
+#   - If env is unset, _FACTORY_DEFAULT is used (admin/admin) but a single
+#     WARNING is emitted at module import so operators can see it.
+#   - When MG_REQUIRE_AURADINE_AUTH=1 is set, the import raises
+#     RuntimeError instead of warning. Production installs (Mac Mini and
+#     beyond) should set this so a missing env var is a hard failure, not
+#     a silent fallback.
+_FACTORY_DEFAULT_USER = "admin"
+_FACTORY_DEFAULT_PASS = "admin"
+_AURADINE_USER_ENV = os.environ.get("AURADINE_USER")
+_AURADINE_PASS_ENV = os.environ.get("AURADINE_PASS")
+_REQUIRE_AURADINE_AUTH = os.environ.get("MG_REQUIRE_AURADINE_AUTH", "0") == "1"
+
+if _AURADINE_USER_ENV is None or _AURADINE_PASS_ENV is None:
+    _msg = (
+        "AURADINE_USER and/or AURADINE_PASS not set in the environment; "
+        "falling back to factory default (admin/admin). Set these in the "
+        "installer-managed .env to silence this warning."
+    )
+    if _REQUIRE_AURADINE_AUTH:
+        raise RuntimeError(
+            _msg + " MG_REQUIRE_AURADINE_AUTH=1 is set, so this is a hard "
+            "failure rather than a fallback."
+        )
+    logger = logging.getLogger("mining_guardian")
+    logger.warning("[auradine_client] %s", _msg)
+
+
 class AuradineClient:
     """Direct API client for Auradine Teraflux miners (AH3880, AT2880, etc.)."""
 
     DEFAULT_PORT_HTTPS = 8443
-    DEFAULT_USER       = os.getenv("AURADINE_USER", "admin")
-    DEFAULT_PASS       = os.getenv("AURADINE_PASS", "admin")
+    DEFAULT_USER       = _AURADINE_USER_ENV or _FACTORY_DEFAULT_USER
+    DEFAULT_PASS       = _AURADINE_PASS_ENV or _FACTORY_DEFAULT_PASS
     TOKEN_LIFETIME_SEC = 3600  # JWT is valid for 1 hour
 
     # Daemons available via the /log endpoint
