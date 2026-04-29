@@ -85,6 +85,30 @@
     .status.ok    { color: var(--success); }
     .status.err   { color: var(--error); }
 
+    /* Schedules tab */
+    .sched-card { background: var(--surface-alt); border: 1px solid var(--border);
+      border-radius: 6px; padding: 16px; margin-bottom: 12px; }
+    .sched-head { display: flex; justify-content: space-between; align-items: baseline;
+      gap: 12px; margin-bottom: 8px; }
+    .sched-name { font-weight: 600; font-size: 15px; }
+    .sched-desc { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; }
+    .sched-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+      margin-bottom: 8px; font-size: 14px; }
+    .sched-row label { color: var(--text-muted); font-size: 13px; min-width: 90px; }
+    .sched-row select, .sched-row input[type="number"] { font: inherit; font-size: 14px;
+      padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); color: var(--text); }
+    .sched-row input[type="number"] { width: 90px; }
+    .dow-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+    .dow-chip { display: inline-block; padding: 4px 10px; border: 1px solid var(--border);
+      border-radius: 12px; font-size: 12px; cursor: pointer;
+      background: var(--surface); color: var(--text-muted); user-select: none; }
+    .dow-chip.on { background: #EAF2F3; border-color: var(--primary); color: var(--primary); }
+    .sched-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+    .sched-toggle input { margin: 0; }
+    .sched-saved { color: var(--text-faint); font-size: 12px; margin-top: 6px; }
+    .badge.cat { background: var(--surface); color: var(--text-muted); }
+
     footer { color: var(--text-faint); font-size: 12px; text-align: center;
       margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); }
     footer code { background: var(--surface-alt); padding: 1px 5px; border-radius: 3px; }
@@ -121,6 +145,21 @@
       </div>
       <p class="mode-meta" id="mode-meta">Loading current mode…</p>
       <p class="status" id="mode-status"></p>
+    </section>
+
+    <!-- Schedules §10.7 -->
+    <section>
+      <h2>Schedules</h2>
+      <p class="hint">
+        Set when each background job runs. Changes take effect within one daemon cycle
+        (typically &lt; 5 min) without restarting any service. Disable a window or
+        time-of-day job to pause it; disabling an interval job has no effect — stop
+        the daemon via <code>launchctl</code> instead.
+      </p>
+      <div id="schedules-root">
+        <p class="empty">Loading schedules…</p>
+      </div>
+      <p class="status" id="schedules-status"></p>
     </section>
 
     <!-- Pending approvals -->
@@ -294,9 +333,164 @@
 
       refreshBtn.addEventListener('click', loadApprovals);
 
+      // ── Schedules §10.7 ──────────────────────────────────────────────────
+      const schedulesRoot   = document.getElementById('schedules-root');
+      const schedulesStatus = document.getElementById('schedules-status');
+      const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+      function hourOptions(maxH) {
+        let s = '';
+        for (let h = 0; h <= maxH; h++) {
+          s += '<option value="' + h + '">' + (h < 10 ? '0' + h : h) + '</option>';
+        }
+        return s;
+      }
+      function minuteOptions() {
+        let s = '';
+        for (let m = 0; m < 60; m += 5) {
+          s += '<option value="' + m + '">' + (m < 10 ? '0' + m : m) + '</option>';
+        }
+        return s;
+      }
+
+      function renderSchedule(s) {
+        const dowSet = new Set((s.days_of_week || '').split(',').map(function (d) { return parseInt(d, 10); }));
+        const chipsHTML = DOW_LABELS.map(function (lbl, i) {
+          const cls = dowSet.has(i) ? 'dow-chip on' : 'dow-chip';
+          return '<span class="' + cls + '" data-dow="' + i + '">' + lbl + '</span>';
+        }).join('');
+
+        let typeBlock = '';
+        if (s.schedule_type === 'window') {
+          typeBlock =
+            '<div class="sched-row">' +
+              '<label>Start</label>' +
+              '<select data-field="start_hour">' + hourOptions(23) + '</select>' +
+              '<select data-field="start_minute">' + minuteOptions() + '</select>' +
+              '<label style="margin-left:16px;">End</label>' +
+              '<select data-field="end_hour">' + hourOptions(24) + '</select>' +
+              '<select data-field="end_minute">' + minuteOptions() + '</select>' +
+            '</div>';
+        } else if (s.schedule_type === 'time_of_day') {
+          typeBlock =
+            '<div class="sched-row">' +
+              '<label>Run at</label>' +
+              '<select data-field="start_hour">' + hourOptions(23) + '</select>' +
+              '<select data-field="start_minute">' + minuteOptions() + '</select>' +
+            '</div>';
+        } else if (s.schedule_type === 'interval') {
+          typeBlock =
+            '<div class="sched-row">' +
+              '<label>Every</label>' +
+              '<input type="number" data-field="interval_seconds" min="5" max="86400" />' +
+              '<span style="color:var(--text-muted);font-size:13px;">seconds</span>' +
+            '</div>';
+        }
+
+        const card = document.createElement('div');
+        card.className = 'sched-card';
+        card.dataset.jobKey = s.job_key;
+        card.dataset.type   = s.schedule_type;
+        card.innerHTML =
+          '<div class="sched-head">' +
+            '<div>' +
+              '<div class="sched-name">' + escHTML(s.job_key) + '</div>' +
+              '<div class="sched-desc">' + escHTML(s.description || '') +
+              ' <span class="badge cat">' + escHTML(s.category || s.schedule_type) + '</span></div>' +
+            '</div>' +
+            '<label class="sched-toggle">' +
+              '<input type="checkbox" data-field="enabled" />' +
+              '<span>Enabled</span>' +
+            '</label>' +
+          '</div>' +
+          typeBlock +
+          (s.schedule_type !== 'interval' ?
+            '<div class="sched-row">' +
+              '<label>Days</label>' +
+              '<div class="dow-chips">' + chipsHTML + '</div>' +
+            '</div>' : '') +
+          '<div class="sched-row">' +
+            '<button type="button" class="btn primary sched-save">Save</button>' +
+            '<span class="status"></span>' +
+          '</div>' +
+          '<div class="sched-saved">' +
+            (s.updated_at ? 'Last changed ' + escHTML(s.updated_at) + ' by ' + escHTML(s.updated_by || '—') : 'Defaults — not yet customised') +
+          '</div>';
+
+        // Pre-fill values
+        card.querySelector('input[data-field="enabled"]').checked = !!s.enabled;
+        ['start_hour', 'start_minute', 'end_hour', 'end_minute', 'interval_seconds'].forEach(function (f) {
+          const el = card.querySelector('[data-field="' + f + '"]');
+          if (el && s[f] !== null && s[f] !== undefined) {
+            el.value = s[f];
+          }
+        });
+
+        // Day-of-week chip toggle
+        card.querySelectorAll('.dow-chip').forEach(function (chip) {
+          chip.addEventListener('click', function () { chip.classList.toggle('on'); });
+        });
+
+        return card;
+      }
+
+      function loadSchedules() {
+        fetchJSON('/schedules')
+          .then(function (data) {
+            schedulesRoot.innerHTML = '';
+            (data.schedules || []).forEach(function (s) {
+              schedulesRoot.appendChild(renderSchedule(s));
+            });
+            if (!data.schedules || !data.schedules.length) {
+              schedulesRoot.innerHTML = '<p class="empty">No schedules configured.</p>';
+            }
+          })
+          .catch(function (e) {
+            schedulesRoot.innerHTML = '<p class="empty">Could not load schedules: ' + escHTML(e.message) + '</p>';
+          });
+      }
+
+      schedulesRoot.addEventListener('click', function (ev) {
+        const btn = ev.target.closest('.sched-save');
+        if (!btn) return;
+        const card = btn.closest('.sched-card');
+        const localStatus = card.querySelector('.sched-row .status');
+        const jobKey = card.dataset.jobKey;
+        const type   = card.dataset.type;
+        const body = {
+          schedule_type: type,
+          enabled:       card.querySelector('input[data-field="enabled"]').checked,
+          operator:      OPERATOR,
+        };
+        const dowOn = Array.from(card.querySelectorAll('.dow-chip.on')).map(function (c) { return c.dataset.dow; });
+        body.days_of_week = dowOn.length ? dowOn.join(',') : '0,1,2,3,4,5,6';
+        ['start_hour', 'start_minute', 'end_hour', 'end_minute', 'interval_seconds'].forEach(function (f) {
+          const el = card.querySelector('[data-field="' + f + '"]');
+          if (el) {
+            const v = parseInt(el.value, 10);
+            body[f] = isNaN(v) ? null : v;
+          }
+        });
+
+        btn.disabled = true;
+        setStatus(localStatus, 'Saving…', '');
+        fetchJSON('/schedules/' + encodeURIComponent(jobKey), {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }).then(function () {
+          setStatus(localStatus, 'Saved.', 'ok');
+          btn.disabled = false;
+          setTimeout(loadSchedules, 600);
+        }).catch(function (e) {
+          setStatus(localStatus, 'Failed: ' + e.message, 'err');
+          btn.disabled = false;
+        });
+      });
+
       // Kick off initial load
       loadMode();
       loadApprovals();
+      loadSchedules();
 
       // Auto-refresh approvals every 30 s
       setInterval(loadApprovals, 30000);

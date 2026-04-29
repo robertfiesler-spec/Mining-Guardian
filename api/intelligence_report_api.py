@@ -495,10 +495,21 @@ _load_catalog()
 # ── Background auto-refresh (checks mtime every 5 minutes) ──────
 
 def _catalog_auto_refresh():
-    """Background thread: reload catalog if unified_miner_index.json changed on disk."""
+    """Background thread: reload catalog if unified_miner_index.json changed on disk.
+
+    Bucket 9 §10.7: poll cadence is read from
+    `system_schedules.catalog_auto_refresh.interval_seconds` so operators
+    can tune it from the GUI. Falls back to 300s if the helper is
+    unavailable.
+    """
     global _catalog_mtime
     while True:
-        time.sleep(300)  # 5 minutes
+        try:
+            from api.system_schedules import get_interval_seconds
+            sleep_s = get_interval_seconds("catalog_auto_refresh")
+        except Exception:
+            sleep_s = 300
+        time.sleep(sleep_s)
         try:
             current_mtime = os.path.getmtime(INDEX_JSON)
         except OSError:

@@ -132,8 +132,18 @@ def get_db():
 
 def is_overnight_window() -> bool:
     """Returns True if current time is inside the automation window.
-    When WINDOW_END_HOUR=24, always returns True (full-day autonomous mode).
+
+    Bucket 9 §10.7: consults `system_schedules.overnight_window` first so
+    operators can change the window from the Web GUI without touching
+    code. Falls back to the WINDOW_START_HOUR / WINDOW_END_HOUR constants
+    if the schedule helpers are unavailable (import error or DB down).
     """
+    try:
+        from api.system_schedules import is_in_window as _is_in_window
+        return _is_in_window("overnight_window")
+    except Exception as e:
+        logger.warning("system_schedules unavailable, using constants: %s", e)
+
     if WINDOW_END_HOUR >= 24:
         return True  # full-day mode
     hour = datetime.now().hour

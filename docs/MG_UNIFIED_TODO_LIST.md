@@ -384,6 +384,7 @@ These are the **answers**, not the work. Listed for reference so nothing contrad
 | 10.4 | Setup Manual (beginner-friendly, with images) | Sunday user msg | 🔴 Post-Mac-Mini |
 | 10.5 | Program Instructions doc (beginner-friendly) | Sunday user msg | 🔴 Post-Mac-Mini |
 | 10.6 | 8-10 page Product Brochure (with images) | Sunday user msg | 🔴 Post-Mac-Mini |
+| 10.7 | Operator schedule control — retime overnight window + interval daemons from Web GUI | 2026-04-29 user msg | ✅ **DONE 2026-04-29 PM** — `system_schedules` table (migration 005) + `/schedules` GET/POST + Schedules tab in `approval_ui.html` + hot-reload in 4 daemons. 23/23 tests pass. See `docs/OPERATOR_SCHEDULES.md`. |
 
 ---
 
