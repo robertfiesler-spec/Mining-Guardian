@@ -291,17 +291,34 @@ phase_04_postgres() {
       ok "${db} created."
     fi
   done
-  step "Applying schema migrations (001, 002?, 003, 004?)..."
-  for n in 001 002 003 004; do
-    local f; f="$(ls "${REPO_DIR}/migrations/${n}_"*.sql 2>/dev/null | head -1 || true)"
-    if [[ -n "${f}" ]]; then
-      info "Applying ${f##*/}..."
-      run_cmd psql -U guardian_app -d mining_guardian -f "${f}" >/dev/null 2>&1 || \
-        warn "${f##*/} non-zero exit (may already be applied)."
-      ok "Migration ${n} applied."
-    else
-      info "Migration ${n} not found — skipping."
-    fi
+  step "Applying all schema migrations in lexical order..."
+  # Glob every NNN_*.sql file under migrations/ and apply in shell-sorted order.
+  # This naturally handles:
+  #   - missing slots (e.g. 002 lives on the VPS pending B-7 commit)
+  #   - multiple migrations sharing a number prefix (e.g. 004_drop_dead_stubs.sql
+  #     and 004_system_settings.sql — both are applied)
+  #   - new migrations added later (005, 006, ...) without editing this loop
+  # The previous "for n in 001 002 003 004" loop silently dropped the second
+  # 004_*.sql file (head -1) and never reached 005_*.sql at all.
+  local applied_count=0 missing_seen=0
+  shopt -s nullglob
+  for f in "${REPO_DIR}/migrations/"[0-9][0-9][0-9]_*.sql; do
+    info "Applying ${f##*/}..."
+    run_cmd psql -U guardian_app -d mining_guardian -f "${f}" >/dev/null 2>&1 || \
+      warn "${f##*/} non-zero exit (may already be applied)."
+    ok "Migration ${f##*/} applied."
+    applied_count=$((applied_count + 1))
+  done
+  shopt -u nullglob
+  if (( applied_count == 0 )); then
+    warn "No migration files found under ${REPO_DIR}/migrations/ — Phase 4 schema step is a no-op."
+  else
+    ok "Applied ${applied_count} migration file(s)."
+  fi
+  # Sanity log: list canonical numbers we expect, note absences for the operator.
+  for n in 001 002 003 004 005; do
+    local g; g="$(ls "${REPO_DIR}/migrations/${n}_"*.sql 2>/dev/null | head -1 || true)"
+    [[ -z "${g}" ]] && info "  (note: no ${n}_*.sql in repo — expected for 002 pending B-7)"
   done
   log_phase_complete "04_postgres"
   ok "Phase 4 complete — PostgreSQL ready (3 databases)."
