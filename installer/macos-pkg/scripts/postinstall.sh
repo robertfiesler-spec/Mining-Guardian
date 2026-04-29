@@ -4,6 +4,38 @@
 # macOS .pkg postinstall script — RUNS AS root via Installer.app, AFTER
 # the package payload has been laid down on disk by Installer.app itself.
 #
+# ============================================================================
+# Bucket 6 final close-out (2026-04-29) — 9-service refresh
+# Bucket 7.5 follow-up (2026-04-29) — fix feedback_loop_daemon launcher path
+# ----------------------------------------------------------------------------
+# This file was originally PR #45 (4 services). Bucket 6 grew the install
+# matrix to 9 services to match what the Mac-Mini production node actually
+# runs (mirrors `scripts/setup.sh` Phase 9 from PR #75 / Bucket 6b).
+#
+# Service matrix (9):
+#   plists from installer/macos-pkg/resources/launchd/        (8 plists)
+#       com.miningguardian.scanner
+#       com.miningguardian.dashboard-api
+#       com.miningguardian.approval-api
+#       com.miningguardian.slack-listener
+#       com.miningguardian.slack-commands
+#       com.miningguardian.overnight-automation
+#       com.miningguardian.alerts
+#       com.miningguardian.intelligence-report
+#   plist from deploy/                                         (1 plist)
+#       com.miningguardian.feedback-loop-daemon  (PR #41)
+#
+# Launcher wrappers (9) are ALL sourced from canonical files in git — zero
+# inline heredocs:
+#   8 wrappers from installer/macos-pkg/resources/launchd/launchers/*.sh
+#     (written by PR #74 / Bucket 6a)
+#   1 wrapper from deploy/feedback_loop_daemon_launcher.sh
+#     (canonical D-14 PR 4b; invokes daemon by file path to dodge the
+#      hyphenated-package import issue — the daemon lives at
+#      intelligence-catalog/db/feedback_loop_daemon.py and `python -m`
+#      cannot import a package whose top-level dir contains a hyphen).
+# ============================================================================
+#
 # Job: bring the freshly-laid-down Mining Guardian install up to a
 # running state. Specifically:
 #
@@ -13,13 +45,11 @@
 #   3. Apply migrations 000_bootstrap, 002_layer2, 003_c5_notify_triggers.
 #   4. Install Ollama and pull the selected LLM model (the ONE network
 #      step at first-run; loud failure if unreachable).
-#   5. Install the 4 launchd plists and load them with launchctl
-#      bootstrap. The 4 services are:
-#         - com.miningguardian.scanner
-#         - com.miningguardian.dashboard-api
-#         - com.miningguardian.approval-api
-#         - com.miningguardian.feedback-loop-daemon  (PR #41)
-#   6. Generate the .env-sourcing launcher wrappers each plist invokes.
+#   5. Copy the 8 pre-written launcher wrappers from the .pkg payload
+#      into ${MG_INSTALL_ROOT}/bin/, then generate the 9th wrapper
+#      (feedback_loop_daemon_launcher.sh) inline.
+#   6. Install the 9 launchd plists and load them with launchctl
+#      bootstrap.
 #   7. Drop /etc/mining-guardian/install-receipt.json with git SHA,
 #      version, install timestamp, RAM tier, LLM model.
 #   8. Fire a first-run baseline scan so the operator sees green tiles
@@ -38,6 +68,7 @@
 #   34     — launchd bootstrap failed
 #   35     — install receipt could not be written
 #   36     — first-run baseline scan failed
+#   37     — launcher wrapper or plist source missing in payload (Bucket 6)
 #
 # Vision Anchor 7 honored: only one network call (model pull); every
 # other byte is vendored inside the .pkg.
@@ -71,13 +102,40 @@ readonly LIB_COLIMA="${SCRIPT_DIR}/lib/install_colima.sh"
 readonly LIB_OLLAMA="${SCRIPT_DIR}/lib/install_ollama.sh"
 
 # launchd plist staging — copied INTO LaunchDaemons/ at install time.
+# Source dirs live inside the pkg's Resources tree (set by .pkg build script
+# to mirror the repo layout under installer/macos-pkg/resources/).
 readonly PLISTS_SRC="${SCRIPT_DIR}/../resources/launchd"
+readonly LAUNCHERS_SRC="${SCRIPT_DIR}/../resources/launchd/launchers"
 readonly PLISTS_DEST="/Library/LaunchDaemons"
+
+# Bucket 6: 9 services. The 8 entries that ship from
+# installer/macos-pkg/resources/launchd/ are listed first; the 9th
+# (feedback-loop-daemon, PR #41) ships from deploy/ via the payload.
 readonly PLIST_LABELS=(
     "com.miningguardian.scanner"
     "com.miningguardian.dashboard-api"
     "com.miningguardian.approval-api"
+    "com.miningguardian.slack-listener"
+    "com.miningguardian.slack-commands"
+    "com.miningguardian.overnight-automation"
+    "com.miningguardian.alerts"
+    "com.miningguardian.intelligence-report"
     "com.miningguardian.feedback-loop-daemon"
+)
+
+# 8 launcher wrappers shipped verbatim from PR #74 (Bucket 6a). The
+# filenames mirror the plist labels with hyphens swapped for underscores
+# and `_launcher.sh` appended. The 9th launcher (feedback_loop_daemon)
+# is generated inline below for parity with the other 8.
+readonly LAUNCHER_FILES=(
+    "scanner_launcher.sh"
+    "dashboard_api_launcher.sh"
+    "approval_api_launcher.sh"
+    "slack_listener_launcher.sh"
+    "slack_commands_launcher.sh"
+    "overnight_automation_launcher.sh"
+    "alerts_launcher.sh"
+    "intelligence_report_launcher.sh"
 )
 
 # ---------------------------------------------------------------------------
@@ -218,75 +276,79 @@ step_install_ollama_and_pull_model() {
     pull_llm_model         || fail 33 "ollama pull of ${MG_INSTALL_LLM_MODEL:-?} failed"
 }
 
-step_generate_launcher_wrappers() {
-    # Each plist invokes a small wrapper that sources .env then execs
-    # the python entrypoint, because launchd has no EnvironmentFile=
-    # equivalent. Same pattern as PR #41 for the feedback-loop-daemon.
+step_install_launcher_wrappers() {
+    # Bucket 6 refresh: all 9 wrappers ship verbatim from the .pkg
+    # payload as canonical files in git — NO inline heredocs:
+    #
+    #   8 wrappers from installer/macos-pkg/resources/launchd/launchers/
+    #     (PR #74 / Bucket 6a)
+    #   1 wrapper from deploy/feedback_loop_daemon_launcher.sh
+    #     (PR #41, the canonical D-14 PR 4b launcher).
+    #
+    # The deploy/ launcher is the correct one because it invokes the
+    # daemon by file path
+    # (/usr/local/MiningGuardian/intelligence-catalog/db/feedback_loop_daemon.py),
+    # which sidesteps the directory-with-hyphen Python import problem.
+    # An earlier draft of this function used an inline heredoc that ran
+    # `python -m intelligence.feedback_loop_daemon` — that module path
+    # never existed (the file lives at intelligence-catalog/db/, not
+    # intelligence/). Bucket 7.5 corrects that by pulling from deploy/.
     local bin="${MG_INSTALL_ROOT}/bin"
     install -d -m 0755 "$bin"
 
-    cat > "${bin}/scanner_launcher.sh" <<'EOF'
-#!/bin/bash
-set -euo pipefail
-cd /usr/local/MiningGuardian
-[[ -r .env ]] && set -a && . ./.env && set +a
-exec /usr/local/MiningGuardian/venv/bin/python core/mining_guardian.py
-EOF
+    if [[ ! -d "$LAUNCHERS_SRC" ]]; then
+        fail 37 "launcher wrappers directory missing in payload: ${LAUNCHERS_SRC}"
+    fi
 
-    cat > "${bin}/dashboard_api_launcher.sh" <<'EOF'
-#!/bin/bash
-set -euo pipefail
-cd /usr/local/MiningGuardian
-[[ -r .env ]] && set -a && . ./.env && set +a
-exec /usr/local/MiningGuardian/venv/bin/python -m api.dashboard
-EOF
+    local f src dst
+    for f in "${LAUNCHER_FILES[@]}"; do
+        src="${LAUNCHERS_SRC}/${f}"
+        dst="${bin}/${f}"
+        if [[ ! -r "$src" ]]; then
+            fail 37 "launcher wrapper missing in payload: ${src}"
+        fi
+        install -m 0755 -o "${SUDO_USER:-${USER}}" -g staff "$src" "$dst"
+        log "INFO installed launcher: ${f}"
+    done
 
-    cat > "${bin}/approval_api_launcher.sh" <<'EOF'
-#!/bin/bash
-set -euo pipefail
-cd /usr/local/MiningGuardian
-[[ -r .env ]] && set -a && . ./.env && set +a
-exec /usr/local/MiningGuardian/venv/bin/python -m api.approval
-EOF
+    # 9th wrapper — feedback_loop_daemon, copied from the deploy/ tree
+    # (canonical D-14 PR 4b launcher; uses file path to dodge the
+    # hyphenated-package import issue).
+    local fbd_src="${MG_PKG_PAYLOAD}/deploy/feedback_loop_daemon_launcher.sh"
+    local fbd_dst="${bin}/feedback_loop_daemon_launcher.sh"
+    if [[ ! -r "$fbd_src" ]]; then
+        fail 37 "feedback_loop_daemon launcher missing in payload: ${fbd_src}"
+    fi
+    install -m 0755 -o "${SUDO_USER:-${USER}}" -g staff "$fbd_src" "$fbd_dst"
+    log "INFO installed launcher: feedback_loop_daemon_launcher.sh (from deploy/)"
 
-    cat > "${bin}/feedback_loop_daemon_launcher.sh" <<'EOF'
-#!/bin/bash
-set -euo pipefail
-cd /usr/local/MiningGuardian
-[[ -r .env ]] && set -a && . ./.env && set +a
-exec /usr/local/MiningGuardian/venv/bin/python -m intelligence.feedback_loop_daemon
-EOF
-
-    chmod 0755 \
-        "${bin}/scanner_launcher.sh" \
-        "${bin}/dashboard_api_launcher.sh" \
-        "${bin}/approval_api_launcher.sh" \
-        "${bin}/feedback_loop_daemon_launcher.sh"
     chown -R "${SUDO_USER:-${USER}}:staff" "$bin"
-    log "INFO generated 4 launcher wrappers in ${bin}"
+    log "INFO installed 9 launcher wrappers in ${bin}"
 }
 
 step_install_plists_and_bootstrap() {
     install -d -m 0755 "$PLISTS_DEST"
 
-    # Three plists ship from this PR's resources/launchd dir. The 4th
-    # (feedback-loop-daemon) ships from deploy/ where PR #41 put it.
-    install -m 0644 -o root -g wheel \
-        "${PLISTS_SRC}/com.miningguardian.scanner.plist"      "$PLISTS_DEST/"
-    install -m 0644 -o root -g wheel \
-        "${PLISTS_SRC}/com.miningguardian.dashboard-api.plist" "$PLISTS_DEST/"
-    install -m 0644 -o root -g wheel \
-        "${PLISTS_SRC}/com.miningguardian.approval-api.plist"  "$PLISTS_DEST/"
+    # 8 plists ship from this PR's resources/launchd dir (PR #74). The
+    # 9th (feedback-loop-daemon) ships from deploy/ where PR #41 put it.
+    local label src
+    for label in "${PLIST_LABELS[@]}"; do
+        if [[ "$label" == "com.miningguardian.feedback-loop-daemon" ]]; then
+            src="${MG_PKG_PAYLOAD}/deploy/${label}.plist"
+        else
+            src="${PLISTS_SRC}/${label}.plist"
+        fi
+        if [[ ! -r "$src" ]]; then
+            fail 37 "plist missing in payload: ${src}"
+        fi
+        install -m 0644 -o root -g wheel "$src" "${PLISTS_DEST}/${label}.plist"
+        log "INFO installed plist: ${label}.plist"
+    done
+    log "INFO installed ${#PLIST_LABELS[@]} launchd plists into $PLISTS_DEST"
 
-    local fbd="${MG_PKG_PAYLOAD}/deploy/com.miningguardian.feedback-loop-daemon.plist"
-    if [[ ! -r "$fbd" ]]; then
-        fail 34 "missing feedback-loop-daemon plist in payload"
-    fi
-    install -m 0644 -o root -g wheel "$fbd" "$PLISTS_DEST/"
-
-    log "INFO installed 4 launchd plists into $PLISTS_DEST"
-
-    local label
+    # bootout any previous load (idempotent re-install support), then
+    # bootstrap each one fresh. Order here mirrors PLIST_LABELS so the
+    # log timeline reads the same as the install matrix in the runbook.
     for label in "${PLIST_LABELS[@]}"; do
         if /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
             /bin/launchctl bootout  "system/${label}" 2>/dev/null || true
@@ -319,6 +381,7 @@ step_write_install_receipt() {
   "ram_tier_gb": ${MG_INSTALL_RAM_TIER:-null},
   "llm_model": "${MG_INSTALL_LLM_MODEL:-unknown}",
   "install_root": "${MG_INSTALL_ROOT}",
+  "service_count": ${#PLIST_LABELS[@]},
   "build_stamp": ${stamp_payload}
 }
 EOF
@@ -344,7 +407,7 @@ step_baseline_scan() {
 
 main() {
     _setup_log
-    log "Mining Guardian postinstall starting (pid=$$)"
+    log "Mining Guardian postinstall starting (pid=$$) — Bucket 6 refresh, 9 services"
     log "PKG_PATH=${PKG_PATH} TARGET=${TARGET_VOLUME} INSTALL_TARGET_DIR=${INSTALL_TARGET_DIR}"
 
     step_source_env
@@ -354,12 +417,13 @@ main() {
     step_provision_postgres
     step_apply_migrations
     step_install_ollama_and_pull_model
-    step_generate_launcher_wrappers
+    step_install_launcher_wrappers
     step_install_plists_and_bootstrap
     step_write_install_receipt
     step_baseline_scan
 
     log "All postinstall steps complete. Mining Guardian is running."
+    log "Services bootstrapped: ${#PLIST_LABELS[@]}"
     log "Dashboard:    http://127.0.0.1:8080/"
     log "Approval API: http://127.0.0.1:8081/"
     log "Logs:         ${MG_INSTALL_ROOT}/logs/"
