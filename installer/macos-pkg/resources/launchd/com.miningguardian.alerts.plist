@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.alerts.plist (Bucket 6 / installer rebuild)
+
+  launchd LaunchDaemon for the AMS alert listener on macOS.
+  Mirrors the systemd unit `mining-guardian-alerts.service`
+  (deploy/mining-guardian-alerts.service) running today on the VPS.
+
+  Service entry point: api/ams_alert_listener.py
+  Restart policy:      always restart on crash, 10s throttle (matches systemd RestartSec=10).
+
+  Resource limits: this is a small service. The systemd unit caps at
+  MemoryMax=256M / TasksMax=20. launchd has no direct equivalent for either;
+  the closest macOS construct is the launchd HardResourceLimits NumberOfFiles
+  and the kernel-side memory_status APIs, neither of which give us the same
+  guarantee. We leave the limits unset on macOS and document this divergence
+  here so a future operator does not have to re-derive it.
+
+  Install path: copied by postinstall.sh to
+      /Library/LaunchDaemons/com.miningguardian.alerts.plist
+  and loaded with:
+      sudo launchctl bootstrap system <path-to-plist>
+
+  Path + env conventions (match scanner / dashboard-api / approval-api / feedback-loop):
+    install root              /usr/local/MiningGuardian
+    .env (private secrets)    /usr/local/MiningGuardian/.env  (mode 0600)
+    venv                      /usr/local/MiningGuardian/venv
+    launcher wrapper          /usr/local/MiningGuardian/bin/alerts_launcher.sh
+    logs                      /usr/local/MiningGuardian/logs/
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.alerts</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/usr/local/MiningGuardian/bin/alerts_launcher.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/MiningGuardian/logs/alerts.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/MiningGuardian/logs/alerts.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
