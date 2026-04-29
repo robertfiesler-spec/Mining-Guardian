@@ -330,7 +330,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 - ❌ Postgres install + DB creation
 - ❌ Ollama install + 14b model pull
 - ❌ Catalog DB / catalog API
-- ❌ 7 of 8 services (only main mining-guardian.service)
+- ❌ 7 of 8 services (only main mining-guardian.service) — **plist templates landed 2026-04-29 (Bucket 6a); `setup.sh` still needs to render + load them in 7c**
 - ❌ Cron jobs (all 9)
 - ❌ Grafana
 - ❌ Tailscale (optional)
@@ -366,7 +366,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | # | Item | Effort |
 |---|---|---|
 | 7a | Inventory current `setup.sh` vs reality (Track I-1) | 30 min |
-| 7b | Write 8 plist templates in `deploy/launchd/` | 1 hour |
+| 7b | Write 8 plist templates in `installer/macos-pkg/resources/launchd/` | ✅ DONE 2026-04-29 (PR — Bucket 6a) |
 | 7c | Rewrite `setup.sh` (Track I-2) | 4-5 hours |
 | 7d | Build `restore_from_snapshot.sh` (separate) | 1.5 hours |
 | 7e | Sandbox test on fresh user account / macOS VM | 1 hour |

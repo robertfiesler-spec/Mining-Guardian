@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.slack-listener.plist (Bucket 6 / installer rebuild)
+
+  launchd LaunchDaemon for the Slack approval listener on macOS.
+  Mirrors the systemd unit `slack-listener.service` (deploy/slack-listener.service)
+  running today on the VPS.
+
+  Service entry point: api/slack_approval_listener.py
+  Restart policy:      always restart on crash, 10s throttle (matches systemd RestartSec=10).
+
+  Install path: copied by postinstall.sh to
+      /Library/LaunchDaemons/com.miningguardian.slack-listener.plist
+  and loaded with:
+      sudo launchctl bootstrap system <path-to-plist>
+
+  Path + env conventions (match scanner / dashboard-api / approval-api / feedback-loop):
+    install root              /usr/local/MiningGuardian
+    .env (private secrets)    /usr/local/MiningGuardian/.env  (mode 0600)
+    venv                      /usr/local/MiningGuardian/venv
+    launcher wrapper          /usr/local/MiningGuardian/bin/slack_listener_launcher.sh
+    logs                      /usr/local/MiningGuardian/logs/
+
+  The wrapper exists because launchd has no EnvironmentFile= equivalent;
+  the wrapper sources .env then execs python.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.slack-listener</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/usr/local/MiningGuardian/bin/slack_listener_launcher.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/MiningGuardian/logs/slack-listener.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/MiningGuardian/logs/slack-listener.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

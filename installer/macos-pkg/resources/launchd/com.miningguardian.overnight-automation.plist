@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.overnight-automation.plist (Bucket 6 / installer rebuild)
+
+  launchd LaunchDaemon for the overnight automation loop on macOS.
+  Mirrors the systemd unit `overnight-automation.service` (deploy/overnight-automation.service)
+  running today on the VPS.
+
+  Service entry point: core/overnight_automation.py
+  Restart policy:      always restart on crash, 30s throttle (matches systemd RestartSec=30).
+
+  Install path: copied by postinstall.sh to
+      /Library/LaunchDaemons/com.miningguardian.overnight-automation.plist
+  and loaded with:
+      sudo launchctl bootstrap system <path-to-plist>
+
+  Path + env conventions (match scanner / dashboard-api / approval-api / feedback-loop):
+    install root              /usr/local/MiningGuardian
+    .env (private secrets)    /usr/local/MiningGuardian/.env  (mode 0600)
+    venv                      /usr/local/MiningGuardian/venv
+    launcher wrapper          /usr/local/MiningGuardian/bin/overnight_automation_launcher.sh
+    logs                      /usr/local/MiningGuardian/logs/
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.overnight-automation</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/usr/local/MiningGuardian/bin/overnight_automation_launcher.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/usr/local/MiningGuardian/logs/overnight-automation.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/usr/local/MiningGuardian/logs/overnight-automation.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
