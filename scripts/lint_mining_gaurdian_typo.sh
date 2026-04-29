@@ -18,24 +18,23 @@
 #       docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md
 #       docs/MG_UNIFIED_TODO_LIST.md
 #       docs/REMAINING_WORK_2026-04-28.md
-#   - Frozen historical record (dated handoff / log files):
-#       docs/DB_STATE_2026-04-22.md
-#       docs/DB_STATE_2026-04-23.md
+#   - Frozen historical record — dated handoff / log files (some still in
+#     docs/, others moved into docs/archive/ during the 2026-04-29 doc sweep,
+#     PR #91):
 #       docs/DEMO_DAY_HANDOFF_2026_04_08.md
-#       docs/HANDOFF_2026_04_09_MIDMORNING.md
-#       docs/RESUME_HERE_2026_04_08_EVENING.md
 #       docs/S15_APPLIED.txt
 #       docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md
-#       docs/SESSION_HANDOFF_2026-04-24.md
-#       docs/SESSION_LOG_2026-04-09.md
-#       docs/SESSION_LOG_2026-04-16.md
+#       docs/archive/**         (all historical handoffs / session logs)
 #   - Frozen by design:
 #       archive/**
 #       fixes/2026-04-13/**
 #   - Build artifact:
 #       .coverage
-#   - The lint script itself (must contain the typo to grep for it):
+#   - This lint's own infrastructure (must contain the typo string by
+#     necessity — the script greps for it, the workflow names the job after
+#     it):
 #       scripts/lint_mining_gaurdian_typo.sh
+#       .github/workflows/lint.yml
 #
 # Usage:
 #   scripts/lint_mining_gaurdian_typo.sh           # from repo root
@@ -75,20 +74,15 @@ read -r -d '' ALLOWED_PATTERNS <<'EOF' || true
 ^\./docs/MAC_MINI_DEPLOYMENT_RUNBOOK\.md$
 ^\./docs/MG_UNIFIED_TODO_LIST\.md$
 ^\./docs/REMAINING_WORK_2026-04-28\.md$
-^\./docs/DB_STATE_2026-04-22\.md$
-^\./docs/DB_STATE_2026-04-23\.md$
 ^\./docs/DEMO_DAY_HANDOFF_2026_04_08\.md$
-^\./docs/HANDOFF_2026_04_09_MIDMORNING\.md$
-^\./docs/RESUME_HERE_2026_04_08_EVENING\.md$
 ^\./docs/S15_APPLIED\.txt$
 ^\./docs/SESSION_2026-04-13_S21_TEST_AND_FIXES\.md$
-^\./docs/SESSION_HANDOFF_2026-04-24\.md$
-^\./docs/SESSION_LOG_2026-04-09\.md$
-^\./docs/SESSION_LOG_2026-04-16\.md$
+^\./docs/archive/
 ^\./archive/
 ^\./fixes/2026-04-13/
 ^\./\.coverage$
 ^\./scripts/lint_mining_gaurdian_typo\.sh$
+^\./\.github/workflows/lint\.yml$
 EOF
 
 # Combine into a single anchored alternation for one grep -E.

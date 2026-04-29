@@ -348,19 +348,27 @@ A CI lint (Optional PR-3) must whitelist all seven files above plus the
 These are dated handoff / log files that capture what was true on the day they
 were written. Editing them would falsify the historical record.
 
+**2026-04-29 update (PR #91 doc sweep):** the `docs/SESSION_LOG_*`,
+`docs/HANDOFF_*`, `docs/SESSION_HANDOFF_*`, and `docs/DB_STATE_*` files
+were relocated into `docs/archive/2026-04/` as part of the install-eve doc
+sweep. The lint allow-list now uses a `docs/archive/` directory prefix to
+cover all of them in one entry. `docs/RESUME_HERE_2026_04_08_EVENING.md`
+was removed entirely during the same sweep (its content was superseded by
+the Mac Mini runbook), so it no longer needs an allow-list entry.
+
 | File | Hits |
 |---|---|
 | `NEXT_SESSION.md` (post-banner body, banner-superseded by PR #31) | 5 |
-| `docs/SESSION_LOG_2026-04-09.md` | 2 |
-| `docs/SESSION_LOG_2026-04-16.md` | 1 |
+| `docs/archive/2026-04/SESSION_LOG_2026-04-09.md` | 2 |
+| `docs/archive/2026-04/SESSION_LOG_2026-04-16.md` | 1 |
 | `docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md` | 6 |
-| `docs/SESSION_HANDOFF_2026-04-24.md` | 2 |
-| `docs/RESUME_HERE_2026_04_08_EVENING.md` | 9 |
-| `docs/HANDOFF_2026_04_09_MIDMORNING.md` | 7 |
+| `docs/archive/2026-04/SESSION_HANDOFF_2026-04-24.md` | 2 |
+| `docs/archive/2026-04/HANDOFF_2026_04_09_MIDMORNING.md` | 7 |
 | `docs/DEMO_DAY_HANDOFF_2026_04_08.md` | 2 |
-| `docs/DB_STATE_2026-04-22.md` | 2 |
-| `docs/DB_STATE_2026-04-23.md` | 7 |
+| `docs/archive/2026-04/DB_STATE_2026-04-22.md` | 2 |
+| `docs/archive/2026-04/DB_STATE_2026-04-23.md` | 7 |
 | `docs/S15_APPLIED.txt` | 1 |
+| `docs/archive/**` (catch-all for all archived handoffs / session logs) | n/a |
 
 #### Leave-as-frozen-by-design scope
 
@@ -420,7 +428,18 @@ script on every push and PR. The script:
 - filters out an explicit allow-list anchored to repo-relative paths
 - prints every disallowed hit with its line numbers, exits 1
 - has a `--list` flag for unfiltered hit listing during local audits
-- self-includes in the allow-list (it must contain the typo to grep for it)
+- self-includes both the script and the workflow in the allow-list (both
+  must contain the typo string by necessity — the script greps for it,
+  the workflow names the job after it)
+
+**2026-04-29 PM allow-list refresh (in this same PR #72):** the doc-sweep
+(PR #91) merged earlier the same day moved the `SESSION_LOG_*`, `HANDOFF_*`,
+`SESSION_HANDOFF_*`, and `DB_STATE_*` files into `docs/archive/2026-04/`
+and deleted `RESUME_HERE_2026_04_08_EVENING.md`. The allow-list was
+updated in lockstep: individual stale path entries replaced with a
+`^\./docs/archive/` directory prefix; `^\./\.github/workflows/lint\.yml$`
+added for the workflow self-reference. Lint re-verified clean (62 hits,
+all inside the allow-list) before merge.
 
 The allow-list is kept in lockstep with this entry's `Allowed-exception
 scope` and `Leave-as-historical-record scope` tables; any new entry must
