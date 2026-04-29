@@ -1,0 +1,253 @@
+  LLM_INSIGHTS_HTML = """<!DOCTYPE html>
+./ai/action_diversity.py:250:5: local variable 'max_board' is assigned to but never used
+./ai/action_diversity.py:47:1: 'datetime.timedelta' imported but unused
+./ai/action_diversity.py:49:1: 'typing.Tuple' imported but unused
+./ai/ai_score.py:26:1: 'datetime.timedelta' imported but unused
+./ai/catalog_context.py:104:5: `global _circuit_open_until` is unused: name is never assigned in scope
+./ai/claude_log_comparison.py:17:1: 'json' imported but unused
+./ai/claude_log_comparison.py:20:1: 're' imported but unused
+./ai/comprehensive_audit.py:17:1: 'datetime.datetime' imported but unused
+./ai/comprehensive_audit.py:480:5: local variable 'orphans' is assigned to but never used
+./ai/confidence_scorer.py:113:17: local variable 'signals' is assigned to but never used
+./ai/daily_deep_dive.py:531:9: local variable 'chips' is assigned to but never used
+./ai/daily_deep_dive.py:67:1: 'datetime.timedelta' imported but unused
+./ai/daily_deep_dive.py:69:1: 'typing.Tuple' imported but unused
+./ai/deep_analysis_claude.py:12:1: 'json' imported but unused
+./ai/deep_analysis_claude.py:16:1: 'datetime.datetime' imported but unused
+./ai/export_knowledge.py:22:1: 'os' imported but unused
+./ai/export_knowledge.py:24:1: 'datetime.date' imported but unused
+./ai/export_knowledge.py:25:1: 'collections.defaultdict' imported but unused
+./ai/fingerprint_builder.py:236:5: local variable 'avg_hr_medium' is assigned to but never used
+./ai/fingerprint_builder.py:286:5: local variable 'avg_pdu_kw' is assigned to but never used
+./ai/fingerprint_builder.py:290:9: local variable 'pdu_variance' is assigned to but never used
+./ai/hvac_correlator.py:26:1: 'json' imported but unused
+./ai/hvac_correlator.py:32:1: 'typing.List' imported but unused
+./ai/hvac_correlator.py:385:15: f-string is missing placeholders
+./ai/insight_manager.py:21:1: 'os' imported but unused
+./ai/insight_manager.py:25:1: 'typing.Any' imported but unused
+./ai/knowledge_manager.py:15:1: 'os' imported but unused
+./ai/knowledge_manager.py:18:1: 'datetime.timedelta' imported but unused
+./ai/knowledge_manager.py:303:26: f-string is missing placeholders
+./ai/knowledge_manager.py:311:26: f-string is missing placeholders
+./ai/local_llm_analyzer.py:26:1: 'datetime.timedelta' imported but unused
+./ai/local_llm_analyzer.py:28:1: 'typing.List' imported but unused
+./ai/local_llm_analyzer.py:367:26: f-string is missing placeholders
+./ai/local_llm_analyzer.py:377:26: f-string is missing placeholders
+./ai/local_llm_analyzer.py:388:26: f-string is missing placeholders
+./ai/local_llm_analyzer.py:409:26: f-string is missing placeholders
+./ai/local_llm_analyzer.py:430:9: local variable 'rules' is assigned to but never used
+./ai/local_llm_analyzer.py:460:26: f-string is missing placeholders
+./ai/local_llm_analyzer.py:495:13: local variable 'category' is assigned to but never used
+./ai/local_llm_analyzer.py:516:26: f-string is missing placeholders
+./ai/local_llm_analyzer.py:522:26: f-string is missing placeholders
+./ai/predictive_eta.py:16:1: 'typing.Optional' imported but unused
+./ai/predictive_eta.py:16:1: 'typing.Tuple' imported but unused
+./ai/predictive_eta.py:58:9: local variable 'analyses' is assigned to but never used
+./ai/predictive_eta.py:73:5: local variable 'restarts_30d' is assigned to but never used
+./ai/predictor.py:764:5: local variable 'avg_voltage' is assigned to but never used
+./ai/predictor.py:984:9: f-string is missing placeholders
+./ai/refinement_chain.py:121:9: 'anthropic' imported but unused
+./ai/train_cohort.py:520:9: f-string is missing placeholders
+./ai/train_cohort.py:521:9: f-string is missing placeholders
+./ai/train_comprehensive.py:24:1: 'json' imported but unused
+./ai/train_comprehensive.py:397:22: f-string is missing placeholders
+./ai/train_comprehensive.py:410:22: f-string is missing placeholders
+./ai/train_llm.py:11:1: 'json' imported but unused
+./ai/train_llm.py:127:11: f-string is missing placeholders
+./ai/train_llm.py:88:9: local variable 'prompt' is assigned to but never used
+./ai/train_llm.py:91:65: f-string is missing placeholders
+./ai/train_llm_pass2.py:100:9: local variable 'prompt' is assigned to but never used
+./ai/train_llm_pass2.py:13:1: 'json' imported but unused
+./ai/train_llm_pass2.py:150:11: f-string is missing placeholders
+./ai/weekly_train.py:22:1: 'knowledge_manager.KnowledgeManager' imported but unused
+./api/ai_dashboard_api.py:168:5: local variable 'e' is assigned to but never used
+./api/ai_dashboard_api.py:17:1: 'datetime.timedelta' imported but unused
+./api/ams_alert_listener.py:341:9: local variable 'miner_id' is assigned to but never used
+./api/ams_alert_listener.py:362:73: local variable 's' is assigned to but never used
+./api/ams_alert_listener.py:61:1: 'typing.List' imported but unused
+./api/dashboard_api.py:1736:5: local variable 'profit_class' is assigned to but never used
+./api/dashboard_api.py:1949:5: local variable 'exc' is assigned to but never used
+./api/dashboard_api.py:25:1: 'typing.Optional' imported but unused
+./api/dashboard_api.py:2637:39: f-string is missing placeholders
+./api/dashboard_api.py:323: SyntaxWarning: invalid escape sequence '\*'
+./api/dashboard_api.py:675:9: local variable 'e' is assigned to but never used
+./api/dashboard_api.py:681:13: 'datetime.timezone as _tz' imported but unused
+./api/fleet_comparison.py:15:1: 'datetime.datetime' imported but unused
+./api/fleet_comparison.py:15:1: 'datetime.timedelta' imported but unused
+./api/fleet_comparison.py:16:1: 'typing.Optional' imported but unused
+./api/intelligence_report_api.py:1201:16: f-string is missing placeholders
+./api/intelligence_report_api.py:1249:16: f-string is missing placeholders
+./api/intelligence_report_api.py:1380:16: f-string is missing placeholders
+./api/intelligence_report_api.py:1458:5: local variable 'manufacturer' is assigned to but never used
+./api/intelligence_report_api.py:1539:5: local variable 'known_issues' is assigned to but never used
+./api/intelligence_report_api.py:1541:5: local variable 'cooling' is assigned to but never used
+./api/intelligence_report_api.py:25:1: 'math' imported but unused
+./api/intelligence_report_api.py:33:1: 'urllib.error.URLError' imported but unused
+./api/intelligence_report_api.py:35:1: 'fastapi.Request as FastAPIRequest' imported but unused
+./api/intelligence_report_api.py:523:5: `global _catalog_mtime` is unused: name is never assigned in scope
+./api/maintenance_scheduler.py:14:1: 'typing.Any' imported but unused
+./api/maintenance_scheduler.py:14:1: 'typing.Dict' imported but unused
+./api/maintenance_scheduler.py:14:1: 'typing.List' imported but unused
+./api/maintenance_scheduler.py:14:1: 'typing.Optional' imported but unused
+./api/report_builder.py:12:1: 'typing.Any' imported but unused
+./api/report_builder.py:17:1: 'reportlab.lib.colors.black' imported but unused
+./api/report_builder.py:21:1: 'reportlab.lib.enums.TA_LEFT' imported but unused
+./api/report_builder.py:21:1: 'reportlab.lib.enums.TA_RIGHT' imported but unused
+./api/slack_approval_listener.py:16:1: 'json' imported but unused
+./api/slack_block_kit.py:14:1: 'typing.Optional' imported but unused
+./api/slack_command_handler.py:248:13: local variable 'insights' is assigned to but never used
+./api/slack_command_handler.py:250:22: f-string is missing placeholders
+./api/slack_command_handler.py:26:1: 'json' imported but unused
+./api/slack_command_handler.py:434:26: f-string is missing placeholders
+./api/slack_command_handler.py:442:26: f-string is missing placeholders
+./api/slack_command_handler.py:451:30: f-string is missing placeholders
+./api/slack_command_handler.py:458:30: f-string is missing placeholders
+./api/slack_command_handler.py:583:20: f-string is missing placeholders
+./api/slack_command_handler.py:644:13: 'fleet_comparison.format_efficiency_ranking' imported but unused
+./api/slack_command_handler.py:692:18: f-string is missing placeholders
+./api/trends_api.py:13:1: 'typing.Optional' imported but unused
+./clients/ams_client.py:9:1: 'os' imported but unused
+./clients/av2_plant_client.py:11:1: 'json' imported but unused
+./clients/container_monitor.py:359:9: local variable 'c' is assigned to but never used
+./clients/container_monitor.py:360:9: local variable 'p' is assigned to but never used
+./clients/container_monitor.py:361:9: local variable 'e' is assigned to but never used
+./clients/container_monitor.py:38:1: 'json' imported but unused
+./clients/container_monitor.py:40:1: 'typing.Any' imported but unused
+./clients/container_monitor.py:444:5: local variable 'e' is assigned to but never used
+./clients/hvac_client.py:14:1: 'json' imported but unused
+./clients/hvac_client.py:18:1: 'dataclasses.field' imported but unused
+./clients/hvac_client.py:19:1: 'typing.Any' imported but unused
+./clients/hvac_client.py:21:1: 'clients.av2_plant_client.AV2PlantClient' imported but unused
+./clients/hvac_client.py:348:22: f-string is missing placeholders
+./clients/immersion_client.py:34:1: 'dataclasses.field' imported but unused
+./core/database.py:1437:9: local variable 'rows' is assigned to but never used
+./core/database.py:15:1: 'core.database_router.TABLE_ROUTING' imported but unused
+./core/database.py:15:1: 'core.database_router.get_connection' imported but unused
+./core/database_pg.py:36:1: 'typing.Any' imported but unused
+./core/database_router.py:128:9: local variable 'e' is assigned to but never used
+./core/database_router.py:156:9: local variable 'e' is assigned to but never used
+./core/database_router.py:17:1: 'typing.Any' imported but unused
+./core/db_compat.py:25:1: 'typing.Set' imported but unused
+./core/db_compat.py:27:1: 'core.database_router.DATABASES' imported but unused
+./core/db_helper.py:25:1: 'contextlib.contextmanager' imported but unused
+./core/db_helper.py:34:5: 'core.database_router.get_db_connection' imported but unused
+./core/db_helper.py:34:5: 'core.database_router.get_router' imported but unused
+./core/hashrate_evaluation.py:27:1: 'datetime.timedelta' imported but unused
+./core/llm_analyzer.py:10:1: 'json' imported but unused
+./core/llm_analyzer.py:19:1: 'psycopg2.extras.DictCursor' imported but unused
+./core/mining_guardian.py:11:1: 'typing.Tuple' imported but unused
+./core/mining_guardian.py:2007:27: f-string is missing placeholders
+./core/mining_guardian.py:2011:27: f-string is missing placeholders
+./core/mining_guardian.py:2017:27: f-string is missing placeholders
+./core/mining_guardian.py:2028:23: f-string is missing placeholders
+./core/mining_guardian.py:2029:23: f-string is missing placeholders
+./core/mining_guardian.py:2030:23: f-string is missing placeholders
+./core/mining_guardian.py:2031:23: f-string is missing placeholders
+./core/mining_guardian.py:2112:13: local variable 'message' is assigned to but never used
+./core/mining_guardian.py:344:9: local variable 'name' is assigned to but never used
+./core/mining_guardian.py:348:9: local variable 'firmware' is assigned to but never used
+./core/mining_guardian.py:395:17: 're as _re' imported but unused
+./core/mining_guardian.py:40:1: 'requests' imported but unused
+./core/mining_guardian.py:41:1: 'websocket' imported but unused
+./core/mining_guardian.py:42:1: 'requests.adapters.HTTPAdapter' imported but unused
+./core/mining_guardian.py:43:1: 'urllib3.util.retry.Retry' imported but unused
+./core/mining_guardian.py:484:17: local variable 'offline_restarts' is assigned to but never used
+./core/mining_guardian.py:57:1: 'hvac_client.poll_all_systems' imported but unused
+./core/mining_guardian.py:64:5: local variable 'log_file' is assigned to but never used
+./core/mining_guardian.py:766:9: redefinition of unused 'requests' from line 40
+./core/mining_guardian.py:8:1: 'dataclasses.dataclass' imported but unused
+./core/mining_guardian.py:8:1: 'dataclasses.field' imported but unused
+./core/mining_guardian.py:92:1: 'core.models.MinerFinding' imported but unused
+./core/mining_guardian.py:92:1: 'core.models.ParameterRule' imported but unused
+./core/mining_guardian.py:92:1: 'core.models.PolicyEngine' imported but unused
+./core/mining_guardian.py:92:1: 'core.models.RemediationCooldown' imported but unused
+./core/mining_guardian.py:92:1: 'core.models.RemediationPlanner' imported but unused
+./core/mining_guardian.py:95:1: 'notifiers.approval_interface.ApprovalInterface' imported but unused
+./core/models.py:10:1: 'time' imported but unused
+./core/models.py:15:1: 'pathlib.Path' imported but unused
+./core/overnight_automation.py:27:1: 'requests' imported but unused
+./fixes/2026-04-13/fix_predictions.py:3:1: 're' imported but unused
+./intelligence-catalog/db/dual_writer.py:99:9: 'psycopg2.extras.Json' imported but unused
+./intelligence-catalog/tools/catalog_updater.py:37:1: 'urllib.error.URLError' imported but unused
+./intelligence-catalog/watchers/manufacturer_watcher.py:59:1: 'os' imported but unused
+./intelligence-catalog/watchers/parsers/auradine.py:56:13: 'httpx' imported but unused
+./intelligence-catalog/watchers/parsers/bitdeer.py:58:13: 'httpx' imported but unused
+./intelligence-catalog/watchers/parsers/bitmain.py:102:13: 'httpx' imported but unused
+./intelligence-catalog/watchers/parsers/canaan.py:55:13: 'httpx' imported but unused
+./intelligence-catalog/watchers/parsers/microbt.py:60:13: 'httpx' imported but unused
+./mg_import_tool/mg_import.py:1179:1: 'struct as _struct' imported but unused
+./mg_import_tool/mg_import.py:1688:5: local variable 'warnings' is assigned to but never used
+./mg_import_tool/mg_import.py:1855:17: local variable 'iin_str' is assigned to but never used
+./mg_import_tool/mg_import.py:1856:17: local variable 'vin_str' is assigned to but never used
+./mg_import_tool/mg_import.py:1857:17: local variable 'pin_val' is assigned to but never used
+./mg_import_tool/mg_import.py:1858:17: local variable 'temp_str' is assigned to but never used
+./mg_import_tool/mg_import.py:1859:17: local variable 'stat_val' is assigned to but never used
+./mg_import_tool/mg_import.py:2086:5: local variable 'power_rows' is assigned to but never used
+./mg_import_tool/mg_import.py:32:1: 'secrets' imported but unused
+./mg_import_tool/mg_import.py:3400:5: local variable 'conn_params' is assigned to but never used
+./mg_import_tool/mg_import.py:3554:5: local variable '_per_archive_errors' is assigned to but never used
+./mg_import_tool/mg_import.py:38:1: 'datetime.timezone' imported but unused
+./mg_import_tool/mg_import.py:40:1: 'functools.lru_cache' imported but unused
+./mg_import_tool/mg_import.py:4364:9: 'hashlib' imported but unused
+./mg_import_tool/mg_import.py:4412:5: `global _BATCH_CANCEL_FLAG` is unused: name is never assigned in scope
+./mg_import_tool/mg_import.py:4412:5: `global _LAST_RESOLVER_STATS` is unused: name is never assigned in scope
+./mg_import_tool/mg_import.py:4445:9: `nonlocal conn_params` is unused: name is never assigned in scope
+./mg_import_tool/mg_import.py:497:22: f-string is missing placeholders
+./mg_import_tool/mg_import.py:594:25: local variable 'in_transaction' is assigned to but never used
+./mg_import_tool/resolver.py:59:1: 'dataclasses.field' imported but unused
+./mg_import_tool/tools/run_full_import.py:85:1: 'mg_import.execute_sql_block' imported but unused
+./mg_import_tool/tools/test_archive_parsers.py:306:23: f-string is missing placeholders
+./mg_import_tool/tools/test_archive_parsers.py:310:23: f-string is missing placeholders
+./migrations/migrate_sqlite_to_postgres.py:166:5: local variable 'placeholders' is assigned to but never used
+./migrations/migrate_sqlite_to_postgres.py:29:1: 'datetime.datetime' imported but unused
+./migrations/migrate_sqlite_to_postgres.py:29:1: 'datetime.timedelta' imported but unused
+./migrations/migrate_sqlite_to_postgres.py:31:1: 'typing.Any' imported but unused
+./migrations/migrate_sqlite_to_postgres.py:31:1: 'typing.Dict' imported but unused
+./monitoring/cost_tracker.py:17:1: 'datetime.datetime' imported but unused
+./monitoring/cost_tracker.py:17:1: 'datetime.timedelta' imported but unused
+./monitoring/cost_tracker.py:18:1: 'typing.Tuple' imported but unused
+./monitoring/weather_collector.py:9:1: 'datetime.datetime' imported but unused
+./monitoring/weather_collector.py:9:1: 'datetime.timedelta' imported but unused
+./notifiers/approval_interface.py:10:1: 'typing.Any' imported but unused
+./notifiers/slack_notifier.py:10:1: 'json' imported but unused
+./notifiers/slack_notifier.py:13:1: 'datetime.timedelta' imported but unused
+./notifiers/slack_notifier.py:14:1: 'typing.Any' imported but unused
+./notifiers/slack_notifier.py:215:26: f-string is missing placeholders
+./notifiers/slack_notifier.py:306:17: f-string is missing placeholders
+./notifiers/slack_notifier.py:346:26: f-string is missing placeholders
+./notifiers/slack_notifier.py:514:30: f-string is missing placeholders
+./scripts/audit_ai_data.py:6:1: 'pathlib.Path' imported but unused
+./scripts/daily_log_failure_report.py:11:1: 'sys' imported but unused
+./scripts/debug_hashrate.py:5:1: 'hashrate_evaluation.BaselineManager' imported but unused
+./scripts/debug_hashrate.py:5:1: 'hashrate_evaluation.HashrateTierResolver' imported but unused
+./scripts/debug_hashrate.py:5:1: 'hashrate_evaluation.MinerSpecsLoader' imported but unused
+./scripts/diagnostics/diagnose_ah3880_v2.py:20:1: 'sqlite3' imported but unused
+./scripts/diagnostics/diagnose_ah3880_v2.py:21:1: 'datetime.datetime' imported but unused
+./scripts/diagnostics/diagnose_ah3880_v2.py:73:7: f-string is missing placeholders
+./scripts/direct_collect_logs.py:122:38: f-string is missing placeholders
+./scripts/direct_collect_logs.py:5:1: 'json' imported but unused
+./scripts/direct_collect_logs.py:5:1: 'sys' imported but unused
+./scripts/full_ai_audit.py:5:1: 'os' imported but unused
+./scripts/full_ai_audit.py:87:9: local variable 'e' is assigned to but never used
+./scripts/inspect_training.py:21:7: f-string is missing placeholders
+./scripts/inspect_training.py:58:7: f-string is missing placeholders
+./scripts/manual_log_upload.py:442:11: f-string is missing placeholders
+./scripts/manual_log_upload.py:500:19: f-string is missing placeholders
+./scripts/manual_log_upload.py:504:11: f-string is missing placeholders
+./scripts/manual_log_upload.py:51:1: 'os' imported but unused
+./scripts/manual_log_upload.py:59:1: 'typing.Tuple' imported but unused
+./scripts/manual_log_upload.py:605:15: f-string is missing placeholders
+./scripts/manual_log_upload.py:620:19: f-string is missing placeholders
+./scripts/manual_log_upload.py:644:15: f-string is missing placeholders
+./scripts/migrate_to_postgres.py:12:1: 'psycopg2.sql' imported but unused
+./scripts/morning_briefing.py:106:5: local variable 'since' is assigned to but never used
+./scripts/morning_briefing.py:17:1: 'json' imported but unused
+./scripts/morning_briefing.py:213:14: f-string is missing placeholders
+./scripts/morning_briefing.py:290:22: f-string is missing placeholders
+./scripts/morning_briefing.py:298:22: f-string is missing placeholders
+./scripts/send_deep_dive_report.py:6:1: 'sys' imported but unused
+./scripts/send_deep_dive_report.py:97:11: f-string is missing placeholders
+./scripts/test_local_llm.py:17:1: 'json' imported but unused
+./scripts/test_local_llm.py:47:7: f-string is missing placeholders
+./scripts/test_local_llm.py:62:7: f-string is missing placeholders
+./scripts/verify_training_data.py:52:7: f-string is missing placeholders
