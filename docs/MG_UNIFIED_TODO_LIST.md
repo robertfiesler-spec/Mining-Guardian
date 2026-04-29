@@ -327,23 +327,23 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 
 # SECTION 7 — Installer Rebuild (the build day target)
 
-## 7.1. Current state of `scripts/setup.sh` (177 lines)
+## 7.1. Current state of `scripts/setup.sh` — ✅ REWRITTEN 2026-04-29 (Bucket 6b)
 
-🔴 **Severely out of date.** Misses:
+**Old state (177 lines, BiXBiT-branded shell, severely out of date)** rewritten as the 883-line, 15-phase customer macOS installer v2 in Bucket 6b. Reality-check of the original gap list:
 
-- ❌ Postgres install + DB creation
-- ❌ Ollama install + 14b model pull
-- ❌ Catalog DB / catalog API
-- ❌ 7 of 8 services (only main mining-guardian.service) — **plist templates landed 2026-04-29 (Bucket 6a); `setup.sh` still needs to render + load them in 7c**
-- ❌ Cron jobs (all 9)
-- ❌ Grafana
-- ❌ Tailscale (optional)
-- ❌ S-7 hardening (dedicated user)
-- ❌ S-14 fix (`read -s`)
-- ❌ S-6 fix (generate API key, write to `.env`)
-- ❌ References `mining_guardian.py` at repo root — moved to `core/mining_guardian.py`
-- ❌ References `com.bixbit.mining-guardian.plist` template that doesn't exist
-- ❌ Only 6 pip packages — repo needs 49
+- ✅ Postgres install + DB creation (Phase 4)
+- ✅ Ollama install + 14b model pull (Phase 8)
+- ✅ Catalog DB / catalog API (Phase 4 + Phase 5 seed)
+- ✅ 8 of 8 services (plists from PR #74 / Bucket 6a, rendered + bootstrapped in Phase 9)
+- ✅ Cron jobs (all 9 + 1 hourly benchmark) (Phase 10)
+- 📘 Grafana — Bucket 6b writes a placeholder provisioning yaml; Bucket 6d ships the real datasources + dashboards
+- ✅ Tailscale (optional, behind `--tailscale` flag) (Phase 12)
+- ❌ S-7 hardening (dedicated user) — deferred; setup.sh has a TODO block citing §3.2
+- ✅ S-14 fix (`read -s` at 5 password-prompt sites) (Phase 2)
+- ✅ S-6 fix (generate `CATALOG_API_KEY` via `openssl rand -hex 32`, write to `.env` mode 0600) (Phase 7)
+- ✅ References `core/mining_guardian.py` (the moved location) throughout
+- ✅ References the 8 real plists from Bucket 6a; old `com.bixbit.mining-guardian.plist` reference removed
+- ✅ Pip install honors `requirements.txt` if present, fallback pinned set otherwise (Phase 6)
 
 ## 7.2. Installer v2 — required functionality
 
@@ -371,7 +371,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 |---|---|---|
 | 7a | Inventory current `setup.sh` vs reality (Track I-1) | 30 min |
 | 7b | Write 8 plist templates in `installer/macos-pkg/resources/launchd/` | ✅ DONE 2026-04-29 (PR — Bucket 6a) |
-| 7c | Rewrite `setup.sh` (Track I-2) | 4-5 hours |
+| 7c | Rewrite `setup.sh` (Track I-2) | ✅ DONE 2026-04-29 (PR — Bucket 6b, 883 lines, 15 phases, S-13/S-14 folded in, 6d-grafana + 6c-restore stubs delegate cleanly) |
 | 7d | ✅ DONE 2026-04-29 (PR — Bucket 6c) — `scripts/restore_from_snapshot.sh` (572 lines, 8 phases, --tarball/--skip-postgres-restore/--skip-grafana-restore/--dry-run, paste-along VPS tarball-build hints at bottom). Verify: `wc -l scripts/restore_from_snapshot.sh` and `git ls-tree HEAD scripts/restore_from_snapshot.sh` (mode 100755). | ✅ |
 | 7e | 📘 Runbook landed 2026-04-29 (PR — Bucket 6e) — `docs/RUNBOOK_BUCKET_6E_SANDBOX_TEST.md` (397 lines: pre-flight, 15 phase-by-phase test procedure, restore-pass procedure, failure-mode catalog, exit criteria). Robert exec on fresh user account / VM — sandbox exec pending. Verify: `wc -l docs/RUNBOOK_BUCKET_6E_SANDBOX_TEST.md`. | 📘 |
 | 7f | ✅ DONE 2026-04-29 (PR — Bucket 6f) — `DEPLOYMENT_CHECKLIST.md` rewritten for Mac-Mini era (410 lines, 7 sections: prerequisites, install .pkg, post-install state checks, restore-from-snapshot path, operator sign-off, common failure modes, rollback plan + Appendix A preserves the April 15 VPS-era checklist verbatim). Verify: `wc -l DEPLOYMENT_CHECKLIST.md` (→ 410) and `grep -c 'launchd\|launchctl\|brew services' DEPLOYMENT_CHECKLIST.md` (→ ≥7 macOS-era references). Will be filled in with observed-reality values from sandbox-test exec (PR Bucket 6e). | ✅ |
@@ -795,3 +795,84 @@ Stale experiments — **do NOT delete without asking**:
 - `pre-prod-audit-2026-04-25` (diverged 47 / 294)
 
 *— end of 2026-04-29 update*
+
+---
+
+# SECTION 16 — New buckets added 2026-04-29 (mid-Bucket-6 user feedback)
+
+## 16.1 Customer-facing scheduling UI (Bucket 9 sub-item) 🔴 OPEN
+
+The launchd plists landed in Bucket 6a (PR #74) and the cron entries that
+Bucket 6b's `setup.sh` writes are the *plumbing*. The customer-facing
+Mining Guardian app needs a **non-terminal interface** so site operators
+who don't know cron or zsh can:
+
+- Set up scan / cron schedules (pick interval, hour-of-day, weekly cadence).
+- Toggle full-auto vs. dry-run vs. paused mode.
+- Stop / pause / resume scheduled events without `launchctl bootout` or
+  `crontab -e`.
+
+**Why it lives in Bucket 9:** the only audience until the customer app
+ships is the operator (Robert), and he is comfortable in a terminal. The
+GUI / mode-selector work in Bucket 9 is the right home; this entry
+ensures schedule control is a first-class feature of that GUI rather
+than an afterthought.
+
+**Internals when the GUI ships:** every control maps to existing plumbing
+— schedule changes rewrite `crontab` + the relevant LaunchDaemon
+`StartInterval`/`StartCalendarInterval` keys; pause sends
+`launchctl bootout`; resume sends `launchctl bootstrap`. No new daemon
+type is introduced.
+
+## 16.2 Bucket 10 — Full repo doc cleanup sweep 🔴 OPEN
+
+The reality-check pattern from PR #63 / PR #70 / PR #69 is reactive—
+flip stale TODO entries to ✅ once we trip over them. Bucket 10 is the
+**proactive** version: walk every doc under the repo, audit it against
+current code/state, classify into one of
+
+- **keep as-is** (still accurate),
+- **update in place** (mostly right, one or two facts to flip),
+- **move to `archive/`** (historical, not current truth, but worth keeping),
+- **delete** (instructions for work already done, runbooks for paths
+  we no longer take, dead reference material with no archival value).
+
+### Target inventory (first-pass, will be refined when Bucket 10 starts)
+
+| Area | Likely action |
+|---|---|
+| `docs/SESSION_LOG_2026-04-*.md` | move to `archive/session_logs/` |
+| `docs/RUNBOOK_2026-04-*` (afternoon, etc.) | archive once superseded |
+| `docs/POSTGRES_MIGRATION_*.md` (status \| plan \| state) | archive once cutover stable |
+| `docs/REMAINING_WORK_2026-04-28.md` | reality-check, then archive or delete |
+| `docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md` | archive |
+| `docs/CRON_RECONCILIATION.md` | reality-check after Bucket 6b ships |
+| `REPAIR_LOG.md` | trim entries older than 30 days into archive |
+| Root-level `*.md` (CAPABILITIES, NEXT_SESSION, SESSION_COMPLETE, etc.) | reality-check each; most are stale |
+| `.claude/` agents/commands/skills | audit which still apply |
+| `archive/` | re-prune (already-archived material that's now truly dead) |
+
+### Process (Bucket 10 cadence)
+
+One PR per logical group, not one giant PR. Suggested groupings:
+
+1. PR — archive old session logs (`SESSION_LOG_2026-04-*`).
+2. PR — archive Postgres-cutover docs (cutover stable now).
+3. PR — reality-check root-level `*.md`.
+4. PR — trim REPAIR_LOG.
+5. PR — prune `archive/` of truly dead material.
+6. PR — `.claude/` audit.
+
+Each PR includes a verification block: a brief "why this is safe to
+delete/archive" note per file, plus the standard `grep` confirming no
+active code references the doc.
+
+### Why this matters
+
+The operator has been bitten three times in a single session by stale
+docs (PR #63, PR #69, PR #70 reality-checks). The runtime defense—
+work.projects.mining_guardian.todo_sync, every fix PR flips its
+TODO entry in the same commit—stays in force as the steady-state
+guardrail. Bucket 10 is the one-time **deep cleanse** that brings the
+repo into a state where the runtime defense actually works against
+a clean baseline.
