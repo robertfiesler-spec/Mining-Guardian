@@ -53,7 +53,7 @@ See `docs/INTELLIGENCE_REPORT_API.md` for full endpoint documentation.
 1. **Catalog research** completed — all major SHA-256 manufacturers covered (Bitmain, MicroBT, Canaan, Bitdeer, Auradine, Innosilicon, Ebang, StrongU)
 2. **Enrichment master CSV** — 277 models with detailed specs, efficiency, firmware, cooling, known issues
 3. **Unified miner index** — 226 models (slug-deduplicated from 235 raw entries, 9 duplicates merged)
-4. **Fleet integration** — models deployed in Bobby's fleet get live operational data from guardian.db
+4. **Fleet integration** — models deployed in Bobby's fleet were joined with operational data from `guardian.db` during the VPS era (historical SQLite snapshot — not live). Post-2026-04-30 the join is against PostgreSQL `mining_guardian` on the Mac Mini.
 5. **Live network data** — BTC price, network difficulty, global hashrate fetched from CoinGecko + mempool.space (15-min cache)
 6. **Correction rules engine** — `correction_rules.json` applies pattern-matched fixes at startup (WhatsMiner cooling types, etc.)
 
