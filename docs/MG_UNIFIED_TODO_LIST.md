@@ -730,3 +730,28 @@ Stale experiments — **do NOT delete without asking**:
 - `pre-prod-audit-2026-04-25` (diverged 47 / 294)
 
 *— end of 2026-04-29 update*
+
+---
+
+# SECTION 16 — Update 2026-04-29 (late) — Bucket 10 repo-docs audit
+
+## 16.1 Bucket 10 — Full repo documentation cleanup sweep
+
+| Step | Status | Notes |
+|---|---|---|
+| Bucket 10 audit + planning doc | 🟡 IN PROGRESS — PLAN PUBLISHED | `docs/BUCKET_10_REPO_DOCS_AUDIT_2026-04-29.md` (this PR) inventories all 104 `*.md` files at root + `docs/`, reference-counts each, tiers them A/B/C, and proposes the move/citation-update plan |
+| Bucket 10 execute (move + cite) | 🔴 OPEN | Follow-up PR after Bobby resolves the 8 verify-first cases listed in §9 of the audit doc. Net moves ~25–30 files, citation updates ~15–20 lines |
+
+## 16.2 What this audit found
+
+- **104 markdown files total** at root (8) + `docs/` (96)
+- **15 files with 0 incoming references** → Tier A archive-immediately
+- **20 files with 1 incoming reference** → Tier B-1 (most cite only `CLAUDE.md`'s tracker tables — drop the row + archive)
+- **13 files with 2 incoming references** → Tier B-2 (mostly KEEP — vendor APIs and active runbooks)
+- **56 files with 3+ refs** → Tier C keep
+
+## 16.3 Doctrine
+
+- Archive ≠ delete. Move to `docs/_archive/2026-04/` so files stay in repo history and on disk.
+- Per "comprehensive + over-document always": only the explicitly-superseded and the dated session/handoff files leave the active doc tree. Vendor API docs, design specs, runbooks, and any file referenced from Python source stay.
+- 8 borderline files flagged verify-first for Bobby — defer until reviewed.
