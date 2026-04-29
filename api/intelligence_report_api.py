@@ -290,11 +290,29 @@ def get_network_data() -> dict:
             print(f"Network data refreshed: BTC ${new_data['btc_price_usd']:,.0f}, difficulty {new_data['network_difficulty']/1e12:.2f}T (from {new_data['source']})")
         
         return _network_cache
+
+
+# S-8 hardening (2026-04-29): the previous middleware used wildcard
+# origins / methods / headers. That makes any browser, on any origin,
+# eligible to fetch this API — including drive-by domains. The intel
+# report API only needs to be reachable from the local dashboard and
+# the operator's browser when running locally on the Mac Mini.
+#
+# We default to a tight loopback allow-list and let operators extend it
+# via INTEL_REPORT_API_CORS_ORIGINS (comma-separated). Methods are
+# restricted to GET (this is a read-only reporting API).
+_default_cors_origins = "http://localhost,http://localhost:3000,http://127.0.0.1,http://127.0.0.1:3000"
+_cors_origins = [
+    o.strip()
+    for o in os.environ.get("INTEL_REPORT_API_CORS_ORIGINS", _default_cors_origins).split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_methods=["GET"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=False,
 )
 
 # ── Data Loading ──────────────────────────────────────────────
@@ -1932,4 +1950,15 @@ def render_full_html(report: dict) -> str:
 # ── Main ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8590)
+    # S-8 hardening (2026-04-29): default bind 127.0.0.1 so the report API
+    # is not reachable from the LAN unless an operator explicitly opts in
+    # by setting INTEL_REPORT_API_BIND=0.0.0.0. The catalog API and
+    # mg_import already follow the same pattern (CRIT-3).
+    _bind_host = os.environ.get("INTEL_REPORT_API_BIND", "127.0.0.1")
+    if _bind_host == "0.0.0.0":
+        print(
+            "[intel-report-api] WARNING: binding to 0.0.0.0 (LAN-reachable). "
+            "Set INTEL_REPORT_API_BIND=127.0.0.1 to restrict to loopback."
+        )
+    _bind_port = int(os.environ.get("INTEL_REPORT_API_PORT", "8590"))
+    uvicorn.run(app, host=_bind_host, port=_bind_port)
