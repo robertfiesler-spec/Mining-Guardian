@@ -30,6 +30,23 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Tuple, Dict, Any
 
+# ---------------------------------------------------------------------------
+# Safety guard — see docs/DECISIONS.md D-6.
+# This script is destructive: it copies SQLite contents into Postgres and can
+# clobber live operational data if run by mistake. Bucket 7.6 (2026-04-29) added
+# this runtime guard to all three migrate_*.py scripts. To run the migration
+# intentionally, set MG_ALLOW_MIGRATION=1 in the environment.
+# ---------------------------------------------------------------------------
+if not os.environ.get("MG_ALLOW_MIGRATION"):
+    sys.stderr.write(
+        "ERROR: %s is gated.\n"
+        "       Set MG_ALLOW_MIGRATION=1 to run this destructive migration.\n"
+        "       See docs/DECISIONS.md D-6 for context.\n"
+        % Path(__file__).name
+    )
+    sys.exit(2)
+# ---------------------------------------------------------------------------
+
 # Add project root to path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
