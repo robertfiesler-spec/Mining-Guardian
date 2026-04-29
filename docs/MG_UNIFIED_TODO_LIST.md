@@ -154,33 +154,61 @@ Add `-s` flag to all password prompts. Echo newline after. **5 min.**
 
 This is the non-security half of the audit. It's about whether AI actually has data to think with.
 
-## 4.1. C4 — Run seed SQL against catalog Postgres 🔴 OPEN
-- **Symptom:** `seed-data/seed_miner_models.sql` was never executed. 313-row baseline seed missing.
-- **Impact:** 208 catalog tables, only 5 have data. AI sees nothing.
+> ## ✅ Reconciliation note — 2026-04-29 (Wednesday)
+>
+> All four C-items below (C4, C1, C3, C5) are **CLOSED**. They were shipped Monday 2026-04-27 (PRs #13, #15, #16, #22) but the corresponding rows in this file were never flipped. Per `docs/SESSION_LOG_2026-04-27.md` line 402: *"Wednesday is now empty. The original Wednesday roadmap items — four manufacturer parsers, the C5 feedback loop, and the catalog API verification — all landed on Monday."*
+>
+> See **§ 4.6 below** for closure evidence per item, and `docs/RUNBOOK_BUCKET_3_RECONCILIATION_2026-04-29.md` for the verification commands an operator can run on the live ROBS-PC catalog DB to confirm the 317-row state.
+>
+> The historical text of §§ 4.1–4.5 is preserved verbatim below for audit trail per the over-document doctrine.
+
+## 4.1. C4 — Run seed SQL against catalog Postgres ✅ DONE 2026-04-27 (PR #13, merge sha `d9aca73`)
+- **Symptom (historical, 2026-04-26):** `seed-data/seed_miner_models.sql` was never executed. 313-row baseline seed missing.
+- **Impact (historical):** 208 catalog tables, only 5 have data. AI sees nothing.
 - **Fix:** One `psql -f` invocation. Truly 30 seconds.
 - **Effort:** 30 seconds. Unblocks C1.
+- **What shipped (PR #13, 2026-04-27):** `scripts/seed_catalog.sh` — idempotent wrapper around `seed_miner_models.sql` with row-count guard, schema-presence check, post-flight verification, `--force` escape hatch. Live catalog DB verified at **317 rows = 313 seeded + 4 base** (`docs/SESSION_LOG_2026-04-27.md` L290, L658).
 
-## 4.2. C1 — Catalog split-brain: enrichment writes JSON, API reads Postgres 🔴 OPEN
-- **Symptom:** Every AI lookup returns empty. 21 SQL queries, 0 rows.
-- **Decision needed:** Path A (dual-write Postgres + JSON, recommended) vs B (rewrite API to read JSON) vs C (sync job)
+## 4.2. C1 — Catalog split-brain: enrichment writes JSON, API reads Postgres ✅ DONE 2026-04-27 (PR #15, merge sha `e0ba593`)
+- **Symptom (historical):** Every AI lookup returns empty. 21 SQL queries, 0 rows.
+- **Decision (locked, D-12):** Path A — dual-write Postgres + JSON with Postgres-as-truth.
 - **Effort:** 4-6 hours
 - **Blocks:** All AI quality. Until this is fixed, every Qwen analysis is uninformed.
+- **What shipped (PR #15, 2026-04-27):** `intelligence-catalog/db/dual_writer.py` + Postgres-as-truth dual-write intake; psycopg2 UUID adapter registered in PR #16 follow-up. Catalog API now reads Postgres (verified by `intelligence-catalog/tools/verify_catalog_api_coverage.py`).
 
-## 4.3. C3 — 5 background watchers write JSON, never to catalog DB 🔴 OPEN
+## 4.3. C3 — 5 background watchers write JSON, never to catalog DB ✅ DONE 2026-04-27 (PR #16, merge sha `817973e`)
 - Aggregator (4cc981c0), Manufacturer (920d0231), Firmware (aa676933), Community (c8c4678d), Deep Enrichment (ebb3af70)
 - All save to `cron_tracking/<watcher>/latest_findings.json` — these JSON files don't move to the Mac Mini
 - **Fix:** Rewrite each watcher to UPSERT into catalog Postgres
 - **Effort:** 3-4 hours
 - **Tied to C1 fix path.**
+- **What shipped (PR #16, 2026-04-27):** `intelligence-catalog/watchers/manufacturer_watcher.py` framework + per-manufacturer parsers for **Bitmain, MicroBT, Canaan, Auradine, Bitdeer** (5 of 5 — the previous 5-watcher list above was the *old* JSON-cron-tracking architecture; the new architecture replaces those with one per-manufacturer parser dispatched by `manufacturer_watcher.py`). Live watcher run produced 10 model proposals, 42 alias proposals, 1 manufacturer proposal in `staging.*` (`docs/SESSION_LOG_2026-04-27.md` L289). Idempotent re-run produced zero new rows.
 
-## 4.4. C5 — Operational→Catalog feedback loop missing 🔴 OPEN
+## 4.4. C5 — Operational→Catalog feedback loop missing ✅ DONE 2026-04-27 (PR #22, merge sha `7105632`)
 - Layer 5 of the 6-layer plan.
 - No code mines `action_audit_log` / `llm_analysis` / `miner_restarts` to upsert `ops.failure_patterns`, `market.war_stories`, `hardware.model_known_issues`
 - **Effort:** 2-3 hours
 - **Can slip post-Mac-Mini.**
+- **What shipped (PR #22, 2026-04-27):** `intelligence-catalog/db/feedback_loop.py` (725 LOC) + 13 unit tests in `intelligence-catalog/db/tests/test_feedback_loop.py`. Three sync paths (`sync_action_audit_to_failure_patterns`, `sync_llm_analysis_to_war_stories`, `sync_miner_restarts_to_known_issues`) all fail-soft and orchestrated by `run_full_feedback_loop(dry_run=False)`. Every C5 write attributed to source `bobby_operational` (`a0000000-0000-0000-0000-00000000000f`, tier2). Daemon launcher fix shipped 2026-04-29 in PR #80 (Bucket 7.5).
 
-## 4.5. C2 — Installer does not install Postgres / Docker / catalog API 🔴 OPEN
-**This is the installer rebuild itself. See Section 7.**
+## 4.5. C2 — Installer does not install Postgres / Docker / catalog API ✅ DONE 2026-04-29 (Bucket 6 — PRs #74/#75/#76/#77/#79)
+**This is the installer rebuild itself. See Section 7.** Closed today: `scripts/setup.sh` v2 (PR #75), 5 LaunchDaemons + 8 launcher wrappers (PR #74), restore-from-snapshot (PR #76), Grafana provisioning (PR #77), DEPLOYMENT_CHECKLIST rewrite (PR #79).
+
+## 4.6. Verification on the live catalog DB (operator step, runtime)
+
+The code-side work is closed. The remaining step is **runtime verification on the actual ROBS-PC catalog DB** (and later on the customer Mac Mini), which Bobby runs once at his machine. Commands and expected outputs are captured in `docs/RUNBOOK_BUCKET_3_RECONCILIATION_2026-04-29.md`. Summary of what to confirm:
+
+- `hardware.miner_models` row count = **317** (313 seed + 4 base)
+- `hardware.manufacturers` = **16**
+- `knowledge.sources` = **23**
+- `mg.model_family_aliases` = **1,494**
+- `hardware.model_aliases` = **12,852**
+- `bash scripts/seed_catalog.sh` returns exit 0 with the message `"Already seeded (>= 313 rows). Skipping."` (idempotency proof)
+- `pytest intelligence-catalog/db/tests/test_feedback_loop.py` — 13/13 pass
+- `pytest intelligence-catalog/db/tests/test_dual_writer.py` — all pass
+- `pytest intelligence-catalog/watchers/tests/` — all 5 parser test files pass
+
+After Bobby runs and confirms, this section can be closed entirely (move to SECTION 1 "Already Done" or archive into a closing note). Until then, leaving §§4.1–4.5 here as DONE-with-verification-pending.
 
 ---
 
@@ -730,3 +758,28 @@ Stale experiments — **do NOT delete without asking**:
 - `pre-prod-audit-2026-04-25` (diverged 47 / 294)
 
 *— end of 2026-04-29 update*
+
+---
+
+# SECTION 16 — Update 2026-04-29 (late) — Bucket 10 repo-docs audit
+
+## 16.1 Bucket 10 — Full repo documentation cleanup sweep
+
+| Step | Status | Notes |
+|---|---|---|
+| Bucket 10 audit + planning doc | 🟡 IN PROGRESS — PLAN PUBLISHED | `docs/BUCKET_10_REPO_DOCS_AUDIT_2026-04-29.md` (this PR) inventories all 104 `*.md` files at root + `docs/`, reference-counts each, tiers them A/B/C, and proposes the move/citation-update plan |
+| Bucket 10 execute (move + cite) | 🔴 OPEN | Follow-up PR after Bobby resolves the 8 verify-first cases listed in §9 of the audit doc. Net moves ~25–30 files, citation updates ~15–20 lines |
+
+## 16.2 What this audit found
+
+- **104 markdown files total** at root (8) + `docs/` (96)
+- **15 files with 0 incoming references** → Tier A archive-immediately
+- **20 files with 1 incoming reference** → Tier B-1 (most cite only `CLAUDE.md`'s tracker tables — drop the row + archive)
+- **13 files with 2 incoming references** → Tier B-2 (mostly KEEP — vendor APIs and active runbooks)
+- **56 files with 3+ refs** → Tier C keep
+
+## 16.3 Doctrine
+
+- Archive ≠ delete. Move to `docs/_archive/2026-04/` so files stay in repo history and on disk.
+- Per "comprehensive + over-document always": only the explicitly-superseded and the dated session/handoff files leave the active doc tree. Vendor API docs, design specs, runbooks, and any file referenced from Python source stay.
+- 8 borderline files flagged verify-first for Bobby — defer until reviewed.
