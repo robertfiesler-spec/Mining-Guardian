@@ -315,7 +315,7 @@ This wasn't a separate section in the audit doc but the user asked. Here's what'
 | 7c | Rewrite `setup.sh` (Track I-2) | 4-5 hours |
 | 7d | Build `restore_from_snapshot.sh` (separate) | 1.5 hours |
 | 7e | Sandbox test on fresh user account / macOS VM | 1 hour |
-| 7f | Update `DEPLOYMENT_CHECKLIST.md` | 30 min |
+| 7f | ✅ DONE 2026-04-29 (PR — Bucket 6f) — `DEPLOYMENT_CHECKLIST.md` rewritten for Mac-Mini era (410 lines, 7 sections: prerequisites, install .pkg, post-install state checks, restore-from-snapshot path, operator sign-off, common failure modes, rollback plan + Appendix A preserves the April 15 VPS-era checklist verbatim). Verify: `wc -l DEPLOYMENT_CHECKLIST.md` (→ 410) and `grep -c 'launchd\|launchctl\|brew services' DEPLOYMENT_CHECKLIST.md` (→ ≥7 macOS-era references). Will be filled in with observed-reality values from sandbox-test exec (PR Bucket 6e). | ✅ |
 | 7g | Add Grafana provisioning yaml (datasource + dashboards) | 1.5 hours |
 
 **Total build day: ~10-11 hours, may bleed into Tuesday morning.**
