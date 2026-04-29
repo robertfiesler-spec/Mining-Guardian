@@ -446,7 +446,7 @@ class TestRawJsonPerFile:
             with open(jf, 'w') as f:
                 json.dump({'key': 'value', 'num': 42}, f)
             calls = []
-            def _fake_insert(cp, af, fp, payload):
+            def _fake_insert(cp, af, fp, parser, payload, sha, entity):
                 calls.append((af, fp, payload))
             with patch.object(_mg, 'insert_raw_json', side_effect=_fake_insert), \
                  patch.object(_mg, 'PSYCOPG2_AVAILABLE', True):
@@ -462,7 +462,7 @@ class TestRawJsonPerFile:
             with open(lf, 'w') as f:
                 json.dump({'status': 'ok'}, f)
             calls = []
-            def _fake_insert(cp, af, fp, payload):
+            def _fake_insert(cp, af, fp, parser, payload, sha, entity):
                 calls.append((af, fp, payload))
             with patch.object(_mg, 'insert_raw_json', side_effect=_fake_insert), \
                  patch.object(_mg, 'PSYCOPG2_AVAILABLE', True):
@@ -478,7 +478,7 @@ class TestRawJsonPerFile:
             with open(lf, 'w') as f:
                 f.write('[2024/06/28 10:00:00] MSG: something happened\n')
             calls = []
-            def _fake_insert(cp, af, fp, payload):
+            def _fake_insert(cp, af, fp, parser, payload, sha, entity):
                 calls.append((af, fp, payload))
             with patch.object(_mg, 'insert_raw_json', side_effect=_fake_insert), \
                  patch.object(_mg, 'PSYCOPG2_AVAILABLE', True):
@@ -494,7 +494,7 @@ class TestRawJsonPerFile:
             ef = os.path.join(td, 'empty.json')
             open(ef, 'w').close()
             calls = []
-            def _fake_insert(cp, af, fp, payload):
+            def _fake_insert(cp, af, fp, parser, payload, sha, entity):
                 calls.append((af, fp, payload))
             with patch.object(_mg, 'insert_raw_json', side_effect=_fake_insert), \
                  patch.object(_mg, 'PSYCOPG2_AVAILABLE', True):
@@ -510,7 +510,7 @@ class TestRawJsonPerFile:
                 with open(os.path.join(td if i < 2 else sub, f'f{i}.json'), 'w') as f:
                     json.dump({'idx': i}, f)
             calls = []
-            def _fake_insert(cp, af, fp, payload):
+            def _fake_insert(cp, af, fp, parser, payload, sha, entity):
                 calls.append((af, fp, payload))
             with patch.object(_mg, 'insert_raw_json', side_effect=_fake_insert), \
                  patch.object(_mg, 'PSYCOPG2_AVAILABLE', True):
@@ -520,7 +520,7 @@ class TestRawJsonPerFile:
     def test_non_directory_tmp_dir_is_noop(self):
         """Non-existent tmp_dir does not raise."""
         calls = []
-        def _fake_insert(cp, af, fp, payload):
+        def _fake_insert(cp, af, fp, parser, payload, sha, entity):
             calls.append((af, fp, payload))
         with patch.object(_mg, 'insert_raw_json', side_effect=_fake_insert):
             _insert_archive_raw_json_files({'host': 'localhost'}, 'arch.tar', '/nonexistent')
@@ -571,11 +571,22 @@ class TestIdempotencyInserts:
             'FIELD_LOG_DDL must include field_log_miner_identity_archive_entity_idx.'
         )
 
-    def test_field_log_ddl_has_unique_index_for_raw_json(self):
-        """FIELD_LOG_DDL must include the unique index for raw_json."""
+    def test_field_log_ddl_does_not_have_legacy_raw_json_unique_index(self):
+        """FIELD_LOG_DDL must NOT include the legacy unique index for raw_json.
+
+        Updated 2026-04-29 in lockstep with the B-4/B-5 fix: the canonical
+        partitioned `knowledge.field_log_raw_json` shape does not have a
+        `file_path_in_archive` column, so the old unique index
+        `field_log_raw_json_archive_path_idx` was removed and `insert_raw_json`
+        no longer relies on ON CONFLICT. The non-unique indexes
+        idx_raw_json_archive / idx_raw_json_entity / idx_raw_json_sha provide
+        the lookup paths we need. This test guards against re-introducing
+        the dead index.
+        """
         ddl = _mg.FIELD_LOG_DDL
-        assert 'field_log_raw_json_archive_path_idx' in ddl, (
-            'FIELD_LOG_DDL must include field_log_raw_json_archive_path_idx.'
+        assert 'field_log_raw_json_archive_path_idx' not in ddl, (
+            'FIELD_LOG_DDL must NOT include the legacy '
+            'field_log_raw_json_archive_path_idx (removed per B-4/B-5 fix).'
         )
 
 

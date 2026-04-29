@@ -652,9 +652,13 @@ class TestRawJsonCapture:
     def test_insert_raw_json_no_op_without_conn(self):
         """insert_raw_json must not raise when conn_params=None."""
         from mg_import import insert_raw_json
-        # Should be a no-op (no DB available)
+        # Should be a no-op (no DB available). Signature updated 2026-04-29 to
+        # canonical 7-arg form: (conn_params, archive_filename, source_file,
+        # parser, payload, sha256, entity_label).
         insert_raw_json(None, 'test_archive.tar', 'miner_overview.log',
-                        {'miner_model': 'M50S', 'firmware': '10.0.1'})
+                        'antminer:miner_overview',
+                        {'miner_model': 'M50S', 'firmware': '10.0.1'},
+                        'a' * 64, 'miner_001')
 
     def test_insert_raw_json_no_op_without_psycopg2(self):
         """insert_raw_json must not raise when PSYCOPG2_AVAILABLE=False."""
@@ -662,7 +666,9 @@ class TestRawJsonCapture:
         with patch('mg_import.PSYCOPG2_AVAILABLE', False):
             insert_raw_json({'host': 'localhost'}, 'test_archive.tar',
                             'miner_overview.log',
-                            {'miner_model': 'M50S'})
+                            'antminer:miner_overview',
+                            {'miner_model': 'M50S'},
+                            'b' * 64, 'miner_002')
 
     def test_insert_raw_json_calls_execute(self):
         """When conn_params provided and psycopg2 available, calls execute."""
@@ -679,7 +685,10 @@ class TestRawJsonCapture:
                 {'host': 'localhost', 'database': 'mining_guardian'},
                 'test_archive.tar',
                 'miner_overview.log',
+                'antminer:miner_overview',
                 {'miner_model': 'M50S', 'firmware': '10.0.1'},
+                'c' * 64,
+                'miner_003',
             )
         cur.execute.assert_called_once()
         # Verify archive_filename and file_path_in_archive are in the query args
