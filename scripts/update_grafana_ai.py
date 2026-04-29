@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Update the Grafana AI & Learning dashboard with the new AI Intelligence Center iframe."""
-import json
+"""Update the Grafana AI & Learning dashboard with the new AI Intelligence Center iframe.
+
+Credentials read from GRAFANA_PASSWORD / GRAFANA_USER / GRAFANA_URL env vars.
+See `scripts/_grafana_auth.py` for the contract.
+"""
 import requests
 
-GRAFANA = "http://localhost:3000"
-AUTH = ("admin", "002300rf")
+from _grafana_auth import grafana_basic_auth_tuple, grafana_url
+
+GRAFANA = grafana_url()
+AUTH = grafana_basic_auth_tuple()
 
 # Get current dashboard
 r = requests.get(f"{GRAFANA}/api/dashboards/uid/llm_learning_001", auth=AUTH)
