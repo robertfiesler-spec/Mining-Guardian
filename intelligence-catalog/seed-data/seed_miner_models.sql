@@ -3529,9 +3529,9 @@ INSERT INTO hardware.miner_models (
     uuid_generate_v4(),
     (SELECT id FROM hardware.manufacturers WHERE brand = 'auradine'),
     'Auradine Teraflux AH3880 (600 TH)', 'AH3880', 'Teraflux Series',
-    'hydro'::public.cooling_type, 4, 600.0, 10740, 17.9,
+    'hydro'::public.cooling_type, 2, 600.0, 10740, 17.9,
     'SHA-256', '2025-03-01', TRUE, FALSE,
-    'Noise 35dB.', '{"sources": ["https://www.auradine.com", "https://www.asicminervalue.com/manufacturers/auradine", "https://www.asicminervalue.com/miners/teraflux-ah3880"]}'::jsonb, 'high',
+    'Noise 35dB. Two hashboards confirmed (README.md, CLAUDE.md, miner_specs.json).', '{"sources": ["https://www.auradine.com", "https://www.asicminervalue.com/manufacturers/auradine", "https://www.asicminervalue.com/miners/teraflux-ah3880"]}'::jsonb, 'high',
     'a0000000-0000-0000-0000-000000000004'::uuid
 );
 INSERT INTO hardware.miner_models (
