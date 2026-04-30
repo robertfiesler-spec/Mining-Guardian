@@ -1,7 +1,8 @@
 # Mining Guardian — Install-Day Unbox Runbook
 
 **Target date:** 2026-04-30 (Mac Mini install)
-**Built from:** `v1.0.0-install-ready` (commit `f484b00`)
+**Built from:** `v1.0.0-install-ready` (commit `b6b7d72`)
+**Headless companion:** `docs/RUNBOOK_HEADLESS_ADDENDUM_2026-04-30.md` (read first if Mini will run without peripherals)
 **Authority:** This file. Print it, follow it top to bottom.
 
 ---
@@ -79,7 +80,7 @@ cd Mining-Guardian
 git fetch --tags
 git checkout v1.0.0-install-ready
 git rev-parse HEAD
-# Should print: f484b003a4881b1513a373540a7c0155fffefb0f
+# Should print: b6b7d7233c4ee2925c06877028af8057acda049d
 ```
 
 If the SHA does not match, stop and recheck — you are not on the install-ready tag.
@@ -255,7 +256,7 @@ When §5 and §6 all pass:
 
 ## Appendix A — Repo state at v1.0.0-install-ready
 
-- **Tag:** `v1.0.0-install-ready` → commit `f484b00`
+- **Tag:** `v1.0.0-install-ready` → commit `b6b7d72`
 - **Main branch:** `main`
 - **Open PRs:** 0
 - **Test suite:** 394 passed / 65 skipped (DB-required) / 0 failed
@@ -263,7 +264,7 @@ When §5 and §6 all pass:
 - **B-6 typo lint:** clean (62 allow-listed hits)
 - **Migrations applied by setup.sh:** 001, 003, 004_drop_dead_stubs, 004_system_settings, 005_system_schedules
 - **launchd plists:** all 9 valid (Label + ProgramArguments present)
-- **Install-day-eve PRs in this tag:** #92 (B-8 imports), #93 (branch triage), #94 (test drift), #95 (migration loop)
+- **Install-day-eve PRs in this tag:** #92 (B-8 imports), #93 (branch triage), #94 (test drift), #95 (migration loop), #96 (unbox runbook), #97 (preflight + handoff)
 
 ## Appendix B — File index
 
