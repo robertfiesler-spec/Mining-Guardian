@@ -87,6 +87,7 @@ CREATE TYPE public.manufacturer_brand AS ENUM (
     'bitfury',
     'iceriver',       -- KAS miners but some BTC
     'goldshell',
+    'bitaxe',         -- Open-source SHA-256 miners (OSMU / skot9000) — BM1366/BM1368/BM1370
     'other',
     'unknown'
 );

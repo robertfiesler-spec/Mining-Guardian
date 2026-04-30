@@ -181,7 +181,7 @@ Add `-s` flag to all password prompts. Echo newline after. **5 min.**
 This is the non-security half of the audit. It's about whether AI actually has data to think with.
 
 ## 4.1. C4 — Run seed SQL against catalog Postgres 🔴 OPEN
-- **Symptom:** `seed-data/seed_miner_models.sql` was never executed. 313-row baseline seed missing.
+- **Symptom:** `seed-data/seed_miner_models.sql` was never executed. 320-row baseline seed missing (313 + 7 Bitaxe added in PR #102, 2026-04-30).
 - **Impact:** 208 catalog tables, only 5 have data. AI sees nothing.
 - **Fix:** One `psql -f` invocation. Truly 30 seconds.
 - **Effort:** 30 seconds. Unblocks C1.
