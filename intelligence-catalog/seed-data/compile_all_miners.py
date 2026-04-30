@@ -2076,6 +2076,66 @@ ALL_MINERS += [
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# BITAXE — 7 variants (open-source SHA-256 miners by Open Source Miners United)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Bitaxe is an open-source single-board ASIC miner family designed by skot9000
+# and the Open Source Miners United (OSMU) community. Hardware schematics, KiCad
+# files, and ESP-Miner firmware are public on GitHub. Chips (BM1366, BM1368,
+# BM1370) are sourced from Bitmain Antminer S19 XP / S21 / S21 Pro hashboards.
+# All units are SHA-256 / Bitcoin. Single-PCB design (hashboard_count=1)
+# regardless of chip count.
+
+BITAXE_SOURCES = "https://bitaxe.org,https://github.com/bitaxeorg,https://www.solosatoshi.com/bitaxe-overclocking-guide/,https://www.zeusbtc.com/blog/details/5694-bm1366-vs-bm1370-asic-chips"
+
+ALL_MINERS += [
+    # Current production — BM1370 chip (from Antminer S21 Pro)
+    dict(manufacturer="bitaxe", canonical_name="Bitaxe Gamma 602 (1.07 TH)", model_number="Gamma 602",
+         generation="Bitaxe Gamma", cooling_type="air", hashboard_count=1,
+         stock_hashrate_th=1.07, stock_power_w=17.8, stock_efficiency_j_th=eff(1.07, 17.8),
+         asic_chip="BM1370", process_node="5nm", release_date="2024-08-01",
+         is_current_product=True, notes="Single-chip BM1370. Most popular Bitaxe — solo-mining lottery hardware. ESP-Miner firmware.",
+         source_urls=BITAXE_SOURCES),
+    dict(manufacturer="bitaxe", canonical_name="Bitaxe Gamma Duo 650 (1.63 TH)", model_number="Gamma Duo 650",
+         generation="Bitaxe Gamma Duo", cooling_type="air", hashboard_count=1,
+         stock_hashrate_th=1.63, stock_power_w=25.8, stock_efficiency_j_th=eff(1.63, 25.8),
+         asic_chip="BM1370 (x2)", process_node="5nm", release_date="2025-09-01",
+         is_current_product=True, notes="Dual BM1370 on single PCB. ~16 J/TH — most efficient Bitaxe to date.",
+         source_urls=BITAXE_SOURCES),
+    dict(manufacturer="bitaxe", canonical_name="Bitaxe GT 801 (2.15 TH)", model_number="GT 801",
+         generation="Bitaxe GT", cooling_type="air", hashboard_count=1,
+         stock_hashrate_th=2.15, stock_power_w=43.0, stock_efficiency_j_th=eff(2.15, 43.0),
+         asic_chip="BM1370 (x2)", process_node="5nm", release_date="2025-10-01",
+         is_current_product=True, notes="Dual BM1370 high-output variant. 80mm fan + larger heatsink.",
+         source_urls=BITAXE_SOURCES),
+    dict(manufacturer="bitaxe", canonical_name="Bitaxe Turbo Touch (2.15 TH)", model_number="Turbo Touch",
+         generation="Bitaxe Turbo", cooling_type="air", hashboard_count=1,
+         stock_hashrate_th=2.15, stock_power_w=43.0, stock_efficiency_j_th=eff(2.15, 43.0),
+         asic_chip="BM1370 (x2)", process_node="5nm", release_date="2025-10-01",
+         is_current_product=True, notes="Dual BM1370 with integrated touchscreen UI. Same hashrate as GT 801.",
+         source_urls=BITAXE_SOURCES),
+    # Legacy — BM1368 chip (from Antminer S21)
+    dict(manufacturer="bitaxe", canonical_name="Bitaxe Supra 400 (0.65 TH)", model_number="Supra 400",
+         generation="Bitaxe Supra", cooling_type="air", hashboard_count=1,
+         stock_hashrate_th=0.65, stock_power_w=12.0, stock_efficiency_j_th=eff(0.65, 12.0),
+         asic_chip="BM1368", process_node="5nm", release_date="2024-06-01",
+         is_current_product=False, notes="Single BM1368 from S21 hashboards. Superseded by Gamma 602.",
+         source_urls=BITAXE_SOURCES),
+    # Legacy — BM1366 chip (from Antminer S19 XP)
+    dict(manufacturer="bitaxe", canonical_name="Bitaxe Ultra 200 (0.50 TH)", model_number="Ultra 200",
+         generation="Bitaxe Ultra", cooling_type="air", hashboard_count=1,
+         stock_hashrate_th=0.50, stock_power_w=12.0, stock_efficiency_j_th=eff(0.50, 12.0),
+         asic_chip="BM1366", process_node="5nm", release_date="2023-08-01",
+         is_current_product=False, notes="Single BM1366 from S19 XP hashboards. First widely-cloned Bitaxe design.",
+         source_urls=BITAXE_SOURCES),
+    dict(manufacturer="bitaxe", canonical_name="Bitaxe Hex 700 (3.0 TH)", model_number="Hex 700",
+         generation="Bitaxe Hex", cooling_type="air", hashboard_count=1,
+         stock_hashrate_th=3.0, stock_power_w=70.0, stock_efficiency_j_th=eff(3.0, 70.0),
+         asic_chip="BM1366 (x6)", process_node="5nm", release_date="2023-12-01",
+         is_current_product=False, notes="Six BM1366 chips on a single PCB — highest-output legacy Bitaxe.",
+         source_urls=BITAXE_SOURCES),
+]
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # OUTPUT: CSV + SQL
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2129,6 +2189,7 @@ def write_sql(miners, path):
 -- ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'auradine';
 -- ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'ebang';
 -- ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'bitfury';
+-- ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'bitaxe';
 --
 -- Also requires manufacturer rows in hardware.manufacturers for each brand.
 -- Run enum updates and manufacturer inserts before this file.
@@ -2147,7 +2208,8 @@ VALUES
   ('strongu', 'StrongU Technologies', 'CN', 'https://www.strongu.com.cn', 'STU-U series, Hornbill H-series'),
   ('auradine', 'Auradine Inc', 'US', 'https://www.auradine.com', 'Teraflux AT/AH/AI series'),
   ('ebang', 'Ebang International Holdings', 'CN', 'https://www.ebang.com.cn', 'Ebit E-series'),
-  ('bitfury', 'Bitfury Group', 'NL', 'https://bitfury.com', 'B8 and Tardis enterprise miners')
+  ('bitfury', 'Bitfury Group', 'NL', 'https://bitfury.com', 'B8 and Tardis enterprise miners'),
+  ('bitaxe', 'Open Source Miners United / Bitaxe', 'US', 'https://bitaxe.org', 'Open-source SHA-256 ASIC miner family. BM1366/BM1368/BM1370 chips sourced from Bitmain S19 XP / S21 / S21 Pro hashboards.')
 ON CONFLICT (brand) DO NOTHING;
 
 """

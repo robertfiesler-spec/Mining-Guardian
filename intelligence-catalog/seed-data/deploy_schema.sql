@@ -48,6 +48,7 @@ ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'kncminer';
 ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'spondoolies';
 ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'butterfly_labs';
 ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'halong';
+ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'bitaxe';
 
 -- Process node additions for older/newer chips
 ALTER TYPE public.process_node ADD VALUE IF NOT EXISTS '3nm';
@@ -110,7 +111,8 @@ INSERT INTO hardware.manufacturers (brand, legal_name, common_name, country_of_o
 VALUES
   ('jasminer', 'Shenzhen Jasminer Technology Co., Ltd.', 'Jasminer', 'CN', TRUE, 'a0000000-0000-0000-0000-00000000000e', 'medium'),
   ('iceriver', 'ICE River Technology', 'IceRiver', 'CN', TRUE, 'a0000000-0000-0000-0000-00000000000e', 'medium'),
-  ('goldshell', 'Goldshell Technology Co., Ltd.', 'Goldshell', 'CN', TRUE, 'a0000000-0000-0000-0000-00000000000e', 'medium')
+  ('goldshell', 'Goldshell Technology Co., Ltd.', 'Goldshell', 'CN', TRUE, 'a0000000-0000-0000-0000-00000000000e', 'medium'),
+  ('bitaxe', 'Open Source Miners United / Bitaxe', 'Bitaxe', 'US', TRUE, 'a0000000-0000-0000-0000-00000000000d', 'medium')
 ON CONFLICT (brand) DO NOTHING;
 
 -- =============================================================================

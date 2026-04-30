@@ -3616,6 +3616,42 @@
       "power_w": 17
     }
   },
+  "bitaxe-gamma-602-107-th": {
+    "manufacturer": "bitaxe",
+    "name": "Bitaxe Gamma 602 (1.07 TH)",
+    "notes": "Single-chip BM1370. Most popular Bitaxe — solo-mining lottery hardware. ESP-Miner firmware.",
+    "source_urls": "https://bitaxe.org,https://github.com/bitaxeorg,https://www.solosatoshi.com/bitaxe-overclocking-guide/,https://www.zeusbtc.com/blog/details/5694-bm1366-vs-bm1370-asic-chips",
+    "specs": {
+      "algorithm": "SHA-256",
+      "asic_chip": "BM1370",
+      "cooling": "air",
+      "efficiency_jth": 16.64,
+      "hashboard_count": 1,
+      "hashrate_ths": 1.07,
+      "is_current_product": true,
+      "power_watts": 17,
+      "process_node": "5nm",
+      "release_date": "2024-08-01"
+    }
+  },
+  "bitaxe-gamma-duo-650-163-th": {
+    "manufacturer": "bitaxe",
+    "name": "Bitaxe Gamma Duo 650 (1.63 TH)",
+    "notes": "Dual BM1370 on single PCB. ~16 J/TH — most efficient Bitaxe to date.",
+    "source_urls": "https://bitaxe.org,https://github.com/bitaxeorg,https://www.solosatoshi.com/bitaxe-overclocking-guide/,https://www.zeusbtc.com/blog/details/5694-bm1366-vs-bm1370-asic-chips",
+    "specs": {
+      "algorithm": "SHA-256",
+      "asic_chip": "BM1370 (x2)",
+      "cooling": "air",
+      "efficiency_jth": 15.83,
+      "hashboard_count": 1,
+      "hashrate_ths": 1.63,
+      "is_current_product": true,
+      "power_watts": 25,
+      "process_node": "5nm",
+      "release_date": "2025-09-01"
+    }
+  },
   "bitaxe-gt-801": {
     "display_name": "Bitaxe Gamma Turbo GT 801",
     "enrichment": {
@@ -3680,6 +3716,24 @@
       "efficiency_jth": 19,
       "hashrate_ths": 3.0,
       "power_w": 57
+    }
+  },
+  "bitaxe-hex-700-30-th": {
+    "manufacturer": "bitaxe",
+    "name": "Bitaxe Hex 700 (3.0 TH)",
+    "notes": "Six BM1366 chips on a single PCB — highest-output legacy Bitaxe.",
+    "source_urls": "https://bitaxe.org,https://github.com/bitaxeorg,https://www.solosatoshi.com/bitaxe-overclocking-guide/,https://www.zeusbtc.com/blog/details/5694-bm1366-vs-bm1370-asic-chips",
+    "specs": {
+      "algorithm": "SHA-256",
+      "asic_chip": "BM1366 (x6)",
+      "cooling": "air",
+      "efficiency_jth": 23.33,
+      "hashboard_count": 1,
+      "hashrate_ths": 3.0,
+      "is_current_product": false,
+      "power_watts": 70,
+      "process_node": "5nm",
+      "release_date": "2023-12-01"
     }
   },
   "bitaxe-max-100": {
@@ -3812,6 +3866,24 @@
       "efficiency_jth": 13.75,
       "hashrate_ths": 1.6,
       "power_w": 22
+    }
+  },
+  "bitaxe-turbo-touch-215-th": {
+    "manufacturer": "bitaxe",
+    "name": "Bitaxe Turbo Touch (2.15 TH)",
+    "notes": "Dual BM1370 with integrated touchscreen UI. Same hashrate as GT 801.",
+    "source_urls": "https://bitaxe.org,https://github.com/bitaxeorg,https://www.solosatoshi.com/bitaxe-overclocking-guide/,https://www.zeusbtc.com/blog/details/5694-bm1366-vs-bm1370-asic-chips",
+    "specs": {
+      "algorithm": "SHA-256",
+      "asic_chip": "BM1370 (x2)",
+      "cooling": "air",
+      "efficiency_jth": 20.0,
+      "hashboard_count": 1,
+      "hashrate_ths": 2.15,
+      "is_current_product": true,
+      "power_watts": 43,
+      "process_node": "5nm",
+      "release_date": "2025-10-01"
     }
   },
   "bitaxe-ultra-200": {
