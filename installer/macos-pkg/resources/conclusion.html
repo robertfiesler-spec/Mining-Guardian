@@ -2,11 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
+<meta name="color-scheme" content="light only">
 <title>Mining Guardian — Installed</title>
 <style>
-  /* Mining Guardian — Installer.app conclusion screen (v3, light theme)
-     Same constraints as welcome.html v3. See welcome.html for palette
-     and design rationale. */
+  /* Mining Guardian — Installer.app conclusion screen (v4, light-only)
+     Same constraints as welcome.html v4. See welcome.html for palette
+     and design rationale. v4 (B-12 fix, v1.0.1) forces light-mode
+     rendering even when the host is set to dark appearance. */
+  :root, html { color-scheme: light only; }
   html, body {
     margin: 0;
     padding: 0;
@@ -16,6 +19,7 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     color: #0A1428 !important;
+    background: #FFFFFF !important;
   }
   body { padding: 28px 32px 24px 32px; }
   .check-row {
@@ -122,6 +126,34 @@
     line-height: 1.5;
   }
   .footer-note strong { color: #0A1428 !important; }
+
+  /* B-12 fix (v1.0.1): belt-and-suspenders for Tahoe Installer.app
+     dark-mode auto-invert. Re-assert every literal even if the host
+     ignores color-scheme: light only. */
+  @media (prefers-color-scheme: dark) {
+    html, body { color: #0A1428 !important; background: #FFFFFF !important; }
+    h1, h2, p, strong { color: #0A1428 !important; }
+    .lede, .footer-note, .quick-grid .label { color: #56688A !important; }
+    .quick-grid .val { color: #0A1428 !important; }
+    .eyebrow { color: #F7931A !important; }
+    .check-pill { background: #1FAE5C !important; color: #FFFFFF !important; }
+    .accent-rule { background: #F7931A !important; }
+    code {
+      background: #F1F4F9 !important;
+      border-color: #D6DEE9 !important;
+      color: #0A1428 !important;
+    }
+    .url { color: #1F6FEB !important; background: #F1F4F9 !important;
+           border-color: #D6DEE9 !important; }
+    pre {
+      background: #F1F4F9 !important;
+      border-color: #D6DEE9 !important;
+      border-left-color: #1F6FEB !important;
+      color: #0A1428 !important;
+    }
+    pre .cmd { color: #B66A0A !important; }
+    .footer-note strong { color: #0A1428 !important; }
+  }
 </style>
 </head>
 <body>
@@ -148,7 +180,7 @@
   <span class="label">Install log</span>
   <span class="val"><code>/var/log/mining-guardian/install-postinstall.log</code></span>
   <span class="label">Service logs</span>
-  <span class="val"><code>/usr/local/MiningGuardian/logs/</code></span>
+  <span class="val"><code>/Library/Application Support/MiningGuardian/logs/</code></span>
   <span class="label">Install receipt</span>
   <span class="val"><code>/etc/mining-guardian/install-receipt.json</code></span>
 </div>
@@ -162,17 +194,17 @@
 
 <h2>Uninstall</h2>
 <p style="margin: 0 0 6px 0;">
-  Run <code>sudo /usr/local/MiningGuardian/bin/uninstall.sh</code> to
+  Run <code>sudo /Library/Application Support/MiningGuardian/bin/uninstall.sh</code> to
   cleanly stop all four services, drop the Postgres container, and
-  remove <code>/usr/local/MiningGuardian</code>. Your Postgres data
-  volume is preserved at <code>/usr/local/MiningGuardian/postgres-data</code>
+  remove <code>/Library/Application Support/MiningGuardian</code>. Your Postgres data
+  volume is preserved at <code>/Library/Application Support/MiningGuardian/postgres-data</code>
   by default &mdash; pass <code>--purge-data</code> to remove it.
 </p>
 
 <div class="footer-note">
   <strong>Bitcoin SHA-256 miners only.</strong> Local-only operation by
   policy &mdash; no cloud telemetry, no shared tenancy. Questions?
-  See <code>/usr/local/MiningGuardian/docs/</code> or the customer-facing
+  See <code>/Library/Application Support/MiningGuardian/docs/</code> or the customer-facing
   Setup Manual that came with this installer.
 </div>
 

@@ -45,7 +45,7 @@
 ### 1.3. Run `scripts/setup.sh`
 
 - [ ] Open Terminal natively (right-click Terminal in `/Applications/Utilities` → Get Info → uncheck "Open using Rosetta" — applies to Apple Silicon Macs only)
-- [ ] `cd /usr/local/MiningGuardian` (the install root from `installer/macos-pkg/Distribution.xml`)
+- [ ] `cd /Library/Application Support/MiningGuardian` (the install root from `installer/macos-pkg/Distribution.xml`)
 - [ ] `zsh scripts/setup.sh` (or `--dry-run-install` first to see the plan)
 - [ ] Walk through Phase 2 prompts; **secrets are read with `read -s` so nothing echoes to the terminal scrollback** (S-14 mitigation)
 
@@ -125,7 +125,7 @@ ollama run qwen2.5:14b-instruct-q4_K_M 'Say "OK"' --hidethinking 2>/dev/null
 brew services list | grep grafana                                         # started
 ls /opt/homebrew/var/lib/grafana/provisioning/datasources/mining_guardian.yml
 ls /opt/homebrew/var/lib/grafana/provisioning/dashboards/mining_guardian.yml
-ls /usr/local/MiningGuardian/grafana/dashboards/*.json | wc -l            # 3
+ls /Library/Application Support/MiningGuardian/grafana/dashboards/*.json | wc -l            # 3
 open http://localhost:3000                                                # admin / admin (change on first login)
 ```
 
@@ -168,7 +168,7 @@ grep '^CATALOG_API_KEY=changeme' ~/Mining-Guardian/.env || echo "OK no default"
 ### 2.8. Smoke test — first scan
 
 ```bash
-cd /usr/local/MiningGuardian
+cd /Library/Application Support/MiningGuardian
 .venv/bin/python core/scanner.py --once 2>&1 | tail -30
 ```
 
@@ -232,7 +232,7 @@ See `docs/RUNBOOK_BUCKET_6E_SANDBOX_TEST.md` §"Failure-mode catalog" for the fu
 
 ```bash
 # On the Mac:
-cd /usr/local/MiningGuardian
+cd /Library/Application Support/MiningGuardian
 brew services stop grafana
 
 # .env

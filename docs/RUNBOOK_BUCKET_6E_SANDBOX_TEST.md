@@ -226,7 +226,7 @@ brew services restart grafana
 ```bash
 ls /opt/homebrew/var/lib/grafana/provisioning/datasources/mining_guardian.yml
 ls /opt/homebrew/var/lib/grafana/provisioning/dashboards/mining_guardian.yml
-ls /usr/local/MiningGuardian/grafana/dashboards/*.json | wc -l   # 3
+ls /Library/Application Support/MiningGuardian/grafana/dashboards/*.json | wc -l   # 3
 open http://localhost:3000   # admin / admin (change on first login)
 # Verify in browser:
 #   - 2 datasources visible (Mining Guardian (operational), Mining Guardian Catalog)
@@ -354,7 +354,7 @@ All 15 phases of `setup.sh` complete on the **fresh-install pass** with no manua
 2. `crontab -l | grep -c MiningGuardian` → `9`
 3. `psql -U guardian_app -d mining_guardian -c '\dt' | wc -l` → ≥ 24
 4. `psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM hardware.miner_models;"` → 313
-5. `ls /usr/local/MiningGuardian/grafana/dashboards/*.json | wc -l` → 3
+5. `ls /Library/Application Support/MiningGuardian/grafana/dashboards/*.json | wc -l` → 3
 6. `open http://localhost:3000` shows 2 datasources and 3 dashboards in a "Mining Guardian" folder
 7. `~/Mining-Guardian/.env` mode is `600` and contains a non-default `MG_DB_PASSWORD` and `CATALOG_API_KEY`
 8. A Slack ping arrived in the staging channel

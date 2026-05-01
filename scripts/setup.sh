@@ -18,12 +18,12 @@
 # INSTALLS (~30-45 min on a fresh Mac Mini):
 #   brew: postgresql@16, python@3.12, git, ollama, grafana, [tailscale]
 #   Postgres DBs: mining_guardian, mining_guardian_test, mining_guardian_catalog
-#   Python 3.12 venv at /usr/local/MiningGuardian/venv (49-package set)
+#   Python 3.12 venv at /Library/Application Support/MiningGuardian/venv (49-package set)
 #   9 LaunchDaemons in /Library/LaunchDaemons/ + 9 launchers in bin/
 #   10 cron entries (macOS-path-translated from docs/CRON_SCHEDULE.md)
 #   Grafana datasource placeholder (Bucket 6d overwrites with full config)
 #   Ollama + qwen2.5:14b-instruct-q4_K_M (~8 GB)
-#   /usr/local/MiningGuardian/.env (mode 0600, root:wheel)
+#   /Library/Application Support/MiningGuardian/.env (mode 0600, root:wheel)
 #
 # SECURITY:
 #   S-14  All password prompts use `read -s`; manual echo "" restores newline
@@ -41,7 +41,7 @@ set -euo pipefail
 setopt err_exit pipefail 2>/dev/null || true
 
 # ── Install constants ─────────────────────────────────────────────────────────
-INSTALL_ROOT="/usr/local/MiningGuardian"      # macOS root (PR #74 convention)
+INSTALL_ROOT="/Library/Application Support/MiningGuardian"      # macOS root (PR #74 convention)
 LAUNCHD_SRC="installer/macos-pkg/resources/launchd"   # plist source (repo-relative)
 LAUNCHER_SRC="${LAUNCHD_SRC}/launchers"       # wrapper scripts
 LAUNCHDAEMONS="/Library/LaunchDaemons"        # system daemon directory
@@ -152,7 +152,7 @@ phase_01_preflight() {
   step "CPU architecture (arm64 required — Ollama GPU inference)..."
   [[ "$(uname -m)" != "arm64" ]] && fail "Requires arm64 (Apple Silicon). Got: $(uname -m)"
   ok "arm64 Apple Silicon"
-  step "RAM (≥16 GB — qwen2.5:14b alone needs ~10 GB headroom)..."
+  step "RAM (≥16 GB — D-13 floor; ≥24 GB enables qwen2.5:14b instead of llama3.2:3b)..."
   local gb=$(( $(sysctl -n hw.memsize) / 1073741824 ))
   [[ "${gb}" -lt 16 ]] && fail "Only ${gb} GB RAM — minimum 16 GB."
   ok "${gb} GB RAM"
@@ -353,7 +353,7 @@ phase_05_catalog_seed() {
 
 # ============================================================
 # PHASE 6 — Repository clone + Python virtual environment
-# Clone or update the repo into /usr/local/MiningGuardian,
+# Clone or update the repo into /Library/Application Support/MiningGuardian,
 # create a Python 3.12 venv, and install all dependencies.
 #
 # requirements.txt: The repo root does not currently ship one
@@ -418,7 +418,7 @@ phase_06_repo_venv() {
 # ============================================================
 # PHASE 7 — Secrets and .env file
 # Generates 3 independent 256-bit secrets via openssl rand -hex 32.
-# Writes /usr/local/MiningGuardian/.env (mode 0600, root:wheel).
+# Writes /Library/Application Support/MiningGuardian/.env (mode 0600, root:wheel).
 #
 # S-14  AMS + Slack passwords from Phase 2 read -s prompts.
 #        NEVER echoed. NEVER in query strings (S-4).
@@ -462,7 +462,7 @@ phase_07_secrets() {
   step "Writing ${ENV_FILE}..."
   # Subshell redirect — no secret value ever touches this script's stdout.
   run_cmd bash -c "cat > '${ENV_FILE}'" <<EOF
-# /usr/local/MiningGuardian/.env  mode=0600  owner=root:wheel
+# /Library/Application Support/MiningGuardian/.env  mode=0600  owner=root:wheel
 # Generated: $(date '+%Y-%m-%d %H:%M:%S %Z')  Site: ${CUSTOMER_NAME}
 # DO NOT COMMIT. DO NOT LOG. DO NOT SHARE.
 
@@ -515,37 +515,64 @@ EOF
 }
 
 # ============================================================
-# PHASE 8 — Ollama + qwen2.5:14b model
-# Pull qwen2.5:14b-instruct-q4_K_M (~8 GB, 5-20 min).
+# PHASE 8 — Ollama + RAM-tier LLM model (D-13)
+#
+# B-11 fix (v1.0.1): mirror the .pkg installer's RAM-tier model
+# selection (D-13) so both install paths converge:
+#
+#   16 GB RAM    → llama3.2:3b                  (~2 GB pull)
+#   24 GB+ RAM   → qwen2.5:14b-instruct-q4_K_M  (~8 GB pull)
+#
+# Pre-v1.0.1 setup.sh forced qwen2.5:14b on every Mac including 16 GB
+# tier, contradicting the .pkg's welcome screen and the locked decision
+# in docs/DECISIONS.md row D-13. The two paths now agree.
+#
 # Role in Learning Chain:
 #   Pass 1 (4 PM) — per-miner analysis (ai/daily_deep_dive.py)
-#   Pass 3 (1 AM) — reflection pass (ai/refinement_chain.py)
-# q4_K_M = 4-bit K-means quantized: best quality/RAM on 16 GB Mac Mini.
+#   Pass 3 (1 AM) — reflection pass  (ai/refinement_chain.py)
+# q4_K_M = 4-bit K-means quantized: best quality/RAM on 24 GB+ Mac.
+# llama3.2:3b is the 16 GB tier fallback; same chain code, smaller model.
 # Pull is resumable — interrupted? Re-run Phase 8 only.
-# Smoke test: ollama list | grep qwen2.5:14b-instruct must match.
 # ============================================================
 phase_08_ollama() {
-  CURRENT_PHASE="Phase 8 — Ollama + qwen2.5:14b model"
+  CURRENT_PHASE="Phase 8 — Ollama + RAM-tier LLM model (D-13)"
   phase_banner "8" "Ollama + AI model"
+
+  # D-13 RAM-tier selection — must agree with
+  # installer/macos-pkg/scripts/lib/detect_ram.sh.
+  local gb model
+  gb=$(( $(sysctl -n hw.memsize) / 1073741824 ))
+  if   [[ "${gb}" -ge 24 ]]; then model="qwen2.5:14b-instruct-q4_K_M"
+  elif [[ "${gb}" -ge 16 ]]; then model="llama3.2:3b"
+  else fail "Only ${gb} GB RAM — D-13 floor is 16 GB."
+  fi
+  info "Detected ${gb} GB RAM → selecting ${model} (D-13)."
+
   step "Starting Ollama service..."
   if ! pgrep -x ollama >/dev/null 2>&1; then
     run_cmd ollama serve >/dev/null 2>&1 & sleep 5; ok "Ollama server started."
   else
     ok "Ollama already running."
   fi
-  step "Pulling qwen2.5:14b-instruct-q4_K_M (~8 GB — do not interrupt)..."
+  step "Pulling ${model} — do not interrupt..."
   info "The pull is resumable if it fails — re-run this phase."
-  run_cmd ollama pull qwen2.5:14b-instruct-q4_K_M
+  run_cmd ollama pull "${model}"
   ok "Model pull complete."
-  step "Smoke test: ollama list | grep qwen2.5:14b-instruct..."
-  if ollama list 2>/dev/null | grep -q "qwen2.5:14b-instruct"; then
-    ok "qwen2.5:14b-instruct confirmed in \`ollama list\`."
+  step "Smoke test: ollama list | grep ${model}..."
+  if ollama list 2>/dev/null | grep -q "${model%%:*}"; then
+    ok "${model} confirmed in \`ollama list\`."
   else
     warn "Model not found in \`ollama list\` — pull may have failed."
-    warn "Fix: ollama list && ollama pull qwen2.5:14b-instruct-q4_K_M"
+    warn "Fix: ollama list && ollama pull ${model}"
   fi
+
+  # Persist the selected model for downstream phases (Slack notifier copy,
+  # install receipt) so they don't have to re-detect.
+  export MG_INSTALL_LLM_MODEL="${model}"
+  export MG_INSTALL_RAM_TIER="${gb}"
+
   log_phase_complete "08_ollama"
-  ok "Phase 8 complete — Ollama + AI model ready."
+  ok "Phase 8 complete — Ollama + ${model} ready."
 }
 
 # ============================================================
@@ -611,7 +638,7 @@ phase_09_launchdaemons() {
 # ============================================================
 # PHASE 10 — Cron jobs (10 entries from docs/CRON_SCHEDULE.md)
 # PATH TRANSLATION: CRON_SCHEDULE.md uses /root/Mining-Guardian (VPS).
-# Every path rewritten to /usr/local/MiningGuardian for macOS.
+# Every path rewritten to /Library/Application Support/MiningGuardian for macOS.
 # Times are machine-local — set Mac Mini timezone before install.
 #
 # Learning Chain:
@@ -812,7 +839,7 @@ phase_14_postinstall() {
   if [[ "${DRY_RUN_INSTALL}" == "true" ]]; then
     info "[DRY RUN] Would POST Slack confirmation to webhook."
   elif [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
-    local MSG="*Mining Guardian online* — macOS v2\n*Site:* ${CUSTOMER_NAME}  *Mode:* dry_run=${MG_DRY_RUN}\n*Scan:* ${SCAN_INTERVAL}s  *9 LaunchDaemons*  *Model:* qwen2.5:14b-instruct-q4_K_M\nBitcoin SHA-256 fleet monitoring active."
+    local MSG="*Mining Guardian online* — macOS v2\n*Site:* ${CUSTOMER_NAME}  *Mode:* dry_run=${MG_DRY_RUN}\n*Scan:* ${SCAN_INTERVAL}s  *9 LaunchDaemons*  *Model:* ${MG_INSTALL_LLM_MODEL:-llama3.2:3b}\nBitcoin SHA-256 fleet monitoring active."
     curl -s -X POST -H 'Content-type: application/json' \
       --data "{\"text\": \"${MSG}\"}" "${SLACK_WEBHOOK_URL}" >/dev/null 2>&1 && \
       ok "Slack notified." || warn "Slack failed — check ${ENV_FILE} SLACK_WEBHOOK_URL."
@@ -856,7 +883,7 @@ phase_14_postinstall() {
 # The actual Phase 15 dispatch happens at the top of this script via
 # --restore-from-snapshot early-dispatch (before the banner). That path
 # execs restore_from_snapshot.sh (Bucket 6c, separate PR), which handles:
-#   1. Untar snapshot into /usr/local/MiningGuardian
+#   1. Untar snapshot into /Library/Application Support/MiningGuardian
 #   2. Restore .env from snapshot
 #   3. Restore Grafana DB (grafana.db) from snapshot
 # After Bucket 6c exits 0, setup.sh re-execs with --post-restore to

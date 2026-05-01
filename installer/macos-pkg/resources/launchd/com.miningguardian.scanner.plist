@@ -12,11 +12,11 @@
       sudo launchctl bootstrap system <path-to-plist>
 
   Path + env conventions (matches PR #41 feedback-loop-daemon plist):
-    install root              /usr/local/MiningGuardian
-    .env (private secrets)    /usr/local/MiningGuardian/.env
-    venv                      /usr/local/MiningGuardian/venv
-    launcher wrapper          /usr/local/MiningGuardian/bin/scanner_launcher.sh
-    logs                      /usr/local/MiningGuardian/logs/
+    install root              /Library/Application Support/MiningGuardian
+    .env (private secrets)    /Library/Application Support/MiningGuardian/.env
+    venv                      /Library/Application Support/MiningGuardian/venv
+    launcher wrapper          /Library/Application Support/MiningGuardian/bin/scanner_launcher.sh
+    logs                      /Library/Application Support/MiningGuardian/logs/
 
   The wrapper exists because launchd has no EnvironmentFile= equivalent;
   the wrapper sources .env then execs python.
@@ -31,11 +31,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/usr/local/MiningGuardian/bin/scanner_launcher.sh</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scanner_launcher.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/usr/local/MiningGuardian</string>
+    <string>/Library/Application Support/MiningGuardian</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -55,17 +55,17 @@
     <string>Background</string>
 
     <key>StandardOutPath</key>
-    <string>/usr/local/MiningGuardian/logs/scanner.out.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/scanner.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/usr/local/MiningGuardian/logs/scanner.err.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/scanner.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PATH</key>
-        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

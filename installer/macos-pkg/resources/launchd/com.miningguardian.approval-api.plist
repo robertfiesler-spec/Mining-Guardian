@@ -22,11 +22,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/usr/local/MiningGuardian/bin/approval_api_launcher.sh</string>
+        <string>/Library/Application Support/MiningGuardian/bin/approval_api_launcher.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/usr/local/MiningGuardian</string>
+    <string>/Library/Application Support/MiningGuardian</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -46,17 +46,17 @@
     <string>Background</string>
 
     <key>StandardOutPath</key>
-    <string>/usr/local/MiningGuardian/logs/approval_api.out.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/approval_api.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/usr/local/MiningGuardian/logs/approval_api.err.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/approval_api.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PATH</key>
-        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

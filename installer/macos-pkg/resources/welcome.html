@@ -2,15 +2,23 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
+<meta name="color-scheme" content="light only">
 <title>Welcome — Mining Guardian</title>
 <style>
-  /* Mining Guardian — Installer.app welcome screen (v3, light theme)
+  /* Mining Guardian — Installer.app welcome screen (v4, light-only)
+
+     v4 change (B-12 fix, v1.0.1): force color-scheme: light only and add
+     an explicit @media (prefers-color-scheme: dark) override that re-asserts
+     every color literal. Tahoe's Installer.app auto-inverts unstyled
+     surfaces in dark mode — it took the inline code-chip backgrounds and
+     the sidebar/branding strip down to near-black, making the chip text
+     unreadable and the sidebar branding invisible. The meta tag plus the
+     CSS belt-and-suspenders forces WebKit to render the page as light
+     regardless of the host appearance.
 
      Designed for Apple Installer.app's locked-down WebKit:
        - No CSS custom properties (Installer.app's internal stylesheet
          breaks the cascade so var(--x) for color is unreliable)
-       - No background paint on html/body (Installer.app forces
-         transparent)
        - Light theme so Installer.app default chrome blends naturally
        - All text colors literal hex with !important to defeat any
          Installer.app color reset
@@ -25,6 +33,9 @@
        CODE_BORDER #D6DEE9   (inline code border)
        MUTED       #56688A   (lede text, footer note)
   */
+  /* B-12 fix: force light-mode rendering inside Installer.app's WebKit. */
+  :root, html { color-scheme: light only; }
+
   html, body {
     margin: 0;
     padding: 0;
@@ -34,6 +45,7 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     color: #0A1428 !important;
+    background: #FFFFFF !important;
   }
   body { padding: 28px 32px 24px 32px; }
   .eyebrow {
@@ -136,6 +148,32 @@
     border-radius: 3px;
     margin-right: 4px;
   }
+
+  /* B-12 fix: belt-and-suspenders. If Tahoe's Installer.app insists on
+     dark mode despite color-scheme: light only, re-assert every color
+     literal here. Tested in both light and dark appearance on macOS 26.4.1. */
+  @media (prefers-color-scheme: dark) {
+    html, body {
+      color: #0A1428 !important;
+      background: #FFFFFF !important;
+    }
+    h1, h2, p, ul li, strong { color: #0A1428 !important; }
+    .lede, .footer-note { color: #56688A !important; }
+    .eyebrow { color: #F7931A !important; }
+    code,
+    .footer-note .badge {
+      background: #F1F4F9 !important;
+      border-color: #D6DEE9 !important;
+      color: #0A1428 !important;
+    }
+    .callout {
+      background: #FFF6E8 !important;
+      border-color: #F4D8A8 !important;
+      border-left-color: #F7931A !important;
+      color: #0A1428 !important;
+    }
+    .callout strong { color: #B66A0A !important; }
+  }
 </style>
 </head>
 <body>
@@ -150,7 +188,7 @@
 
 <h2>What this installer does</h2>
 <ul>
-  <li>Lays down the Mining Guardian application at <code>/usr/local/MiningGuardian</code>.</li>
+  <li>Lays down the Mining Guardian application at <code>/Library/Application Support/MiningGuardian</code>.</li>
   <li>Stands up a local Postgres&nbsp;16 database in a Colima-managed container, bound to <code>127.0.0.1:5432</code> only.</li>
   <li>Installs Ollama and pulls a local LLM model sized to your Mac's RAM (16&nbsp;GB &rsaquo; <code>llama3.2:3b</code>; 24&nbsp;GB+ &rsaquo; <code>qwen2.5:14b-instruct-q4_K_M</code>).</li>
   <li>Registers four background services so Mining Guardian comes up automatically every time this Mac boots.</li>

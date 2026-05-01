@@ -15,8 +15,8 @@
   .env and does the right thing.
 
   GUARDIAN_DB note: the systemd unit sets GUARDIAN_DB=/root/Mining-Guardian/guardian.db,
-  but on macOS the install root is /usr/local/MiningGuardian, so we set
-  GUARDIAN_DB=/usr/local/MiningGuardian/guardian.db here. The launcher wrapper
+  but on macOS the install root is /Library/Application Support/MiningGuardian, so we set
+  GUARDIAN_DB=/Library/Application Support/MiningGuardian/guardian.db here. The launcher wrapper
   also sources .env, which can override this if the operator wants a custom
   path.
 
@@ -26,11 +26,11 @@
       sudo launchctl bootstrap system <path-to-plist>
 
   Path + env conventions (match scanner / dashboard-api / approval-api / feedback-loop):
-    install root              /usr/local/MiningGuardian
-    .env (private secrets)    /usr/local/MiningGuardian/.env  (mode 0600)
-    venv                      /usr/local/MiningGuardian/venv
-    launcher wrapper          /usr/local/MiningGuardian/bin/intelligence_report_launcher.sh
-    logs                      /usr/local/MiningGuardian/logs/
+    install root              /Library/Application Support/MiningGuardian
+    .env (private secrets)    /Library/Application Support/MiningGuardian/.env  (mode 0600)
+    venv                      /Library/Application Support/MiningGuardian/venv
+    launcher wrapper          /Library/Application Support/MiningGuardian/bin/intelligence_report_launcher.sh
+    logs                      /Library/Application Support/MiningGuardian/logs/
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -42,11 +42,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/usr/local/MiningGuardian/bin/intelligence_report_launcher.sh</string>
+        <string>/Library/Application Support/MiningGuardian/bin/intelligence_report_launcher.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/usr/local/MiningGuardian</string>
+    <string>/Library/Application Support/MiningGuardian</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -66,19 +66,19 @@
     <string>Background</string>
 
     <key>StandardOutPath</key>
-    <string>/usr/local/MiningGuardian/logs/intelligence-report.out.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/intelligence-report.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/usr/local/MiningGuardian/logs/intelligence-report.err.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/intelligence-report.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PATH</key>
-        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>GUARDIAN_DB</key>
-        <string>/usr/local/MiningGuardian/guardian.db</string>
+        <string>/Library/Application Support/MiningGuardian/guardian.db</string>
     </dict>
 </dict>
 </plist>

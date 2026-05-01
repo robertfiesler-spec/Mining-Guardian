@@ -1,6 +1,6 @@
 [project]
 name = "mining-guardian"
-version = "1.0.0"
+version = "1.0.1"
 description = "AI-driven fleet management and autonomous remediation for Bitcoin mining operations"
 readme = "README.md"
 requires-python = ">=3.10"

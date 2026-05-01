@@ -5,13 +5,13 @@
 # Wrapper invoked by com.miningguardian.slack-commands.plist.
 #
 # launchd has no EnvironmentFile= equivalent, so this wrapper sources
-# /usr/local/MiningGuardian/.env and execs the Python entry point.
+# /Library/Application Support/MiningGuardian/.env and execs the Python entry point.
 #
-# Drop at /usr/local/MiningGuardian/bin/slack_commands_launcher.sh, mode 0755, owner root:wheel.
+# Drop at /Library/Application Support/MiningGuardian/bin/slack_commands_launcher.sh, mode 0755, owner root:wheel.
 
 set -euo pipefail
 
-INSTALL_ROOT="/usr/local/MiningGuardian"
+INSTALL_ROOT="/Library/Application Support/MiningGuardian"
 ENV_FILE="${INSTALL_ROOT}/.env"
 VENV_PYTHON="${INSTALL_ROOT}/venv/bin/python"
 ENTRY_POINT="${INSTALL_ROOT}/api/slack_command_handler.py"
