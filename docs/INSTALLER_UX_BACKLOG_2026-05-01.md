@@ -84,11 +84,12 @@
 - **Symptom:** Pre-flight calls fail without sudo even when no changes are being made.
 - **Fix:** Skip the root-EUID check when `--dry-run-install` is set. Allow non-destructive dry-runs as any user.
 
-### B-9 · Catalog count drift (313 vs 320)
+### B-9 · Catalog count drift (313 vs 320 — and the count grows) — ✅ DONE in v1.0.2
 
-- **Symptom:** Multiple docs reference 313 catalog rows; actual catalog is 320 since PR #102 (Bitaxe).
-- **Files to update:** `CLAUDE.md`, `README.md`, `AI_ROADMAP.md`, `docs/CAPABILITIES.md`, `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`, `docs/RUNBOOK_INSTALL_DAY_2026-04-30.md` (Phase 5 timing table line 112).
-- **Recommend:** Single search-replace PR, no code changes.
+- **Symptom:** Multiple docs reference 313 catalog rows; actual catalog is 320 since PR #102 (Bitaxe). Other docs had drifted to 321 (likely from miscounting the CSV header). The deeper issue is that any hardcoded count in docs goes stale every time a new model lands.
+- **Files to update:** `CLAUDE.md`, `README.md`, `AI_ROADMAP.md`, `docs/CAPABILITIES.md`, `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`, `docs/RUNBOOK_INSTALL_DAY_2026-04-30.md` (Phase 5 timing table line 112), and the rest of the runbooks/checklists/vision docs that reference catalog row counts.
+- **Recommend:** Single search-replace PR, no code changes — but reframe each hardcoded count as "N at v1.0.2 build; the catalog grows over time. Source of truth is `seed_miner_models.sql` row count."
+- **Resolution (v1.0.2 / 2026-05-02):** Reset all in-repo docs to the canonical count (320 = 320 INSERTs into `hardware.miner_models` in `intelligence-catalog/seed-data/seed_miner_models.sql`, matching 320 data rows in `all_bitcoin_sha256_miners.csv`). Reframed every count as "current at v1.0.2; grows over time" with a pointer to `seed_miner_models.sql` as the source of truth. Recorded the **operator-locked rule** that the Grafana Intelligence Report miner-dropdown must read `hardware.miner_models` live (via a SQL-driven Grafana variable) rather than a hardcoded list — fix lives on the Mining Guardian roadmap as a deferred but explicit requirement, not "refresh the hardcoded list every time a miner is added." Files touched: `README.md`, `CLAUDE.md`, `AI_ROADMAP.md`, `DEPLOYMENT_CHECKLIST.md`, `docs/CAPABILITIES.md`, `docs/VISION.md`, `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md`, `docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md`, `docs/MG_UNIFIED_TODO_LIST.md`, `docs/MONDAY_INTELLIGENCE_CATALOG_PLAN.md`, `docs/REPO_DOC_SWEEP_2026-04-29.md`, `docs/ROADMAP_TO_MAC_MINI_2026-05-05.md`, `docs/RUNBOOK_BUCKET_3.2_DEPLOY_HARDWARE_SCHEMA.md`, `docs/RUNBOOK_BUCKET_3_RECONCILIATION_2026-04-29.md`, `docs/RUNBOOK_BUCKET_6E_SANDBOX_TEST.md`, `docs/RUNBOOK_INSTALL_DAY_2026-04-30.md`, `intelligence-catalog/seed-data/README.md`.
 
 ### B-11 ✅ FIXED in v1.0.1 · `.pkg` Welcome copy promises wrong LLM model
 

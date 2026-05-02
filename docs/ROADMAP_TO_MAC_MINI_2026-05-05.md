@@ -31,7 +31,7 @@ The Mac Mini install does NOT happen until all 8 of these are green:
 | 2 | No hardcoded passwords or default API keys | CRIT-1 + CRIT-3 + CRIT-6 closed; new `MG_DB_PASSWORD` and `CATALOG_API_KEY` generated at install time |
 | 3 | No dead code shipping to customer | OpenClaw fully removed (10 active source files clean); orphan tables dropped or wired (`chip_readings`, `log_collection_failures`, empty `guardian.db` stub, `databases/*.db`) |
 | 4 | One canonical catalog schema | N6 done — 4 schema versions consolidated to 1, others archived |
-| 5 | AI actually has data | C4 seed executed (313-row baseline) + C1/C3 dual-write live so catalog Postgres has real rows the API can read |
+| 5 | AI actually has data | C4 seed executed (320-row baseline: 313 + 7 Bitaxe per PR #102) + C1/C3 dual-write live so catalog Postgres has real rows the API can read |
 | 6 | Installer is real | `scripts/setup.sh` v2 produces a working system from a blank Mac in one pass: Postgres, Ollama (qwen2.5:14b), 8 LaunchAgents, 9 cron jobs, Grafana, Tailscale, secrets generation, masked credential prompts, idempotent re-runs |
 | 7 | Daily paper trail | Every working day from now through 05-05 has a `SESSION_LOG_YYYY-MM-DD.md` committed |
 | 8 | Customer-facing docs done | Setup Manual + Program Instructions + Product Brochure (8–10 pages with images) — all written and reviewed |

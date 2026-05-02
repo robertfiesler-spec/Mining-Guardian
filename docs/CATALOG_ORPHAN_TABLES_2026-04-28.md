@@ -6,7 +6,7 @@
 >
 > Quick state vs. what this audit recommended:
 >
-> - **`intelligence-catalog/seed-data/`** — canonical schema location, **unchanged**. The 321-row Bitcoin SHA-256 catalog seeds from here on Mac Mini install.
+> - **`intelligence-catalog/seed-data/`** — canonical schema location, **unchanged**. The 320-row Bitcoin SHA-256 catalog seeds from here on Mac Mini install.
 > - **Parallel `intelligence/` directory** — **deleted** (the "Mon May 4 housekeeping PR" outlined in this audit ran early as part of the 2026-04-29 doc sweep, Commit 2). The directory no longer exists in the tree. The 7 docs that referenced `intelligence/README.md` have all been updated or rewritten to point at `intelligence-catalog/seed-data/README.md`.
 > - **Mac Mini install date** — the audit was written assuming a May 5 install. The install is now **2026-04-30**. The classification scheme and DROP/KEEP/DEFER decisions still apply unchanged — only the calendar moved.
 > - **OpenClaw references** — retained verbatim in this audit as historical context for *why* the parallel `intelligence/` directory was abandoned. OpenClaw was removed from the active tree pre-sweep; see `MG_UNIFIED_TODO_LIST.md` § 5.5.
@@ -62,7 +62,7 @@ The core hardware identity track. **C1 (PR #15)** and **C3 (PR #16)** target thi
 | Table | Rows (sandbox) | Writer today | Decision | Notes |
 |---|---:|---|---|---|
 | `hardware.manufacturers` | 16 | `compile_all_miners.py` (seed) + `manufacturer_watcher.py` (PR #16) | **KEEP-WIRED** | Seed gives the day-one set, PR #16 wires the live UPSERT path |
-| `hardware.miner_models` | 317 | `compile_all_miners.py` (seed) + dual-write in PR #15 | **KEEP-WIRED** | Anchor table. 317 = 313 from seed + 4 from base schema |
+| `hardware.miner_models` | 324 | `compile_all_miners.py` (seed) + dual-write in PR #15 | **KEEP-WIRED** | Anchor table. 324 = 320 from seed (313 baseline + 7 Bitaxe in PR #102) + 4 from base schema |
 | `hardware.model_aliases` | 29 | seed | **KEEP-WIRED** | PR #16 will UPSERT from manufacturer pages with the cross-model normalized-alias collision check |
 | `hardware.model_known_issues` | 0 | none | **DEFER** | Wednesday community watcher (forum mining for `hardware.model_known_issues` rows) |
 | `hardware.model_spec_history` | 0 | none | **DEFER** | Auto-populated by trigger in PR #15: every UPDATE to `hardware.miner_models.specs` writes a history row |
@@ -346,7 +346,7 @@ Status flips for every action item in this audit:
 | Drop the 13 DROP tables + `regulatory` schema | Mon May 4 housekeeping PR | ✅ Already in canonical schema (consolidated in N6 / PR #12); the dropped tables never shipped |
 | `rm -rf intelligence/` (with operator confirm) | Mon May 4 housekeeping PR | ✅ Done in 2026-04-29 doc-sweep Commit 2 |
 | Update doc redirects (7 docs reference `intelligence/README.md`) | Mon May 4 housekeeping PR | ✅ Done in 2026-04-29 doc-sweep Commits 4–9:<br>  • README.md (Tier 3 rewrite, Commit 4)<br>  • CLAUDE.md (Tier 3 rewrite, Commit 5)<br>  • AI_ROADMAP.md (Tier 3 rewrite, Commit 6)<br>  • docs/VISION.md (full rewrite, Commit 9 — line 16 reference replaced)<br>  • docs/MONDAY_INTELLIGENCE_CATALOG_PLAN.md (Tier 4, upcoming Commit 11)<br>  • docs/INTELLIGENCE_CATALOG_STATUS.md (Tier 4, upcoming Commit 11)<br>  • docs/RESUME_HERE_2026_04_08_EVENING.md (archived in Tier 2, Commit 3) |
-| Run `scripts/seed_catalog.sh` after each schema-affecting PR | Per-PR | ✅ Verifying 321 rows on Mac Mini install (2026-04-30) |
+| Run `scripts/seed_catalog.sh` after each schema-affecting PR | Per-PR | ✅ Verifying 320 rows on Mac Mini install (2026-04-30) |
 
 **Net:** every recommendation in this audit has either shipped or is correctly tracked in the post-install roadmap. The audit's classification scheme (KEEP-WIRED / DROP / DEFER / SEED-ONLY) remains the canonical reference for catalog table status.
 

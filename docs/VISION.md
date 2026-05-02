@@ -11,7 +11,7 @@ This document synthesizes and consolidates:
 - `docs/DECISIONS.md` (locked decisions, especially D-7 through D-14)
 - `docs/INTELLIGENCE_CATALOG_STATUS.md` (catalog wiring)
 - `docs/OPEN_LOG_UPLOADER_VISION.md` (any-vendor ingestion vision)
-- `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv` (the 321-miner SHA-256 seed)
+- `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv` (the SHA-256 seed — 320 miners at v1.0.2, growing)
 - `installer/macos-pkg/README.md` (the customer installer .pkg)
 
 If any of the above conflict with this doc, this doc is wrong — update it.
@@ -26,7 +26,7 @@ Mining Guardian is an AI-powered autonomous fleet monitoring and remediation sys
 
 These are the immutable rules. They constrain every design decision.
 
-**1. The catalog is sacred.** The Mining Intelligence Catalog (`intelligence-catalog/`) is the single source of truth for everything known about Bitcoin SHA-256 ASIC miners — manufacturer specs, firmware quirks, failure patterns, war stories, repair-shop intelligence. The 321-miner SHA-256 seed is the floor; we only grow it. Any change that drops, divorces, or duplicates catalog data is the wrong change.
+**1. The catalog is sacred.** The Mining Intelligence Catalog (`intelligence-catalog/`) is the single source of truth for everything known about Bitcoin SHA-256 ASIC miners — manufacturer specs, firmware quirks, failure patterns, war stories, repair-shop intelligence. The 320-miner SHA-256 seed (current at v1.0.2) is the floor; we only grow it. Any change that drops, divorces, or duplicates catalog data is the wrong change.
 
 **2. The LLM IS the product.** The main feature of Mining Guardian is the LLM getting smarter over time. Every scan feeds it. Every denial refines it. Every operational outcome flows back into the catalog within ~100 ms (D-14). Any solution that removes the LLM from the operator's decision flow is the wrong solution.
 
@@ -219,7 +219,7 @@ All HTTP surfaces bind to `127.0.0.1`. Remote access is via Tailscale to the Min
 Two databases in one Postgres instance, per D-14:
 
 - **`mining_guardian` (operational):** scans, miner_readings, chain_readings, pool_readings, action_audit_log, miner_restarts, llm_analysis, hvac_readings, weather_readings, pending_approvals, known_dead_boards, system_settings, system_schedules.
-- **`intelligence_catalog` (reference):** `hardware.miner_models`, `hardware.manufacturers`, `hardware.model_known_issues`, `ops.failure_patterns`, `market.war_stories`, `knowledge.field_registry`, `knowledge.sources`. Seeded with the 321-miner SHA-256 catalog at install time.
+- **`intelligence_catalog` (reference):** `hardware.miner_models`, `hardware.manufacturers`, `hardware.model_known_issues`, `ops.failure_patterns`, `market.war_stories`, `knowledge.field_registry`, `knowledge.sources`. Seeded with the 320-miner SHA-256 catalog at v1.0.2 install time (the catalog grows post-install as models are added).
 
 ## 7. Deadlines & Install
 
@@ -227,7 +227,7 @@ Two databases in one Postgres instance, per D-14:
 
 - Operator runs the installer .pkg from PR #79 on a fresh Mac
 - Postgres 16 + the 5 catalog migrations (001–005) + Ollama + launchd plists for all services
-- Catalog seed loads (321 SHA-256 miners)
+- Catalog seed loads (320 SHA-256 miners at v1.0.2; grows over time)
 - Smoke tests: scan loop, AMS reach, all services, Slack ping, Grafana datasource, Ollama smoke
 - If green: tag `v1.0.0`, write `docs/INSTALL_REPORT_2026-04-30.md`
 - If red: pre-defined rollback (re-run installer next day)
@@ -240,7 +240,7 @@ Two databases in one Postgres instance, per D-14:
 
 ## 8. Build Queue (in priority order, post-install)
 
-1. Address the Grafana 321-miner dropdown (deferred from earlier — verify dashboard reflects the full 321-miner catalog seed).
+1. Address the Grafana miner-dropdown so it queries `hardware.miner_models` live instead of a hardcoded list (the catalog grows over time — 320 at v1.0.2) (deferred from earlier — verify dashboard reflects the live `hardware.miner_models` count (320 at v1.0.2; the dashboard must follow the table, not a static number)).
 2. Customer-facing doc refresh (Setup Manual, Program Instructions, Brochure §10.4 / §10.5 / §10.6 — blocked on screenshots from the live install).
 3. Repair-shop data ingestion (gated on the dataset arrival from James / ACS).
 4. Container monitoring activation (gated on BiXBiT API access).

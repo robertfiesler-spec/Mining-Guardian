@@ -10,7 +10,7 @@ BiXBiT USA | Fort Worth, TX | as of 2026-04-29 (last day before the 2026-04-30 M
 - Scans the operator's fleet on a schedule (default hourly; the operator can adjust the cadence and the active window per `docs/OPERATOR_SCHEDULES.md`) via the AMS WebSocket API
 - Three-tier hashrate evaluation:
   - Tier 1: Parses live BiXBiT firmware profile strings (exact rated TH/s)
-  - Tier 2: Known model specs from the Mining Intelligence Catalog (`hardware.miner_models`, 321 SHA-256 miners seeded)
+  - Tier 2: Known model specs from the Mining Intelligence Catalog (`hardware.miner_models`, 320 SHA-256 miners seeded at v1.0.2 build (count grows as models are added))
   - Tier 3: 3-day learned baseline for unknown models
 - Per-board hashboard analysis — detects which specific board is dead
 - Offline verification — checks miner directly before flagging (avoids false alarms)

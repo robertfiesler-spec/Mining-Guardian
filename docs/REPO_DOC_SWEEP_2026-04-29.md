@@ -39,7 +39,7 @@ Stale-term breakdown across all docs (post-PR #90):
 ## Execution sequence (single PR, multiple commits)
 
 1. **Commit 1 (THIS commit):** Audit doc + inventory CSVs landed first as the record.
-2. **Commit 2:** DELETE — 24 files: entire `intelligence/` directory (12 files), entire `deploy/openclaw-skills/` directory (7 files), 5 root-level one-shot notes (`NEXT_SESSION.md`, 3× `RESUME_HERE_*`, `MORNING_KICKOFF_PROMPT.md`). Also: 1-line patch to `installer/macos-pkg/scripts/build_pkg.sh` (`intelligence/***` → `intelligence-catalog/***`). `intelligence-catalog/` is LIVE CODE (catalog API, watchers, 321 miner seed CSV) and is preserved.
+2. **Commit 2:** DELETE — 24 files: entire `intelligence/` directory (12 files), entire `deploy/openclaw-skills/` directory (7 files), 5 root-level one-shot notes (`NEXT_SESSION.md`, 3× `RESUME_HERE_*`, `MORNING_KICKOFF_PROMPT.md`). Also: 1-line patch to `installer/macos-pkg/scripts/build_pkg.sh` (`intelligence/***` → `intelligence-catalog/***`). `intelligence-catalog/` is LIVE CODE (catalog API, watchers, 320 miner seed CSV) and is preserved.
 3. **Commit 3:** ARCHIVE — 36 files moved to `docs/archive/2026-04/`.
 4. **Commit 4–7:** REWRITE — 4 root-level files, one commit each (`README.md`, `CLAUDE.md`, `AI_ROADMAP.md`, `DEPLOYMENT_CHECKLIST.md`).
 5. **Commit 8–11:** UPDATE — 49 files batched by theme:
@@ -199,6 +199,6 @@ Listed in the inventory CSV. Most are `.claude/` tooling files (commands/agents/
 - Code cleanup (dead imports, unused files, TODO/FIXME audit).
 - Test pass on current main.
 - Final preflight + `v1.0.0-install-ready` tag.
-- Grafana 321-miner dropdown fix.
+- Grafana 320-miner dropdown fix.
 
 All deferred per Bobby's directive: "when the documents are done we will continue with the polishing."

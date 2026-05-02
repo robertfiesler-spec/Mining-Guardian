@@ -15,7 +15,7 @@
   - PR #75 — Bucket 6b: `scripts/setup.sh` v2 (15 phases)
   - PR #76 — Bucket 6c: `scripts/restore_from_snapshot.sh` (8 phases — kept for historical / lab use only; not part of the customer fresh-install path)
   - PR #77 — Bucket 6d: Grafana provisioning bundle + `scripts/install_grafana_provisioning.sh`
-- [ ] Migrations 001–005 present in `migrations/` and applied automatically by `setup.sh` Phase 5 (operational + catalog schemas, including the 313-row miner_models seed)
+- [ ] Migrations 001–005 present in `migrations/` and applied automatically by `setup.sh` Phase 5 (operational + catalog schemas, including the 320-row miner_models seed (313 baseline + 7 Bitaxe added in PR #102))
 - [ ] `MG_DB_PASSWORD` generated for this Mac (32-char): `openssl rand -base64 24`
 - [ ] `CATALOG_API_KEY` generated: `openssl rand -hex 32`
 - [ ] AMS API username + password handed to operator
@@ -101,11 +101,11 @@ psql -U guardian_app -d mining_guardian -c '\dt' | wc -l
 psql -U guardian_app -d mining_guardian_catalog -c "\dn" | grep -E 'hardware|firmware|ops|knowledge'
 # expected: 4 schemas
 psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM hardware.miner_models;"
-# expected: 313 (or current seed count — match against intelligence-catalog/seed-data/seed_miner_models.sql)
+# expected: 320 (or current seed count — match against intelligence-catalog/seed-data/seed_miner_models.sql)
 ```
 
 - [ ] `mining_guardian` operational DB has all expected tables
-- [ ] `mining_guardian_catalog` has 4 schemas + 313 miner models
+- [ ] `mining_guardian_catalog` has 4 schemas + 320 miner models
 - [ ] `~/Mining-Guardian/.env` mode `600`, contains non-default `MG_DB_PASSWORD` and `CATALOG_API_KEY`
 
 ### 2.4. Ollama

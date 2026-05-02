@@ -462,7 +462,7 @@ This is what I'd tackle, in this order, if you asked me to drive it:
 4. **CRIT-1 password purge** (S-1, S-4) — ~3 hr
 5. **CRIT-3 mg_import auth** (S-3) — ~1.5 hr
 6. **CRIT-6 catalog API hardening** (S-5, S-6, S-12) — ~1 hr
-7. **C4 seed catalog** (30 sec) + verify 313 rows present
+7. **C4 seed catalog** (30 sec) + verify 320 rows present (313 baseline + 7 Bitaxe in PR #102)
 8. Start **installer rewrite** (Section 7) — ~4 hr (will spill to Tuesday)
 
 ## 📅 Tuesday 2026-04-28 — Installer + Sandbox
@@ -478,7 +478,7 @@ This is what I'd tackle, in this order, if you asked me to drive it:
 
 14. Run installer in customer mode with existing creds (~~Wed~~ Thu morning)
 15. Document every paper cut as we go
-16. ~~Restore VPS data via `restore_from_snapshot.sh`~~ — superseded. Per D-14, no live VPS data is being copied to the Mac Mini; the Mini stands up its own operational DB from migrations 001–005 + 321-row catalog seed. The `restore_from_snapshot.sh` script remains in the tree as an **optional** tool for any future operator who explicitly wants to re-import a historical operational-DB snapshot, but it is **not** part of the canonical Mac Mini install path.
+16. ~~Restore VPS data via `restore_from_snapshot.sh`~~ — superseded. Per D-14, no live VPS data is being copied to the Mac Mini; the Mini stands up its own operational DB from migrations 001–005 + 320-row catalog seed. The `restore_from_snapshot.sh` script remains in the tree as an **optional** tool for any future operator who explicitly wants to re-import a historical operational-DB snapshot, but it is **not** part of the canonical Mac Mini install path.
 17. Live verification, swap DNS / cron / Slack notifier targets to Mac
 18. Begin 24-48 hr burn-in
 
@@ -903,7 +903,7 @@ The May 1 install attempt logged backlog items B-1 through B-13. Of those, **onl
 - B-6 — Tahoe auto-update mid-install drag
 - B-7 — `--dry-run-install` doesn't skip Phase 2 prompts
 - B-8 — dry-run requires sudo
-- B-9 — Catalog count drift (313 vs 320)
+- B-9 — Catalog count drift (313 vs 320 — and the count grows; Grafana dropdown must be SQL-driven, not hardcoded) — ✅ DONE in v1.0.2
 - B-10 — Runbook says `bash setup.sh` but it's `#!/bin/zsh` — ✅ DONE in v1.0.2
 
 Logged but **not yet a backlog row**: the conclusion.html still says "four services" in two places, but postinstall.sh boots 9. Will be **B-14 — conclusion.html service-count drift (4 vs 9)** in a follow-up PR; out of scope for v1.0.1.
