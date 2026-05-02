@@ -17,7 +17,7 @@
 - **Today's workaround:** Commented out lines 159–162 with `DISK_CHECK_BYPASS_2026-05-01` prefix. Reverted at end of session via `setup.sh.bak`.
 - **Resolution (v1.0.2 / 2026-05-02):** Replaced the `df -g /` reading with a `diskutil info /` parser that extracts the byte count from the `Container Free Space` line (always exact, always integer, never abbreviated to TB). On parse failure we fall back to `df -g /` with a `warn` so the install still has a chance to complete. Fix landed on branch `fix/installer-b1-disk-check-b10-runbook-zsh`.
 
-### B-2 · Phase 2 customer-info prompt UX is unusable
+### B-2 · Phase 2 customer-info prompt UX is unusable — ✅ DONE in v1.0.2
 
 - **Symptom:** Raw `read` prompts in sequence with no context, no validation, no review, no edit, no go-back.
 - **Specific failures observed:**
@@ -30,6 +30,13 @@
   - A pre-filled `.env.template` the operator edits in `nano` / `vim`, then setup.sh validates the file
   - OR a proper TUI (Rich/Textual already in the repo's installer brand toolkit — use it) with field validation, edit-before-commit, and a final review screen
 - **Recommend:** Template-file approach. Less code, less to break, operator gets to use a real editor with backspace.
+- **Resolution (v1.0.2 / 2026-05-02):** Took the template-file path per operator decision ("Full config-file approach").
+  - New file: `installer/macos-pkg/resources/MiningGuardian.conf.template` — fully commented site config with REQUIRED/OPTIONAL sections.
+  - New flag: `--config-file=PATH` lets the operator (or the .pkg postinstall) skip the editor entirely and source a pre-filled config. Headless installs are now possible.
+  - New zsh helpers in `scripts/setup.sh`: `mg_source_config` (safe key=value parser, only-known-keys allowlist) and `mg_validate_site_config` (every required key non-empty; integer fields integer; URLs http(s)://; AMS_EMAIL contains '@'; SLACK_WEBHOOK_URL starts with `https://hooks.slack.com/`; SLACK_BOT_TOKEN starts with `xoxb-`; SLACK_APP_TOKEN, if set, starts with `xapp-`).
+  - `phase_02_customer_info()` now resolves the config (file or interactive editor on `$EDITOR`/nano), validates BEFORE any system-state change, and prints a one-line summary. Truncates Slack webhook URL when echoing back.
+  - The exact 2026-05-01 failure ("usa 188" accepted as a workspace ID) is now caught with the message `AMS_WORKSPACE_ID must be an integer (got: usa 188)` before Phase 3 starts.
+  - Verified offline against four cases (valid, missing CUSTOMER_NAME, non-integer workspace ID, wrong-prefix bot token). All four pass.
 
 ### B-3 · `.pkg` vs `setup.sh` path is unclear and inconsistent
 
@@ -71,18 +78,20 @@
   - Have a recovery doc for "I rebooted and now can't reach the Mini"
 - **Recommend:** Add a `phase_00_environment_check()` that gates the install on these conditions.
 
-### B-7 · `--dry-run-install` doesn't skip Phase 2 prompts
+### B-7 · `--dry-run-install` doesn't skip Phase 2 prompts — ✅ DONE in v1.0.2
 
 - **Symptom:** `sudo zsh setup.sh --dry-run-install` still asks for AMS creds, Slack tokens, etc. interactively. Defeats the purpose of dry-run.
 - **Fix:** Either:
   - Skip Phase 2 entirely in dry-run (use placeholder values internally to walk Phases 3–15)
   - Or read from a config file so dry-run can preview the full path without input
 - **Recommend:** Tied to B-2 — if Phase 2 becomes a config file, dry-run "just works" because the file is or isn't there.
+- **Resolution (v1.0.2 / 2026-05-02):** Both, with `--config-file=PATH` taking precedence. When `DRY_RUN_INSTALL=true` and no `--config-file` is provided, Phase 2 substitutes safe placeholder values (`DRY-RUN-SITE`, `dry-run@example.invalid`, `xoxb-dry-run-placeholder`, etc.) and skips the editor and validation entirely. When `--config-file` is provided, dry-run uses that file like a real install would, but every subsequent phase routes through the existing `run_cmd` wrapper which short-circuits writes. Operator can now preview every phase without typing a single field.
 
-### B-8 · `setup.sh` requires sudo even for `--dry-run-install`
+### B-8 · `setup.sh` requires sudo even for `--dry-run-install` — ✅ DONE in v1.0.2
 
 - **Symptom:** Pre-flight calls fail without sudo even when no changes are being made.
 - **Fix:** Skip the root-EUID check when `--dry-run-install` is set. Allow non-destructive dry-runs as any user.
+- **Resolution (v1.0.2 / 2026-05-02):** The root-EUID check at line 102 was already gated on `[[ "${DRY_RUN_INSTALL}" != "true" ]]` (this part was correct in v1.0.1). The remaining piece was that Phase 2 still demanded interactive sudo-protected input even in dry-run — that's resolved as part of B-7 above. As of v1.0.2 a non-root user can run `zsh scripts/setup.sh --dry-run-install` from a clean checkout and watch every phase preview without entering a password. The USAGE banner was updated to call out both `--dry-run-install` and `--config-file=PATH` as legitimate non-root paths.
 
 ### B-9 · Catalog count drift (313 vs 320 — and the count grows) — ✅ DONE in v1.0.2
 

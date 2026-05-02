@@ -1,0 +1,92 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Mining Guardian — Site Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# This is the SITE configuration file the installer reads instead of asking
+# you 12 raw shell prompts in a row. Edit the values below in your text
+# editor, save the file, and exit.  The installer then validates every
+# field, generates the secrets it owns (database password, API keys), writes
+# /Library/Application Support/MiningGuardian/.env, and continues.
+#
+# RULES
+# ─────
+#   • Every key listed under REQUIRED must be filled in. Empty values =
+#     install aborts before any system change.
+#   • Every key has a comment explaining what it is and where to find it.
+#   • Lines starting with #  are comments and are ignored.
+#   • You can re-run the installer with this file via:
+#         sudo -E zsh scripts/setup.sh --config-file=PATH
+#     so the editor step is skipped entirely (headless / repeat installs).
+#
+# DO NOT EDIT in this template:  ports, host bindings, AUTO_APPROVE_ENABLED.
+#                                 Those are written by the installer to
+#                                 /Library/Application Support/MiningGuardian/.env
+#                                 with secure defaults (S-13, D-2).
+#
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ─── REQUIRED — Site identity ────────────────────────────────────────────────
+
+# Customer / site display name. Shown in dashboards, alerts, log headers.
+# Example:  CUSTOMER_NAME="Mesa Verde Mine I"
+CUSTOMER_NAME=""
+
+
+# ─── REQUIRED — AMS (BiXBiT mining management system) ────────────────────────
+
+# AMS base URL. Default fits BiXBiT-hosted AMS; override only if you run a
+# private AMS instance.
+AMS_URL="https://api.bixbit.io/api/v1"
+
+# AMS account email used by Mining Guardian to authenticate.
+AMS_EMAIL=""
+
+# AMS account password.
+# Stored at 0600 root:wheel in /Library/Application Support/MiningGuardian/.env.
+# NEVER appears on stdout, NEVER in URL query strings (S-4).
+AMS_PASSWORD=""
+
+# AMS workspace ID. Integer. Find it in AMS → Workspace Settings → ID.
+AMS_WORKSPACE_ID=""
+
+
+# ─── REQUIRED — Slack ────────────────────────────────────────────────────────
+
+# Incoming webhook URL Mining Guardian posts alerts to. Must start
+# with https://hooks.slack.com/services/...
+SLACK_WEBHOOK_URL=""
+
+# Slack bot token. Starts with xoxb-...
+SLACK_BOT_TOKEN=""
+
+# Slack signing secret. Used to verify inbound Slack requests.
+SLACK_SIGNING_SECRET=""
+
+# Comma-separated Slack user IDs allowed to approve actions
+# (e.g. U01ABC123,U02DEF456). Anyone not on this list is rejected
+# at the approval API.
+AUTHORIZED_SLACK_USER_IDS=""
+
+
+# ─── OPTIONAL — Slack app-level token ────────────────────────────────────────
+
+# Only needed if you use Slack's socket-mode features (most sites do not).
+# Starts with xapp-... If unset, leave empty.
+SLACK_APP_TOKEN=""
+
+
+# ─── OPTIONAL — Runtime tuning ───────────────────────────────────────────────
+
+# How often (seconds) the scanner polls miners. 300 = 5 minutes (default).
+SCAN_INTERVAL="300"
+
+# Start in dry-run mode? (true = monitor only, no automated actions.)
+# Strongly recommended for the first few weeks of any new install (D-2).
+# Set to false only after the operator has reviewed Mining Guardian's
+# decisions and is ready to enable automated remediation.
+MG_DRY_RUN="true"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# End of site config. Save and exit your editor when ready.
+# ──────────────────────────────────────────────────────────────────────────────

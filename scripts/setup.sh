@@ -9,7 +9,13 @@
 #   --post-restore       Skip Phases 1-8 after a snapshot restore
 #   --tailscale          Run `tailscale up --accept-routes` (Phase 12)
 #   --skip-lan-check     Skip miner LAN ping in Phase 1
-#   --dry-run-install    Print each action without executing (audit mode)
+#   --dry-run-install    Print each action without executing (audit mode).
+#                        Skips Phase 2 prompts and the root check — use this
+#                        to preview the install on any Mac without sudo.
+#   --config-file=PATH   Read site config from PATH instead of opening an
+#                        editor. Headless / repeat-install path. Template
+#                        ships at installer/macos-pkg/resources/
+#                        MiningGuardian.conf.template.
 #   --help               Print this block and exit
 #
 # REQUIREMENTS: macOS 14+, arm64 (Apple Silicon), 16 GB RAM, 50 GB free,
@@ -68,7 +74,7 @@ log_phase_complete() { echo "$(date '+%Y-%m-%d %H:%M:%S') COMPLETE phase_${1}" >
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 RESTORE_SNAPSHOT=""; POST_RESTORE=false; WANT_TAILSCALE=false
-SKIP_LAN_CHECK=false; DRY_RUN_INSTALL=false
+SKIP_LAN_CHECK=false; DRY_RUN_INSTALL=false; CONFIG_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --restore-from-snapshot=*) RESTORE_SNAPSHOT="${1#*=}" ;;
@@ -76,6 +82,8 @@ while [[ $# -gt 0 ]]; do
     --tailscale)       WANT_TAILSCALE=true ;;
     --skip-lan-check)  SKIP_LAN_CHECK=true ;;
     --dry-run-install) DRY_RUN_INSTALL=true; warn "DRY RUN — no changes made." ;;
+    --config-file=*)   CONFIG_FILE="${1#*=}" ;;
+    --config-file)     shift; CONFIG_FILE="${1:-}" ;;
     --help|-h) sed -n '/^# ====/,/^# ====/p' "$0" | head -40; exit 0 ;;
     *) warn "Unknown argument: $1 (ignored)" ;;
   esac; shift
@@ -202,40 +210,166 @@ phase_01_preflight() {
 # Values written to .env in Phase 7. NEVER echoed to stdout.
 # NEVER in URL query strings (S-4).
 # ============================================================
+# ──────────────────────────────────────────────────────────────────────────
+# B-2 FIX (v1.0.2): Config-file UX replaces 12 raw `read` prompts.
+#
+# Old behavior (v1.0.1 and earlier): Phase 2 ran 12 sequential `read` prompts
+#   with no validation, no review, no edit, no go-back. One typo on field 3
+#   meant restart from field 1. Hidden password fields gave zero feedback.
+#   On 2026-05-01 the operator gave up mid-Phase-2 (B-2).
+#
+# New behavior (v1.0.2):
+#   1. If --config-file=PATH was passed, source PATH directly. No editor.
+#      (For headless / repeat installs.)
+#   2. Otherwise, copy installer/macos-pkg/resources/MiningGuardian.conf.template
+#      to /tmp/mg_site_config_<timestamp>.conf, open the operator's $EDITOR
+#      (or `nano` fallback) on it, then source it after they save and exit.
+#   3. Either path lands in mg_validate_site_config() which checks every
+#      required key is set, integer fields are integers, URL fields look like
+#      URLs. Any failure aborts before any system change.
+#
+# B-7 FIX (v1.0.2): when DRY_RUN_INSTALL=true, Phase 2 skips the editor and
+#   uses safe placeholder values. The operator can preview Phases 3-15
+#   without editing a single field.
+# ──────────────────────────────────────────────────────────────────────────
+
+# Source a key=value config file safely (zsh, no eval gymnastics).
+mg_source_config() {
+  local cf="$1"
+  [[ ! -r "${cf}" ]] && fail "Config file not readable: ${cf}"
+  # Set every supported key to empty first so a removed line means "unset".
+  CUSTOMER_NAME=""; AMS_URL=""; AMS_EMAIL=""; AMS_PASSWORD=""; AMS_WORKSPACE_ID=""
+  SLACK_WEBHOOK_URL=""; SLACK_BOT_TOKEN=""; SLACK_SIGNING_SECRET=""
+  SLACK_APP_TOKEN=""; AUTHORIZED_SLACK_USER_IDS=""
+  SCAN_INTERVAL=""; MG_DRY_RUN=""
+  # Read line-by-line, accept only KEY=value or KEY="value" lines.
+  local line key val
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    # Skip blanks and comments.
+    [[ -z "${line// }" ]] && continue
+    [[ "${line}" =~ ^[[:space:]]*# ]] && continue
+    # Split on first '='.
+    if [[ "${line}" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      key="${match[1]}"; val="${match[2]}"
+      # Strip surrounding quotes if present.
+      val="${val#\"}"; val="${val%\"}"
+      val="${val#\'}"; val="${val%\'}"
+      # Only assign known keys. Unknown keys warn and are ignored.
+      case "${key}" in
+        CUSTOMER_NAME|AMS_URL|AMS_EMAIL|AMS_PASSWORD|AMS_WORKSPACE_ID|\
+        SLACK_WEBHOOK_URL|SLACK_BOT_TOKEN|SLACK_SIGNING_SECRET|\
+        SLACK_APP_TOKEN|AUTHORIZED_SLACK_USER_IDS|SCAN_INTERVAL|MG_DRY_RUN)
+          eval "${key}=\"\${val}\"" ;;
+        *) warn "Unknown config key ignored: ${key}" ;;
+      esac
+    fi
+  done < "${cf}"
+}
+
+# Validate the values we sourced. Aborts on the first failure with a
+# specific message. Designed to fail BEFORE any system-state change so
+# a bad config file never leaves the box half-installed.
+mg_validate_site_config() {
+  [[ -z "${CUSTOMER_NAME}" ]]            && fail "CUSTOMER_NAME is required."
+  [[ -z "${AMS_URL}" ]]                  && AMS_URL="https://api.bixbit.io/api/v1"
+  [[ ! "${AMS_URL}" =~ ^https?:// ]]     && fail "AMS_URL must start with http:// or https:// (got: ${AMS_URL})"
+  [[ -z "${AMS_EMAIL}" ]]                && fail "AMS_EMAIL is required."
+  [[ ! "${AMS_EMAIL}" =~ @ ]]            && fail "AMS_EMAIL must contain '@' (got: ${AMS_EMAIL})"
+  [[ -z "${AMS_PASSWORD}" ]]             && fail "AMS_PASSWORD is required."
+  [[ -z "${AMS_WORKSPACE_ID}" ]]         && fail "AMS_WORKSPACE_ID is required."
+  [[ ! "${AMS_WORKSPACE_ID}" =~ ^[0-9]+$ ]] && fail "AMS_WORKSPACE_ID must be an integer (got: ${AMS_WORKSPACE_ID})"
+  [[ -z "${SLACK_WEBHOOK_URL}" ]]        && fail "SLACK_WEBHOOK_URL is required."
+  [[ ! "${SLACK_WEBHOOK_URL}" =~ ^https://hooks\.slack\.com/ ]] && \
+    fail "SLACK_WEBHOOK_URL must start with https://hooks.slack.com/ (got: ${SLACK_WEBHOOK_URL})"
+  [[ -z "${SLACK_BOT_TOKEN}" ]]          && fail "SLACK_BOT_TOKEN is required."
+  [[ ! "${SLACK_BOT_TOKEN}" =~ ^xoxb- ]] && fail "SLACK_BOT_TOKEN must start with 'xoxb-' (got: ${SLACK_BOT_TOKEN:0:8}...)"
+  [[ -z "${SLACK_SIGNING_SECRET}" ]]     && fail "SLACK_SIGNING_SECRET is required."
+  [[ -z "${AUTHORIZED_SLACK_USER_IDS}" ]] && fail "AUTHORIZED_SLACK_USER_IDS is required (at least one Slack user ID)."
+  # Optional fields — assign defaults if empty.
+  SCAN_INTERVAL="${SCAN_INTERVAL:-300}"
+  [[ ! "${SCAN_INTERVAL}" =~ ^[0-9]+$ ]] && fail "SCAN_INTERVAL must be an integer seconds value (got: ${SCAN_INTERVAL})"
+  MG_DRY_RUN="${MG_DRY_RUN:-true}"
+  case "${MG_DRY_RUN}" in
+    true|false) ;;
+    *) fail "MG_DRY_RUN must be 'true' or 'false' (got: ${MG_DRY_RUN})" ;;
+  esac
+  # SLACK_APP_TOKEN is optional — no validation beyond format if set.
+  if [[ -n "${SLACK_APP_TOKEN}" && ! "${SLACK_APP_TOKEN}" =~ ^xapp- ]]; then
+    fail "SLACK_APP_TOKEN, if set, must start with 'xapp-' (got: ${SLACK_APP_TOKEN:0:8}...)"
+  fi
+}
+
+# Resolve where to find the site config: --config-file or interactive editor.
+mg_resolve_site_config() {
+  local template="${REPO_DIR}/installer/macos-pkg/resources/MiningGuardian.conf.template"
+  if [[ -n "${CONFIG_FILE}" ]]; then
+    info "Using config file: ${CONFIG_FILE}"
+    mg_source_config "${CONFIG_FILE}"
+    return 0
+  fi
+  # Interactive: copy template to a writable scratch path and open editor.
+  [[ ! -r "${template}" ]] && fail "Config template not found: ${template}"
+  local scratch
+  scratch="/tmp/mg_site_config_$(date +%Y%m%d_%H%M%S).conf"
+  cp "${template}" "${scratch}"
+  chmod 0600 "${scratch}"
+  echo ""
+  info "I'll open your editor on a config file. Fill in every field marked"
+  info "REQUIRED, save, and quit. The installer validates the file before"
+  info "touching any system state — bad values fail fast with a specific"
+  info "error, no half-install."
+  info ""
+  info "Editor: ${EDITOR:-nano}    File: ${scratch}"
+  echo ""
+  read "OK?  Press Enter to open editor (or Ctrl-C to abort): "
+  local editor="${EDITOR:-nano}"
+  command -v "${editor}" >/dev/null 2>&1 || editor="nano"
+  command -v "${editor}" >/dev/null 2>&1 || fail "No editor found (\$EDITOR unset and nano not installed)."
+  "${editor}" "${scratch}"
+  echo ""
+  step "Validating site config..."
+  mg_source_config "${scratch}"
+  # Note: scratch is left in /tmp on purpose so the operator can re-edit and
+  # re-run with --config-file=${scratch} if validation fails.
+  info "Config file kept at ${scratch} (chmod 0600). Re-run with --config-file"
+  info "to skip the editor step on a retry."
+}
+
 phase_02_customer_info() {
   CURRENT_PHASE="Phase 2 — Customer information"
   phase_banner "2" "Customer information"
-  echo "  All fields required unless [default] shown.\n"
-  read "CUSTOMER_NAME?  Customer / Site name (e.g. \"Mesa Verde Mine I\"): "
-  [[ -z "${CUSTOMER_NAME}" ]] && fail "Site name required."
-  read "AMS_URL?  AMS base URL [https://api.bixbit.io/api/v1]: "
-  AMS_URL="${AMS_URL:-https://api.bixbit.io/api/v1}"
-  read "AMS_EMAIL?  AMS email address: "
-  [[ -z "${AMS_EMAIL}" ]] && fail "AMS email required."
-  read -s "AMS_PASSWORD?  AMS password (hidden — S-14 fix): "; echo ""  # S-14
-  [[ -z "${AMS_PASSWORD}" ]] && fail "AMS password required."
-  read "AMS_WORKSPACE_ID?  AMS workspace ID (integer): "
-  [[ -z "${AMS_WORKSPACE_ID}" ]] && fail "AMS workspace ID required."
-  echo ""; step "Slack configuration..."
-  read "SLACK_WEBHOOK_URL?  Slack webhook URL: "
-  [[ -z "${SLACK_WEBHOOK_URL}" ]] && fail "Slack webhook URL required."
-  read "SLACK_BOT_TOKEN?  Slack bot token (xoxb-...): "
-  [[ -z "${SLACK_BOT_TOKEN}" ]] && fail "Slack bot token required."
-  read -s "SLACK_SIGNING_SECRET?  Slack signing secret (hidden — S-14): "; echo ""  # S-14
-  [[ -z "${SLACK_SIGNING_SECRET}" ]] && fail "Slack signing secret required."
-  read "SLACK_APP_TOKEN?  Slack app-level token (xapp-...) [optional]: "
-  read "AUTHORIZED_SLACK_USER_IDS?  Authorized Slack user IDs (comma-sep, e.g. U01ABC): "
-  [[ -z "${AUTHORIZED_SLACK_USER_IDS}" ]] && fail "Authorized Slack user IDs required."
-  echo ""; read "SCAN_INTERVAL?  Scan interval seconds [300]: "
-  SCAN_INTERVAL="${SCAN_INTERVAL:-300}"
-  echo "\n  ${BOLD}Mode:${NC} dry_run=true → monitor only (recommended) | dry_run=false → live"
-  read "DRY_RUN_MODE?  Start in dry-run mode? [Y/n]: "
-  if [[ "${DRY_RUN_MODE:-Y}" == "n" || "${DRY_RUN_MODE:-Y}" == "N" ]]; then
-    MG_DRY_RUN="false"; warn "Live mode — automated actions enabled."
-  else
-    MG_DRY_RUN="true"; ok "Dry-run mode (safe default, D-2)."
+
+  # B-7 FIX: dry-run skips the editor and uses placeholder values so the
+  # operator can preview Phases 3-15 without filling in real credentials.
+  if [[ "${DRY_RUN_INSTALL}" == "true" && -z "${CONFIG_FILE}" ]]; then
+    warn "DRY RUN — using placeholder site config so Phases 3-15 can be previewed."
+    CUSTOMER_NAME="DRY-RUN-SITE"
+    AMS_URL="https://api.bixbit.io/api/v1"
+    AMS_EMAIL="dry-run@example.invalid"
+    AMS_PASSWORD="dry-run-placeholder"
+    AMS_WORKSPACE_ID="0"
+    SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T0/B0/dry-run-placeholder"
+    SLACK_BOT_TOKEN="xoxb-dry-run-placeholder"
+    SLACK_SIGNING_SECRET="dry-run-placeholder"
+    SLACK_APP_TOKEN=""
+    AUTHORIZED_SLACK_USER_IDS="U00DRYRUN"
+    SCAN_INTERVAL="300"
+    MG_DRY_RUN="true"
+    ok "Dry-run placeholder config loaded."
+    log_phase_complete "02_customer_info_DRY_RUN"
+    return 0
   fi
+
+  mg_resolve_site_config
+  mg_validate_site_config
   ok "Customer info collected for: ${CUSTOMER_NAME}"
+  ok "AMS URL: ${AMS_URL}"
+  ok "Slack webhook: ${SLACK_WEBHOOK_URL%/*}/... (truncated)"
+  if [[ "${MG_DRY_RUN}" == "true" ]]; then
+    ok "Mode: dry-run (D-2 safe default)."
+  else
+    warn "Mode: LIVE — automated actions enabled."
+  fi
   log_phase_complete "02_customer_info"
 }
 
