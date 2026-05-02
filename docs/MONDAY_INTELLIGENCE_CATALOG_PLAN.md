@@ -467,10 +467,10 @@ When the UGREEN NASync arrives:
 | Catalog host | ROBS-PC (Windows 11, Docker/Postgres) | ✅ Mac Mini (macOS, Homebrew Postgres 17, port 5432) |
 | Catalog user | `miner_intel` | ✅ `guardian_app` (canonical across all MG services) |
 | Catalog DB name | `miner_intelligence` | ✅ `mining_guardian` (single unified DB) |
-| Schema files | `intelligence/schema/001_initial.sql` | ✅ `intelligence-catalog/seed-data/` (canonical, 321-row seed) |
+| Schema files | `intelligence/schema/001_initial.sql` | ✅ `intelligence-catalog/seed-data/` (canonical, 320-row seed) |
 | `intelligence/` directory | Active | ✅ Deprecated and deleted (2026-04-29 doc-sweep Commit 2) |
 | VPS connectivity test (Phase 6) | VPS → ROBS-PC:5432 | ❌ Not applicable — VPS decommissioned for MG; catalog is local to Mac Mini |
 | Install date | Monday April 13 (ROBS-PC) | ✅ 2026-04-30 (Mac Mini) |
 | `intelligence/README.md` reference | Active architecture doc | ✅ Redirected to `intelligence-catalog/seed-data/README.md` |
 
-**Net:** This entire document is historical. The ROBS-PC + VPS architecture was evaluated and not taken. The catalog lives on the Mac Mini, started from migrations 001–005 + 321-row Bitcoin SHA-256 seed. See `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md` for current table status.
+**Net:** This entire document is historical. The ROBS-PC + VPS architecture was evaluated and not taken. The catalog lives on the Mac Mini, started from migrations 001–005 + 320-row Bitcoin SHA-256 seed. See `docs/CATALOG_ORPHAN_TABLES_2026-04-28.md` for current table status.

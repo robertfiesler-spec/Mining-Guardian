@@ -67,7 +67,7 @@ docker exec -e PGPASSWORD=$env:MG_DB_PASSWORD mining-guardian-db `
   "SELECT count(*) FROM hardware.miner_models;"
 ```
 
-**Expected:** `317` (313 from `seed_miner_models.sql` + 4 from base schema).
+**Expected:** `324` (320 from `seed_miner_models.sql` + 4 from base schema).
 
 ### 2.3. C4 — Idempotency of `seed_catalog.sh`
 
@@ -82,7 +82,7 @@ PGHOST=localhost PGPORT=5432 PGUSER=guardian_admin PGDATABASE=mining_guardian \
 
 ```
 [seed_catalog] hardware.miner_models currently has 317 rows.
-[seed_catalog] Already seeded (>= 313 rows). Skipping.
+[seed_catalog] Already seeded (>= 320 rows). Skipping.
 ```
 
 **Expected exit:** `0`. This proves the runner is idempotent — re-running on a populated DB is safe.
@@ -156,7 +156,7 @@ python tools/verify_catalog_api_coverage.py
 
 | If 2.1 fails | Schema not deployed. Re-run Bucket 3.2 path: `psql -U guardian_admin -d mining_guardian -f intelligence-catalog/seed-data/deploy_schema.sql`. |
 | If 2.2 < 317 | Seed never ran or table truncated. Run `bash scripts/seed_catalog.sh` (no `--force`). If it still skips, check `--force` path with truncate (see `seed_catalog.sh:124-135`). |
-| If 2.3 doesn't say "Already seeded" | Either rows < 313 (see above) or the env vars are pointing at a different DB. Verify `PGHOST` / `PGUSER` / `PGDATABASE`. |
+| If 2.3 doesn't say "Already seeded" | Either rows < 320 (see above) or the env vars are pointing at a different DB. Verify `PGHOST` / `PGUSER` / `PGDATABASE`. |
 | If 2.4 counts disagree | Likely a partial / failed import. Re-run `compile_all_miners.py` after truncating only the affected tables. **Do not** rerun the manufacturer watcher live — first audit `staging.miner_model_proposals` for unintended pending rows. |
 | If 2.5 produces non-zero new rows | Watcher finding **new** data — that's good. Review `staging.*` rows manually before promoting. Idempotency only applies to **already-known** facts. |
 | If 2.6 fails | Likely a psycopg2 UUID adapter regression. Check `intelligence-catalog/db/dual_writer.py:_ensure_uuid_adapter()`. |

@@ -182,7 +182,7 @@ UNION ALL SELECT 'knowledge.sources', COUNT(*) FROM knowledge.sources
 UNION ALL SELECT 'knowledge.contributors', COUNT(*) FROM knowledge.contributors
 UNION ALL SELECT 'staging.staged_proposals', COUNT(*) FROM staging.staged_proposals;
 -- expect:
---   hardware.miner_models     >= 4   (post-Bucket-3.1 will be 313+)
+--   hardware.miner_models     >= 4   (post-Bucket-3.1 will be 320+)
 --   hardware.manufacturers    = 16
 --   hardware.model_aliases    >= 0
 --   knowledge.sources         = 15
@@ -206,7 +206,7 @@ If any of the four blocks shows unexpected rows or counts, the deploy is **not**
 
 | Bucket | Item | What it needs from this runbook |
 |---|---|---|
-| 3.1 | C4 — `seed_miner_models.sql` (313 rows) | Needs `hardware.miner_models` schema (✅ from Section A) |
+| 3.1 | C4 — `seed_miner_models.sql` (320 rows) | Needs `hardware.miner_models` schema (✅ from Section A) |
 | 8.1 | Grafana Intelligence Report dropdown | Needs `hardware.miner_models` populated by 3.1 |
 | 3.3 | C1 — dual-write Path A | Needs both `staging.staged_proposals` and `hardware.miner_models` |
 | 3.4 | C3 — 5 watcher rewrites | Needs `staging.*` (intake) and target `hardware.*` tables |

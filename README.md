@@ -12,7 +12,7 @@ The system learns continuously. Every hourly scan refines its knowledge base. We
 
 A self-contained appliance that drops onto a customer's network as a Mac Mini. No cloud, no public ingress, no recurring SaaS bill. Outbound-only. Bitcoin SHA-256 miners only.
 
-**As of 2026-04-29:** the installer (PR #79) builds a signed `.pkg` from the repo. First customer install is tomorrow morning (2026-04-30) at BiXBiT USA, Fort Worth, TX. The catalog of supported miner models lives in Postgres on the same Mac Mini and currently covers **321 SHA-256 miners** across the major manufacturers.
+**As of 2026-04-29:** the installer (PR #79) builds a signed `.pkg` from the repo. First customer install is tomorrow morning (2026-04-30) at BiXBiT USA, Fort Worth, TX. The catalog of supported miner models lives in Postgres on the same Mac Mini and currently currently covers **320 SHA-256 miners** (and growing — exact count is whatever `seed_miner_models.sql` ships at build time, plus any models added post-install via `catalog_updater.py --add-from-csv`) across the major manufacturers.
 
 ---
 
@@ -24,7 +24,7 @@ Mac Mini (customer site, on local LAN, on Tailscale)
   ├── mining-guardian (launchd)            — fleet scanner, every hour
   ├── dashboard-api (launchd :8585)        — REST + Prometheus /metrics + /query/* endpoints
   ├── approval-api (launchd :8686)         — APPROVE/DENY/approve_selected + operator web GUI
-  ├── intelligence-report-api (launchd :8590) — Miner Intelligence Report API (321 models)
+  ├── intelligence-report-api (launchd :8590) — Miner Intelligence Report API (320 models at v1.0.2 build; count grows as models are added)
   ├── overnight-automation (launchd)       — autonomous low-risk actions, schedule-driven
   ├── slack-listener (launchd)             — text-based approval polling
   ├── slack-commands (launchd)             — fleet intelligence chat bot
@@ -91,7 +91,7 @@ The first deployment uses Anthropic Claude API for *weekly* training only (proof
 | `com.miningguardian.mining-guardian` | — | Scans the fleet every hour, evaluates miners, runs the AI feature pipeline |
 | `com.miningguardian.dashboard-api` | 8585 | REST + Prometheus `/metrics` + `/query/*` endpoints |
 | `com.miningguardian.approval-api` | 8686 | APPROVE/DENY/approve_selected + operator web GUI (`/ui/`) |
-| `com.miningguardian.intelligence-report` | 8590 | Miner Intelligence Report API — 321 models, live BTC/difficulty, correction-rules engine |
+| `com.miningguardian.intelligence-report` | 8590 | Miner Intelligence Report API — 320 models at v1.0.2 build (count grows over time), live BTC/difficulty, correction-rules engine |
 | `com.miningguardian.overnight-automation` | — | Autonomous low-risk actions, schedule-driven (window from `system_schedules`) |
 | `com.miningguardian.slack-listener` | — | Polls Slack threads for text approvals — interval from `system_schedules` |
 | `com.miningguardian.slack-commands` | — | Conversational fleet intelligence bot |
@@ -143,7 +143,7 @@ One Postgres 16 instance on the Mac Mini hosts both the live runtime state and t
 
 ### Catalog (`intelligence-catalog/`)
 
-- **`intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv`** — 321 SHA-256 miners across Bitmain, MicroBT, Canaan, Auradine, Bitdeer, and others.
+- **`intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv`** — 320 SHA-256 miners (current at v1.0.2; the catalog grows as models are added) across Bitmain, MicroBT, Canaan, Auradine, Bitdeer, and others.
 - **`intelligence-catalog/catalog-api/catalog_api.py`** — Catalog HTTP API (read-mostly).
 - **`intelligence-catalog/db/dual_writer.py` + `feedback_loop.py`** — Catalog enrichment writes back to the master Postgres instance.
 - **`intelligence-catalog/watchers/parsers/`** — Per-manufacturer firmware/spec watchers (Bitmain, MicroBT, Canaan, Auradine, Bitdeer).
@@ -164,7 +164,7 @@ Seven dashboards. Six operational ones fed by Prometheus scraping `dashboard-api
 | Board Health | `afi3p5mhapn9ce` | Per-board voltage/freq/HW errors/power |
 | Pool Stats | `afi3q9w5ishz4f` | Fleet totals + rejection rate + top 5 worst offenders |
 | AI & Learning | `llm_learning_001` | Knowledge score, insights growth, autonomy rate |
-| Intelligence Report | `intelligence_report_001` | Searchable miner lookup across all 321 models, full HTML reports, live BTC/network data |
+| Intelligence Report | `intelligence_report_001` | Searchable miner lookup across all current miner_models rows (320 at v1.0.2), full HTML reports, live BTC/network data |
 
 Per-miner dropdown in the Intelligence Report dashboard is query-driven against the catalog (PR #87) — no hardcoded miner list. Type any IP suffix or model substring to filter.
 
@@ -325,7 +325,7 @@ No Slack messages during quiet hours. Operator-controlled via `system_schedules`
 | `api/slack_approval_listener.py` | Text-based Slack approval handler. |
 | `api/slack_command_handler.py` | Conversational fleet intelligence bot. |
 | `api/ams_alert_listener.py` | AMS alert listener. |
-| `api/intelligence_report_api.py` | Miner Intelligence Report (321 models). |
+| `api/intelligence_report_api.py` | Miner Intelligence Report — reads `hardware.miner_models` live (320 rows at v1.0.2; grows over time). |
 | `api/system_settings.py` | Operator mode + global flags. |
 | `api/system_schedules.py` | Operator-controlled schedules (PR #90). |
 | `core/overnight_automation.py` | Autonomous overnight engine. |
@@ -341,7 +341,7 @@ No Slack messages during quiet hours. Operator-controlled via `system_schedules`
 | `clients/pdu_client.py` | BiXBiT 2U+PDU client. |
 | `installer/macos-pkg/` | Mac Mini `.pkg` installer (PR #79). |
 | `migrations/` | Postgres migrations 001–005. |
-| `intelligence-catalog/` | Catalog API + 321-miner seed CSV + watchers. |
+| `intelligence-catalog/` | Catalog API + 320-row seed CSV (current; grows as models are added) + watchers. |
 
 ---
 

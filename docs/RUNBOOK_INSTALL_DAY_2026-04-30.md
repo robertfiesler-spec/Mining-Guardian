@@ -115,7 +115,7 @@ The 15 phases (rough timing on M-series Mac Mini):
 | 02 | Brew installs: postgresql@16, jq, curl, openssl, python@3.12 | 5m |
 | 03 | Python venv + pip install -r requirements.txt | 5m |
 | 04 | Postgres setup: 3 DBs (operational, test, catalog) + migrations 001/003/004×2/005 | 5m |
-| 05 | Catalog seed: 313 Bitcoin SHA-256 model rows | 2m |
+| 05 | Catalog seed: 320 Bitcoin SHA-256 model rows | 2m |
 | 06 | Colima + Docker (for Grafana) | 8m |
 | 07 | Set MG_DB_PASSWORD via `ALTER ROLE guardian_app WITH PASSWORD ...` | 1m |
 | 08 | Ollama install + qwen2.5:7b pull | 10m (download) |
@@ -151,7 +151,7 @@ psql -U guardian_app -d mining_guardian -c "\dt"
 
 # 5.3 Catalog populated?
 psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM miner_models;"
-# Expect: 313
+# Expect: 320
 
 # 5.4 Dashboard API up?
 curl -fsS http://127.0.0.1:8080/api/health

@@ -107,7 +107,7 @@ loop. Do not introduce a cloud service that the operational loop depends on
 synchronously. Local-first beats convenient cloud integration every time.
 
 **Vision Anchor 7 — Catalog is sacred.** The Mining Intelligence Catalog
-(`intelligence-catalog/`) is the live research database. 321 Bitcoin SHA-256
+(`intelligence-catalog/`) is the live research database. roughly 320 (and growing) Bitcoin SHA-256
 miners seeded from `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv`,
 plus parsers for Bitmain / MicroBT / Canaan / Auradine / Bitdeer, plus the
 dual-writer and feedback-loop. This is live code. Do not delete it, do not
@@ -245,7 +245,7 @@ canonical doc is created — never let this table go stale again.
 | Topic | Authoritative source |
 |---|---|
 | Mining Intelligence Catalog (live, in-repo) | `intelligence-catalog/` |
-| Catalog seed data (321 SHA-256 miners) | `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv` |
+| Catalog seed data (320 SHA-256 miners at v1.0.2 build; count grows over time as models are added — source of truth is `intelligence-catalog/seed-data/seed_miner_models.sql` row count) | `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv` |
 | Catalog seed README | `intelligence-catalog/seed-data/README.md` |
 | Intelligence catalog status | `docs/INTELLIGENCE_CATALOG_STATUS.md` |
 | Intelligence report API | `docs/INTELLIGENCE_REPORT_API.md` |

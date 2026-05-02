@@ -4,7 +4,7 @@
 >
 > **Install date: 2026-04-30.** This runbook is canonical; only the date reference shifts (was 2026-04-27, briefly 2026-05-05, now locked at 2026-04-30).
 >
-> **DB approach:** The Mac Mini stands up its own operational Postgres DB from migrations 001–005 + the 321-row catalog seed. There is no live data copy from the VPS — the VPS is decommissioned for Mining Guardian (Bobby still uses it for his own facility). The optional `restore_from_snapshot.sh` path remains available for any operator who explicitly wants to import a historical operational-DB snapshot from the pre-Mac-Mini era.
+> **DB approach:** The Mac Mini stands up its own operational Postgres DB from migrations 001–005 + the 320-row catalog seed. There is no live data copy from the VPS — the VPS is decommissioned for Mining Guardian (Bobby still uses it for his own facility). The optional `restore_from_snapshot.sh` path remains available for any operator who explicitly wants to import a historical operational-DB snapshot from the pre-Mac-Mini era.
 >
 > **Cloudflare:** NOT used. The locked decision is Mac Mini local-first, loopback-only services. All Cloudflare tunnel references in this runbook describe the pre-Mac-Mini VPS era (historical context); they do not describe the 2026-04-30 install. See `MG_UNIFIED_TODO_LIST.md` and `ROADMAP_TO_MAC_MINI_2026-05-05.md`.
 
@@ -78,7 +78,7 @@ Spin up a scratch Postgres DB and verify all 8 services come up cleanly against 
 
 ### 2. Knowledge snapshot (optional — historical VPS snapshot path)
 
-> **2026-04-29 PM update:** The Mac Mini install (2026-04-30) starts from migrations 001–005 + the 321-row catalog seed. No live data copy from the VPS is required or expected — the VPS is decommissioned for MG. The steps below are the `restore_from_snapshot.sh` optional path, preserved for any operator who explicitly wants to import a pre-Mac-Mini operational-DB snapshot.
+> **2026-04-29 PM update:** The Mac Mini install (2026-04-30) starts from migrations 001–005 + the 320-row catalog seed. No live data copy from the VPS is required or expected — the VPS is decommissioned for MG. The steps below are the `restore_from_snapshot.sh` optional path, preserved for any operator who explicitly wants to import a pre-Mac-Mini operational-DB snapshot.
 
 To export the historical VPS state (optional):
 
@@ -148,12 +148,12 @@ Transfer these files to a USB drive or Bobby's Mac before the install date if us
     GRANT ALL PRIVILEGES ON DATABASE mining_guardian TO guardian_app;
     SQL
 
-    # Standard path: apply migrations 001-005 + 321-row catalog seed
+    # Standard path: apply migrations 001-005 + 320-row catalog seed
     # (no VPS dump required — the VPS is decommissioned for MG)
     PGPASSWORD="$MG_DB_PASSWORD" psql -h localhost -U guardian_app \\
         mining_guardian -f migrations/001_initial_schema.sql
     # ... apply migrations 002-005 in order ...
-    # ... run scripts/seed_catalog.sh to load 321-row Bitcoin SHA-256 catalog ...
+    # ... run scripts/seed_catalog.sh to load 320-row Bitcoin SHA-256 catalog ...
 
     # Optional snapshot restore path (only if operator explicitly wants pre-Mac-Mini history):
     # gunzip /path/to/mining_guardian_YYYYMMDD.sql.gz

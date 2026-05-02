@@ -63,7 +63,7 @@ The catalog is the long-term moat. It lives at `intelligence-catalog/` in the re
 
 **What it contains:**
 
-- **Seed dataset:** 321 Bitcoin SHA-256 miners across all major manufacturers (Bitmain, MicroBT, Canaan, Auradine, Bitdeer, etc.) at `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv`.
+- **Seed dataset:** 320 Bitcoin SHA-256 miners at v1.0.2 (count grows over time as models are added) across all major manufacturers (Bitmain, MicroBT, Canaan, Auradine, Bitdeer, etc.) at `intelligence-catalog/seed-data/all_bitcoin_sha256_miners.csv`.
 - **Two-tier model resolver:** Tier-1 (`hardware.model_aliases`, 12,852 unambiguous 1:1 mappings — slugs, parenthetical qualifiers, V-codes V10-V100/VE30-VE80/VK10-VK30, retailer SKUs) + Tier-2 (`mg.model_family_aliases`, 1,494 hashrate-disambiguated families with `candidate_model_ids UUID[]` + `candidate_hashrates_ths NUMERIC[]`). Resolver picks nearest hashrate bin (no tolerance), ties break to lower-rated variant.
 - **Fallback:** `mg.unresolved_models` — manual GUI triage queue. No guessing.
 - **Per-archive tracker:** `mg.import_runs` (ok/failed/partial/skipped) powers SSE progress + `/api/resolver-summary`.
@@ -202,7 +202,7 @@ The April 8 AH3880 firmware regression case (above) was the most important learn
 
 1. **Customer Mac Mini install** — ship the `.pkg` and walk the operator through preflight + install + first-run verification. Runbook: `docs/MAC_MINI_DEPLOYMENT_RUNBOOK.md`. Rebuild runbook: `docs/RUNBOOK_PKG_REBUILD.md`. Distribution runbook: `docs/RUNBOOK_DISTRIBUTION_v1.0.0.md`.
 2. **Repo polish day** (2026-04-29) — full doc sweep, PR triage of 23 open PRs and 43 stale branches, security sweep (secrets / hardcoded creds / debug=True / 0.0.0.0 binds), code cleanup, test verification, preflight, tag `v1.0.0-install-ready`. Tracking: `docs/REPO_DOC_SWEEP_2026-04-29.md`.
-3. **Grafana 321-miner dropdown refresh** (deferred) — Intelligence Report dropdown looks stale relative to the catalog count of 321 miners. Investigate and refresh.
+3. **Grafana miner-dropdown must reflect live catalog count** (deferred) — the Intelligence Report dropdown currently relies on a hardcoded miner list and goes stale every time a model is added to `hardware.miner_models`. Fix: drive the dropdown from a Grafana variable that runs `SELECT canonical_name FROM hardware.miner_models ORDER BY canonical_name` on every dashboard load. Once that lands, no Grafana edit is ever needed when the catalog grows. Current row count at v1.0.2: 320.
 
 ### P1 — Post-install (first weeks)
 

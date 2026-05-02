@@ -12,7 +12,7 @@ deploy script and one canonical install order.
 | `intelligence_catalog_schema_v2_additions.sql` | Bobby's gap audit — PSU serials, repair shop tracking, 9 more tables | 886 | 2 |
 | `intelligence_catalog_schema_v3_additions.sql` | Exhaustive gap audit — auto-discovery field registry, 14+ more tables | 1,256 | 3 |
 | `deploy_schema.sql` | **Canonical entry point.** Runs files 1–3, then enum extensions, then seeds sources/contributors/manufacturers | 108 | run this |
-| `seed_miner_models.sql` | 313 Bitcoin SHA-256 ASIC miner models (factory specs only) | 4,097 | run after |
+| `seed_miner_models.sql` | 320 Bitcoin SHA-256 ASIC miner models (factory specs only) | 4,097 | run after |
 | `all_bitcoin_sha256_miners.csv` | Source CSV the seed file was generated from (audit trail) | — | reference only |
 | `compile_all_miners.py` | Generator that produced `seed_miner_models.sql` from the CSV | — | reference only |
 
@@ -27,7 +27,7 @@ cd intelligence-catalog/seed-data
 # Step 1 — schema + enum extensions + base reference rows
 psql -U guardian_admin -d mining_guardian -f deploy_schema.sql
 
-# Step 2 — 313 miner models
+# Step 2 — 320 miner models
 psql -U guardian_admin -d mining_guardian -f seed_miner_models.sql
 ```
 
@@ -92,7 +92,7 @@ intelligence_catalog_schema_v3_additions  ← exhaustive gap audit + auto-discov
 deploy_schema.sql                         ← runs the three above, adds enum extensions, seeds reference rows
         │
         ▼
-seed_miner_models.sql                     ← 313 factory-spec miner rows
+seed_miner_models.sql                     ← 320 factory-spec miner rows
 ```
 
 Total surface: ~10,777 lines of SQL, 86+ tables across 10 schemas.

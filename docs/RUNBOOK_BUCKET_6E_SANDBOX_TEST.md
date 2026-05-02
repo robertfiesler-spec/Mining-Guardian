@@ -147,12 +147,12 @@ psql -U guardian_app -d mining_guardian_catalog -c '\dn' | grep -E 'hardware|fir
 
 ### Phase 5 — Catalog seed
 
-Runs `intelligence-catalog/seed-data/seed_miner_models.sql` — the 313-row C4 dataset.
+Runs `intelligence-catalog/seed-data/seed_miner_models.sql` — the 320-row C4 dataset (313 baseline + 7 Bitaxe in PR #102).
 
 **PASS criteria:**
 ```bash
 psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM hardware.miner_models;"
-# expect 313 (or whatever the latest count is — match it to seed_miner_models.sql line count)
+# expect 320 (or whatever the latest count is — match it to seed_miner_models.sql line count)
 ```
 
 ### Phase 6 — Repo + venv
@@ -314,7 +314,7 @@ zsh scripts/restore_from_snapshot.sh --tarball=~/Downloads/mg_snapshot_*.tar.gz
 ```bash
 psql -U guardian_app -d mining_guardian -c "SELECT COUNT(*) FROM scans;"      # > 0 (matches VPS)
 psql -U guardian_app -d mining_guardian -c "SELECT COUNT(*) FROM miner_readings;"
-psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM hardware.miner_models;"   # 313
+psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM hardware.miner_models;"   # 320
 ls ~/Mining-Guardian/.env.bak.*                               # original .env backed up
 ls /opt/homebrew/var/lib/grafana/grafana.db.bak.*             # original grafana.db backed up
 launchctl list | grep com.miningguardian | wc -l              # 9 (services kickstarted)
@@ -353,7 +353,7 @@ All 15 phases of `setup.sh` complete on the **fresh-install pass** with no manua
 1. `launchctl list | grep com.miningguardian | wc -l` → `9`
 2. `crontab -l | grep -c MiningGuardian` → `9`
 3. `psql -U guardian_app -d mining_guardian -c '\dt' | wc -l` → ≥ 24
-4. `psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM hardware.miner_models;"` → 313
+4. `psql -U guardian_app -d mining_guardian_catalog -c "SELECT COUNT(*) FROM hardware.miner_models;"` → 320
 5. `ls /Library/Application Support/MiningGuardian/grafana/dashboards/*.json | wc -l` → 3
 6. `open http://localhost:3000` shows 2 datasources and 3 dashboards in a "Mining Guardian" folder
 7. `~/Mining-Guardian/.env` mode is `600` and contains a non-default `MG_DB_PASSWORD` and `CATALOG_API_KEY`
