@@ -200,4 +200,23 @@ This is the canonical log of decisions that are committed and not subject to re-
 
 ---
 
+## D-17 — Monthly catalog sync deferred until post-cutover
+- **Date locked:** 2026-05-02 (verbally, by Rob)
+- **Decided by:** Operator
+- **Decision:** The monthly catalog sync protocol (per D-16, ROBS-PC retains catalog masters) is deferred until after the Mac Mini cutover is verified green. The Mini ships with the current 320-row baseline catalog seed (Bitaxe import 2026-04-26, PR #102). Once the Mini is verified live (Postgres + Grafana + 9 launchd services running, miner scans flowing), the monthly sync runs on ROBS-PC, then re-clones to the Mini Postgres over Tailscale.
+- **Why:**
+  - Cutover is the priority — touching live catalog data on the critical path is unnecessary risk.
+  - Cron jobs on the Mini write JSON/CSV files in `cron_tracking/`, NOT directly to the Postgres catalog. The catalog DB has not grown since 2026-04-26 (this is by design, not a bug).
+  - Per D-16, ROBS-PC retains catalog masters post-cutover anyway, so the monthly-sync protocol is satisfied either way.
+  - Operator quote 2026-05-02: "I agree with you, with this work it may take a couple of times to get it right".
+- **Reconciles with D-16:** D-16 says ROBS-PC retains catalog masters post-cutover and is the source from which future-customer DBs are cloned. D-17 only sequences the recurring sync — Mini ships with the 320-row baseline seed at install time, recurring ROBS-PC → Mini sync is a post-cutover work item, not a cutover gate.
+- **Implementation plan:**
+  1. Mini ships with `seed_miner_models.sql` at 320 rows.
+  2. Cutover proceeds Sunday 2026-05-03 via `setup.sh`.
+  3. Once Mini is verified green, schedule monthly sync on ROBS-PC (separate work item, post-cutover).
+  4. ROBS-PC syncs to Mini Postgres over Tailscale on schedule.
+- **Implementation status:** Locked 2026-05-02. No implementation yet — first sync runs only after Mini is verified live.
+
+---
+
 *Append new decisions below this line. Do not edit history.*
