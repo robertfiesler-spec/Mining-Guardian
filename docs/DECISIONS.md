@@ -168,4 +168,36 @@ This is the canonical log of decisions that are committed and not subject to re-
 
 ---
 
+## D-15 — Handoff protocol: every session ends with a handoff, every session starts by reading one
+- **Date locked:** 2026-05-02
+- **Decided by:** Operator + agent
+- **Decision:** At the end of every Mining Guardian work session the agent writes a handoff document at `docs/handoffs/HANDOFF_<YYYY-MM-DD>.md` using the canonical template at `docs/handoffs/HANDOFF_TEMPLATE.md`. At the start of every new session the agent's first action is to read the latest handoff before proposing or executing any change. If a session begins with a fix proposal that did not first read the prior handoff, that is a protocol violation the operator can invoke at any time to halt the session and force a rewind.
+- **Why:** On the morning of 2026-05-02 the agent lost roughly an hour of paid time proposing fixes for problems that did not exist (split-brain framing on a system where split-brain had already been closed by PR #15 and PR #22, password rotation panic, near-miss `docker volume rm` against the live catalog volume) because the session started with confident assertions instead of reading the existing record. The over-documentation discipline the operator already enforces only pays back if the next session is required to read what the prior session wrote. D-15 closes that loop.
+- **Mandatory handoff sections** (template enforces order): YAML header (date, session_id, last_commit_on_main); Open questions for operator at top; Mantras and standing rules in effect; Host topology — what is LIVE right now; Do not touch list; Things I currently believe that need re-verification; Today's PRs / branches / commits; Open work in priority order; Decisions made today; Costs / credits burned; Files created/modified; Failure modes spotted; Next session start checklist ending with the rule that anything stale must be confirmed with the operator before action.
+- **Hard failsafe:** the operator can stop the session at any moment by saying the current proposal violates D-15. The agent rewinds to the handoff read step.
+- **Implementation status:** Implemented in commit `fa6adbc` on branch `docs/handoff-protocol-state-of-system-2026-05-02`. README, template, and 2026-05-02 first handoff all created. Active starting next session.
+
+---
+
+## D-16 — Post-cutover masters on ROBS-PC; Mini fully self-contained at runtime
+- **Date locked:** 2026-05-02
+- **Decided by:** Operator + agent
+- **Decision:** Once the Mac Mini cutover is verified green (target: Monday morning 2026-05-04), ROBS-PC retains the masters of the catalog Postgres database and the enrichment file artifacts (`unified_miner_index.json`, `miner_enrichment_master.csv`, `cron_tracking/` outputs) purely as a backup and as the source from which future-customer DBs are cloned. The Mac Mini does not pull anything from ROBS-PC at runtime; it is fully self-contained per cutover scope Option γ in its purest form. Once the Mini is verified self-contained, the ROBS-PC Docker container `mining-guardian-db` is shut down, the Hostinger VPS is decommissioned, and the next project (the customer-facing app) begins.
+- **Why:** Operator quote 2026-05-02: *"we will only be keep the masters on robs pc, it will not be pulling anything from anywhere that is the purpose of the design fully self contained, we can then shut down the container and the vps and move on to the app"*. The earlier phrasing in `INTEL_CATALOG_FULL_BRIEF_2026-05-02.md` calling ROBS-PC "superseded" was correct in spirit but lost the master-archive role that ROBS-PC keeps. D-16 records the master-archive role explicitly so future sessions do not propose deleting ROBS-PC's catalog volume on the assumption that "superseded" means "erasable."
+- **Reconciles with D-14:** D-14 sub-lock 1 says both DBs run in the same Postgres 16 container on the Mini post-cutover. That remains true. D-16 only addresses what happens to the *previous* hosts — ROBS-PC keeps an offline master copy, then its Docker container shuts down; the VPS is decommissioned. Neither is a runtime dependency of the Mini.
+- **Reconciles with cutover scope γ:** D-16 is cutover scope γ in execution detail. The Mini replaces both VPS and ROBS-PC for runtime. ROBS-PC continues to exist as a development workstation and master-archive box, not as part of the Mining Guardian data plane.
+- **Implementation plan:**
+  1. Land installer fixes B-1, B-2, B-3, B-7, B-8, B-9, B-10 (Saturday 2026-05-02).
+  2. Build, sign, and notarize v1.0.2 .pkg (Saturday evening into Sunday).
+  3. Smoke-test v1.0.2 .pkg on a clean Tahoe Mac (Sunday morning).
+  4. Install on the customer-site Mini via .pkg double-click with screenshots at every screen (Sunday afternoon).
+  5. Verify Mini full-auto: Postgres reachable, Grafana up, Ollama responding, scheduled tasks loaded, Tailscale solid (Sunday evening).
+  6. Finalize installation PDF from screenshots (Monday morning).
+  7. Shut down ROBS-PC Docker container `mining-guardian-db` (Monday morning, after Mini verified).
+  8. Decommission Hostinger VPS (Monday morning, after Mini verified).
+  9. Begin app project (Monday onward).
+- **Implementation status:** Locked 2026-05-02. Step 1 in progress on branch `docs/handoff-protocol-state-of-system-2026-05-02` (PR landing immediately after D-15 doc).
+
+---
+
 *Append new decisions below this line. Do not edit history.*
