@@ -89,7 +89,9 @@ If the SHA does not match, stop and recheck — you are not on the install-ready
 
 ## 4. Run the 15-phase installer (`scripts/setup.sh`) (≈45 min)
 
-The installer is the canonical path. Do **not** click the .pkg — the .pkg is for end-user laptops, not the operations Mac Mini. The .pkg invokes a subset of these same scripts plus Apple-style postinstall plumbing.
+The installer is the canonical path for the Mini. Do **not** click the .pkg — the .pkg is for end-user laptops, not the operations Mac Mini. See `docs/INSTALL_PATHS_2026-05-02.md` for the full architecture rationale and the role/path matrix (closes backlog item B-3).
+
+In one line: `setup.sh` brings up Postgres + Grafana + Ollama + Tailscale + the scheduled tasks; the `.pkg` is the viewer-only build for non-technical customer laptops. They are not interchangeable.
 
 ```bash
 cd ~/code/Mining-Guardian

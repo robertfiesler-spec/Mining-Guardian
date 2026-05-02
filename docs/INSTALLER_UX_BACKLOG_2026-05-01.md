@@ -38,7 +38,7 @@
   - The exact 2026-05-01 failure ("usa 188" accepted as a workspace ID) is now caught with the message `AMS_WORKSPACE_ID must be an integer (got: usa 188)` before Phase 3 starts.
   - Verified offline against four cases (valid, missing CUSTOMER_NAME, non-integer workspace ID, wrong-prefix bot token). All four pass.
 
-### B-3 · `.pkg` vs `setup.sh` path is unclear and inconsistent
+### B-3 ✅ FIXED in v1.0.2 · `.pkg` vs `setup.sh` path is unclear and inconsistent
 
 - **Symptom:** Today we spent significant time confused about whether the Mini should be installed via `.pkg` double-click (matches Setup Manual PDF) or `setup.sh` manually.
 - **Conflicting docs:**
@@ -49,6 +49,7 @@
   - (a) Mini = `setup.sh`, end-user laptops = `.pkg` viewer-only build (different payload). Document the split in a single architecture doc, link it from both runbooks and the Setup Manual.
   - (b) Mini = `.pkg` flow same as customers. Then make the `.pkg` actually work for the Mini operator role and retire `setup.sh`.
 - **Recommend:** (a). Operations server and end-user laptop are different roles, deserve different installers. But the docs need to stop pretending the `.pkg` is for everyone.
+- **Resolution (PR-D, 2026-05-02):** Adopted recommendation (a). New architecture doc `docs/INSTALL_PATHS_2026-05-02.md` is the authoritative source: Mini = `setup.sh` (operator role, full stack), end-user laptop = `.pkg` (viewer-only). `RUNBOOK_INSTALL_DAY_2026-04-30.md` §4 and `RUNBOOK_PKG_REBUILD.md` header now both link to it. The customer-facing `MiningGuardian_Setup_Manual.pdf` already documents only the `.pkg` flow; a one-line clarifying footer will be added on next regeneration.
 
 ### B-4 · Xcode CLT manual install (customer-facing problem)
 
