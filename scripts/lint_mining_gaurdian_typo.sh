@@ -24,6 +24,9 @@
 #       docs/DEMO_DAY_HANDOFF_2026_04_08.md
 #       docs/S15_APPLIED.txt
 #       docs/SESSION_2026-04-13_S21_TEST_AND_FIXES.md
+#       docs/STATE_OF_THE_SYSTEM_2026-05-02.md
+#       docs/handoffs/**        (per D-15 handoff protocol — every dated
+#                                handoff is a frozen historical record)
 #       docs/archive/**         (all historical handoffs / session logs)
 #   - Frozen by design:
 #       archive/**
@@ -77,6 +80,9 @@ read -r -d '' ALLOWED_PATTERNS <<'EOF' || true
 ^\./docs/DEMO_DAY_HANDOFF_2026_04_08\.md$
 ^\./docs/S15_APPLIED\.txt$
 ^\./docs/SESSION_2026-04-13_S21_TEST_AND_FIXES\.md$
+^\./docs/STATE_OF_THE_SYSTEM_2026-05-02\.md$
+^\./docs/handoffs/HANDOFF_2026-05-02\.md$
+^\./docs/handoffs/
 ^\./docs/archive/
 ^\./archive/
 ^\./fixes/2026-04-13/

@@ -379,6 +379,9 @@ the Mac Mini runbook), so it no longer needs an allow-list entry.
 | `docs/archive/2026-04/DB_STATE_2026-04-22.md` | 2 |
 | `docs/archive/2026-04/DB_STATE_2026-04-23.md` | 7 |
 | `docs/S15_APPLIED.txt` | 1 |
+| `docs/STATE_OF_THE_SYSTEM_2026-05-02.md` (D-16 cutover doc — historical narrative on the pre-2026-04-26 typo path) | 1 |
+| `docs/handoffs/HANDOFF_2026-05-02.md` (D-15 handoff protocol — historical narrative) | 1 |
+| `docs/handoffs/**` (catch-all per D-15 — every dated handoff is a frozen historical record) | n/a |
 | `docs/archive/**` (catch-all for all archived handoffs / session logs) | n/a |
 
 #### Leave-as-frozen-by-design scope
