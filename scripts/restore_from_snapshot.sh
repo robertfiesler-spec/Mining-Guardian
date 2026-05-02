@@ -29,9 +29,9 @@
 #       └── crontab.txt                    (`crontab -l` from VPS, for diff)
 #
 # Outputs:
-#   /usr/local/MiningGuardian/.env            (mode 0600, owner root:wheel)
-#   /usr/local/MiningGuardian/config.json
-#   /usr/local/MiningGuardian/logs/           (merged with existing)
+#   /Library/Application Support/MiningGuardian/.env            (mode 0600, owner root:wheel)
+#   /Library/Application Support/MiningGuardian/config.json
+#   /Library/Application Support/MiningGuardian/logs/           (merged with existing)
 #   Postgres restored into local mining_guardian + mining_guardian_catalog
 #   /usr/local/var/lib/grafana/grafana.db     (overwritten if --skip-grafana-restore not set)
 #   /tmp/mg_restore_<TS>/                     (extracted tarball, kept until reboot)
@@ -109,7 +109,7 @@ Typical flow:
   #  build hints (VPS-side)" section near the bottom.)
 
   # On Mac Mini — install + restore
-  zsh /usr/local/MiningGuardian/scripts/setup.sh \
+  zsh /Library/Application Support/MiningGuardian/scripts/setup.sh \
       --restore-from-snapshot=/Volumes/USB/mg_snapshot_srv1549463_20260505_0900.tar.gz
 HELP
   exit 0
@@ -129,7 +129,7 @@ if [[ ! -r "$TARBALL" ]]; then
 fi
 
 # Install root convention (matches scripts/setup.sh)
-INSTALL_ROOT="/usr/local/MiningGuardian"
+INSTALL_ROOT="/Library/Application Support/MiningGuardian"
 TS=$(date +%Y%m%d_%H%M%S)
 EXTRACT_ROOT="/tmp/mg_restore_${TS}"
 
@@ -458,7 +458,7 @@ if [[ -f "$EXTRACT_ROOT/crontab.txt" ]]; then
     else
       echo ""
       warn "Crontabs differ. setup.sh Phase 10 already wrote the canonical 10 entries with"
-      warn "/root/Mining-Guardian → /usr/local/MiningGuardian rewrites. The diff above is"
+      warn "/root/Mining-Guardian → /Library/Application Support/MiningGuardian rewrites. The diff above is"
       warn "informational — do NOT blindly overwrite the local crontab with the snapshot's,"
       warn "because the snapshot's paths still point at /root."
     fi
@@ -565,7 +565,7 @@ divider
 #   shasum -a 256 /tmp/mg_snapshot_srv1549463_${TS}.tar.gz > /tmp/mg_snapshot_srv1549463_${TS}.tar.gz.sha256
 #
 # Then scp to the Mac (or copy via USB) and run:
-#   sudo zsh /usr/local/MiningGuardian/scripts/restore_from_snapshot.sh \
+#   sudo zsh /Library/Application Support/MiningGuardian/scripts/restore_from_snapshot.sh \
 #       --tarball=/Volumes/USB/mg_snapshot_srv1549463_<TS>.tar.gz
 #
 # ============================================================

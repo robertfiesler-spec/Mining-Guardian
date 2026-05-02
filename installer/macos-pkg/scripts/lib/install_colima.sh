@@ -17,7 +17,7 @@
 #   • $MG_PKG_PAYLOAD points at the directory in which the bundled
 #     binaries (colima, lima) and the docker images live. We use
 #     Apple's Virtualization.framework (--vm-type vz) — no QEMU needed.
-#   • $MG_INSTALL_ROOT = /usr/local/MiningGuardian.
+#   • $MG_INSTALL_ROOT = /Library/Application Support/MiningGuardian.
 #   • $MG_INSTALL_LOG is open for append.
 #
 # Functions exported:

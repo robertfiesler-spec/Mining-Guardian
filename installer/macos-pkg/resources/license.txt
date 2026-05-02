@@ -45,7 +45,7 @@ or using Mining Guardian you agree to the following terms.
    - PostgreSQL 16                 PostgreSQL License
    - Ollama                        MIT License
    - Python and the Python ecosystem libraries listed in
-     /usr/local/MiningGuardian/requirements.txt
+     /Library/Application Support/MiningGuardian/requirements.txt
 
 6. TERMINATION
    This license terminates automatically if you breach its terms.

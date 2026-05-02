@@ -15,10 +15,10 @@
 #   zsh install_grafana_provisioning.sh \
 #       --target=/opt/homebrew/var/lib/grafana \
 #       --bundle=/path/to/installer/macos-pkg/resources/grafana \
-#       --runtime-dashboards=/usr/local/MiningGuardian/grafana/dashboards
+#       --runtime-dashboards=/Library/Application Support/MiningGuardian/grafana/dashboards
 #
 #   zsh install_grafana_provisioning.sh --auto      (auto-detect target;
-#                                                    bundle = repo-rel; runtime = /usr/local/MiningGuardian/grafana/dashboards)
+#                                                    bundle = repo-rel; runtime = /Library/Application Support/MiningGuardian/grafana/dashboards)
 #   zsh install_grafana_provisioning.sh --dry-run   (no writes; print plan)
 #   zsh install_grafana_provisioning.sh --help
 #
@@ -75,7 +75,7 @@ ${C_BOLD}Mining Guardian — Grafana provisioning installer${C_RESET}
     --bundle=<dir>               Repo bundle path (default: this script's
                                   ../installer/macos-pkg/resources/grafana)
     --runtime-dashboards=<dir>   Where dashboard JSONs live at runtime
-                                  (default: /usr/local/MiningGuardian/grafana/dashboards)
+                                  (default: /Library/Application Support/MiningGuardian/grafana/dashboards)
     --auto                       Use defaults for all three paths
     --dry-run                    Print plan without writing
     --help                       Print this help
@@ -108,7 +108,7 @@ if [[ -z "$BUNDLE" ]]; then
   BUNDLE="${REPO_ROOT}/installer/macos-pkg/resources/grafana"
 fi
 if [[ -z "$RUNTIME_DASH" ]]; then
-  RUNTIME_DASH="/usr/local/MiningGuardian/grafana/dashboards"
+  RUNTIME_DASH="/Library/Application Support/MiningGuardian/grafana/dashboards"
 fi
 if [[ -z "$TARGET" ]]; then
   if [[ -d /opt/homebrew/var/lib/grafana ]]; then

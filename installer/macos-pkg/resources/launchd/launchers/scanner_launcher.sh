@@ -13,17 +13,17 @@
 # .env file here and exec python with the inherited env.
 #
 # Installer responsibilities (installer/macos-pkg/scripts/postinstall.sh):
-#   1. Drop this script at /usr/local/MiningGuardian/bin/scanner_launcher.sh
+#   1. Drop this script at /Library/Application Support/MiningGuardian/bin/scanner_launcher.sh
 #      with mode 0755, owner root:wheel.
-#   2. Drop /usr/local/MiningGuardian/.env with mode 0600, owner root:wheel.
+#   2. Drop /Library/Application Support/MiningGuardian/.env with mode 0600, owner root:wheel.
 #   3. Drop the plist at /Library/LaunchDaemons/com.miningguardian.scanner.plist
 #      with mode 0644, owner root:wheel.
-#   4. mkdir -p /usr/local/MiningGuardian/logs
+#   4. mkdir -p /Library/Application Support/MiningGuardian/logs
 #   5. launchctl bootstrap system /Library/LaunchDaemons/com.miningguardian.scanner.plist
 
 set -euo pipefail
 
-INSTALL_ROOT="/usr/local/MiningGuardian"
+INSTALL_ROOT="/Library/Application Support/MiningGuardian"
 ENV_FILE="${INSTALL_ROOT}/.env"
 VENV_PYTHON="${INSTALL_ROOT}/venv/bin/python"
 ENTRY_POINT="${INSTALL_ROOT}/core/mining_guardian.py"

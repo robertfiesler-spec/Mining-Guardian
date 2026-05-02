@@ -37,7 +37,7 @@ services in this directory.
     com.miningguardian.intelligence-report.plist
     com.miningguardian.feedback-loop-daemon.plist   (from deploy/)
 
-/usr/local/MiningGuardian/
+/Library/Application Support/MiningGuardian/
     .env                                        (mode 0600, owner root:wheel)
     venv/
     core/, api/, intelligence-catalog/db/       (the repo)
@@ -62,9 +62,9 @@ services in this directory.
 launchd has no equivalent of systemd's `EnvironmentFile=` directive. Rather
 than embedding secrets (`MG_DB_PASSWORD`, `AMS_PASSWORD`, etc.) directly into
 the plist (which sits world-readable in `/Library/LaunchDaemons/`), each plist
-invokes a small wrapper at `/usr/local/MiningGuardian/bin/*_launcher.sh` that:
+invokes a small wrapper at `/Library/Application Support/MiningGuardian/bin/*_launcher.sh` that:
 
-1. Verifies `/usr/local/MiningGuardian/.env` exists.
+1. Verifies `/Library/Application Support/MiningGuardian/.env` exists.
 2. Verifies the venv Python is present and executable.
 3. Verifies the entry point file exists.
 4. Sources `.env` so every `KEY=VALUE` is exported into the env.
@@ -95,7 +95,7 @@ sudo launchctl list | grep com.miningguardian
 ```
 
 If any entry shows exit-code != 0 immediately on load, check
-`/usr/local/MiningGuardian/logs/<service>.err.log` — the launcher wrapper's
+`/Library/Application Support/MiningGuardian/logs/<service>.err.log` — the launcher wrapper's
 `FATAL: ...` line tells you which precondition failed.
 
 ## Unloading (e.g. uninstall, or to stop everything for an update)
@@ -115,7 +115,7 @@ differences:
    `MemoryMax=256M` / `TasksMax=20`; launchd has no equivalent. Documented in
    `com.miningguardian.alerts.plist` itself.
 2. **Install root.** systemd path is `/root/Mining-Guardian`; macOS path is
-   `/usr/local/MiningGuardian`. Reflected in every entry point and log path.
+   `/Library/Application Support/MiningGuardian`. Reflected in every entry point and log path.
 3. **`User=root`.** systemd runs as root; launchd LaunchDaemons also run as
    root by default. S-7 (dedicated `miningguardian` user) is the longer-term
    plan and is tracked separately in `docs/MG_UNIFIED_TODO_LIST.md` §3.2 — when
@@ -126,7 +126,7 @@ differences:
    30s for overnight-automation, 5s for intelligence-report).
 5. **Logging.** systemd routes to journald; launchd writes to
    `StandardOutPath` / `StandardErrorPath` files under
-   `/usr/local/MiningGuardian/logs/`. Operators tail those directly.
+   `/Library/Application Support/MiningGuardian/logs/`. Operators tail those directly.
 
 ## Adding a new service
 

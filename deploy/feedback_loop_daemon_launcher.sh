@@ -12,13 +12,13 @@
 # we source the .env file here and exec python with the inherited env.
 #
 # Installer responsibilities (installer/macos-pkg/postinstall.sh):
-#   1. Drop this script at /usr/local/MiningGuardian/bin/feedback_loop_daemon_launcher.sh
+#   1. Drop this script at /Library/Application Support/MiningGuardian/bin/feedback_loop_daemon_launcher.sh
 #      with mode 0755, owner root:wheel.
-#   2. Drop /usr/local/MiningGuardian/.env with mode 0600, owner root:wheel
+#   2. Drop /Library/Application Support/MiningGuardian/.env with mode 0600, owner root:wheel
 #      containing MG_DB_PASSWORD, PGHOST, PGPORT, PGUSER, PGDATABASE.
 #   3. Drop the plist at /Library/LaunchDaemons/com.miningguardian.feedback-loop-daemon.plist
 #      with mode 0644, owner root:wheel.
-#   4. mkdir -p /usr/local/MiningGuardian/logs
+#   4. mkdir -p /Library/Application Support/MiningGuardian/logs
 #   5. launchctl bootstrap system /Library/LaunchDaemons/com.miningguardian.feedback-loop-daemon.plist
 #
 # This script is identical in shape to whatever wrapper the systemd unit
@@ -26,7 +26,7 @@
 
 set -euo pipefail
 
-INSTALL_ROOT="/usr/local/MiningGuardian"
+INSTALL_ROOT="/Library/Application Support/MiningGuardian"
 ENV_FILE="${INSTALL_ROOT}/.env"
 VENV_PYTHON="${INSTALL_ROOT}/venv/bin/python"
 DAEMON_PATH="${INSTALL_ROOT}/intelligence-catalog/db/feedback_loop_daemon.py"

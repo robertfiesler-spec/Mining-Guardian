@@ -43,7 +43,7 @@ password: change `MG_DB_PASSWORD` in `.env`, then `brew services restart grafana
 
 ### Dashboard provider (`provisioning/dashboards/mining_guardian.yml`)
 
-Watches `/usr/local/MiningGuardian/grafana/dashboards/*.json` every 30 s.
+Watches `/Library/Application Support/MiningGuardian/grafana/dashboards/*.json` every 30 s.
 `allowUiUpdates: false` — operators may experiment in the browser, but the
 JSON files are truth and overwrite UI changes on each tick. Permanent
 changes must go through PR.
@@ -86,7 +86,7 @@ offline.
 3. Call `scripts/install_grafana_provisioning.sh
    --target=$GRAFANA_VAR
    --bundle=installer/macos-pkg/resources/grafana
-   --runtime-dashboards=/usr/local/MiningGuardian/grafana/dashboards`
+   --runtime-dashboards=/Library/Application Support/MiningGuardian/grafana/dashboards`
 4. `brew services restart grafana`
 
 The helper script copies datasource yaml + provider yaml into the Grafana
@@ -152,14 +152,14 @@ on `127.0.0.1:5432`.
    to validate.
 6. Commit. Phase 11 (or `install_grafana_provisioning.sh`) picks it up
    on next run; live Grafana picks it up within 30 s of the file appearing
-   under `/usr/local/MiningGuardian/grafana/dashboards/`.
+   under `/Library/Application Support/MiningGuardian/grafana/dashboards/`.
 
 ---
 
 ## Removing a dashboard
 
 Delete the file from `dashboards/` AND from
-`/usr/local/MiningGuardian/grafana/dashboards/` on the Mac. Provider has
+`/Library/Application Support/MiningGuardian/grafana/dashboards/` on the Mac. Provider has
 `disableDeletion: false` so it will purge on next tick. Commit the removal.
 
 ---

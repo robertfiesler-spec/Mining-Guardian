@@ -15,11 +15,11 @@
       sudo launchctl bootstrap system <path-to-plist>
 
   Path + env conventions (match scanner / dashboard-api / approval-api / feedback-loop):
-    install root              /usr/local/MiningGuardian
-    .env (private secrets)    /usr/local/MiningGuardian/.env  (mode 0600)
-    venv                      /usr/local/MiningGuardian/venv
-    launcher wrapper          /usr/local/MiningGuardian/bin/slack_commands_launcher.sh
-    logs                      /usr/local/MiningGuardian/logs/
+    install root              /Library/Application Support/MiningGuardian
+    .env (private secrets)    /Library/Application Support/MiningGuardian/.env  (mode 0600)
+    venv                      /Library/Application Support/MiningGuardian/venv
+    launcher wrapper          /Library/Application Support/MiningGuardian/bin/slack_commands_launcher.sh
+    logs                      /Library/Application Support/MiningGuardian/logs/
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -31,11 +31,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/usr/local/MiningGuardian/bin/slack_commands_launcher.sh</string>
+        <string>/Library/Application Support/MiningGuardian/bin/slack_commands_launcher.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/usr/local/MiningGuardian</string>
+    <string>/Library/Application Support/MiningGuardian</string>
 
     <key>RunAtLoad</key>
     <true/>
@@ -55,17 +55,17 @@
     <string>Background</string>
 
     <key>StandardOutPath</key>
-    <string>/usr/local/MiningGuardian/logs/slack-commands.out.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/slack-commands.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/usr/local/MiningGuardian/logs/slack-commands.err.log</string>
+    <string>/Library/Application Support/MiningGuardian/logs/slack-commands.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
         <key>PATH</key>
-        <string>/usr/local/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>

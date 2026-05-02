@@ -83,7 +83,7 @@ set -euo pipefail
 # Same convention as preinstall.sh.
 export MG_INSTALL_LOG="/var/log/mining-guardian/install-postinstall.log"
 export MG_INSTALL_ENV="/tmp/mg_install_env"
-export MG_INSTALL_ROOT="/usr/local/MiningGuardian"
+export MG_INSTALL_ROOT="/Library/Application Support/MiningGuardian"
 
 # Installer.app sets these positional args; we just take note of them.
 PKG_PATH="${1:-}"            # full path to the installed pkg
@@ -287,7 +287,7 @@ step_install_launcher_wrappers() {
     #
     # The deploy/ launcher is the correct one because it invokes the
     # daemon by file path
-    # (/usr/local/MiningGuardian/intelligence-catalog/db/feedback_loop_daemon.py),
+    # (/Library/Application Support/MiningGuardian/intelligence-catalog/db/feedback_loop_daemon.py),
     # which sidesteps the directory-with-hyphen Python import problem.
     # An earlier draft of this function used an inline heredoc that ran
     # `python -m intelligence.feedback_loop_daemon` — that module path
@@ -394,9 +394,11 @@ step_baseline_scan() {
     # NOT block on its result — if it fails the operator can re-run from
     # the dashboard. We DO log the outcome.
     log "INFO triggering first-run baseline scan (non-blocking)"
+    # Quoted because MG_INSTALL_ROOT now contains a space
+    # ("/Library/Application Support/MiningGuardian" — B-13 fix, v1.0.1).
     sudo -u "${SUDO_USER:-${USER}}" \
-        /usr/local/MiningGuardian/venv/bin/python \
-        /usr/local/MiningGuardian/core/mining_guardian.py --once \
+        "${MG_INSTALL_ROOT}/venv/bin/python" \
+        "${MG_INSTALL_ROOT}/core/mining_guardian.py" --once \
         >> "${MG_INSTALL_LOG}" 2>&1 &
     disown
 }

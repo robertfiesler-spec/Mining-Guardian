@@ -175,7 +175,21 @@ step_4_assemble_payload() {
 
     # 4a. App code — a curated subset of the repo, NOT the whole tree.
     # Anything in this list is inside the .pkg.
-    local app_root="${PAYLOAD_DIR}/MiningGuardian"
+    # Payload is rooted directly at PAYLOAD_DIR so it lays down at the
+    # install-location without an extra MiningGuardian/ wrapper directory.
+    # Combined with --install-location "/Library/Application Support/MiningGuardian"
+    # in step 5, the result is a flat install at that path.
+    #
+    # Tahoe SSV (B-13 fix, v1.0.1): we MUST install onto the data volume,
+    # not the system root. /Library/Application Support is writable on the
+    # data volume and explicitly Apple-blessed for system-wide application
+    # state — see Apple HIG "File System Programming Guide". The earlier
+    # v1.0.0 layout (--install-location "/" + payload/MiningGuardian/...)
+    # tried to write /MiningGuardian/ at the system-volume root, which
+    # Tahoe's signed-system-volume protection rejects with the
+    # "package is incompatible with this version of macOS" dialog
+    # (logged in docs/INSTALLER_UX_BACKLOG_2026-05-01.md as B-13).
+    local app_root="${PAYLOAD_DIR}"
     install -d -m 0755 "$app_root"
     /usr/bin/rsync -a --delete \
         --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' \
@@ -350,12 +364,18 @@ step_5_pkgbuild_and_sign() {
 
     # 5a. pkgbuild assembles the inner component pkg from the payload +
     # scripts. We DO NOT sign here — productbuild does the final sign.
+    # B-13 fix (v1.0.1): install to /Library/Application Support/MiningGuardian.
+    # The previous v1.0.0 used --install-location "/" with payload structured
+    # as payload/MiningGuardian/, which Tahoe's signed-system-volume (SSV)
+    # rejects: "This package is incompatible with this version of macOS."
+    # See INSTALLER_UX_BACKLOG_2026-05-01.md row B-13 for the forensic
+    # capture and the SSV write-restriction explanation.
     /usr/bin/pkgbuild \
         --root "$PAYLOAD_DIR" \
         --scripts "$SCRIPTS_DIR" \
         --identifier "$PKG_IDENTIFIER" \
         --version "$BUILD_VERSION" \
-        --install-location "/" \
+        --install-location "/Library/Application Support/MiningGuardian" \
         "${BUILD_DIR}/core.pkg" \
         || _die 44 "pkgbuild failed"
 

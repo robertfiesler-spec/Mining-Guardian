@@ -876,3 +876,62 @@ TODO entry in the same commit—stays in force as the steady-state
 guardrail. Bucket 10 is the one-time **deep cleanse** that brings the
 repo into a state where the runtime defense actually works against
 a clean baseline.
+
+---
+
+# SECTION 17 — Update 2026-05-01 (Friday) — v1.0.1 hotfix (Tahoe SSV + dark-mode + model copy)
+
+## 17.1 Status flips
+
+| Row | From | To | Notes |
+|---|---|---|---|
+| **B-13** — `.pkg` rejected by macOS Tahoe SSV with *"package is incompatible with this version of macOS"* (RELEASE BLOCKER) | 🔴 OPEN | ✅ DONE | Fix landed in this PR. `--install-location` moved from `/` to `/Library/Application Support/MiningGuardian`; payload root no longer wraps in `MiningGuardian/`; `MG_INSTALL_ROOT` updated everywhere. See `docs/RELEASE_NOTES_v1.0.1.md` for the full path-change matrix. |
+| **B-12** — `.pkg` Welcome panel renders broken in dark mode on Tahoe (sidebar branding invisible, code chips solid black) | 🔴 OPEN | ✅ DONE | `welcome.html` and `conclusion.html` get `<meta name="color-scheme" content="light only">`, `:root, html { color-scheme: light only; }`, and an explicit `@media (prefers-color-scheme: dark)` block that re-asserts every brand color literal with `!important`. |
+| **B-11** — `.pkg` Welcome copy promises RAM-tier model selection, but `setup.sh` Phase 8 force-pulls `qwen2.5:14b-instruct-q4_K_M` regardless of RAM | 🔴 OPEN | ✅ DONE | `phase_08_ollama` now reads `sysctl -n hw.memsize` and selects `qwen2.5:14b-instruct-q4_K_M` for ≥24 GB, `llama3.2:3b` otherwise. Matches `installer/macos-pkg/scripts/lib/detect_ram.sh` exactly. Per locked decision D-13. Welcome copy was already correct against D-13; setup.sh was the offender. |
+| Bump version in `pyproject.toml` from 1.0.0 → 1.0.1 | 🔴 OPEN | ✅ DONE | |
+| Add `docs/RELEASE_NOTES_v1.0.1.md` | 🔴 OPEN | ✅ DONE | Full root-cause writeup, fix matrix, build/install/uninstall commands, verification block. |
+
+## 17.2 What this PR does NOT fix
+
+The May 1 install attempt logged backlog items B-1 through B-13. Of those, **only B-11/B-12/B-13 ship in v1.0.1**. The remaining items remain 🔴 OPEN:
+
+- B-1 — APFS-naive disk pre-flight (false-negative at 36 GB free)
+- B-2 — Phase 2 customer-info UX is unusable raw `read` prompts
+- B-3 — `.pkg` vs `setup.sh` choice not surfaced
+- B-4 — Xcode CLT manual install required mid-install
+- B-5 — GitHub auth wall (resolved by going public; doc-only follow-up)
+- B-6 — Tahoe auto-update mid-install drag
+- B-7 — `--dry-run-install` doesn't skip Phase 2 prompts
+- B-8 — dry-run requires sudo
+- B-9 — Catalog count drift (313 vs 320)
+- B-10 — Runbook says `bash setup.sh` but it's `#!/bin/zsh`
+
+Logged but **not yet a backlog row**: the conclusion.html still says "four services" in two places, but postinstall.sh boots 9. Will be **B-14 — conclusion.html service-count drift (4 vs 9)** in a follow-up PR; out of scope for v1.0.1.
+
+See `docs/INSTALLER_UX_BACKLOG_2026-05-01.md` rows B-1 through B-13 for the full forensic record.
+
+## 17.3 Re-sign + re-notarize required
+
+`build_pkg.sh` cannot run in the agent sandbox — it requires:
+
+- macOS host (`uname -s` Darwin)
+- `/Users/BigBobby/Documents/Apple Cert/CREDENTIALS_NOTES.txt` (private)
+- `~/MiningGuardian-vendor/` populated with Colima, lima, Ollama.app, postgres-16-bookworm.tar
+- Internet for Apple notarization (5–60 min wait per submission)
+
+After this PR merges, the operator runs `./installer/macos-pkg/scripts/build_pkg.sh` on his laptop. Output: `build/MiningGuardian-1.0.1-<sha>.pkg`. Replaces the broken v1.0.0 .pkg on the USB stick + GitHub Release.
+
+## 17.4 QA on Mini after rebuild
+
+| Step | Expected |
+|---|---|
+| `pkgutil --check-signature MiningGuardian-1.0.1-<sha>.pkg` | "Signed by a developer certificate issued by Apple for distribution" + Developer ID Installer: Robert Fiesler (ARJZ5FYU94) |
+| `spctl --assess --type install MiningGuardian-1.0.1-<sha>.pkg` | "accepted" + "Notarized Developer ID" |
+| Double-click on Tahoe Mini, dark mode | Welcome screen renders with full branding, code chips visible, no black rectangles |
+| Click Install → enter admin password | Install proceeds (B-13 fix). No "package is incompatible with this version of macOS" dialog. |
+| `ls -ld "/Library/Application Support/MiningGuardian"` | exists, root:wheel-ish ownership |
+| `sudo launchctl print system/com.miningguardian.scanner \| head -5` | service = scanner, state = running |
+| `cat /etc/mining-guardian/install-receipt.json` | `install_root: "/Library/Application Support/MiningGuardian"`, `llm_model: "llama3.2:3b"` (16 GB Mini) |
+
+If any step fails, `sudo /Library/Application\ Support/MiningGuardian/bin/uninstall.sh` is the rollback. The `setup.sh` path remains a backstop (also at the new install root after this PR).
+
