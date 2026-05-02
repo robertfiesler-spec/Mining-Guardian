@@ -895,16 +895,16 @@ a clean baseline.
 
 The May 1 install attempt logged backlog items B-1 through B-13. Of those, **only B-11/B-12/B-13 ship in v1.0.1**. The remaining items remain 🔴 OPEN:
 
-- B-1 — APFS-naive disk pre-flight (false-negative at 36 GB free)
+- B-1 — APFS-naive disk pre-flight (false-negative at 36 GB free) — ✅ DONE in v1.0.2
 - B-2 — Phase 2 customer-info UX is unusable raw `read` prompts
 - B-3 — `.pkg` vs `setup.sh` choice not surfaced
-- B-4 — Xcode CLT manual install required mid-install
+- B-4 — Xcode CLT manual install required mid-install (resolved by `.pkg` install path per D-16; doc-only follow-up)
 - B-5 — GitHub auth wall (resolved by going public; doc-only follow-up)
 - B-6 — Tahoe auto-update mid-install drag
 - B-7 — `--dry-run-install` doesn't skip Phase 2 prompts
 - B-8 — dry-run requires sudo
 - B-9 — Catalog count drift (313 vs 320)
-- B-10 — Runbook says `bash setup.sh` but it's `#!/bin/zsh`
+- B-10 — Runbook says `bash setup.sh` but it's `#!/bin/zsh` — ✅ DONE in v1.0.2
 
 Logged but **not yet a backlog row**: the conclusion.html still says "four services" in two places, but postinstall.sh boots 9. Will be **B-14 — conclusion.html service-count drift (4 vs 9)** in a follow-up PR; out of scope for v1.0.1.
 
