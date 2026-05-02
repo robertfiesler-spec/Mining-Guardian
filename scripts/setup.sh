@@ -157,9 +157,30 @@ phase_01_preflight() {
   [[ "${gb}" -lt 16 ]] && fail "Only ${gb} GB RAM — minimum 16 GB."
   ok "${gb} GB RAM"
   step "Free disk space (≥50 GB — model + Postgres + venv + logs)..."
-  local free; free="$(df -g / | awk 'NR==2{print $4}')"
-  [[ "${free}" -lt 50 ]] && fail "Only ${free} GB free — minimum 50 GB."
-  ok "${free} GB free"
+  # B-1 FIX (v1.0.2): On APFS, `df -g / | awk 'NR==2{print $4}'` reports a
+  # value derived from the root volume that does not reflect the true free
+  # space available to the APFS container shared by all volumes (system,
+  # data, preboot, recovery, VM). On a real Tahoe Mac the previous formula
+  # could fail a 50 GB precheck on a disk with > 200 GB actually free, or
+  # pass a precheck on a disk that was actually full. Use `diskutil info /`
+  # instead — its `Container Free Space` line is the authoritative number
+  # APFS uses for allocation decisions. Format example we must parse:
+  #   "Container Free Space:      234.7 GB (234680123456 Bytes)"
+  # We parse the byte count in parentheses (always exact, always integer),
+  # not the human-readable prefix (which can be GB or TB).
+  local free_bytes
+  free_bytes="$(diskutil info / 2>/dev/null | awk -F'[()]' '/Container Free Space/{print $2}' | awk '{print $1}')"
+  if [[ -z "${free_bytes}" || ! "${free_bytes}" =~ ^[0-9]+$ ]]; then
+    warn "Could not read APFS container free space from \`diskutil info /\`."
+    warn "Falling back to \`df -g /\` (less accurate on APFS)."
+    local free; free="$(df -g / | awk 'NR==2{print $4}')"
+    [[ "${free}" -lt 50 ]] && fail "Only ${free} GB free — minimum 50 GB."
+    ok "${free} GB free (df fallback)"
+  else
+    local free_gb=$(( free_bytes / 1073741824 ))
+    [[ "${free_gb}" -lt 50 ]] && fail "Only ${free_gb} GB free in APFS container — minimum 50 GB. Run \`diskutil apfs list\` to inspect."
+    ok "${free_gb} GB free (APFS container)"
+  fi
   step "Miner LAN connectivity (ping 192.168.1.1, 1s timeout)..."
   if [[ "${SKIP_LAN_CHECK}" == "true" ]]; then
     warn "LAN check skipped (--skip-lan-check)."

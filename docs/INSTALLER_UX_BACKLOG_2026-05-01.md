@@ -8,13 +8,14 @@
 
 ## Bugs that blocked or nearly blocked install
 
-### B-1 · Pre-flight disk check is APFS-naïve (BLOCKER, false-negative)
+### B-1 · Pre-flight disk check is APFS-naïve (BLOCKER, false-negative) — ✅ DONE in v1.0.2
 
 - **Symptom:** `setup.sh` Phase 1 reports `Only 36 GB free — minimum 50 GB.` and aborts.
 - **Reality:** Mini has ~180 GB actually free. APFS dynamic allocation hides true free space from `df`.
 - **Bad code:** `scripts/setup.sh:160` — `free="$(df -g / | awk 'NR==2{print $4}')"`
 - **Fix:** Use `diskutil info / | grep "Container Free"` (which reports 37.6 GB even when df says 35 GB — closer but still understates) plus optionally force purge via `mkfile -n 100g /tmp/forcefree && rm /tmp/forcefree` before measuring.
 - **Today's workaround:** Commented out lines 159–162 with `DISK_CHECK_BYPASS_2026-05-01` prefix. Reverted at end of session via `setup.sh.bak`.
+- **Resolution (v1.0.2 / 2026-05-02):** Replaced the `df -g /` reading with a `diskutil info /` parser that extracts the byte count from the `Container Free Space` line (always exact, always integer, never abbreviated to TB). On parse failure we fall back to `df -g /` with a `warn` so the install still has a chance to complete. Fix landed on branch `fix/installer-b1-disk-check-b10-runbook-zsh`.
 
 ### B-2 · Phase 2 customer-info prompt UX is unusable
 
@@ -129,10 +130,11 @@
 - **Recommend:** (a) for a quick fix, (b) for a polish pass once we have time. Test on a Tahoe Mini in both light and dark mode before signing the next .pkg.
 - **Discovered:** 2026-05-01 mid-install, when first opening the .pkg on the Mini in dark mode showed broken rendering. Mitigated by switching to light mode.
 
-### B-10 · Runbook's `bash scripts/setup.sh` line is wrong
+### B-10 · Runbook's `bash scripts/setup.sh` line is wrong — ✅ DONE in v1.0.2
 
 - **Symptom:** `docs/RUNBOOK_INSTALL_DAY_2026-04-30.md` instructs `bash scripts/setup.sh`. The script is `#!/bin/zsh`. Running with bash produces literal escape codes instead of color output.
 - **Fix:** Update runbook to `sudo zsh scripts/setup.sh`. One-line PR.
+- **Resolution (v1.0.2 / 2026-05-02):** Updated runbook to `DRY_RUN=1 zsh scripts/setup.sh` for the dry-run line and `sudo -E zsh scripts/setup.sh` for the real run, with an inline comment explaining that `setup.sh` uses zsh-only `read VAR?prompt` and `read -s VAR?prompt` syntax that bash rejects with `bash: -s: invalid option`. Symptom is worse than just lost color output — Phase 2 hard-fails. Fix landed on branch `fix/installer-b1-disk-check-b10-runbook-zsh`.
 
 ---
 

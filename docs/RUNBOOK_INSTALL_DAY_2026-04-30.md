@@ -94,11 +94,17 @@ The installer is the canonical path. Do **not** click the .pkg — the .pkg is f
 ```bash
 cd ~/code/Mining-Guardian
 chmod +x scripts/setup.sh
-# Optional dry-run first to see all 15 phases:
-DRY_RUN=1 bash scripts/setup.sh
+# B-10 FIX (v1.0.2): scripts/setup.sh uses zsh-only syntax (`read VAR?prompt`,
+# `read -s VAR?prompt`). Running it under bash (`bash scripts/setup.sh`) on
+# Tahoe makes Phase 2 explode at the first read with `bash: -s: invalid
+# option`. Always invoke with `zsh`, never `bash`. macOS 14+ already ships
+# zsh as /bin/zsh; nothing extra to install.
+#
+# Optional dry-run first to see all 15 phases (no sudo, no system writes):
+DRY_RUN=1 zsh scripts/setup.sh
 
-# Real run:
-sudo -E bash scripts/setup.sh 2>&1 | tee ~/mg-install-$(date +%Y%m%d-%H%M).log
+# Real run (sudo required for Phase 8 Colima service + Phase 11 launchd):
+sudo -E zsh scripts/setup.sh 2>&1 | tee ~/mg-install-$(date +%Y%m%d-%H%M).log
 ```
 
 The 15 phases (rough timing on M-series Mac Mini):
