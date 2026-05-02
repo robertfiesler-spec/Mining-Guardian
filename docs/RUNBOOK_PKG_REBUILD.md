@@ -3,6 +3,8 @@
 > Use this every time a code change lands on `main` that you want to ship as a new `.pkg`.
 > Paste-along blocks. Ten minutes end-to-end if Apple notary is fast. Mac zsh.
 
+> **Audience reminder (B-3, 2026-05-02):** the `.pkg` you build with this runbook is for **end-user (customer) laptops** — the viewer-only payload. It is **not** the install path for the Mac Mini operations server. The Mini uses `scripts/setup.sh` directly. See `docs/INSTALL_PATHS_2026-05-02.md` for the role/path matrix and rationale.
+
 ## Pre-flight (30 seconds)
 
 ```zsh

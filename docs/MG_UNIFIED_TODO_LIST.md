@@ -897,7 +897,7 @@ The May 1 install attempt logged backlog items B-1 through B-13. Of those, **onl
 
 - B-1 — APFS-naive disk pre-flight (false-negative at 36 GB free) — ✅ DONE in v1.0.2
 - B-2 — Phase 2 customer-info UX is unusable raw `read` prompts — ✅ DONE in v1.0.2 (config-file approach: `MiningGuardian.conf.template` + `--config-file=PATH` + validation in `mg_validate_site_config`)
-- B-3 — `.pkg` vs `setup.sh` choice not surfaced
+- B-3 — `.pkg` vs `setup.sh` choice not surfaced — ✅ DONE in v1.0.2 (resolved by `docs/INSTALL_PATHS_2026-05-02.md` — Mini = `setup.sh`, end-user laptop = `.pkg` viewer-only — plus runbook cross-links)
 - B-4 — Xcode CLT manual install required mid-install (resolved by `.pkg` install path per D-16; doc-only follow-up)
 - B-5 — GitHub auth wall (resolved by going public; doc-only follow-up)
 - B-6 — Tahoe auto-update mid-install drag
