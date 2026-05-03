@@ -197,12 +197,16 @@ flow or build new." The discovery answer:
   requests to `approval_api.py` with `INTERNAL_API_SECRET` (it lives on
   the same Mini and can read the `.env`), and renders an authenticated
   HTML page to the operator. No browser ever holds the secret.
-- The Grafana panel's Approve/Deny buttons should either (a) be removed
-  in v1.0.3 to avoid customer confusion (clicking does nothing
-  user-visible), or (b) be re-pointed at the new console URL. **(a) is
-  recommended for v1.0.3** to keep the console as the single
-  customer-facing approval surface; (b) is a post-cutover follow-up
-  if the operator wants Grafana to remain a viable second surface.
+- **Grafana UI cleanup is deferred to a later follow-up; it is NOT in
+  scope for the v1.0.3 installer push.** Per Rob's clarification on
+  2026-05-03 ~12:34 PM CDT (see §5): "we are not trying to fix anything
+  with grafana right now at all, that will be a later fix." The
+  code-grounded finding stands — the Approve/Deny buttons render but
+  POST a 403 from the customer browser — but no Grafana code change
+  (button removal, panel rewrite, URL re-pointing) is part of the
+  v1.0.3 implementation. The status quo (silent 403 on click) holds
+  through cutover; the console is the single customer-facing approval
+  surface that v1.0.3 actually ships.
 
 This finding does not change D-19 scope. It confirms the locked design
 and rules out the cheaper "extend the browser handlers" path.
@@ -359,24 +363,24 @@ PR train must close in dependency order.
 | 1 | Console reads `pending_approvals` directly via psycopg, not via the public `approval_api.py` HTTP. | Confirmed feasible per §1.3 above. | None — table already exists. |
 | 2 | Console writes `APPROVED` / `DENIED` by calling `approval_api.py` with `INTERNAL_API_SECRET` server-side, OR by issuing the same `UPDATE pending_approvals SET status=…` + `INSERT INTO action_audit_log` SQL the API does. | Recommendation: route through `approval_api.py` with the secret. Reuses the side-effect logic (executing the action, logging the audit row, refreshing the Slack thread). | Console code in `console/` must source `INTERNAL_API_SECRET` from the same `.env` the `approval-api` LaunchDaemon launcher wrapper sources. |
 | 3 | Cloudflare Tunnel routes `mg.fieslerfamily.com` → `127.0.0.1:8686` (the console). | 🔴 Not yet implemented — D-19 step 5. | Cloudflare API token in operator's Desktop conf (per D-19 plan). |
-| 4 | The Grafana "Live Action Queue" iframe Approve/Deny buttons should be removed in v1.0.3 (recommendation §2.3 above) so the console becomes the single customer-facing approval surface. | 🔴 Not yet decided — needs operator confirmation. | Edit `api/ai_dashboard_api.py:288-289` to render row state only (no buttons), and update the iframe page's empty-state to point operators at the console URL. |
+| 4 | Grafana "Live Action Queue" iframe Approve/Deny buttons cleanup. | ⏸ DEFERRED to later follow-up — explicitly NOT part of v1.0.3 per Rob 2026-05-03 ~12:34 PM CDT (see §5). The console (D-19) remains the single customer-facing approval surface that v1.0.3 ships; the Grafana buttons continue to silently 403 as the status-quo through cutover. | None for v1.0.3. Future follow-up: edit `api/ai_dashboard_api.py:288-289` (or the panel HTML) when Grafana cleanup is scheduled. |
 | 5 | `mg_import_tool/` payload exclusion + migration relocation per §3.6. | 🔴 Not yet implemented. | Step 1 of the v1.0.3 PR train (no order dependency on the console PR — they can land in parallel). |
 | 6 | `pending_approvals` is created by `migrations/001_initial_schema.sql`. The audit found postinstall.sh applies bootstrap + layer2 + c5_triggers but does NOT apply 001 (or 002, etc.). Confirm the `pending_approvals` table actually exists post-install before the console assumes it. | 🟡 v1.0.3 postinstall already needs venv + catalog seed work (Gap 5 + Gap 2 per D-18). Add: postinstall must apply ALL `migrations/NNN_*.sql` files in lexical order, not a hand-picked subset. | This is part of the existing v1.0.3 venv / catalog seed PR scope. |
 
 Items 1, 2, 6 are inputs that determine console PR shape. Items 3, 5
-are independent. Item 4 is the only one that needs an explicit
-operator decision before the console PR lands; if deferred, the
-console still works — the Grafana buttons just continue to silently
-403, which is the status quo.
+are independent. Item 4 (Grafana UI cleanup) is explicitly DEFERRED
+out of v1.0.3 per Rob's 2026-05-03 ~12:34 PM CDT clarification (see
+§5); the Grafana buttons continue to silently 403 through cutover
+as the status quo, which is acceptable because the console is the
+single customer-facing approval surface that v1.0.3 ships.
 
-### Open question for operator (one, not three)
+### Open questions for operator
 
-**Should v1.0.3 remove the Approve/Deny buttons from the
-`api/ai_dashboard_api.py` Live Action Queue panel, leaving it as
-display-only and pointing operators at the new console URL for
-Approve/Deny?** Recommendation: yes. The buttons are non-functional
-today, the console exists to be the single customer-facing approval
-surface, and a non-functional button is worse than no button.
+None remaining. The single open question previously listed here
+(whether to remove the Grafana Approve/Deny buttons in v1.0.3) was
+answered by Rob on 2026-05-03 ~12:34 PM CDT — see §5. Grafana UI
+cleanup is deferred to a later follow-up and is NOT in scope for the
+v1.0.3 installer push.
 
 ---
 
@@ -404,6 +408,15 @@ sessions reason from the same scope:
 - **Doctrine carry-overs:** "stay local," "Bitcoin SHA-256 only,"
   "leave no data behind," "step by step," "late and perfect over
   early and wrong" — all still in force. No shortcuts.
+- **Question answered by Rob:** Rob clarified on 2026-05-03 ~12:34 PM
+  CDT: "we are not trying to fix anything with grafana right now at
+  all, that will be a later fix." Translation for this discovery:
+  Grafana Live Action Queue cleanup — including removing or changing
+  the non-functional Approve/Deny buttons — is DEFERRED to a later
+  follow-up. It is NOT part of the v1.0.3 installer implementation.
+  The code-grounded finding in §2 (buttons render but POST a 403 from
+  the browser) stands; only the recommendation/scope language has
+  been updated to reflect the deferral. See §2.3 and §4 item 4.
 
 ---
 
@@ -412,7 +425,7 @@ sessions reason from the same scope:
 | Touched | Why |
 |---|---|
 | **D-18** (v1.0.3 installer scope) | Confirms Gap 2 (catalog seed), Gap 5 (venv) and adds an audit-time assertion against `mg_import_tool/` in the payload (§3.6 step 4). Confirms postinstall must apply ALL `migrations/NNN_*.sql` not a subset (§4 item 6). |
-| **D-19** (operator console) | Resolves D-19 step-1 discovery: pending approvals already live in Postgres (§1); the Grafana buttons are non-functional and should not be extended (§2). The locked design (FastAPI + Jinja2 + HTMX, 127.0.0.1:8686, Cloudflare-fronted) is correct. |
+| **D-19** (operator console) | Resolves D-19 step-1 discovery: pending approvals already live in Postgres (§1); the Grafana buttons are non-functional from the customer browser today and the existing browser-side handlers should not be extended (§2). The locked design (FastAPI + Jinja2 + HTMX, 127.0.0.1:8686, Cloudflare-fronted) is correct. Per Rob's 2026-05-03 clarification (§5), Grafana UI cleanup is deferred to a later follow-up and is NOT in scope for the v1.0.3 installer push; the console is the single customer-facing approval surface that v1.0.3 ships. |
 | **D-20** (importer is operator-only) | Identifies the live D-20 violation in `build_pkg.sh:207,218-220` and prescribes the exclusion + migration-relocation reconciliation (§3.6). |
 | `docs/PROGRAM_STATE.md` Section 11 (in-flight) | This discovery moves from "🔴 QUEUED" to "🟢 done" in the next PROGRAM_STATE update (will be done in the same PR as the next session-end handoff, per Section 14 of PROGRAM_STATE.md). |
 | `docs/audits/PKG_AUDIT_v1.0.2_FINDINGS_2026-05-03.md` line 332 | This discovery confirms the audit's flag and prescribes the fix path. |
