@@ -184,11 +184,11 @@ When the customer double-clicks `MiningGuardian-1.0.2-27fb2c10bbe0.pkg`, they se
 
 Five hard installation gaps. Four user-facing copy bugs. Four integration bugs (most consequential is Gap 1 / Integration bug 4: customer credentials are never collected, every launchd service crashes).
 
-### Gap 1 — Customer-info collection (BLOCKER, system-non-functional)
+### Gap 1 — Customer-info collection (BLOCKER, system-non-functional) — RESOLVED in v1.0.3 (PR mg/v103-gap1-customer-info-conf)
 
 - **Where it should be:** Distribution.xml `<choice>` element OR postinstall.sh reading a known-path config file.
-- **What is actually there:** Distribution.xml has `<choices-outline>` collapsed to a single line (no choice tree per the Q1 hybrid .pkg lock in `installer/macos-pkg/README.md`). postinstall.sh has zero references to `MiningGuardian.conf`, `AMS_URL`, `SLACK_BOT_TOKEN`, or any customer credential.
-- **Effect:** The `.env` written by `step_drop_dotenv` (postinstall.sh lines 203-243) contains only:
+- **What is actually there (v1.0.2):** Distribution.xml has `<choices-outline>` collapsed to a single line (no choice tree per the Q1 hybrid .pkg lock in `installer/macos-pkg/README.md`). postinstall.sh has zero references to `MiningGuardian.conf`, `AMS_URL`, `SLACK_BOT_TOKEN`, or any customer credential.
+- **Effect (v1.0.2):** The `.env` written by `step_drop_dotenv` (postinstall.sh lines 203-243) contains only:
   - `MG_DB_PASSWORD` (sourced from `/tmp/mg_install_env_secret`)
   - `PGHOST=127.0.0.1`
   - `PGPORT=5432`
@@ -196,8 +196,17 @@ Five hard installation gaps. Four user-facing copy bugs. Four integration bugs (
   - `PGDATABASE=mining_guardian`
   - `MG_INSTALL_RAM_TIER`
   - `MG_INSTALL_LLM_MODEL`
-  
+
   The `scanner_launcher.sh` (and every other launcher) sources this `.env` and execs Python. The Python entry points read `os.environ['AMS_BASE_URL']` etc. and raise `KeyError`. Every service exits non-zero. launchd's `KeepAlive=Crashed` (per `com.miningguardian.scanner.plist` lines 38-46) restarts each service every 10 seconds (ThrottleInterval). The system burns CPU on crash-loops while presenting a green "Installed" dialog.
+- **Resolution (v1.0.3 PR `mg/v103-gap1-customer-info-conf`, 2026-05-04):** New step `step_collect_customer_info` runs in `main()` BEFORE `step_layout_install_root`, so a missing or invalid conf aborts before any system-state change. Behavior:
+  1. Reads `/Users/${SUDO_USER}/Desktop/MiningGuardian.conf` (operator hands the customer a USB or AirDrop with the pre-filled file; customer drops on Desktop, double-clicks .pkg).
+  2. Sources every supported key via `_conf_source` (mirrors `scripts/setup.sh::mg_source_config` — strict `KEY=value` parser, comments + blank lines ignored, unknown keys WARN'd).
+  3. Validates per `_conf_validate` — every check from `setup.sh::mg_validate_site_config` is replicated, including `AMS_URL` http(s) prefix, `AMS_EMAIL` `@` requirement, integer `AMS_WORKSPACE_ID`, `https://hooks.slack.com/` webhook prefix, `xoxb-` bot token prefix, optional `xapp-` app token prefix, integer `SCAN_INTERVAL`, and `true`/`false` `MG_DRY_RUN`. Defaults: empty `AMS_URL` → `https://api.bixbit.io/api/v1`; empty `SCAN_INTERVAL` → `300`; empty `MG_DRY_RUN` → `true`.
+  4. On any failure, `_conf_fail` logs the specific reason + opens a Cocoa dialog (`osascript display dialog ... with icon stop`) naming the field and what's wrong, then exits 41.
+  - `step_drop_dotenv` rewritten to consume the validated values + generate `MG_DB_PASSWORD` / `CATALOG_API_KEY` / `INTERNAL_API_SECRET` via `openssl rand -hex 32` + write a full `.env` matching `setup.sh::phase_07_secrets` shape (closes Integration bugs 1, 2, 4 below).
+  - Tests: `tests/installer/test_postinstall_customer_info.sh` (76 assertions; static checks of ordering, exit code, Cocoa wiring, .env keys; runtime checks against synthetic conf files for missing fields, bad regexes, default fall-throughs).
+  - Exit code 41 reserved for customer-info failures (documented in postinstall header).
+  - Conf template at `installer/macos-pkg/resources/MiningGuardian.conf.template` already had all 12 required keys (no schema change). Header note added pointing to the .pkg Desktop path.
 
 ### Gap 2 — Catalog DB + 320-row seed (BLOCKER for AI / dashboards / catalog UX) — RESOLVED in v1.0.3 (PR mg/v103-gap2-catalog-db-and-seed)
 
@@ -264,30 +273,30 @@ Five hard installation gaps. Four user-facing copy bugs. Four integration bugs (
 
 - conclusion.html lines 190-193: lists `scanner`, `dashboard-api`, `approval-api`, `feedback-loop-daemon` only. Misses `slack-listener`, `slack-commands`, `overnight-automation`, `alerts`, `intelligence-report`. v1.0.3 conclusion.html must enumerate all 10 services (9 + console per D-19).
 
-### Integration bug 1 — `MG_DB_PASSWORD` flow depends on out-of-band staging
+### Integration bug 1 — `MG_DB_PASSWORD` flow depends on out-of-band staging — RESOLVED in v1.0.3 (PR mg/v103-gap1-customer-info-conf)
 
-- postinstall.sh `step_drop_dotenv` (lines 203-243) sources `/tmp/mg_install_env_secret` for `MG_DB_PASSWORD`. The comment on line 204 says "the .pkg build script writes it into `/tmp/mg_install_env_secret` BEFORE Installer.app runs us." But:
+- postinstall.sh `step_drop_dotenv` (v1.0.2 lines 203-243) sources `/tmp/mg_install_env_secret` for `MG_DB_PASSWORD`. The comment on line 204 says "the .pkg build script writes it into `/tmp/mg_install_env_secret` BEFORE Installer.app runs us." But:
   - `build_pkg.sh` builds the .pkg on the operator's laptop (different machine from the Mini being installed-onto).
   - `/tmp/mg_install_env_secret` does not magically appear on the customer's Mac — it must be staged out-of-band, which is impossible for a customer who just downloaded the .pkg.
-  - On any clean install, postinstall.sh fails with exit code 31: "missing per-install secret file at /tmp/mg_install_env_secret; was the pkg built correctly?"
-- v1.0.3 fix: postinstall generates a random `MG_DB_PASSWORD` itself via `openssl rand -hex 32` (matching setup.sh `phase_07_secrets` line 605). No out-of-band staging.
+  - On any clean install, v1.0.2 postinstall.sh fails with exit code 31: "missing per-install secret file at /tmp/mg_install_env_secret; was the pkg built correctly?"
+- **Resolution (v1.0.3 PR `mg/v103-gap1-customer-info-conf`, 2026-05-04):** `step_drop_dotenv` now generates `MG_DB_PASSWORD`, `CATALOG_API_KEY`, and `INTERNAL_API_SECRET` itself via `openssl rand -hex 32` — matching `scripts/setup.sh::phase_07_secrets` lines 605, 609, 611. No out-of-band staging. As a defensive measure, any stale `/tmp/mg_install_env_secret` left from a prior v1.0.2 build is scrubbed; postinstall does NOT consume it.
 
-### Integration bug 2 — `GUARDIAN_PG_USER` vs `PGUSER` mismatch
+### Integration bug 2 — `GUARDIAN_PG_USER` vs `PGUSER` mismatch — RESOLVED in v1.0.3 (PR mg/v103-gap1-customer-info-conf)
 
-- postinstall.sh `step_drop_dotenv` line 228: `PGUSER=mg`
+- postinstall.sh `step_drop_dotenv` (v1.0.2 line 228): `PGUSER=mg`
 - setup.sh `phase_07_secrets`: `GUARDIAN_PG_USER=guardian_app`
-- The Python codebase reads `GUARDIAN_PG_USER` (per `core/database_pg.py` and the dashboard-api). The .pkg writes `PGUSER` only. Even if the AMS/Slack issue (Gap 1) were fixed, the Python code would still fail to connect because it does not see `GUARDIAN_PG_USER` in the env.
+- The Python codebase reads `GUARDIAN_PG_USER` (per `core/database_pg.py` and the dashboard-api). The v1.0.2 .pkg writes `PGUSER` only. Even if the AMS/Slack issue (Gap 1) were fixed, the Python code would still fail to connect because it does not see `GUARDIAN_PG_USER` in the env.
 - Plus: the user names disagree (`mg` vs `guardian_app`). The Postgres container created by postinstall.sh (per `lib/install_colima.sh` `provision_postgres` lines 167-171: `-e POSTGRES_USER=mg`) only has the `mg` user.
-- v1.0.3 fix: postinstall writes BOTH keys with the same value (`GUARDIAN_PG_USER=mg` and `PGUSER=mg`) until the dual-naming tech debt is cleaned up. Document as tech debt in MG_UNIFIED_TODO_LIST.
+- **Resolution (v1.0.3 PR `mg/v103-gap1-customer-info-conf`, 2026-05-04):** v1.0.3 postinstall `.env` writes BOTH `GUARDIAN_PG_USER=mg` AND `PGUSER=mg` so both code paths see the user that actually exists in the container. Tracked as tech debt in `docs/MG_UNIFIED_TODO_LIST.md` — collapse to a single key once the Python codebase converges on one name (cross-cutting cleanup, separate PR per scope-discipline rule).
 
 ### Integration bug 3 — Tailscale handling is silent
 
 - postinstall.sh has no Tailscale logic at all. The customer might already have Tailscale up (operator pre-staged it). The customer might not. The .pkg postinstall does not check.
 - For now, Tailscale is operator-side per D-9. v1.0.3 fix: postinstall surfaces a Cocoa dialog if `tailscale status` fails or returns "Logged out" — the dialog tells the operator/customer to run `tailscale up` before the system can be reached over the tailnet. Tailscale auth itself stays operator-side.
 
-### Integration bug 4 — All customer-tunable .env keys missing
+### Integration bug 4 — All customer-tunable .env keys missing — RESOLVED in v1.0.3 (PR mg/v103-gap1-customer-info-conf)
 
-- The complete list of `.env` keys missing from the .pkg's postinstall-written `.env` (vs setup.sh's `phase_07_secrets`):
+- The complete list of `.env` keys missing from the v1.0.2 .pkg's postinstall-written `.env` (vs setup.sh's `phase_07_secrets`):
   - `AMS_BASE_URL`, `AMS_EMAIL`, `AMS_PASSWORD`, `AMS_WORKSPACE_ID`
   - `SLACK_WEBHOOK_URL`, `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_APP_TOKEN`, `AUTHORIZED_SLACK_USER_IDS`
   - `CATALOG_API_KEY`, `INTERNAL_API_SECRET`
@@ -295,7 +304,7 @@ Five hard installation gaps. Four user-facing copy bugs. Four integration bugs (
   - `OLLAMA_HOST`
   - `MG_DRY_RUN`, `MG_SCAN_INTERVAL`, `MG_CUSTOMER_NAME`, `AUTO_APPROVE_ENABLED`
   - `GUARDIAN_DASHBOARD_PORT`, `GUARDIAN_APPROVAL_PORT`, `GUARDIAN_INTELLIGENCE_PORT`
-- v1.0.3 fix: postinstall reads the customer's pre-filled `~/Desktop/MiningGuardian.conf` (per D-18 Gap 1 resolution), validates per B-2 rules, generates the secret-only keys (`CATALOG_API_KEY`, `INTERNAL_API_SECRET`, `MG_DB_PASSWORD`) via `openssl rand -hex 32`, and writes the full `.env` matching setup.sh's `phase_07_secrets` shape.
+- **Resolution (v1.0.3 PR `mg/v103-gap1-customer-info-conf`, 2026-05-04):** `step_drop_dotenv` writes the full key set above (heredoc body matches `setup.sh::phase_07_secrets` line-for-line). Customer-tunable values come from `step_collect_customer_info` (Desktop conf — D-18 Gap 1). Secret-only keys (`MG_DB_PASSWORD`, `CATALOG_API_KEY`, `INTERNAL_API_SECRET`) generated in-process via `openssl rand -hex 32` (Integration bug 1). `AUTO_APPROVE_ENABLED=false` (D-2 default — explicit opt-in required). Test `tests/installer/test_postinstall_customer_info.sh` section 9 asserts every required key is present.
 
 ---
 
