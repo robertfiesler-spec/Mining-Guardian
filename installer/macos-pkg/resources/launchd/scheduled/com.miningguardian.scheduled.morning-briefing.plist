@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.scheduled.morning-briefing.plist — D-18 Gap 4 / P-007 (v1.0.3)
+
+  Replaces the cron entry in setup.sh::phase_10_cron for scripts/morning_briefing.py.
+  Posts the daily summary to Slack. CRON_SCHEDULE.md row 7:00 AM.
+
+  Time semantics: StartCalendarInterval fires in the Mac's local timezone.
+  Per docs/CRON_SCHEDULE.md "All times are CDT (Mac Mini timezone)" —
+  set the Mini's timezone before install.
+
+  No KeepAlive — scheduled jobs run, exit, and wait for the next fire.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.scheduled.morning-briefing</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scheduled_job_launcher.sh</string>
+        <string>scripts/morning_briefing.py</string>
+        <string>morning_briefing</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/morning_briefing.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/morning_briefing.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

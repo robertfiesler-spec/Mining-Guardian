@@ -65,8 +65,14 @@
 #      <payload>/python-wheels/ (D-18 Gap 5 — closes the v1.0.2 audit
 #      finding that every launchd launcher wrapper was crash-looping
 #      because the venv it sources never existed).
-#   7. Install the 9 launchd plists and load them with launchctl
+#   7. Install the 10 launchd service plists and load them with launchctl
 #      bootstrap.
+#   7b. Install the 11 launchd scheduled-job plists (D-18 Gap 4 / P-007 —
+#       replaces the legacy setup.sh phase_10 cron block) and bootstrap
+#       them after the service plists. One generic launcher
+#       (scheduled_job_launcher.sh) serves all 11 plists; per-job knobs
+#       live in StartCalendarInterval/StartInterval inside each plist.
+#       Plists ship under <payload>/resources/launchd/scheduled/.
 #   8. Drop /etc/mining-guardian/install-receipt.json with git SHA,
 #      version, install timestamp, RAM tier, LLM model.
 #   9. Fire a first-run baseline scan so the operator sees green tiles
@@ -88,6 +94,7 @@
 #   37     — launcher wrapper or plist source missing in payload (Bucket 6)
 #   38     — Python venv create or vendored pip install failed (D-18 Gap 5)
 #   39     — catalog DB / schema / seed apply failed (D-18 Gap 2)
+#   40     — scheduled-job plist install or bootstrap failed (D-18 Gap 4)
 #   41     — customer-info Desktop conf missing or invalid (D-18 Gap 1)
 #
 # Vision Anchor 7 honored: only one network call (model pull); every
@@ -151,6 +158,11 @@ readonly PLIST_LABELS=(
 # with hyphens swapped for underscores and `_launcher.sh` appended. The
 # 10th launcher (feedback_loop_daemon) is generated inline below for
 # parity with the other 9.
+#
+# v1.0.3 D-18 Gap 4 / P-007 also adds `scheduled_job_launcher.sh` — a
+# generic wrapper used by all 11 scheduled-job plists (replaces the
+# legacy setup.sh phase_10 cron block). One launcher serves all 11
+# plists; per-job knobs live in the plists themselves.
 readonly LAUNCHER_FILES=(
     "scanner_launcher.sh"
     "dashboard_api_launcher.sh"
@@ -161,6 +173,32 @@ readonly LAUNCHER_FILES=(
     "alerts_launcher.sh"
     "intelligence_report_launcher.sh"
     "console_launcher.sh"
+    "scheduled_job_launcher.sh"
+)
+
+# v1.0.3 D-18 Gap 4 / P-007 — scheduled-job plists.
+# Source dir: installer/macos-pkg/resources/launchd/scheduled/
+# These replace the 11 crontab entries in setup.sh::phase_10_cron. Each
+# plist invokes scheduled_job_launcher.sh with the entrypoint + label
+# baked into ProgramArguments, so adding a 12th scheduled job is one new
+# plist + one new SCHEDULED_PLIST_LABELS row, no launcher edit required.
+#
+# Labels match the plist_label values declared by the operator console
+# (console/task_registry.py). Drift here breaks the console's
+# /tasks page launchctl probe.
+readonly SCHEDULED_PLISTS_SRC="${SCRIPT_DIR}/../resources/launchd/scheduled"
+readonly SCHEDULED_PLIST_LABELS=(
+    "com.miningguardian.scheduled.weekly-training"
+    "com.miningguardian.scheduled.refinement-chain"
+    "com.miningguardian.scheduled.db-maintenance"
+    "com.miningguardian.scheduled.knowledge-backup"
+    "com.miningguardian.scheduled.morning-briefing"
+    "com.miningguardian.scheduled.operator-review"
+    "com.miningguardian.scheduled.ams-cleanup"
+    "com.miningguardian.scheduled.log-collection"
+    "com.miningguardian.scheduled.daily-deep-dive"
+    "com.miningguardian.scheduled.log-failure-report"
+    "com.miningguardian.scheduled.benchmark"
 )
 
 # ---------------------------------------------------------------------------
@@ -912,6 +950,72 @@ step_install_plists_and_bootstrap() {
     done
 }
 
+step_install_scheduled_plists_and_bootstrap() {
+    # D-18 Gap 4 / P-007 — replace setup.sh::phase_10_cron with launchd.
+    #
+    # The legacy setup.sh path installed 11 crontab entries via
+    # `crontab -` and required the operator to grant Full Disk Access to
+    # /usr/sbin/cron in System Settings (macOS 14+ blocks cron from
+    # writing /tmp + /var/log without FDA). That path is unsuitable for
+    # a customer-facing .pkg install — there is no operator standing by
+    # to click through System Settings, the FDA prompt is not surfaceable
+    # from postinstall, and silent failure of nightly jobs (deep-dive,
+    # briefing, backup) is exactly the "apparent success, real silence"
+    # failure mode the v1.0.2 audit flagged.
+    #
+    # Approach (locked in D-18 Gap 4):
+    #   * One plist per scheduled job under
+    #     installer/macos-pkg/resources/launchd/scheduled/.
+    #   * Each plist uses StartCalendarInterval (or StartInterval=3600
+    #     for the hourly benchmark) — launchd is the macOS-native
+    #     primitive for scheduled work, no FDA required.
+    #   * One generic launcher (`scheduled_job_launcher.sh`) sources
+    #     .env, dispatches by file extension (.py → venv python, .sh →
+    #     bash), stamps a per-run JSON file under
+    #     ${INSTALL_ROOT}/logs/scheduled/ for the operator console.
+    #   * Bootstrap order: AFTER the 10 service plists are bootstrapped
+    #     (the 10th is the console — D-19 / P-006). If the service
+    #     bootstrap fails, the scheduled jobs are not installed; the
+    #     install still aborts with the original exit 34, no scheduled
+    #     half-state.
+    #
+    # Idempotent under retries / re-installs: bootout any existing label
+    # before bootstrap, identical to step_install_plists_and_bootstrap.
+    #
+    # Exit 40 is reserved for any failure in this step.
+
+    if [[ ! -d "$SCHEDULED_PLISTS_SRC" ]]; then
+        fail 40 "scheduled-plists directory missing in payload: ${SCHEDULED_PLISTS_SRC} (D-18 Gap 4)"
+    fi
+
+    install -d -m 0755 "${MG_INSTALL_ROOT}/logs/scheduled"
+    chown "${SUDO_USER:-${USER}}:staff" "${MG_INSTALL_ROOT}/logs/scheduled"
+
+    local label src
+    for label in "${SCHEDULED_PLIST_LABELS[@]}"; do
+        src="${SCHEDULED_PLISTS_SRC}/${label}.plist"
+        if [[ ! -r "$src" ]]; then
+            fail 40 "scheduled plist missing in payload: ${src} (D-18 Gap 4)"
+        fi
+        install -m 0644 -o root -g wheel "$src" "${PLISTS_DEST}/${label}.plist"
+        log "INFO installed scheduled plist: ${label}.plist"
+    done
+    log "INFO installed ${#SCHEDULED_PLIST_LABELS[@]} scheduled-job launchd plists into ${PLISTS_DEST}"
+
+    # Bootout any previous load (idempotent re-install support), then
+    # bootstrap each one fresh.
+    for label in "${SCHEDULED_PLIST_LABELS[@]}"; do
+        if /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
+            /bin/launchctl bootout  "system/${label}" 2>/dev/null || true
+        fi
+        if ! /bin/launchctl bootstrap system "${PLISTS_DEST}/${label}.plist" \
+                2>&1 | tee -a "$MG_INSTALL_LOG"; then
+            fail 40 "launchctl bootstrap failed for ${label} (D-18 Gap 4)"
+        fi
+        log "INFO bootstrapped scheduled plist: ${label}"
+    done
+}
+
 step_write_install_receipt() {
     local receipt_dir="/etc/mining-guardian"
     install -d -m 0755 "$receipt_dir"
@@ -933,6 +1037,7 @@ step_write_install_receipt() {
   "llm_model": "${MG_INSTALL_LLM_MODEL:-unknown}",
   "install_root": "${MG_INSTALL_ROOT}",
   "service_count": ${#PLIST_LABELS[@]},
+  "scheduled_job_count": ${#SCHEDULED_PLIST_LABELS[@]},
   "build_stamp": ${stamp_payload}
 }
 EOF
@@ -979,11 +1084,13 @@ main() {
     step_install_launcher_wrappers
     step_create_venv
     step_install_plists_and_bootstrap
+    step_install_scheduled_plists_and_bootstrap
     step_write_install_receipt
     step_baseline_scan
 
     log "All postinstall steps complete. Mining Guardian is running."
     log "Services bootstrapped: ${#PLIST_LABELS[@]}"
+    log "Scheduled jobs bootstrapped: ${#SCHEDULED_PLIST_LABELS[@]}"
     log "Dashboard:    http://127.0.0.1:8080/"
     log "Approval API: http://127.0.0.1:8081/"
     log "Logs:         ${MG_INSTALL_ROOT}/logs/"

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.scheduled.daily-deep-dive.plist — D-18 Gap 4 / P-007 (v1.0.3)
+
+  Replaces the cron entry in setup.sh::phase_10_cron for ai/daily_deep_dive.py.
+  Pass 1 of the learning chain — local LLM analyzes each miner. CRON_SCHEDULE.md row 4:00 PM.
+
+  Time semantics: StartCalendarInterval fires in the Mac's local timezone.
+  Per docs/CRON_SCHEDULE.md "All times are CDT (Mac Mini timezone)" —
+  set the Mini's timezone before install.
+
+  No KeepAlive — scheduled jobs run, exit, and wait for the next fire.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.scheduled.daily-deep-dive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scheduled_job_launcher.sh</string>
+        <string>ai/daily_deep_dive.py</string>
+        <string>daily_deep_dive</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>16</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/daily_deep_dive.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/daily_deep_dive.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

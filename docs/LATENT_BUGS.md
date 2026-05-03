@@ -22,6 +22,7 @@ pick up the fix without re-deriving the context.
 | B-6 | Medium   | Retired `Mining-Gaurdian/` typo persists across 13 active docs + 8 service files | Fixed in PR-2 (path strings); 4 narrative references retained as allowed-exception; PR-3 CI lint added 2026-04-29 (PR #72) |
 | B-7 | Medium   | Live migrations `002_layer2` + staging not committed to the repo  | 📘 Runbook landed (2026-04-29) — VPS exec pending |
 | B-8 | High     | 3 silent NameError bugs (missing imports): `core/models.py` Tuple, `notifiers/approval_interface.py` os, `notifiers/slack_notifier.py` requests | ✅ Fixed 2026-04-29 (pre-install pyflakes sweep) |
+| B-9 | Low      | `tests/run_benchmark.py` referenced by `com.miningguardian.scheduled.benchmark.plist` (hourly) + legacy `setup.sh` cron — script does not exist at HEAD | Open — `scheduled_job_launcher.sh` will exit 1 with a clear FATAL until restored. Surfaced 2026-05-04 by D-18 Gap 4 / P-007. |
 
 ---
 

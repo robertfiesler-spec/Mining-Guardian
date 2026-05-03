@@ -367,6 +367,53 @@ step_4_assemble_payload() {
     fi
     _log "step 4h OK: D-20 assertion passed (zero mg_import* paths in payload)"
 
+    # 4i. Scheduled-jobs plist assertion (D-18 Gap 4 / P-007). postinstall.sh
+    # step_install_scheduled_plists_and_bootstrap reads the 11 scheduled
+    # plists from the same productbuild --resources directory the services
+    # use. A typo or missing plist file at this point would not surface
+    # until install time on a customer Mac (where the scheduled bootstrap
+    # would fail with exit code 40), so we assert here and abort the build
+    # with exit 47 if any of the 11 scheduled plists are missing from the
+    # source tree.
+    #
+    # Source location: ${PKG_DIR}/resources/launchd/scheduled/
+    #   (mirrors installer/macos-pkg/resources/launchd/scheduled/)
+    #
+    # Why we assert in the source tree rather than in PAYLOAD_DIR: the
+    # scheduled plists are productbuild --resources content (see step 5b
+    # below — `rsync ${PKG_DIR}/resources/ ${BUILD_DIR}/resources/`), not
+    # payload content. A future build_pkg.sh refactor that moved this
+    # rsync would still benefit from the source-tree assertion landing
+    # here (where step 4 already lives).
+    local scheduled_dir="${PKG_DIR}/resources/launchd/scheduled"
+    local scheduled_labels=(
+        "com.miningguardian.scheduled.weekly-training"
+        "com.miningguardian.scheduled.refinement-chain"
+        "com.miningguardian.scheduled.db-maintenance"
+        "com.miningguardian.scheduled.knowledge-backup"
+        "com.miningguardian.scheduled.morning-briefing"
+        "com.miningguardian.scheduled.operator-review"
+        "com.miningguardian.scheduled.ams-cleanup"
+        "com.miningguardian.scheduled.log-collection"
+        "com.miningguardian.scheduled.daily-deep-dive"
+        "com.miningguardian.scheduled.log-failure-report"
+        "com.miningguardian.scheduled.benchmark"
+    )
+    if [[ ! -d "$scheduled_dir" ]]; then
+        _die 47 "step 4i: scheduled-plists directory missing: ${scheduled_dir} (D-18 Gap 4)"
+    fi
+    local sl
+    for sl in "${scheduled_labels[@]}"; do
+        if [[ ! -r "${scheduled_dir}/${sl}.plist" ]]; then
+            _die 47 "step 4i: scheduled plist missing: ${scheduled_dir}/${sl}.plist (D-18 Gap 4)"
+        fi
+    done
+    local scheduled_launcher="${PKG_DIR}/resources/launchd/launchers/scheduled_job_launcher.sh"
+    if [[ ! -r "$scheduled_launcher" ]]; then
+        _die 47 "step 4i: scheduled-job launcher missing: ${scheduled_launcher} (D-18 Gap 4)"
+    fi
+    _log "step 4i OK: ${#scheduled_labels[@]} scheduled-job plists + scheduled_job_launcher.sh staged (D-18 Gap 4)"
+
     _log "step 4 OK: payload assembled at ${PAYLOAD_DIR}"
 }
 

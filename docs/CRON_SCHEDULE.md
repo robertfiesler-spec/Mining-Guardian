@@ -1,6 +1,23 @@
 # Mining Guardian — Cron Schedule
 
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-05-04 (D-18 Gap 4 / P-007 — converted from cron to launchd)
+
+> **2026-05-04 update (D-18 Gap 4 / P-007):** The 11 entries below are no
+> longer installed as crontab entries on the Mac Mini. They are launchd
+> plists at `/Library/LaunchDaemons/com.miningguardian.scheduled.*.plist`,
+> bootstrapped by `postinstall.sh::step_install_scheduled_plists_and_bootstrap`
+> (`.pkg` install path) or by `scripts/setup.sh::phase_10_scheduled`
+> (operator install path). Both paths invoke the same 11 plist files
+> committed at `installer/macos-pkg/resources/launchd/scheduled/`. One
+> generic launcher (`scheduled_job_launcher.sh`) under
+> `${INSTALL_ROOT}/bin/` sources `.env`, dispatches by file extension,
+> and stamps `${INSTALL_ROOT}/logs/scheduled/<task_key>.last-run.json`
+> for the operator console.
+>
+> The cron table below remains the canonical source of truth for fire
+> times, entrypoints, and intent. The `Cron Commands` section is
+> retained as historical reference — it documents the VPS-era schedule
+> that was the source for the launchd plist set.
 
 ---
 

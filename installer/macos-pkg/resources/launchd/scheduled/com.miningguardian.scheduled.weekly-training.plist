@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.scheduled.weekly-training.plist — D-18 Gap 4 / P-007 (v1.0.3)
+
+  Replaces the `0 0 * * *` cron entry in setup.sh::phase_10_cron for
+  ai/weekly_train.py (Pass 2 of the learning chain — Claude cohort
+  analysis). Naming preserves the legacy "weekly_training" task_key the
+  operator console (D-19 / P-006) already references in
+  console/task_registry.py; the actual schedule is daily at 00:00 local
+  per docs/CRON_SCHEDULE.md "Pass 2 - Claude cohort training (midnight)".
+  Updating that name is out of scope for this PR — it is documented as a
+  follow-up in docs/MG_UNIFIED_TODO_LIST.md.
+
+  Time semantics: StartCalendarInterval fires in the Mac's local timezone.
+  Per CRON_SCHEDULE.md "All times are CDT (Mac Mini timezone)" — set the
+  Mini's timezone before install.
+
+  No KeepAlive — scheduled jobs run, exit, and wait for the next fire.
+  StartCalendarInterval triggers reads on every minute change and fires
+  when all keys match.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.scheduled.weekly-training</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scheduled_job_launcher.sh</string>
+        <string>ai/weekly_train.py</string>
+        <string>weekly_training</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>0</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/weekly_training.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/weekly_training.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

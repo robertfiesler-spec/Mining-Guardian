@@ -26,7 +26,9 @@
 #   Postgres DBs: mining_guardian, mining_guardian_test, mining_guardian_catalog
 #   Python 3.12 venv at /Library/Application Support/MiningGuardian/venv (49-package set)
 #   9 LaunchDaemons in /Library/LaunchDaemons/ + 9 launchers in bin/
-#   10 cron entries (macOS-path-translated from docs/CRON_SCHEDULE.md)
+#   11 scheduled-job launchd plists in /Library/LaunchDaemons/ +
+#       1 generic scheduled_job_launcher.sh in bin/ (D-18 Gap 4 / P-007 —
+#       replaces the legacy crontab path; matches the .pkg installer)
 #   Grafana datasource placeholder (Bucket 6d overwrites with full config)
 #   Ollama + qwen2.5:14b-instruct-q4_K_M (~8 GB)
 #   /Library/Application Support/MiningGuardian/.env (mode 0600, root:wheel)
@@ -791,70 +793,105 @@ phase_09_launchdaemons() {
 }
 
 # ============================================================
-# PHASE 10 — Cron jobs (10 entries from docs/CRON_SCHEDULE.md)
-# PATH TRANSLATION: CRON_SCHEDULE.md uses /root/Mining-Guardian (VPS).
-# Every path rewritten to /Library/Application Support/MiningGuardian for macOS.
-# Times are machine-local — set Mac Mini timezone before install.
+# PHASE 10 — Scheduled jobs via launchd (D-18 Gap 4 / P-007 — v1.0.3)
 #
-# Learning Chain:
-#   00:00 Pass 2 Claude cohort (ai/weekly_train.py)
-#   01:00 Pass 3+4 Qwen reflect + merge (ai/refinement_chain.py)
-#   03:30 DB maintenance WAL/vacuum (scripts/db_maintenance.sh)
-#   04:00 Knowledge backup (ai/backup_knowledge.py)
-#   07:00 Morning briefing Slack (scripts/morning_briefing.py)
-#   08:00 Operator review report (scripts/daily_operator_review.py)
-#   12:45 AMS log cleanup (scripts/cleanup_ams_logs.py)
-#   13:00 Log pull from miners (scripts/direct_collect_logs.py)
-#   16:00 Pass 1 Qwen deep dive (ai/daily_deep_dive.py)
-#   16:15 Log failure report (scripts/daily_log_failure_report.py)
-#   *:00  Hourly benchmark (tests/run_benchmark.py)
+# Replaces the legacy crontab path. Installs the same 11 scheduled jobs
+# defined in docs/CRON_SCHEDULE.md, but as launchd plists so the
+# operator-side setup.sh and the customer-facing .pkg installer agree
+# on the same scheduling primitive (Vision Anchor 2 — install must be
+# easy enough for someone who barely knows a computer; a .pkg cannot
+# realistically prompt the operator to grant Full Disk Access for
+# /usr/sbin/cron, but launchd needs no FDA).
 #
-# FULL DISK ACCESS: macOS 14+ blocks /usr/sbin/cron from writing outside
-# user home without FDA. Operator prompted after crontab install.
+# Plist source (committed to git):
+#   installer/macos-pkg/resources/launchd/scheduled/com.miningguardian.scheduled.*.plist
+# Generic launcher (committed to git):
+#   installer/macos-pkg/resources/launchd/launchers/scheduled_job_launcher.sh
+#
+# Schedule is defined inside each plist (StartCalendarInterval or
+# StartInterval=3600). To change a fire time, edit the plist and re-run
+# this phase. Daylight-savings is handled by launchd correctly — cron
+# was the only primitive with the "two fires on the fall-back" bug.
+#
+# 11 scheduled jobs (matching the cron table the VPS used to run):
+#   00:00 Pass 2 Claude cohort        (ai/weekly_train.py)        — task_key=weekly_training
+#   01:00 Pass 3+4 Qwen reflect+merge (ai/refinement_chain.py)    — task_key=refinement_chain
+#   03:30 DB maintenance              (scripts/db_maintenance.sh) — task_key=db_maintenance
+#   04:00 Knowledge backup            (ai/backup_knowledge.py)    — task_key=knowledge_backup
+#   07:00 Morning briefing Slack      (scripts/morning_briefing.py) — task_key=morning_briefing
+#   08:00 Operator review report      (scripts/daily_operator_review.py) — task_key=operator_review
+#   12:45 AMS log cleanup             (scripts/cleanup_ams_logs.py) — task_key=ams_cleanup
+#   13:00 Direct log collection       (scripts/direct_collect_logs.py) — task_key=log_collection
+#   16:00 Pass 1 Qwen deep dive       (ai/daily_deep_dive.py)     — task_key=daily_deep_dive
+#   16:15 Log failure report          (scripts/daily_log_failure_report.py) — task_key=log_failure_report
+#   hourly Benchmark                  (tests/run_benchmark.py)    — task_key=benchmark
+#
+# Idempotency: bootout each label before bootstrap. Re-running this
+# phase replaces the running plists with whatever is on disk.
 # ============================================================
-phase_10_cron() {
-  CURRENT_PHASE="Phase 10 — Cron jobs"
-  phase_banner "10" "Cron jobs (10 entries)"
-  local MG="${INSTALL_ROOT}"; local PY="${MG}/venv/bin/python"
-  local NEW_CRON
-  NEW_CRON=$(cat <<'CRONEOF'
-# ── Mining Guardian cron schedule (setup.sh v2 — macOS paths) ──
-CRONEOF
-# Expand variables now (not heredoc-literal)
-echo "0 0 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} ai/weekly_train.py >> /tmp/daily_claude_training.log 2>&1"
-echo "0 1 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} ai/refinement_chain.py >> /tmp/daily_refinement_chain.log 2>&1"
-echo "30 3 * * * cd ${MG} && bash scripts/db_maintenance.sh >> /tmp/db_maintenance.log 2>&1"
-echo "0 4 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} ai/backup_knowledge.py >> /tmp/knowledge_backup.log 2>&1"
-echo "0 7 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} scripts/morning_briefing.py >> /tmp/morning_briefing.log 2>&1"
-echo "0 8 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} scripts/daily_operator_review.py >> /tmp/daily_operator_review.log 2>&1"
-echo "45 12 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} scripts/cleanup_ams_logs.py >> /tmp/ams_cleanup.log 2>&1"
-echo "0 13 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} scripts/direct_collect_logs.py >> /tmp/direct_log_collection.log 2>&1"
-echo "0 16 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} ai/daily_deep_dive.py >> /tmp/daily_deep_dive.log 2>&1"
-echo "15 16 * * * cd ${MG} && PYTHONPATH=${MG} ${PY} scripts/daily_log_failure_report.py >> /tmp/daily_log_failure_report.log 2>&1"
-echo "0 * * * * cd ${MG} && source ${MG}/venv/bin/activate && PYTHONPATH=${MG} python3 tests/run_benchmark.py >> /var/log/mg_benchmark.log 2>&1"
-)
-  if [[ "${DRY_RUN_INSTALL}" == "true" ]]; then
-    info "[DRY RUN] Would install crontab entries:"; echo "${NEW_CRON}"
-  else
-    local EX; EX="$(crontab -l 2>/dev/null || true)"
-    if echo "${EX}" | grep -q "Mining Guardian cron schedule"; then
-      warn "Existing MG cron entries found — replacing..."
-      local STRIP; STRIP="$(echo "${EX}" | grep -v "Mining-Guardian\|Mining Guardian cron\|weekly_train\|refinement_chain\|backup_knowledge\|morning_briefing\|daily_operator\|cleanup_ams\|direct_collect\|daily_deep_dive\|daily_log_failure\|run_benchmark\|db_maintenance")"
-      (echo "${STRIP}"; echo "${NEW_CRON}") | crontab -
-    else
-      (echo "${EX}"; echo "${NEW_CRON}") | crontab -
-    fi
-    ok "10 cron entries installed."
+phase_10_scheduled() {
+  CURRENT_PHASE="Phase 10 — Scheduled jobs (launchd plists)"
+  phase_banner "10" "Scheduled jobs (11 launchd plists)"
+
+  local SCHED_SRC="${REPO_DIR}/installer/macos-pkg/resources/launchd/scheduled"
+  local LAUNCH_SRC="${REPO_DIR}/${LAUNCHER_SRC}"
+  local LAUNCHER_DST="${BIN_DIR}/scheduled_job_launcher.sh"
+
+  if [[ ! -d "${SCHED_SRC}" ]]; then
+    fail "Scheduled-plists directory missing: ${SCHED_SRC} — repo out of date with v1.0.3 (D-18 Gap 4)."
   fi
-  divider
-  echo "\n  ${BOLD}${YELLOW}ACTION REQUIRED — Full Disk Access for /usr/sbin/cron${NC}\n"
-  echo "  macOS 14+ blocks cron from writing /tmp + /var/log without FDA."
-  echo "  Without FDA, nightly jobs (deep-dive, briefing, backups) fail silently.\n"
-  echo "  Grant: System Settings → Privacy & Security → Full Disk Access → [+]"
-  echo "         Cmd+Shift+G → /usr/sbin → select: cron → toggle ON\n"
-  read "FDA?  Press Enter once Full Disk Access is granted (Ctrl+C to skip)..."
-  log_phase_complete "10_cron"
-  ok "Phase 10 complete — cron schedule installed."
+
+  step "Installing scheduled-job logs directory + launcher wrapper..."
+  run_cmd mkdir -p "${LOGS_DIR}/scheduled"
+  run_cmd cp "${LAUNCH_SRC}/scheduled_job_launcher.sh" "${LAUNCHER_DST}"
+  run_cmd chmod 0755 "${LAUNCHER_DST}"
+  run_cmd chown root:wheel "${LAUNCHER_DST}"
+  ok "scheduled_job_launcher.sh installed at ${LAUNCHER_DST}"
+
+  # Same 11 labels declared in postinstall.sh::SCHEDULED_PLIST_LABELS and
+  # console/task_registry.py. Drift here breaks the operator console.
+  local labels=(
+    "com.miningguardian.scheduled.weekly-training"
+    "com.miningguardian.scheduled.refinement-chain"
+    "com.miningguardian.scheduled.db-maintenance"
+    "com.miningguardian.scheduled.knowledge-backup"
+    "com.miningguardian.scheduled.morning-briefing"
+    "com.miningguardian.scheduled.operator-review"
+    "com.miningguardian.scheduled.ams-cleanup"
+    "com.miningguardian.scheduled.log-collection"
+    "com.miningguardian.scheduled.daily-deep-dive"
+    "com.miningguardian.scheduled.log-failure-report"
+    "com.miningguardian.scheduled.benchmark"
+  )
+
+  step "Installing 11 scheduled-job plists into ${LAUNCHDAEMONS}..."
+  local lbl pd src
+  for lbl in "${labels[@]}"; do
+    src="${SCHED_SRC}/${lbl}.plist"
+    pd="${LAUNCHDAEMONS}/${lbl}.plist"
+    [[ ! -f "${src}" ]] && fail "Scheduled plist missing: ${src}"
+    run_cmd cp "${src}" "${pd}"
+    run_cmd chmod 0644 "${pd}"
+    run_cmd chown root:wheel "${pd}"
+    # Bootout first — launchctl bootstrap errors if the label is already
+    # registered. Idempotent for re-runs of phase_10.
+    launchctl bootout "system/${lbl}" 2>/dev/null || true
+    sleep 1
+    run_cmd launchctl bootstrap system "${pd}"
+    ok "  ${lbl}"
+  done
+
+  log_phase_complete "10_scheduled"
+  ok "Phase 10 complete — 11 scheduled-job launchd plists bootstrapped."
+}
+
+# Backwards-compatibility shim: the legacy phase function name was
+# `phase_10_cron`. main() below calls phase_10_scheduled directly; this
+# stub exists only so any out-of-tree caller (rare — this script is
+# customer-facing) sees a clear error rather than a silent no-op.
+phase_10_cron() {
+  warn "phase_10_cron is removed in v1.0.3 — scheduled jobs are launchd plists now (D-18 Gap 4)."
+  phase_10_scheduled
 }
 
 # ============================================================
@@ -1009,7 +1046,8 @@ phase_14_postinstall() {
   echo "    Secrets:       ${ENV_FILE}   (mode 0600, root:wheel)"
   echo "    Logs:          ${LOGS_DIR}/"
   echo "    Phase log:     ${PHASE_LOG}"
-  echo "    Cron logs:     /tmp/daily_deep_dive.log  /tmp/morning_briefing.log  etc.\n"
+  echo "    Scheduled-job logs: ${LOGS_DIR}/scheduled/<task_key>.{out,err}.log"
+  echo "                        last-run stamps: ${LOGS_DIR}/scheduled/<task_key>.last-run.json"
   echo "  ${BOLD}Service management:${NC}"
   echo "    launchctl list | grep com.miningguardian          # list + PIDs"
   echo "    sudo launchctl bootout system/com.miningguardian.scanner    # stop"
@@ -1025,9 +1063,10 @@ phase_14_postinstall() {
   echo "  ${BOLD}Ports (all 127.0.0.1 — S-13):${NC}"
   echo "    Dashboard: 8585  •  Approval API: 8686  •  Intel Report: 8590  •  Grafana: 3000\n"
   echo "  ${BOLD}Uninstall:${NC}"
-  echo "    1. Bootout all 9 services  2. rm -f /Library/LaunchDaemons/com.miningguardian.*.plist"
+  echo "    1. Bootout all 9 services + 11 scheduled jobs  2. rm -f /Library/LaunchDaemons/com.miningguardian.*.plist"
   echo "    3. rm -rf ${INSTALL_ROOT}   4. dropdb mining_guardian mining_guardian_test mining_guardian_catalog"
-  echo "    5. dropuser guardian_app    6. crontab -e (remove MG block)"
+  echo "    5. dropuser guardian_app"
+  echo "    NOTE: crontab is no longer used — D-18 Gap 4 moved scheduling to launchd plists in step 1+2."
   divider
   log_phase_complete "14_postinstall"
   ok "Phase 14 complete — Mining Guardian is live."
@@ -1070,7 +1109,7 @@ main() {
     phase_01_preflight; phase_02_customer_info; phase_03_brew_deps
     phase_04_postgres; phase_05_catalog_seed; phase_06_repo_venv
     phase_07_secrets; phase_08_ollama; phase_09_launchdaemons
-    phase_10_cron; phase_11_grafana; phase_12_tailscale
+    phase_10_scheduled; phase_11_grafana; phase_12_tailscale
     phase_13_smoke_test; phase_14_postinstall
   fi
   divider

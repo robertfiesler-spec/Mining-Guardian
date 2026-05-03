@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.scheduled.db-maintenance.plist — D-18 Gap 4 / P-007 (v1.0.3)
+
+  Replaces the cron entry in setup.sh::phase_10_cron for scripts/db_maintenance.sh.
+  WAL checkpoint, vacuum, integrity check. CRON_SCHEDULE.md row 3:30 AM. Shell entrypoint, not Python.
+
+  Time semantics: StartCalendarInterval fires in the Mac's local timezone.
+  Per docs/CRON_SCHEDULE.md "All times are CDT (Mac Mini timezone)" —
+  set the Mini's timezone before install.
+
+  No KeepAlive — scheduled jobs run, exit, and wait for the next fire.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.scheduled.db-maintenance</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scheduled_job_launcher.sh</string>
+        <string>scripts/db_maintenance.sh</string>
+        <string>db_maintenance</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/db_maintenance.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/db_maintenance.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
