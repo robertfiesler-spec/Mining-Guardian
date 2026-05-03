@@ -48,11 +48,16 @@
 #   5. Copy the 8 pre-written launcher wrappers from the .pkg payload
 #      into ${MG_INSTALL_ROOT}/bin/, then generate the 9th wrapper
 #      (feedback_loop_daemon_launcher.sh) inline.
-#   6. Install the 9 launchd plists and load them with launchctl
+#   6. Create ${MG_INSTALL_ROOT}/venv from a Homebrew python3.12 and
+#      pip-install the full dependency set from vendored wheels at
+#      <payload>/python-wheels/ (D-18 Gap 5 — closes the v1.0.2 audit
+#      finding that every launchd launcher wrapper was crash-looping
+#      because the venv it sources never existed).
+#   7. Install the 9 launchd plists and load them with launchctl
 #      bootstrap.
-#   7. Drop /etc/mining-guardian/install-receipt.json with git SHA,
+#   8. Drop /etc/mining-guardian/install-receipt.json with git SHA,
 #      version, install timestamp, RAM tier, LLM model.
-#   8. Fire a first-run baseline scan so the operator sees green tiles
+#   9. Fire a first-run baseline scan so the operator sees green tiles
 #      on the dashboard within ~30 s of the install completing.
 #
 # Refuses to silently degrade. Any failure exits non-zero so
@@ -69,6 +74,7 @@
 #   35     — install receipt could not be written
 #   36     — first-run baseline scan failed
 #   37     — launcher wrapper or plist source missing in payload (Bucket 6)
+#   38     — Python venv create or vendored pip install failed (D-18 Gap 5)
 #
 # Vision Anchor 7 honored: only one network call (model pull); every
 # other byte is vendored inside the .pkg.
@@ -326,6 +332,140 @@ step_install_launcher_wrappers() {
     log "INFO installed 9 launcher wrappers in ${bin}"
 }
 
+step_create_venv() {
+    # D-18 Gap 5 — every launchd launcher wrapper exec's
+    # ${MG_INSTALL_ROOT}/venv/bin/python and exits FATAL when missing
+    # (e.g. scanner_launcher.sh line 36-39). The first-run baseline scan
+    # in step_baseline_scan also relies on it. v1.0.2 .pkg never created
+    # the venv, so every service crash-looped on first start. This step
+    # closes that gap.
+    #
+    # Hard rules:
+    #   * No network for pip — vendored wheels only. Vision Anchor 7
+    #     (catalog is sacred) extends here: install-time network calls
+    #     are budgeted to ONE (the Ollama model pull); pip is not on
+    #     that budget. If the wheels payload is missing or the resolver
+    #     would need to reach PyPI, this step exits non-zero.
+    #   * Python 3.12 is required. The .pkg does not vendor a Python
+    #     interpreter (Apple-supplied python3 is 3.9; the operator-side
+    #     setup.sh assumes Homebrew python@3.12 from `phase_03_brew_deps`).
+    #     v1.0.3 docs the python@3.12 prerequisite in the customer setup
+    #     manual; if it is absent at install time, exit with a clear
+    #     pointer rather than silently picking a 3.9 interpreter.
+    #   * Idempotent. Re-running over an existing venv is a no-op for the
+    #     `python -m venv` call (skip-if-present); pip install is run
+    #     either way so a partial install heals on re-run.
+    #
+    # Inputs (all under <payload>/):
+    #   python-wheels/      directory of pre-downloaded wheels (sdists are
+    #                       NOT permitted — `--only-binary=:all:`).
+    #   requirements.txt    pin file the build host wrote during
+    #                       step_4_assemble_payload. If absent, falls
+    #                       back to <payload>/requirements.txt staged at
+    #                       repo root.
+    local venv_dir="${MG_INSTALL_ROOT}/venv"
+    local wheels_dir="${MG_PKG_PAYLOAD}/python-wheels"
+    local req_file="${MG_PKG_PAYLOAD}/requirements.txt"
+
+    if [[ ! -d "$wheels_dir" ]]; then
+        fail 38 "vendored python wheels directory missing in payload: ${wheels_dir} (build_pkg.sh step_4_assemble_payload should have copied \${HOME}/MiningGuardian-vendor/python-wheels/)"
+    fi
+
+    # Empty-dir guard — find returns 0 even if no .whl files are present;
+    # that would cause pip to silently fall through to PyPI on networked
+    # hosts. Refuse to proceed.
+    local wheel_count
+    wheel_count="$(/usr/bin/find "$wheels_dir" -maxdepth 1 -type f -name '*.whl' 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "${wheel_count:-0}" -lt 1 ]]; then
+        fail 38 "no .whl files found under ${wheels_dir}; cannot pip install offline"
+    fi
+
+    if [[ ! -r "$req_file" ]]; then
+        fail 38 "requirements.txt missing in payload: ${req_file}"
+    fi
+
+    # Resolve a Python 3.12 interpreter. Order:
+    #   1. /opt/homebrew/opt/python@3.12/bin/python3.12 (Apple Silicon Homebrew default)
+    #   2. /usr/local/opt/python@3.12/bin/python3.12 (Intel Homebrew fallback; v1.0.3 is Apple-Silicon-only per preinstall gate_apple_silicon, but kept for VM smoke-test paths)
+    #   3. `command -v python3.12`
+    # We do NOT accept `python3` because Apple-supplied python3 is 3.9 on
+    # current macOS and many of the pinned wheels require ≥ 3.12 ABI.
+    local py312=""
+    local candidate
+    for candidate in \
+        "/opt/homebrew/opt/python@3.12/bin/python3.12" \
+        "/usr/local/opt/python@3.12/bin/python3.12"; do
+        if [[ -x "$candidate" ]]; then
+            py312="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$py312" ]]; then
+        py312="$(command -v python3.12 2>/dev/null || true)"
+    fi
+    if [[ -z "$py312" || ! -x "$py312" ]]; then
+        fail 38 "python3.12 not found on this Mac; install Homebrew + python@3.12 before running the .pkg (operator setup manual covers this)"
+    fi
+
+    log "INFO using Python interpreter: ${py312} ($(${py312} --version 2>&1))"
+
+    # Create the venv (skip if already present and the python symlink is
+    # executable — supports retries / re-installs).
+    if [[ -x "${venv_dir}/bin/python" ]]; then
+        log "INFO venv already present at ${venv_dir} — re-using"
+    else
+        if ! "$py312" -m venv "$venv_dir" >>"$MG_INSTALL_LOG" 2>&1; then
+            fail 38 "python -m venv failed for ${venv_dir}"
+        fi
+        log "INFO created venv at ${venv_dir}"
+    fi
+
+    # Ownership — the launcher wrappers run as root (LaunchDaemons),
+    # but the baseline-scan path drops to ${SUDO_USER}, and operator
+    # debug runs the venv as ${SUDO_USER} too. Match the install-root
+    # ownership pattern from step_layout_install_root.
+    chown -R "${SUDO_USER:-${USER}}:staff" "$venv_dir"
+
+    local venv_pip="${venv_dir}/bin/pip"
+    if [[ ! -x "$venv_pip" ]]; then
+        fail 38 "pip missing inside venv: ${venv_pip}"
+    fi
+
+    # Upgrade pip itself from the vendored wheels — keeps the resolver
+    # version pinned to whatever build_pkg.sh staged. `--no-index` is the
+    # offline guarantee; `--find-links` points at the vendored dir.
+    log "INFO upgrading pip from vendored wheels"
+    # shellcheck disable=SC2024  # log is owned by root; redirect is opened by parent shell pre-sudo, which is the intended behavior (matches step_baseline_scan).
+    if ! sudo -u "${SUDO_USER:-${USER}}" \
+            "$venv_pip" install \
+            --no-index --find-links "$wheels_dir" \
+            --upgrade pip \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        # Older vendored wheel sets may not include a pip wheel — that
+        # is acceptable; the bundled pip from `python -m venv` is fine.
+        log "INFO vendored pip upgrade skipped (no pip wheel in payload — using bootstrap pip)"
+    fi
+
+    # Install dependencies. `--only-binary=:all:` refuses to fall back to
+    # building from source (no compiler on the customer Mini, and would
+    # require network anyway). `--no-deps` is NOT used — the vendored
+    # wheel set must be the full transitive closure, captured at build
+    # time by the operator running `pip download -r requirements.txt -d
+    # ${HOME}/MiningGuardian-vendor/python-wheels/` before `make pkg`.
+    log "INFO installing python deps from ${req_file} (offline, vendored wheels)"
+    # shellcheck disable=SC2024  # log is owned by root; redirect is opened by parent shell pre-sudo, which is the intended behavior (matches step_baseline_scan).
+    if ! sudo -u "${SUDO_USER:-${USER}}" \
+            "$venv_pip" install \
+            --no-index --find-links "$wheels_dir" \
+            --only-binary=:all: \
+            -r "$req_file" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 38 "pip install -r ${req_file} failed (offline); check that vendored wheels cover the full transitive closure"
+    fi
+
+    log "INFO venv ready at ${venv_dir} ($(wc -l <"$req_file" | tr -d ' ') requirement lines installed)"
+}
+
 step_install_plists_and_bootstrap() {
     install -d -m 0755 "$PLISTS_DEST"
 
@@ -420,6 +560,7 @@ main() {
     step_apply_migrations
     step_install_ollama_and_pull_model
     step_install_launcher_wrappers
+    step_create_venv
     step_install_plists_and_bootstrap
     step_write_install_receipt
     step_baseline_scan
