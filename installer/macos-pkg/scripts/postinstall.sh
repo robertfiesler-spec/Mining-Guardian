@@ -42,7 +42,13 @@
 #   1. Resolve install paths and re-source the env file written by
 #      preinstall.sh (RAM tier + LLM model from D-13).
 #   2. Stand up Colima + the bundled Postgres container (offline).
-#   3. Apply migrations 000_bootstrap, 002_layer2, 003_c5_notify_triggers.
+#   3. Apply every <payload>/migrations/*.sql in lexical order against
+#      the operational `mining_guardian` DB (each is idempotent).
+#   3b. Create the catalog DB `mining_guardian_catalog`, apply the
+#      catalog schema bundle (deploy_schema.sql), and seed the 320-row
+#      Bitcoin SHA-256 baseline (seed_miner_models.sql) — D-18 Gap 2.
+#      Without this, hardware.miner_models is empty on the customer
+#      Mini and the AI tier sees every miner as "unknown."
 #   4. Install Ollama and pull the selected LLM model (the ONE network
 #      step at first-run; loud failure if unreachable).
 #   5. Copy the 8 pre-written launcher wrappers from the .pkg payload
@@ -75,6 +81,7 @@
 #   36     — first-run baseline scan failed
 #   37     — launcher wrapper or plist source missing in payload (Bucket 6)
 #   38     — Python venv create or vendored pip install failed (D-18 Gap 5)
+#   39     — catalog DB / schema / seed apply failed (D-18 Gap 2)
 #
 # Vision Anchor 7 honored: only one network call (model pull); every
 # other byte is vendored inside the .pkg.
@@ -275,6 +282,166 @@ step_apply_migrations() {
         fi
     done
     log "INFO all migrations applied"
+}
+
+step_provision_catalog_db_and_seed() {
+    # D-18 Gap 2 — the v1.0.2 .pkg shipped a Postgres container with only
+    # the operational `mining_guardian` DB; the catalog DB
+    # `mining_guardian_catalog` (which `hardware.miner_models` lives in)
+    # was never created and the 320-row Bitcoin SHA-256 baseline seed
+    # (`intelligence-catalog/seed-data/seed_miner_models.sql`) was never
+    # applied. Without this, `ai/catalog_context.py` consumers see an
+    # empty catalog, every miner is "unknown model," and the Grafana
+    # Intelligence Report dropdown is empty (audit Section 5 / Gap 2).
+    #
+    # This step closes the gap by, in order:
+    #   1. Creating the `mining_guardian_catalog` database in the existing
+    #      Colima-managed Postgres container (`mining-guardian-db`),
+    #      OWNER `mg`. Idempotent — `IF NOT EXISTS` semantics via SELECT.
+    #   2. Applying the canonical catalog schema bundle via
+    #      `deploy_schema.sql`, which `\ir`-includes
+    #      `intelligence_catalog_schema.sql` + v2 + v3 + `staging_schema.sql`,
+    #      then performs the manufacturer-brand enum extensions, then
+    #      seeds `knowledge.sources`, `knowledge.contributors`, and
+    #      `hardware.manufacturers`. All idempotent (`IF NOT EXISTS`,
+    #      `ON CONFLICT DO NOTHING`).
+    #   3. Applying `seed_miner_models.sql` (320 rows) against the catalog
+    #      DB. Idempotent at the row level via the seed's transaction
+    #      semantics (each model row is keyed by canonical_name + model
+    #      number; re-applies are no-ops on already-seeded models).
+    #
+    # All three steps target the catalog DB exclusively. The operational
+    # DB `mining_guardian` is NOT touched here — its schema was already
+    # applied by `step_apply_migrations` (lexical order, all
+    # `<payload>/migrations/*.sql`).
+    #
+    # Source files travel inside the .pkg payload via build_pkg.sh
+    # step 4a (`--include 'intelligence-catalog/***'`), so they live at
+    #   ${MG_PKG_PAYLOAD}/intelligence-catalog/seed-data/*.sql
+    # at install time. No separate payload-staging step is required.
+    #
+    # Hard rules (Vision Anchor 7 — local-only):
+    #   * Network use is the existing Ollama-only budget; this step
+    #     issues `psql` against the localhost Colima container ONLY.
+    #   * Refuse if any source file is missing — partial catalog seed
+    #     would leave the customer Mini in a half-initialized state that
+    #     looks healthy at install time but fails the v1.0.3 verification
+    #     gate (`SELECT count(*) FROM hardware.miner_models;` must
+    #     return 320).
+    #   * Idempotent under retries / re-installs.
+    #
+    # Exit code 39 is reserved for any failure in this step.
+    local seed_dir="${MG_PKG_PAYLOAD}/intelligence-catalog/seed-data"
+    local schema_file="${seed_dir}/deploy_schema.sql"
+    local seed_file="${seed_dir}/seed_miner_models.sql"
+    local catalog_db="mining_guardian_catalog"
+    local container="mining-guardian-db"
+
+    if [[ ! -d "$seed_dir" ]]; then
+        fail 39 "catalog seed directory missing in payload: ${seed_dir} (build_pkg.sh step 4a should have rsync'd intelligence-catalog/***)"
+    fi
+    if [[ ! -r "$schema_file" ]]; then
+        fail 39 "catalog schema deploy file missing: ${schema_file}"
+    fi
+    if [[ ! -r "$seed_file" ]]; then
+        fail 39 "catalog seed file missing: ${seed_file}"
+    fi
+
+    # 1. Create the catalog DB. Idempotent via existence check; CREATE
+    # DATABASE cannot run inside a transaction, so we issue it with -tAc
+    # only when the row count comes back zero.
+    local exists
+    exists="$(sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+        psql -U mg -d postgres -tAc \
+        "SELECT 1 FROM pg_database WHERE datname='${catalog_db}';" \
+        2>>"$MG_INSTALL_LOG" || true)"
+    exists="$(echo "${exists:-}" | tr -d '[:space:]')"
+    if [[ "${exists:-}" != "1" ]]; then
+        log "INFO creating catalog database ${catalog_db}"
+        # shellcheck disable=SC2024  # log file is owned by root; redirect is opened by parent shell pre-sudo, intentional (matches step_baseline_scan / step_create_venv).
+        if ! sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+                psql -U mg -d postgres -v ON_ERROR_STOP=1 -c \
+                "CREATE DATABASE ${catalog_db} OWNER mg;" \
+                >>"$MG_INSTALL_LOG" 2>&1; then
+            fail 39 "CREATE DATABASE ${catalog_db} failed (see ${MG_INSTALL_LOG})"
+        fi
+    else
+        log "INFO catalog database ${catalog_db} already present — re-using"
+    fi
+
+    # 2. Apply the catalog schema. deploy_schema.sql uses psql's `\ir`
+    # (include relative) directive to pull in the v1/v2/v3 schema files
+    # from the same directory; we copy the whole seed-data tree into the
+    # container so the relative includes resolve.
+    local container_seed_dir="/tmp/mg-catalog-seed-$$"
+    # shellcheck disable=SC2024  # see SC2024 disable note above.
+    if ! sudo -u "${SUDO_USER:-${USER}}" docker exec "$container" \
+            mkdir -p "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 39 "could not create staging dir inside container: ${container_seed_dir}"
+    fi
+    # shellcheck disable=SC2024
+    if ! sudo -u "${SUDO_USER:-${USER}}" docker cp \
+            "${seed_dir}/." "${container}:${container_seed_dir}/" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 39 "docker cp of seed-data into container failed"
+    fi
+
+    # deploy_schema.sql contains ALTER TYPE ... ADD VALUE statements that
+    # cannot run inside an implicit transaction block. We apply it with
+    # ON_ERROR_STOP=0 so the enum-extension warnings do not abort the
+    # idempotent re-apply on already-seeded systems; structural CREATE
+    # TYPE / CREATE TABLE / CREATE SCHEMA are themselves IF NOT EXISTS.
+    log "INFO applying catalog schema (deploy_schema.sql)"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+            psql -U mg -d "$catalog_db" \
+            -v ON_ERROR_STOP=0 \
+            -f "${container_seed_dir}/deploy_schema.sql" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 39 "deploy_schema.sql apply failed against ${catalog_db}"
+    fi
+
+    # 3. Apply the 320-row seed. ON_ERROR_STOP=1 here — the seed file
+    # uses `INSERT INTO hardware.miner_models` without ON CONFLICT, but
+    # is wrapped in a single BEGIN/COMMIT block so a re-apply against an
+    # already-seeded DB will fail cleanly on the first duplicate canonical
+    # name. We treat that case as "already seeded — re-use" by checking
+    # the row count first.
+    local row_count
+    row_count="$(sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+        psql -U mg -d "$catalog_db" -tAc \
+        "SELECT count(*) FROM hardware.miner_models;" \
+        2>>"$MG_INSTALL_LOG" || echo 0)"
+    row_count="$(echo "${row_count:-0}" | tr -d '[:space:]')"
+    if [[ "${row_count:-0}" -ge 320 ]]; then
+        log "INFO catalog already seeded (${row_count} rows) — skipping seed apply"
+    else
+        log "INFO seeding 320 Bitcoin SHA-256 miner models into ${catalog_db}"
+        # shellcheck disable=SC2024
+        if ! sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+                psql -U mg -d "$catalog_db" -v ON_ERROR_STOP=1 \
+                -f "${container_seed_dir}/seed_miner_models.sql" \
+                >>"$MG_INSTALL_LOG" 2>&1; then
+            fail 39 "seed_miner_models.sql apply failed against ${catalog_db}"
+        fi
+    fi
+
+    # Verify final row count meets the v1.0.3 verification-gate floor.
+    row_count="$(sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+        psql -U mg -d "$catalog_db" -tAc \
+        "SELECT count(*) FROM hardware.miner_models;" \
+        2>>"$MG_INSTALL_LOG" || echo 0)"
+    row_count="$(echo "${row_count:-0}" | tr -d '[:space:]')"
+    if [[ "${row_count:-0}" -lt 320 ]]; then
+        fail 39 "catalog seed verification failed: hardware.miner_models has ${row_count} rows (expected >= 320 per D-18 verification gate)"
+    fi
+    log "INFO catalog seed verified: hardware.miner_models has ${row_count} rows"
+
+    # Best-effort cleanup of the in-container staging dir; not fatal if
+    # it fails (the container is ephemeral relative to the install root).
+    # shellcheck disable=SC2024
+    sudo -u "${SUDO_USER:-${USER}}" docker exec "$container" \
+        rm -rf "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1 || true
 }
 
 step_install_ollama_and_pull_model() {
@@ -558,6 +725,7 @@ main() {
     step_drop_dotenv
     step_provision_postgres
     step_apply_migrations
+    step_provision_catalog_db_and_seed
     step_install_ollama_and_pull_model
     step_install_launcher_wrappers
     step_create_venv

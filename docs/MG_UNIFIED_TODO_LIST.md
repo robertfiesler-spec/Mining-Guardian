@@ -62,7 +62,7 @@ The PR train below closes the v1.0.2 .pkg audit gaps (`docs/audits/PKG_AUDIT_v1.
 | # | Audit Gap / Bug | Status | PR / Notes |
 |---|---|---|---|
 | 1 | Gap 5 — Python venv + offline pip install | ✅ | PR `mg/v103-gap5-postinstall-venv` (2026-05-04) — `step_create_venv` + vendored wheels + payload-requirements.txt + tests/installer/test_postinstall_venv.sh; exit code 38 reserved |
-| 2 | Gap 2 — Catalog DB + 320-row seed | 🔴 | Next PR after Gap 5 — postinstall creates `mining_guardian_catalog` + applies `intelligence-catalog/seed-data/seed_miner_models.sql` |
+| 2 | Gap 2 — Catalog DB + 320-row seed | ✅ | PR `mg/v103-gap2-catalog-db-and-seed` (2026-05-04) — `step_provision_catalog_db_and_seed` (creates `mining_guardian_catalog`, applies `deploy_schema.sql`, seeds 320 rows from `seed_miner_models.sql`); `build_pkg.sh` step 4g asserts seed staged in payload; exit code 39 reserved; exit code 44 in build for missing seed; `tests/installer/test_postinstall_catalog_seed.sh` (24 assertions). D-20 reconciliation (drop `mg_import_tool/` from .pkg payload + relocate importer migrations to canonical `migrations/`) explicitly DEFERRED to a separate P-004 PR before v1.0.3 build per discovery §3.6 step ordering — payload/migration cleanup is content move + assertion work, kept single-concern out of this Gap-2 PR. |
 | 3 | Gap 1 — Customer-info Desktop conf flow | 🔴 | Postinstall reads `~/Desktop/MiningGuardian.conf`, validates per B-2, Cocoa-dialog on missing/invalid |
 | 4 | Gap 3 — Grafana vendoring + provisioning + LaunchDaemon | 🔴 | Vendor `grafana.app`, provisioning yaml, 11th LaunchDaemon |
 | 5 | Gap 4 — Scheduled-tasks launchd plists (replaces setup.sh phase_10 cron) | 🔴 | New plist set under `installer/macos-pkg/resources/launchd/scheduled/` |

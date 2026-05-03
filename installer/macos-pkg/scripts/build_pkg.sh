@@ -291,6 +291,35 @@ step_4_assemble_payload() {
     chmod +x "${SCRIPTS_DIR}/preinstall.sh" "${SCRIPTS_DIR}/postinstall.sh"
     chmod +x "${SCRIPTS_DIR}/lib/"*.sh
 
+    # 4g. Catalog seed assertion (D-18 Gap 2). postinstall.sh
+    # step_provision_catalog_db_and_seed expects deploy_schema.sql and
+    # seed_miner_models.sql under <payload>/intelligence-catalog/seed-data/.
+    # Those land via the 4a rsync `--include 'intelligence-catalog/***'`
+    # but a typo or future include-list edit could silently drop them and
+    # the failure would not surface until install time on a customer Mac.
+    # Belt-and-suspenders: assert here, fail the build with exit 44 if
+    # missing.
+    local catalog_seed_dir="${PAYLOAD_DIR}/intelligence-catalog/seed-data"
+    local schema_file="${catalog_seed_dir}/deploy_schema.sql"
+    local seed_file="${catalog_seed_dir}/seed_miner_models.sql"
+    if [[ ! -r "$schema_file" ]]; then
+        _die 44 "step 4g: catalog deploy_schema.sql missing in payload at ${schema_file} (D-18 Gap 2)"
+    fi
+    if [[ ! -r "$seed_file" ]]; then
+        _die 44 "step 4g: catalog seed_miner_models.sql missing in payload at ${seed_file} (D-18 Gap 2)"
+    fi
+    # Sanity-check the seed has the expected row count (320 INSERT rows
+    # at v1.0.3; the count will grow as miners are added — operator
+    # quote 2026-04-30: "the list grows as miners get added so it needs
+    # to reflect that... it is not a static number"). Use >= as the
+    # assertion to make this future-proof.
+    local seed_inserts
+    seed_inserts="$(/usr/bin/grep -cE '^INSERT INTO hardware\.miner_models' "$seed_file" || true)"
+    if (( seed_inserts < 320 )); then
+        _die 44 "step 4g: seed_miner_models.sql has ${seed_inserts} INSERT rows, expected ≥ 320 (D-18 verification gate)"
+    fi
+    _log "step 4g OK: catalog seed staged (${seed_inserts} INSERT rows in seed_miner_models.sql)"
+
     _log "step 4 OK: payload assembled at ${PAYLOAD_DIR}"
 }
 
