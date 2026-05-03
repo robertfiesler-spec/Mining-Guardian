@@ -114,7 +114,7 @@ Every session END must:
 
 ## STEP 8 — Today's session-start SHA check
 
-Last main SHA at end of 2026-05-03 session: `<MERGE_SHA_PLACEHOLDER>` (filled in by the
+Last main SHA at end of 2026-05-03 session: `8f26ab1a7570268915abe4723eeee1debda4689a` (filled in by the
 follow-up commit immediately after this PR squash-merges; until that follow-up lands,
 treat the value as "the squash-merge SHA of this PR — confirm via `gh pr view N --json mergeCommit`").
 
