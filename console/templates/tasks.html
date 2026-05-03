@@ -1,0 +1,23 @@
+{% extends "_base.html" %}
+{% block title %}Tasks · Mining Guardian Console{% endblock %}
+{% block content %}
+<section>
+  <h1>Task Registry</h1>
+  <p class="muted">The 9 always-on services and the 11 scheduled jobs (D-19). Pause/Resume calls launchctl bootout/bootstrap on the underlying plist. Schedule edits write to system_schedules; jobs not yet wired (Gap 4) record the intended schedule for later application.</p>
+
+  <table class="task-table" id="task-table">
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>Category</th>
+        <th>Schedule</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody hx-get="/tasks/htmx" hx-trigger="every 15s" hx-swap="innerHTML">
+      {% include "_task_rows.html" %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

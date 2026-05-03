@@ -1,0 +1,33 @@
+{% extends "_base.html" %}
+{% block title %}System State · Mining Guardian Console{% endblock %}
+{% block content %}
+<section>
+  <h1>System State</h1>
+  <p class="muted">Read-only probes. Each probe is bounded by a short timeout; absence of data does not necessarily mean a service is down (see Tailscale note).</p>
+
+  <table class="system-table">
+    <thead><tr><th>Component</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>
+      {% for name, info in state.items() %}
+        <tr>
+          <td><strong>{{ name }}</strong></td>
+          <td>
+            {% if info.status == "up" %}
+              <span class="pill pill-up">up</span>
+            {% elif info.status == "degraded" %}
+              <span class="pill pill-warn">degraded</span>
+            {% elif info.status == "down" %}
+              <span class="pill pill-down">down</span>
+            {% else %}
+              <span class="pill pill-unknown">unknown</span>
+            {% endif %}
+          </td>
+          <td class="muted small">{{ info.detail }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="muted small">Refresh the page to re-run probes. Grafana stays the visualization surface — see the Mining Guardian dashboards on :3000 for time-series detail.</p>
+</section>
+{% endblock %}

@@ -128,9 +128,11 @@ readonly PLISTS_SRC="${SCRIPT_DIR}/../resources/launchd"
 readonly LAUNCHERS_SRC="${SCRIPT_DIR}/../resources/launchd/launchers"
 readonly PLISTS_DEST="/Library/LaunchDaemons"
 
-# Bucket 6: 9 services. The 8 entries that ship from
-# installer/macos-pkg/resources/launchd/ are listed first; the 9th
-# (feedback-loop-daemon, PR #41) ships from deploy/ via the payload.
+# Bucket 6: 9 services. v1.0.3 D-19 (P-006): 10th service added — the
+# customer operator console (com.miningguardian.console).
+# The 9 plists that ship from installer/macos-pkg/resources/launchd/ are
+# listed first; the 10th (feedback-loop-daemon, PR #41) ships from
+# deploy/ via the payload.
 readonly PLIST_LABELS=(
     "com.miningguardian.scanner"
     "com.miningguardian.dashboard-api"
@@ -140,13 +142,15 @@ readonly PLIST_LABELS=(
     "com.miningguardian.overnight-automation"
     "com.miningguardian.alerts"
     "com.miningguardian.intelligence-report"
+    "com.miningguardian.console"
     "com.miningguardian.feedback-loop-daemon"
 )
 
-# 8 launcher wrappers shipped verbatim from PR #74 (Bucket 6a). The
-# filenames mirror the plist labels with hyphens swapped for underscores
-# and `_launcher.sh` appended. The 9th launcher (feedback_loop_daemon)
-# is generated inline below for parity with the other 8.
+# 9 launcher wrappers shipped verbatim from PR #74 (Bucket 6a) plus the
+# v1.0.3 D-19 console launcher. The filenames mirror the plist labels
+# with hyphens swapped for underscores and `_launcher.sh` appended. The
+# 10th launcher (feedback_loop_daemon) is generated inline below for
+# parity with the other 9.
 readonly LAUNCHER_FILES=(
     "scanner_launcher.sh"
     "dashboard_api_launcher.sh"
@@ -156,6 +160,7 @@ readonly LAUNCHER_FILES=(
     "overnight_automation_launcher.sh"
     "alerts_launcher.sh"
     "intelligence_report_launcher.sh"
+    "console_launcher.sh"
 )
 
 # ---------------------------------------------------------------------------
@@ -874,8 +879,9 @@ step_create_venv() {
 step_install_plists_and_bootstrap() {
     install -d -m 0755 "$PLISTS_DEST"
 
-    # 8 plists ship from this PR's resources/launchd dir (PR #74). The
-    # 9th (feedback-loop-daemon) ships from deploy/ where PR #41 put it.
+    # 9 plists ship from this PR's resources/launchd dir (PR #74 + the
+    # v1.0.3 D-19 console plist). The 10th (feedback-loop-daemon) ships
+    # from deploy/ where PR #41 put it.
     local label src
     for label in "${PLIST_LABELS[@]}"; do
         if [[ "$label" == "com.miningguardian.feedback-loop-daemon" ]]; then

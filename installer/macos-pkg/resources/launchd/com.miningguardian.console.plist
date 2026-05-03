@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.console.plist — D-19 / P-006 (v1.0.3)
+
+  10th LaunchDaemon: the customer operator console (FastAPI + Jinja2 +
+  HTMX). Binds to 127.0.0.1:8787 ONLY. Cloudflare Tunnel + Access (set up
+  separately by v1.0.3 postinstall) front the console at the operator's
+  customer-facing hostname; Tailscale provides the operator/dev path. No
+  public ingress on this host.
+
+  Port note: D-19 originally requested 8686, but com.miningguardian.approval-api
+  already owns 8686 (Slack approve/deny + existing /ui Web GUI). Console
+  uses 8787 to avoid the collision. Documented in
+  docs/CONSOLE_OPERATIONS_GUIDE.md.
+
+  Install path: copied by postinstall.sh to
+      /Library/LaunchDaemons/com.miningguardian.console.plist
+
+  Same path + env conventions as the other 9 plists in this directory.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.console</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/console_launcher.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/console.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/console.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>MG_CONSOLE_PORT</key>
+        <string>8787</string>
+        <key>MG_PLISTS_DEST</key>
+        <string>/Library/LaunchDaemons</string>
+    </dict>
+</dict>
+</plist>

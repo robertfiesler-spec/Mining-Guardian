@@ -206,6 +206,7 @@ step_4_assemble_payload() {
         --include 'monitoring/***' \
         --include 'api/***' \
         --include 'ai/***' \
+        --include 'console/***' \
         --include 'intelligence-catalog/***' \
         --include 'docs/***' \
         --include 'branding/***' \

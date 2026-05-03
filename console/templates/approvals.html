@@ -1,0 +1,58 @@
+{% extends "_base.html" %}
+{% block title %}Approvals · Mining Guardian Console{% endblock %}
+{% block content %}
+<section>
+  <h1>Pending Approvals</h1>
+  <p class="muted">Reads PENDING rows from <code>pending_approvals</code>. Approve / Deny update the row directly. Snooze records a wake time in <code>system_settings</code>; the row is not hidden in v1.</p>
+
+  {% if rows %}
+    <table class="approval-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Miner</th>
+          <th>Action</th>
+          <th>Reason</th>
+          <th>Classification</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr id="approval-{{ r.id }}">
+            <td>{{ r.id }}</td>
+            <td>{{ r.miner_id }} <span class="muted small">{{ r.ip }}</span></td>
+            <td>{{ r.action_type }}</td>
+            <td class="reason">{{ r.reason }}</td>
+            <td>
+              {{ r.classification or "—" }}
+              {% if r.confidence %}<span class="muted small">{{ "%.2f"|format(r.confidence) }}</span>{% endif %}
+            </td>
+            <td class="muted small">{{ r.created_at }}</td>
+            <td class="actions">
+              <button hx-post="/approvals/{{ r.id }}/approve"
+                      hx-target="#approval-{{ r.id }}"
+                      hx-swap="outerHTML"
+                      hx-on::after-request="this.closest('tr').remove()">Approve</button>
+              <button hx-post="/approvals/{{ r.id }}/deny"
+                      hx-target="#approval-{{ r.id }}"
+                      hx-swap="outerHTML"
+                      hx-on::after-request="this.closest('tr').remove()">Deny</button>
+              <form style="display:inline" hx-post="/approvals/{{ r.id }}/snooze" hx-swap="none">
+                <input type="number" name="minutes" min="1" max="1440" value="30" style="width: 4em">
+                <button>Snooze</button>
+              </form>
+              {% if r.snoozed_until %}
+                <span class="muted small">snoozed until {{ r.snoozed_until }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No pending approvals. 🎉</p>
+  {% endif %}
+</section>
+{% endblock %}

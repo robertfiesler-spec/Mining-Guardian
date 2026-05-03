@@ -1,0 +1,35 @@
+{% extends "_base.html" %}
+{% block title %}Automation · Mining Guardian Console{% endblock %}
+{% block content %}
+<section>
+  <h1>Automation Mode</h1>
+  <p class="muted">Controls how AUTO-classified actions are handled by the overnight automation. Stored in <code>system_settings.automation_mode</code>; daemons read it on every loop, so changes take effect within one cycle.</p>
+
+  <div id="automation-pill">
+    {% include "_automation_pill.html" %}
+  </div>
+
+  <form hx-post="/automation/mode"
+        hx-target="#automation-pill"
+        hx-swap="innerHTML">
+    <fieldset>
+      <legend>Set automation mode</legend>
+      {% for mode in allowed_modes %}
+        <label>
+          <input type="radio" name="mode" value="{{ mode }}"
+                 {% if mode == current_mode %}checked{% endif %}>
+          {{ mode }}
+        </label>
+      {% endfor %}
+      <button type="submit">Save</button>
+    </fieldset>
+  </form>
+
+  <h2>What each mode means</h2>
+  <ul>
+    <li><strong>FULL_AUTO</strong> — AUTO-classified actions auto-execute (default).</li>
+    <li><strong>SEMI_AUTO</strong> — AUTO actions queue for human approval.</li>
+    <li><strong>MANUAL</strong> — every action queues for human approval.</li>
+  </ul>
+</section>
+{% endblock %}
