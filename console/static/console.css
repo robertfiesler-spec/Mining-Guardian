@@ -129,3 +129,29 @@ button:hover, .link-action:hover { background: var(--bg); }
 .actions form { margin-left: var(--space-xs); }
 
 .reason { max-width: 360px; }
+
+/* Callouts — used on the approvals page to flag the queue-only limitation
+   so customers cannot mistake a queue mark for actual remediation. */
+.callout {
+  border-left: 4px solid var(--border);
+  background: var(--surface);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius);
+  margin-bottom: var(--space-md);
+}
+.callout-warning {
+  border-left-color: var(--warn);
+  background: #fff8e1;
+}
+
+/* Queue-only buttons get a muted look so they don't look like a primary
+   "go execute remediation" action. The label text already calls out
+   "queue only"; the styling reinforces it. */
+button.queue-action {
+  border-style: dashed;
+  color: var(--text-secondary);
+}
+button.queue-action:hover {
+  background: var(--bg);
+  color: var(--text-primary);
+}

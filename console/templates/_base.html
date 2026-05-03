@@ -4,7 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Mining Guardian Console{% endblock %}</title>
-  <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+  {# HTMX is vendored locally — see console/static/vendor/README.md.
+     The console runs on a local-only Mac Mini with no public ingress
+     and must not depend on a CDN at runtime. #}
+  <script src="/static/vendor/htmx-1.9.12.min.js" defer></script>
   <link rel="stylesheet" href="/static/console.css">
 </head>
 <body>

@@ -197,3 +197,78 @@ def test_console_binds_only_to_localhost_in_main():
     from console import main as console_main
     src = inspect.getsource(console_main.main)
     assert 'host="127.0.0.1"' in src, "console.main.main must hard-code host=127.0.0.1"
+
+
+def test_no_cdn_dependencies_in_any_template(client):
+    """Local-first appliance rule: no template may load assets from a
+    public CDN. Walks every public GET route, fetches the body, and
+    ensures no `https://` cross-origin <script src> or <link href> is
+    present. The console must run with zero outbound HTTP traffic from
+    the operator's browser."""
+    forbidden_hosts = (
+        "unpkg.com",
+        "cdn.jsdelivr.net",
+        "cdnjs.cloudflare.com",
+        "ajax.googleapis.com",
+        "code.jquery.com",
+    )
+    paths = ("/tasks", "/automation", "/system", "/approvals")
+    with patch("api.system_settings.get_setting", return_value="FULL_AUTO"), \
+         patch("console.approvals.list_pending", return_value=[]), \
+         patch("console.system_state.collect_system_state", return_value={}):
+        for path in paths:
+            r = client.get(path)
+            assert r.status_code == 200, f"{path} did not render"
+            body = r.text
+            for host in forbidden_hosts:
+                assert host not in body, (
+                    f"{path} loads {host} — console must vendor all assets locally"
+                )
+
+
+def test_htmx_served_from_local_static(client):
+    """The vendored HTMX file must be reachable at /static/vendor/.
+    StaticFiles serves the console/static/ tree, so this is the
+    end-to-end check that the local-first asset path works."""
+    r = client.get("/static/vendor/htmx-1.9.12.min.js")
+    assert r.status_code == 200, "vendored HTMX is not reachable via /static/vendor/"
+    # spot-check we got the real file, not an HTML error page
+    assert "htmx" in r.text.lower() or "function" in r.text
+
+
+def test_base_template_references_vendored_htmx(client):
+    """The page chrome must point at the local vendored HTMX file —
+    not the unpkg/jsdelivr CDN. Direct content check on a rendered page."""
+    r = client.get("/tasks")
+    assert r.status_code == 200
+    assert "/static/vendor/htmx-1.9.12.min.js" in r.text
+    assert "unpkg.com" not in r.text
+
+
+def test_approvals_page_shows_queue_only_callout(client):
+    """The approvals page must clearly tell the operator that the buttons
+    only update the queue row — they do NOT execute remediation. This is
+    a customer-experience guard against an apparent-success failure mode."""
+    fake_rows = [{
+        "id": 7, "thread_ts": "1714000000.000099", "scan_id": 1,
+        "miner_id": "ant-007", "ip": "192.168.188.7",
+        "action_type": "RESTART", "reason": "offline > 10min",
+        "classification": "AUTO", "confidence": 0.91,
+        "status": "PENDING", "created_at": "2026-05-03T10:00:00Z",
+        "responded_at": None,
+    }]
+    with patch("console.approvals.list_pending", return_value=fake_rows), \
+         patch("console.approvals.snoozed_until", return_value=None):
+        r = client.get("/approvals")
+    assert r.status_code == 200
+    body = r.text
+    # The buttons must NOT be labelled bare "Approve" / "Deny" — that wording
+    # would mislead the operator into thinking remediation runs.
+    assert "Mark Approved (queue only)" in body
+    assert "Mark Denied (queue only)" in body
+    # The page-level callout must explain the limitation explicitly.
+    assert "queue-only" in body.lower() or "queue only" in body.lower()
+    # The callout must spell out that no remediation runs from this page.
+    body_normalized = " ".join(body.split())
+    assert "do <strong>not</strong> execute remediation" in body_normalized or \
+           "does <strong>not</strong> execute remediation" in body_normalized
