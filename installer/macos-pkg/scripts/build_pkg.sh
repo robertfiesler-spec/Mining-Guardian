@@ -46,8 +46,11 @@
 #   40  — not running on macOS
 #   41  — credentials file missing or malformed
 #   42  — git tree dirty
-#   43  — payload assembly failed
-#   44  — productbuild / signing failed
+#   43  — payload assembly failed (includes step 4h D-20 violation:
+#         customer payload contains mg_import* path — importer is
+#         operator-only per D-20 and must never ship to customers)
+#   44  — productbuild / signing failed; or step 4g catalog-seed
+#         payload assertion failed (D-18 Gap 2)
 #   45  — notarytool submission failed or timed out
 #   46  — staple failed
 #   47  — final integrity check failed
@@ -204,7 +207,6 @@ step_4_assemble_payload() {
         --include 'api/***' \
         --include 'ai/***' \
         --include 'intelligence-catalog/***' \
-        --include 'mg_import_tool/***' \
         --include 'docs/***' \
         --include 'branding/***' \
         --include 'deploy/***' \
@@ -212,15 +214,31 @@ step_4_assemble_payload() {
         --exclude '*' \
         "${REPO_ROOT}/" "${app_root}/"
 
-    # 4b. Migrations — surface them at the top of the payload so
-    # postinstall.sh can find them at <payload>/migrations/.
-    install -d -m 0755 "${PAYLOAD_DIR}/migrations"
-    /usr/bin/rsync -a \
-        "${REPO_ROOT}/mg_import_tool/sql/migrations/" \
-        "${PAYLOAD_DIR}/migrations/"
-    /usr/bin/rsync -a \
-        "${REPO_ROOT}/migrations/003_c5_notify_triggers.sql" \
-        "${PAYLOAD_DIR}/migrations/" 2>/dev/null || true
+    # 4b. Migrations — already laid down at <payload>/migrations/ by the
+    # 4a rsync above (`--include 'migrations/***'` from REPO_ROOT/migrations).
+    # Per D-20 (locked 2026-05-03) and the v1.0.3 importer-payload
+    # reconciliation (P-004, PR mg/v103-d20-importer-payload-reconciliation,
+    # 2026-05-04), the canonical `migrations/` directory is the SOLE source
+    # of payload migrations. The previous overlay from
+    # `mg_import_tool/sql/migrations/` was a live D-20 violation — the
+    # importer is operator-only forever and does not ship to customers.
+    #
+    # The runtime-relevant importer migrations (field-log bootstrap +
+    # layer-2 resolver) were relocated to `migrations/006_field_log_bootstrap.sql`
+    # and `migrations/007_layer2_resolver.sql` in the same PR; they ride
+    # in via the 4a `migrations/***` rsync. The operator-side originals at
+    # `mg_import_tool/sql/migrations/000_bootstrap_field_log_tables.sql`
+    # and `mg_import_tool/sql/migrations/002_layer2_and_learning_foundation.sql`
+    # are intentionally retained as the importer's own source of truth on
+    # the operator workstation (D-20 footnote 1) but are NOT copied into
+    # the customer payload.
+    #
+    # Belt-and-suspenders: step 4h below asserts that the assembled payload
+    # contains zero `mg_import*` files or directories and aborts the build
+    # with exit 43 if any are found.
+    if [[ ! -d "${PAYLOAD_DIR}/migrations" ]]; then
+        _die 43 "step 4b: <payload>/migrations/ missing after 4a rsync — `--include 'migrations/***'` must be present in the include list above"
+    fi
 
     # 4c. Vendored runtime: Colima, lima, qemu-img, Ollama.app,
     # postgres-16-bookworm.tar. These come from a vendor/ directory the
@@ -319,6 +337,34 @@ step_4_assemble_payload() {
         _die 44 "step 4g: seed_miner_models.sql has ${seed_inserts} INSERT rows, expected ≥ 320 (D-18 verification gate)"
     fi
     _log "step 4g OK: catalog seed staged (${seed_inserts} INSERT rows in seed_miner_models.sql)"
+
+    # 4h. D-20 importer-payload regression assertion (P-004 PR
+    # mg/v103-d20-importer-payload-reconciliation, 2026-05-04).
+    #
+    # D-20 (locked 2026-05-03): the hardware-catalog importer
+    # (`mg_import_tool/`) stays on the operator's workstation forever and
+    # is NOT shipped to customers. v1.0.2's build_pkg.sh had `mg_import_tool/***`
+    # in the 4a rsync include list and rsync'd `mg_import_tool/sql/migrations/`
+    # over `<payload>/migrations/`; both were removed in this PR. This
+    # assertion is belt-and-suspenders: even if a future include-list edit
+    # silently re-adds the path, the build hard-fails before we burn an
+    # Apple notarization round-trip on a payload that violates D-20.
+    #
+    # Scope: the entire PAYLOAD_DIR tree, including any staging copies the
+    # 4c (vendored runtime) or 4e (vendored python wheels) rsync may have
+    # populated. The operator-side `MiningGuardian-vendor/` directory should
+    # NEVER contain `mg_import*` — but if it does (operator mistake), this
+    # check catches it and aborts with exit 43.
+    local mg_import_hits
+    # `find ... -print` writes one absolute path per match; we count lines.
+    # `wc -l` is safe with no trailing newline because empty input returns 0.
+    mg_import_hits="$(/usr/bin/find "$PAYLOAD_DIR" -name 'mg_import*' -print 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    if (( mg_import_hits > 0 )); then
+        _log "step 4h FAIL: payload contains ${mg_import_hits} mg_import* path(s):"
+        /usr/bin/find "$PAYLOAD_DIR" -name 'mg_import*' -print | /usr/bin/sed "s#${PAYLOAD_DIR}#<payload>#" >&2
+        _die 43 "step 4h: D-20 violation — customer payload must contain no mg_import* files or directories (the importer is operator-only forever)"
+    fi
+    _log "step 4h OK: D-20 assertion passed (zero mg_import* paths in payload)"
 
     _log "step 4 OK: payload assembled at ${PAYLOAD_DIR}"
 }
