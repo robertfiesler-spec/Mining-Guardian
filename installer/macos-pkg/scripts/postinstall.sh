@@ -41,6 +41,12 @@
 #
 #   1. Resolve install paths and re-source the env file written by
 #      preinstall.sh (RAM tier + LLM model from D-13).
+#   1b. Read + validate the customer-info Desktop conf at
+#       /Users/${SUDO_USER}/Desktop/MiningGuardian.conf (D-18 Gap 1).
+#       Mirrors B-2 validation rules from setup.sh::mg_validate_site_config.
+#       Aborts with a Cocoa dialog + exit 41 on missing / invalid file.
+#       Runs BEFORE any system-state change so a bad config never leaves
+#       the box half-installed.
 #   2. Stand up Colima + the bundled Postgres container (offline).
 #   3. Apply every <payload>/migrations/*.sql in lexical order against
 #      the operational `mining_guardian` DB (each is idempotent).
@@ -82,6 +88,7 @@
 #   37     — launcher wrapper or plist source missing in payload (Bucket 6)
 #   38     — Python venv create or vendored pip install failed (D-18 Gap 5)
 #   39     — catalog DB / schema / seed apply failed (D-18 Gap 2)
+#   41     — customer-info Desktop conf missing or invalid (D-18 Gap 1)
 #
 # Vision Anchor 7 honored: only one network call (model pull); every
 # other byte is vendored inside the .pkg.
@@ -213,43 +220,274 @@ step_layout_install_root() {
     log "INFO laid out install root at ${MG_INSTALL_ROOT}"
 }
 
+_cocoa_alert() {
+    # Best-effort macOS GUI dialog. AppleScript is the simplest path that
+    # works without bundling a helper binary; if osascript is missing or
+    # blocked we silently fall through (the FATAL log line is still
+    # emitted by fail()).
+    local title="$1"; shift
+    local msg="$*"
+    if command -v /usr/bin/osascript >/dev/null 2>&1; then
+        # Best-effort — never let a dialog failure cascade into a second
+        # error from the caller. Errors swallowed.
+        /usr/bin/osascript \
+            -e "display dialog \"${msg//\"/\\\"}\" with title \"${title//\"/\\\"}\" with icon stop buttons {\"OK\"} default button \"OK\"" \
+            >/dev/null 2>&1 || true
+    fi
+}
+
+_conf_fail() {
+    # D-18 Gap 1 — customer-info collection. On any failure: surface a
+    # Cocoa dialog AND log the specific reason, then exit 41.
+    local msg="$1"
+    _cocoa_alert "Mining Guardian — install aborted" \
+        "Customer-info file problem:\n\n${msg}\n\nFix the file at ~/Desktop/MiningGuardian.conf and run the installer again. No system changes have been made yet.\n\nDetails: ${MG_INSTALL_LOG}"
+    fail 41 "customer-info Desktop conf: ${msg}"
+}
+
+# Source a key=value config file safely (bash, no eval gymnastics).
+# Mirrors scripts/setup.sh::mg_source_config so both install paths agree
+# on which keys exist and how unknown keys are handled.
+_conf_source() {
+    local cf="$1"
+    [[ ! -r "$cf" ]] && _conf_fail "config file not readable: ${cf}"
+
+    # Reset every supported key first so a missing line means "unset".
+    CUSTOMER_NAME=""; AMS_URL=""; AMS_EMAIL=""; AMS_PASSWORD=""; AMS_WORKSPACE_ID=""
+    SLACK_WEBHOOK_URL=""; SLACK_BOT_TOKEN=""; SLACK_SIGNING_SECRET=""
+    SLACK_APP_TOKEN=""; AUTHORIZED_SLACK_USER_IDS=""
+    SCAN_INTERVAL=""; MG_DRY_RUN=""
+
+    local line key val
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Strip leading/trailing whitespace, skip blanks and comments.
+        [[ -z "${line// }" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$line" =~ ^[[:space:]]*([A-Z_][A-Z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"
+            # Strip surrounding single OR double quotes if present.
+            val="${val#\"}"; val="${val%\"}"
+            val="${val#\'}"; val="${val%\'}"
+            case "$key" in
+                CUSTOMER_NAME|AMS_URL|AMS_EMAIL|AMS_PASSWORD|AMS_WORKSPACE_ID|\
+                SLACK_WEBHOOK_URL|SLACK_BOT_TOKEN|SLACK_SIGNING_SECRET|\
+                SLACK_APP_TOKEN|AUTHORIZED_SLACK_USER_IDS|SCAN_INTERVAL|MG_DRY_RUN)
+                    printf -v "$key" '%s' "$val"
+                    ;;
+                *)
+                    log "WARN unknown config key ignored: ${key}"
+                    ;;
+            esac
+        fi
+    done < "$cf"
+}
+
+# Validate the values we sourced. Mirrors scripts/setup.sh::mg_validate_site_config
+# so the .pkg path enforces the same B-2 rules as the operator-side
+# setup.sh path. Aborts on the first failure with a specific message.
+_conf_validate() {
+    [[ -z "${CUSTOMER_NAME:-}" ]]              && _conf_fail "CUSTOMER_NAME is required."
+    [[ -z "${AMS_URL:-}" ]]                    && AMS_URL="https://api.bixbit.io/api/v1"
+    [[ ! "${AMS_URL}" =~ ^https?:// ]]         && _conf_fail "AMS_URL must start with http:// or https:// (got: ${AMS_URL})"
+    [[ -z "${AMS_EMAIL:-}" ]]                  && _conf_fail "AMS_EMAIL is required."
+    [[ ! "${AMS_EMAIL}" =~ @ ]]                && _conf_fail "AMS_EMAIL must contain '@' (got: ${AMS_EMAIL})"
+    [[ -z "${AMS_PASSWORD:-}" ]]               && _conf_fail "AMS_PASSWORD is required."
+    [[ -z "${AMS_WORKSPACE_ID:-}" ]]           && _conf_fail "AMS_WORKSPACE_ID is required."
+    [[ ! "${AMS_WORKSPACE_ID}" =~ ^[0-9]+$ ]]  && _conf_fail "AMS_WORKSPACE_ID must be an integer (got: ${AMS_WORKSPACE_ID})"
+    [[ -z "${SLACK_WEBHOOK_URL:-}" ]]          && _conf_fail "SLACK_WEBHOOK_URL is required."
+    [[ ! "${SLACK_WEBHOOK_URL}" =~ ^https://hooks\.slack\.com/ ]] && \
+        _conf_fail "SLACK_WEBHOOK_URL must start with https://hooks.slack.com/ (got: ${SLACK_WEBHOOK_URL})"
+    [[ -z "${SLACK_BOT_TOKEN:-}" ]]            && _conf_fail "SLACK_BOT_TOKEN is required."
+    [[ ! "${SLACK_BOT_TOKEN}" =~ ^xoxb- ]]     && _conf_fail "SLACK_BOT_TOKEN must start with 'xoxb-' (got: ${SLACK_BOT_TOKEN:0:8}...)"
+    [[ -z "${SLACK_SIGNING_SECRET:-}" ]]       && _conf_fail "SLACK_SIGNING_SECRET is required."
+    [[ -z "${AUTHORIZED_SLACK_USER_IDS:-}" ]]  && _conf_fail "AUTHORIZED_SLACK_USER_IDS is required (at least one Slack user ID)."
+    SCAN_INTERVAL="${SCAN_INTERVAL:-300}"
+    [[ ! "${SCAN_INTERVAL}" =~ ^[0-9]+$ ]]     && _conf_fail "SCAN_INTERVAL must be an integer seconds value (got: ${SCAN_INTERVAL})"
+    MG_DRY_RUN="${MG_DRY_RUN:-true}"
+    case "$MG_DRY_RUN" in
+        true|false) ;;
+        *) _conf_fail "MG_DRY_RUN must be 'true' or 'false' (got: ${MG_DRY_RUN})" ;;
+    esac
+    if [[ -n "${SLACK_APP_TOKEN:-}" && ! "${SLACK_APP_TOKEN}" =~ ^xapp- ]]; then
+        _conf_fail "SLACK_APP_TOKEN, if set, must start with 'xapp-' (got: ${SLACK_APP_TOKEN:0:8}...)"
+    fi
+}
+
+step_collect_customer_info() {
+    # D-18 Gap 1 — customer-info collection (closes audit Section 5 / Gap 1).
+    #
+    # The .pkg path (this script) used to write a `.env` with ONLY
+    # MG_DB_PASSWORD + Postgres connection bits, leaving every AMS_*,
+    # SLACK_*, and customer-tunable key empty. Every launchd service
+    # crash-looped on first start because its launcher could not reach
+    # AMS or Slack (audit Gap 1 / Integration bug 4 — BLOCKER).
+    #
+    # Approach (locked in D-18, 2026-05-03):
+    #   * Operator hands the customer a USB stick (or AirDrop) with a
+    #     pre-filled `MiningGuardian.conf` — see
+    #     `installer/macos-pkg/resources/MiningGuardian.conf.template`.
+    #   * Customer drops the file on Desktop, double-clicks the .pkg.
+    #   * This step reads `/Users/${SUDO_USER}/Desktop/MiningGuardian.conf`,
+    #     validates per the same B-2 rules `setup.sh::mg_validate_site_config`
+    #     enforces, and exports every sourced value for `step_drop_dotenv`
+    #     to consume.
+    #   * On any failure: surface a Cocoa dialog telling the customer
+    #     exactly what's wrong, log the same reason, exit 41. No system
+    #     state has changed at this point — refer to main() ordering:
+    #     this step runs BEFORE `step_layout_install_root`, BEFORE
+    #     `step_provision_postgres`, etc.
+    #
+    # Vision Anchor 2 (Mac Mini IS the product) — install must be
+    # easy enough for someone who barely knows a computer. The Cocoa
+    # dialog tells the customer where the file should be and what
+    # specifically failed validation (matching message wording the
+    # operator pre-trains the customer on).
+    local desktop_user="${SUDO_USER:-${USER}}"
+    local conf_path="/Users/${desktop_user}/Desktop/MiningGuardian.conf"
+
+    if [[ ! -e "$conf_path" ]]; then
+        _conf_fail "${conf_path} not found. Place the pre-filled MiningGuardian.conf on the Desktop and run the installer again."
+    fi
+    if [[ ! -r "$conf_path" ]]; then
+        _conf_fail "${conf_path} exists but is not readable by root. Check file permissions."
+    fi
+
+    log "INFO reading customer config: ${conf_path}"
+    _conf_source "$conf_path"
+    _conf_validate
+
+    # Export every sourced value so step_drop_dotenv (and any future
+    # steps) see them without re-sourcing. Customer-tunable values only;
+    # secrets (MG_DB_PASSWORD / CATALOG_API_KEY / INTERNAL_API_SECRET)
+    # are generated in step_drop_dotenv itself.
+    export CUSTOMER_NAME AMS_URL AMS_EMAIL AMS_PASSWORD AMS_WORKSPACE_ID
+    export SLACK_WEBHOOK_URL SLACK_BOT_TOKEN SLACK_SIGNING_SECRET
+    export SLACK_APP_TOKEN AUTHORIZED_SLACK_USER_IDS
+    export SCAN_INTERVAL MG_DRY_RUN
+
+    log "INFO customer config OK: site='${CUSTOMER_NAME}' ams='${AMS_URL}' dry_run='${MG_DRY_RUN}'"
+}
+
 step_drop_dotenv() {
-    # MG_DB_PASSWORD is generated fresh per-install by the .pkg build
-    # script (NOT shipped in git). The build script writes it into
-    # /tmp/mg_install_env_secret BEFORE Installer.app runs us; we read
-    # it from there and write it into the canonical .env, then erase
-    # the temp file.
-    local secret_file="/tmp/mg_install_env_secret"
-    if [[ ! -r "$secret_file" ]]; then
-        fail 31 "missing per-install secret file at ${secret_file}; was the pkg built correctly?"
+    # D-18 Gap 1 + Integration bugs 1, 2, 4 (BLOCKERS — audit Section 5).
+    #
+    # Generates the canonical /Library/Application Support/MiningGuardian/.env
+    # used by every LaunchDaemon launcher wrapper. Shape MUST match
+    # scripts/setup.sh::phase_07_secrets so both install paths converge —
+    # the Python codebase reads ONE set of env keys, regardless of which
+    # installer wrote them.
+    #
+    # Per-install secrets are generated HERE (Integration bug 1 fix —
+    # no out-of-band /tmp/mg_install_env_secret staging step):
+    #
+    #   * MG_DB_PASSWORD     — fresh openssl rand -hex 32; no two sites
+    #                          share a password. Replaces the leaked
+    #                          MiningGuardian2026! (CRIT-1 / S-1).
+    #   * CATALOG_API_KEY    — fresh openssl rand -hex 32. Closes S-6 —
+    #                          never the known default.
+    #   * INTERNAL_API_SECRET — fresh openssl rand -hex 32. Used by
+    #                          approval_api.py verify_internal()
+    #                          fail-closed check.
+    #
+    # Customer-tunable values come from `step_collect_customer_info`
+    # (Desktop conf — D-18 Gap 1).
+    #
+    # Postgres user keys (Integration bug 2 fix):
+    #   * GUARDIAN_PG_USER=mg AND PGUSER=mg are BOTH written so the Python
+    #     codebase (which reads GUARDIAN_PG_USER per core/database_pg.py
+    #     and dashboard-api) and the bundled psql container (initdb'd as
+    #     POSTGRES_USER=mg in lib/install_colima.sh L172) both see the
+    #     correct user. Dual-naming is documented as tech debt in
+    #     MG_UNIFIED_TODO_LIST; collapse to a single key once the
+    #     codebase migration completes.
+    #
+    # All values land at .env mode 0600, owner ${SUDO_USER}:staff (the
+    # services run as that user via launchd). Never logged. Never
+    # committed.
+    if ! command -v openssl >/dev/null 2>&1; then
+        fail 31 "openssl not on PATH; cannot generate per-install secrets"
     fi
-    # shellcheck disable=SC1090
-    source "$secret_file"
-    if [[ -z "${MG_DB_PASSWORD:-}" ]]; then
-        fail 31 "MG_DB_PASSWORD not set after sourcing ${secret_file}"
-    fi
+    local MG_DB_PASSWORD CATALOG_API_KEY INTERNAL_API_SECRET
+    MG_DB_PASSWORD="$(openssl rand -hex 32)"
+    CATALOG_API_KEY="$(openssl rand -hex 32)"
+    INTERNAL_API_SECRET="$(openssl rand -hex 32)"
 
     local env_file="${MG_INSTALL_ROOT}/.env"
-    {
-        echo "# Generated by Mining Guardian installer postinstall.sh"
-        echo "# Generated at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        echo "# Permissions: 0600. Do NOT commit. Do NOT share."
-        echo
-        echo "MG_DB_PASSWORD=${MG_DB_PASSWORD}"
-        echo "PGHOST=127.0.0.1"
-        echo "PGPORT=5432"
-        echo "PGUSER=mg"
-        echo "PGDATABASE=mining_guardian"
-        echo
-        echo "MG_INSTALL_RAM_TIER=${MG_INSTALL_RAM_TIER}"
-        echo "MG_INSTALL_LLM_MODEL=${MG_INSTALL_LLM_MODEL}"
-    } > "$env_file"
-    chown "${SUDO_USER:-${USER}}:staff" "$env_file"
-    chmod 0600 "$env_file"
+    # Subshell redirect — no secret value ever touches this script's
+    # stdout. Heredoc body MUST stay aligned with setup.sh::phase_07_secrets
+    # (any drift = launchd services crash on first start because the
+    # Python code looks for keys this file did not write).
+    cat > "$env_file" <<EOF
+# /Library/Application Support/MiningGuardian/.env  mode=0600  owner=${SUDO_USER:-${USER}}:staff
+# Generated by Mining Guardian installer postinstall.sh
+# Generated at $(date -u +%Y-%m-%dT%H:%M:%SZ)  Site: ${CUSTOMER_NAME}
+# DO NOT COMMIT. DO NOT LOG. DO NOT SHARE.
 
-    # Erase the staging file so it doesn't linger in /tmp.
-    rm -f "$secret_file"
-    log "INFO wrote ${env_file} (mode 0600) and erased ${secret_file}"
+# AMS — Bitcoin SHA-256 miners only (S-4: no creds in query strings)
+AMS_BASE_URL=${AMS_URL}
+AMS_EMAIL=${AMS_EMAIL}
+AMS_PASSWORD=${AMS_PASSWORD}
+AMS_WORKSPACE_ID=${AMS_WORKSPACE_ID}
+
+# Postgres — 127.0.0.1 only (S-13: no Tailscale IPs anywhere)
+# Integration bug 2: GUARDIAN_PG_USER + PGUSER both written with the
+# same value until the Python-codebase dual-naming cleanup completes.
+GUARDIAN_PG_HOST=127.0.0.1
+GUARDIAN_PG_PORT=5432
+GUARDIAN_PG_USER=mg
+GUARDIAN_PG_PASSWORD=${MG_DB_PASSWORD}
+GUARDIAN_PG_DBNAME=mining_guardian
+GUARDIAN_PG_TEST_DBNAME=mining_guardian_test
+GUARDIAN_PG_CATALOG_DBNAME=mining_guardian_catalog
+PGHOST=127.0.0.1
+PGPORT=5432
+PGUSER=mg
+PGDATABASE=mining_guardian
+MG_DB_PASSWORD=${MG_DB_PASSWORD}
+
+# Slack — all values customer-specific (do not copy from VPS; §6.3)
+SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+SLACK_APP_TOKEN=${SLACK_APP_TOKEN:-}
+AUTHORIZED_SLACK_USER_IDS=${AUTHORIZED_SLACK_USER_IDS}
+
+# Catalog API key — S-6 fix: generated fresh; crash-on-startup if absent (PR #65/#66)
+CATALOG_API_KEY=${CATALOG_API_KEY}
+
+# Internal API secret — approval_api.py verify_internal() fail-closed
+INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+
+# Ollama — local GPU inference on 127.0.0.1 (S-13 fix: no hardcoded Tailscale IPs)
+OLLAMA_HOST=http://127.0.0.1:11434
+
+# Runtime config (D-2: auto_approve=false — explicit opt-in required)
+MG_DRY_RUN=${MG_DRY_RUN}
+MG_SCAN_INTERVAL=${SCAN_INTERVAL}
+MG_CUSTOMER_NAME=${CUSTOMER_NAME}
+AUTO_APPROVE_ENABLED=false
+
+# Service ports — all 127.0.0.1 (S-13)
+GUARDIAN_DASHBOARD_PORT=8585
+GUARDIAN_APPROVAL_PORT=8686
+GUARDIAN_INTELLIGENCE_PORT=8590
+
+# Install metadata (sourced from preinstall.sh detect_ram.sh — D-13)
+MG_INSTALL_RAM_TIER=${MG_INSTALL_RAM_TIER:-}
+MG_INSTALL_LLM_MODEL=${MG_INSTALL_LLM_MODEL:-}
+EOF
+    chmod 0600 "$env_file"
+    chown "${SUDO_USER:-${USER}}:staff" "$env_file"
+
+    # Defensive: if a stale /tmp/mg_install_env_secret was left from an
+    # older v1.0.2 build, scrub it. v1.0.3 postinstall does not consume
+    # it (Integration bug 1 fix — secrets are generated in-process).
+    if [[ -e "/tmp/mg_install_env_secret" ]]; then
+        rm -f "/tmp/mg_install_env_secret" || true
+        log "INFO removed stale /tmp/mg_install_env_secret (no longer used by v1.0.3)"
+    fi
+
+    log "INFO wrote ${env_file} (mode 0600) with full customer + secret payload"
 
     # Re-export so subsequent steps (Postgres provisioning) see it.
     export MG_DB_PASSWORD
@@ -721,6 +959,11 @@ main() {
 
     step_source_env
     step_load_libs
+    # D-18 Gap 1 — collect + validate customer-info BEFORE any system
+    # change. _conf_fail() exits 41 with a Cocoa dialog on missing or
+    # invalid Desktop conf, so a bad config never leaves the box
+    # half-installed.
+    step_collect_customer_info
     step_layout_install_root
     step_drop_dotenv
     step_provision_postgres

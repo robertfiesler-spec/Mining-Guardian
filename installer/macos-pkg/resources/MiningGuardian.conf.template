@@ -18,6 +18,19 @@
 #         sudo -E zsh scripts/setup.sh --config-file=PATH
 #     so the editor step is skipped entirely (headless / repeat installs).
 #
+# .PKG INSTALL PATH (D-18 Gap 1, v1.0.3)
+# ─────────────────────────────────────
+# When the customer double-clicks the Mining Guardian .pkg, postinstall.sh
+# reads this file from the customer's Desktop:
+#
+#         /Users/${SUDO_USER}/Desktop/MiningGuardian.conf
+#
+# The operator pre-fills it for the customer (USB stick or AirDrop), the
+# customer drops it on their Desktop, and the installer validates and
+# consumes it. If the file is missing or any field fails validation, the
+# installer aborts BEFORE any system change with a Cocoa dialog naming the
+# specific field. (postinstall.sh exit 41.)
+#
 # DO NOT EDIT in this template:  ports, host bindings, AUTO_APPROVE_ENABLED.
 #                                 Those are written by the installer to
 #                                 /Library/Application Support/MiningGuardian/.env
