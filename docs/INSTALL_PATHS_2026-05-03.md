@@ -75,8 +75,8 @@ D-18 locks the rewrite. v1.0.3 .pkg becomes the customer install. The Mini will 
 - 10 service LaunchDaemons (the existing 9 + the customer operator console per D-19), all bootstrapped via `launchctl bootstrap`.
 - `.env` written with the full set of customer-tunable + installer-generated keys per D-18 Integration bug 4.
 - Cloudflare Tunnel + Access setup per D-19 (operator's API token from the Desktop conf).
-- `bin/uninstall.sh` shipped per D-18 Copy bug 3 (option a).
-- Welcome and Conclusion HTML showing correct service counts (10) and ports (`:8585` dashboard, `:8686` console, `:3000` Grafana).
+- `bin/uninstall.sh` shipped per D-18 Copy bug 3 (option a). SHIPPED 2026-05-04 in P-008 — bootouts all 10 service + 11 scheduled-job LaunchDaemons, removes Postgres container, removes `${MG_INSTALL_ROOT}` (preserves `postgres-data/` by default; `--purge-data` opt-in), supports `--help` / `--dry-run` / `--yes` / `--purge-logs`.
+- Welcome and Conclusion HTML showing correct service counts (10) and ports (`:8585` dashboard, `:8686` approval API, `:8787` operator console — moved from :8686 → :8787 in P-006 to avoid collision with approval API; `:3000` Grafana). SHIPPED 2026-05-04 in P-008 (PR `mg/v103-p008-installer-copy-and-uninstall`).
 - Install receipt at `/etc/mining-guardian/install-receipt.json` with version + git SHA + RAM tier + LLM model.
 - Non-blocking baseline scan at the end so the customer's first dashboard load has data within ~30 seconds.
 

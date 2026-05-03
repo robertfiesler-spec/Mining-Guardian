@@ -165,40 +165,57 @@
 <h1>You're up and running.</h1>
 <div class="accent-rule"></div>
 <p class="lede">
-  All four background services are now registered with launchd and will
-  start automatically every time this Mac boots. A first-run baseline
-  scan is running in the background &mdash; give it about 30&nbsp;seconds
-  before opening the dashboard.
+  All ten background services are now registered with launchd and will
+  start automatically every time this Mac boots. Eleven scheduled jobs
+  (nightly briefings, weekly training, hourly benchmark) are also wired
+  into launchd. A first-run baseline scan is running in the background
+  &mdash; give it about 30&nbsp;seconds before opening the dashboard.
 </p>
 
 <h2>Quick links</h2>
 <div class="quick-grid">
   <span class="label">Dashboard</span>
-  <span class="val"><span class="url">http://127.0.0.1:8080/</span></span>
-  <span class="label">Approval queue</span>
-  <span class="val"><span class="url">http://127.0.0.1:8081/</span></span>
+  <span class="val"><span class="url">http://127.0.0.1:8585/</span></span>
+  <span class="label">Operator console</span>
+  <span class="val"><span class="url">http://127.0.0.1:8787/</span></span>
+  <span class="label">Approval API</span>
+  <span class="val"><span class="url">http://127.0.0.1:8686/</span></span>
   <span class="label">Install log</span>
   <span class="val"><code>/var/log/mining-guardian/install-postinstall.log</code></span>
   <span class="label">Service logs</span>
   <span class="val"><code>/Library/Application Support/MiningGuardian/logs/</code></span>
+  <span class="label">Scheduled-job logs</span>
+  <span class="val"><code>/Library/Application Support/MiningGuardian/logs/scheduled/</code></span>
   <span class="label">Install receipt</span>
   <span class="val"><code>/etc/mining-guardian/install-receipt.json</code></span>
 </div>
 
-<h2>Verifying the four services</h2>
+<h2>Verifying the ten services</h2>
 <p style="margin: 0 0 6px 0; color: #56688A; font-size: 12px;">From <strong style="color: #0A1428;">Terminal.app</strong>:</p>
 <pre><span class="cmd">sudo</span> launchctl print system/com.miningguardian.scanner
 <span class="cmd">sudo</span> launchctl print system/com.miningguardian.dashboard-api
 <span class="cmd">sudo</span> launchctl print system/com.miningguardian.approval-api
+<span class="cmd">sudo</span> launchctl print system/com.miningguardian.slack-listener
+<span class="cmd">sudo</span> launchctl print system/com.miningguardian.slack-commands
+<span class="cmd">sudo</span> launchctl print system/com.miningguardian.overnight-automation
+<span class="cmd">sudo</span> launchctl print system/com.miningguardian.alerts
+<span class="cmd">sudo</span> launchctl print system/com.miningguardian.intelligence-report
+<span class="cmd">sudo</span> launchctl print system/com.miningguardian.console
 <span class="cmd">sudo</span> launchctl print system/com.miningguardian.feedback-loop-daemon</pre>
+<p style="margin: 0 0 6px 0; color: #56688A; font-size: 12px;">To list the eleven scheduled jobs:</p>
+<pre><span class="cmd">sudo</span> launchctl list | grep com.miningguardian.scheduled.</pre>
 
 <h2>Uninstall</h2>
 <p style="margin: 0 0 6px 0;">
   Run <code>sudo /Library/Application Support/MiningGuardian/bin/uninstall.sh</code> to
-  cleanly stop all four services, drop the Postgres container, and
-  remove <code>/Library/Application Support/MiningGuardian</code>. Your Postgres data
-  volume is preserved at <code>/Library/Application Support/MiningGuardian/postgres-data</code>
-  by default &mdash; pass <code>--purge-data</code> to remove it.
+  cleanly stop all ten services and eleven scheduled jobs, drop the
+  Postgres container, and remove
+  <code>/Library/Application Support/MiningGuardian</code>. Your Postgres
+  data volume is preserved at
+  <code>/Library/Application Support/MiningGuardian/postgres-data</code>
+  by default &mdash; pass <code>--purge-data</code> to remove it. Pass
+  <code>--help</code> to see all options or <code>--dry-run</code> to
+  preview every action before committing.
 </p>
 
 <div class="footer-note">

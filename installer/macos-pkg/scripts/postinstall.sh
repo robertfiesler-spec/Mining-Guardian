@@ -135,6 +135,13 @@ readonly PLISTS_SRC="${SCRIPT_DIR}/../resources/launchd"
 readonly LAUNCHERS_SRC="${SCRIPT_DIR}/../resources/launchd/launchers"
 readonly PLISTS_DEST="/Library/LaunchDaemons"
 
+# v1.0.3 D-18 Copy bug 3 / P-008 — bin/uninstall.sh ships from this
+# Resources path and lands at ${MG_INSTALL_ROOT}/bin/uninstall.sh. Source
+# is committed at installer/macos-pkg/resources/uninstall.sh. Tests in
+# tests/installer/test_uninstall_script.sh assert it exists with mode
+# 0755 in the source tree.
+readonly UNINSTALL_SH_SRC="${SCRIPT_DIR}/../resources/uninstall.sh"
+
 # Bucket 6: 9 services. v1.0.3 D-19 (P-006): 10th service added — the
 # customer operator console (com.miningguardian.console).
 # The 9 plists that ship from installer/macos-pkg/resources/launchd/ are
@@ -1016,6 +1023,28 @@ step_install_scheduled_plists_and_bootstrap() {
     done
 }
 
+step_install_uninstall_script() {
+    # D-18 Copy bug 3 / P-008 (v1.0.3) — ship a real bin/uninstall.sh in
+    # the install root so the conclusion.html `sudo /Library/Application
+    # Support/MiningGuardian/bin/uninstall.sh` reference is honored.
+    #
+    # Source: installer/macos-pkg/resources/uninstall.sh (committed; mode
+    # 0755 enforced by tests/installer/test_uninstall_script.sh).
+    # Dest:   ${MG_INSTALL_ROOT}/bin/uninstall.sh, root:wheel mode 0755.
+    #
+    # Owner is root (NOT ${SUDO_USER}) because the script has to run as
+    # root via `sudo` and reads /Library/LaunchDaemons; setting it
+    # root-owned avoids a stale-permissions trap if the customer's home
+    # is moved or their account is renamed post-install.
+    local bin="${MG_INSTALL_ROOT}/bin"
+    install -d -m 0755 "$bin"
+    if [[ ! -r "$UNINSTALL_SH_SRC" ]]; then
+        fail 37 "uninstall.sh missing in payload: ${UNINSTALL_SH_SRC} (D-18 Copy bug 3)"
+    fi
+    install -m 0755 -o root -g wheel "$UNINSTALL_SH_SRC" "${bin}/uninstall.sh"
+    log "INFO installed uninstall.sh: ${bin}/uninstall.sh"
+}
+
 step_write_install_receipt() {
     local receipt_dir="/etc/mining-guardian"
     install -d -m 0755 "$receipt_dir"
@@ -1085,15 +1114,17 @@ main() {
     step_create_venv
     step_install_plists_and_bootstrap
     step_install_scheduled_plists_and_bootstrap
+    step_install_uninstall_script
     step_write_install_receipt
     step_baseline_scan
 
     log "All postinstall steps complete. Mining Guardian is running."
     log "Services bootstrapped: ${#PLIST_LABELS[@]}"
     log "Scheduled jobs bootstrapped: ${#SCHEDULED_PLIST_LABELS[@]}"
-    log "Dashboard:    http://127.0.0.1:8080/"
-    log "Approval API: http://127.0.0.1:8081/"
-    log "Logs:         ${MG_INSTALL_ROOT}/logs/"
+    log "Dashboard:        http://127.0.0.1:8585/"
+    log "Approval API:     http://127.0.0.1:8686/"
+    log "Operator console: http://127.0.0.1:8787/"
+    log "Logs:             ${MG_INSTALL_ROOT}/logs/"
     return 0
 }
 
