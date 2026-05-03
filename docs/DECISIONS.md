@@ -219,4 +219,104 @@ This is the canonical log of decisions that are committed and not subject to re-
 
 ---
 
+## D-18 — v1.0.3 installer scope: feature-parity .pkg, no Mini install before then
+- **Date locked:** 2026-05-03
+- **Decided by:** Operator (Rob), after v1.0.2 .pkg audit (`docs/audits/PKG_AUDIT_v1.0.2_FINDINGS_2026-05-03.md`)
+- **Decision:** v1.0.2 .pkg is **incomplete** — partial operations installer, not the customer-grade .pkg the operator vision requires. v1.0.3 will close ALL audit gaps. The Mini will NOT be installed (via .pkg or setup.sh) until v1.0.3 is built, signed, notarized, AND smoke-tested green on a clean Mac VM. The Hostinger VPS continues running production until v1.0.3 is verified. D-16's Monday-morning decommission timeline slips by however many days v1.0.3 takes — accepted explicitly by operator: "if we keep things for a couple of days so be it, lets get it right this time."
+- **Why:** Three consecutive ".pkg" releases (v1.0.0, v1.0.1, v1.0.2) shipped as "release-grade" but were progressively closer approximations of the vision, none of which actually delivered the customer-experience goal: "install easy enough for someone who barely knows a computer." The audit found v1.0.2 .pkg would produce an Apple-confirmed "install completed" dialog with a non-functional Mini (every LaunchDaemon crash-loops within seconds, no catalog DB, no Grafana, no scheduled tasks, no customer-info collection). Apparent success, real silence — the operator's worst-case scenario.
+- **Reconciles with D-16:** D-16 step 4 ("Install on the customer-site Mini via .pkg double-click with screenshots at every screen — Sunday afternoon") is amended. Replace with: "Install on the customer-site Mini via v1.0.3 .pkg double-click with screenshots at every screen — when v1.0.3 is verified green on a clean Mac VM." D-16 Monday morning sequencing (VPS decommission, ROBS-PC container shutdown) is deferred until v1.0.3 ships. ROBS-PC + VPS continue running.
+- **Reconciles with INSTALL_PATHS_2026-05-02.md:** That doc's "viewer-only" framing is FACTUALLY WRONG per audit. INSTALL_PATHS is rewritten in this PR to reflect audit reality.
+- **v1.0.3 scope (closes all 5 audit gaps + 4 user-facing copy bugs + 4 integration bugs):**
+  - **Gap 1 — Customer-info collection:** Add a customer-info step to the installer. Approach: postinstall reads `/Users/${SUDO_USER}/Desktop/MiningGuardian.conf` if present (operator hands customer a USB or AirDrop with the pre-filled .conf; customer drops on Desktop, double-clicks .pkg). Postinstall validates per B-2 rules and aborts with a Cocoa dialog if missing or invalid. Avoids InstallerPane plugin complexity for v1.0.3; revisited if customer feedback demands GUI form.
+  - **Gap 2 — Catalog DB + 320-row seed:** Postinstall creates `mining_guardian_catalog` DB in the Colima container and applies `intelligence-catalog/seed-data/seed_miner_models.sql`.
+  - **Gap 3 — Grafana:** Vendor `grafana.app` and provisioning yaml into the .pkg payload. Postinstall installs to `/Applications/Grafana.app`, drops provisioning into `/usr/local/etc/grafana/provisioning/`, registers as 11th LaunchDaemon (`com.miningguardian.grafana.plist` if not auto-managed by .app), exposes :3000.
+  - **Gap 4 — Scheduled tasks via launchd:** Convert the 11 cron entries in setup.sh phase_10 to launchd `StartCalendarInterval` plists. New plist set under `installer/macos-pkg/resources/launchd/scheduled/`. Bootstrap them in postinstall after the 9 service plists.
+  - **Gap 5 — Python venv + pip install:** Postinstall creates `${MG_INSTALL_ROOT}/venv` and runs `pip install -r requirements.txt` from the vendored payload (no network for pip — vendor wheels in the payload).
+  - **Copy bug 1:** welcome.html "four background services" → "ten background services" (9 + console).
+  - **Copy bug 2:** welcome.html + conclusion.html dashboard URL :8080 → correct port (verify against actual dashboard-api binding; likely :8585 per setup.sh phase_07).
+  - **Copy bug 3:** conclusion.html `uninstall.sh` reference — either (a) ship a real `bin/uninstall.sh` in payload that does `launchctl bootout` for all services, removes /Library/Application Support/MiningGuardian, removes /Library/LaunchDaemons/com.miningguardian.*.plist, removes /Applications/Mining Guardian, leaves Postgres data dir intact for safety, OR (b) remove the reference. v1.0.3: ship a real uninstall.sh.
+  - **Copy bug 4:** conclusion.html "verify these 4 services" code block updated to enumerate all 10 services (9 + console).
+  - **Integration bug 1:** `MG_DB_PASSWORD` flow — build_pkg.sh writes `/tmp/mg_install_env_secret` before postinstall runs, OR postinstall generates a random password and writes it to .env. v1.0.3: postinstall generates random password (no out-of-band staging step).
+  - **Integration bug 2:** `GUARDIAN_PG_USER` vs `PGUSER` mismatch — postinstall .env writes both keys with the same value to satisfy both code paths until cleanup is complete (fix-forward, document as tech debt).
+  - **Integration bug 3:** Tailscale handling — postinstall checks if Tailscale is already up; if yes, no-op; if no, surfaces a Cocoa dialog telling operator to run `tailscale up` separately. Tailscale auth is operator-side, not part of v1.0.2/v1.0.3 .pkg responsibility.
+  - **Integration bug 4:** `AMS_*`, `SLACK_*`, `CATALOG_API_KEY`, `INTERNAL_API_SECRET`, `AUTHORIZED_SLACK_USER_IDS`, `AUTO_APPROVE_ENABLED` keys — written to .env by postinstall from the customer's Desktop conf file (Gap 1 closes this).
+- **v1.0.3 verification gate (HARD, not skippable):**
+  1. Build, sign, notarize, staple v1.0.3 .pkg on operator's laptop.
+  2. Smoke-test on a clean macOS 14 VM (UTM/Tart). Required pass criteria:
+     - Postgres container up, all 3 DBs created (`mining_guardian`, `mining_guardian_test`, `mining_guardian_catalog`).
+     - `SELECT count(*) FROM hardware.miner_models;` against `mining_guardian_catalog` returns 320.
+     - Grafana :3000 reachable, returns healthy JSON, AI & Learning dashboard renders.
+     - All 10 LaunchDaemons (9 + console) loaded via `launchctl list | grep miningguardian`.
+     - All scheduled-task launchd plists registered.
+     - `~/Desktop/MiningGuardian.conf` validation passes for valid input, fails-with-Cocoa-dialog for invalid input.
+     - Console reachable at `http://127.0.0.1:8686/`, displays task list + automation toggles + approval queue (D-19).
+     - Cloudflare Tunnel routes `mg.fieslerfamily.com` → console (D-19).
+     - Welcome + conclusion HTML show correct service counts and ports.
+     - `bin/uninstall.sh` cleanly tears down everything.
+  3. Only AFTER VM smoke-test passes, install on the Mini.
+- **Implementation plan:**
+  1. New chat session opens — agent reads PROGRAM_STATE.md, this D-18, D-19, D-20, INSTALL_PATHS_2026-05-03.md, audit findings, HANDOFF_2026-05-04_NEW_CHAT.md.
+  2. Discovery task — verify what `mg_import_tool/` exposes, what the Grafana "Live Action Queue" panel does, whether approval data exists in Postgres or only in Slack today.
+  3. PR train: scope-locking docs (this PR, already done), then per-gap PRs in dependency order: venv first, then catalog seed, then customer-info conf flow, then Grafana, then scheduled-tasks plists, then console (D-19), then copy-bug fixes, then uninstall.sh, then version bump + release notes.
+  4. Build v1.0.3 .pkg, sign, notarize, staple.
+  5. Smoke-test on clean VM. Iterate until ALL gate criteria pass.
+  6. Install on Mini. Screenshots throughout.
+  7. Verify Mini green per D-16 criteria.
+  8. Then and only then: VPS decommission + ROBS-PC container shutdown.
+- **Implementation status:** Locked 2026-05-03. No code yet.
+
+---
+
+## D-19 — Customer operator console (10th service, Cloudflare-fronted, temporary scaffolding)
+- **Date locked:** 2026-05-03
+- **Decided by:** Operator (Rob)
+- **Decision:** Mining Guardian v1.0.3 ships with a customer-facing operator console as the 10th LaunchDaemon. The console exposes:
+  - Task registry view: every scheduled task (the 11 from setup.sh phase_10, now launchd plists per D-18) with status (running / paused / last run / next run / last result).
+  - Toggles: turn each scheduled task on/off; toggle automation switches (auto-approve, alerts, overnight automation).
+  - Time editing: change the schedule time of each task (e.g., morning briefing 7:00 → 8:00). Writes back to the launchd plist and reboots the daemon.
+  - Approval queue: pending miner-restart and other approval items. [Approve] / [Deny] / [Snooze] buttons. The Grafana "Live Action Queue" panel at `grafana.fieslerfamily.com/d/llm_learning_001` displays the same queue but its interactive Approve/Deny is unverified — discovery task at start of v1.0.3 work confirms whether to extend the existing flow or build new.
+  - Read-only system-state panel: Postgres / Grafana / Ollama / Tailscale up indicators, last successful scan timestamp, miner reachability summary.
+- **Console v1 explicitly does NOT include:** creating new task types from scratch, custom alert-rule editor, miner config push, customer-info editing, multi-tenant tenant-switching, importer functionality (importer is operator-only per D-20).
+- **Tech stack (locked, no bikeshedding):**
+  - Backend: Python FastAPI under `console/` in repo. Reuses existing `intelligence/` and `core/` modules. Talks to Postgres + launchd via `launchctl` shell-out and `.plist` rewrites.
+  - Frontend: Server-rendered Jinja2 + HTMX. No React, no node, no build step.
+  - Auth: Cloudflare Access (email-based). Console binds to 127.0.0.1:8686 only — never exposed on a public IP. Cloudflare Tunnel fronts it at `mg.fieslerfamily.com` (operator's first-customer hostname; multi-tenant deferred).
+- **Why:** The customer-experience vision requires a non-Slack, non-Terminal way for the customer to operate the system day-to-day. The Grafana Live Action Queue panel is a step in that direction but its interactivity is unverified. Until the phone-app project takes over (post-cutover work item), the console serves as the bridge.
+- **Temporary scaffolding clause:** This console is explicitly temporary. Once the phone-app project ships, the console is retired. The phone app talks to the same launchd / Postgres surfaces, just with a better UX.
+- **Cloudflare Tunnel + Access setup:**
+  - Operator's `fieslerfamily.com` zone, operator's API token, operator's tunnel.
+  - Hostname: `mg.fieslerfamily.com` (fiesler-family branding will be removed when customer-facing brand is locked, per operator quote 2026-05-03: "we are taking fiesler family away from the program soon as this is done").
+  - Tunnel config + Access policy written by v1.0.3 postinstall step (operator pastes Cloudflare API token into Desktop conf at install time; postinstall calls `cloudflared service install` with the tunnel token).
+- **Implementation plan:**
+  1. Discovery: read existing approval-queue code paths (`grep -r "approval" core/ intelligence/ clients/`), determine where pending actions live (Postgres table? JSON file? Slack-only?). Result drives whether console reads from existing surface or adds a new persistent queue.
+  2. Build console under `console/` — FastAPI app, routes for tasks/automation/approvals/system-state, Jinja2 templates with HTMX.
+  3. Add `com.miningguardian.console.plist` to `installer/macos-pkg/resources/launchd/`.
+  4. Add console to v1.0.3 postinstall bootstrapping (10th service after the 9 existing ones).
+  5. Add Cloudflare Tunnel + Access setup to v1.0.3 postinstall (gated on Cloudflare token in Desktop conf).
+  6. Update welcome.html + conclusion.html to mention the console URL.
+  7. Document console operations in a new `docs/CONSOLE_OPERATIONS_GUIDE.md`.
+- **Implementation status:** Locked 2026-05-03. No code yet.
+
+---
+
+## D-20 — Importer stays with operator forever (single-source-of-truth catalog model)
+- **Date locked:** 2026-05-03
+- **Decided by:** Operator (Rob)
+- **Decision:** The hardware-catalog importer (`mg_import_tool/`) stays on the operator's workstation forever. It is NOT shipped to customers. The customer .pkg will not include `mg_import_tool/` in its payload (or if it does for code-coupling reasons, no LaunchDaemon or console UI surfaces it).
+- **Catalog distribution model:**
+  - Operator runs the importer monthly on their workstation (or ROBS-PC per D-16) → catalog DB updated → knowledge JSON regenerated.
+  - Operator pushes a delta (or full snapshot) to all customer Minis over Tailscale.
+  - Customer Minis are read-only consumers of the catalog. They never run the importer.
+  - "Single source of truth" — one master catalog, one operator, N read-only customer copies.
+- **Why:** Operator quote 2026-05-03: "the importer does not go to the customer that stays with me, once a month we will go a update of the intelligence db and the knowledge json for customers that way there is only 1 truth."
+- **Reconciles with D-16:** D-16 says ROBS-PC retains catalog masters post-cutover. D-20 confirms the importer is the tool that maintains those masters, and ROBS-PC (or operator's laptop) is where it runs. Never on a customer Mini.
+- **Reconciles with D-17:** D-17 deferred the monthly catalog sync to post-cutover. D-20 specifies the architecture (operator-runs-importer → Tailscale push to customer Minis) but does NOT change the deferral. First sync runs only after Mini is verified green.
+- **Implementation plan:**
+  1. v1.0.3 .pkg payload audit: confirm `mg_import_tool/` is NOT bundled into the customer .pkg, OR if it is (for shared-code reasons), no UI surfaces it.
+  2. Post-cutover work item: build the operator-side delta-push tool (Tailscale rsync or postgres dump-restore) — separate work, not v1.0.3 scope.
+  3. Document the catalog distribution model in `docs/CATALOG_DISTRIBUTION_MODEL.md` (separate PR, post-cutover).
+- **Implementation status:** Locked 2026-05-03. No code changes today.
+
+---
+
 *Append new decisions below this line. Do not edit history.*
