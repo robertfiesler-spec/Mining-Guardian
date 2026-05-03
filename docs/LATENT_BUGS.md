@@ -686,6 +686,91 @@ $ python3 -m py_compile core/models.py notifiers/approval_interface.py notifiers
 
 ---
 
+## B-9 — `tests/run_benchmark.py` referenced by hourly benchmark plist but missing at HEAD
+
+**Severity:** Low
+**Status:** Open. Audited 2026-05-04 against PR #123 (D-18 Gap 4 / P-007) and
+explicitly waived as a P-007 merge blocker. See "Merge-readiness audit" below.
+
+**Surfaced:** 2026-05-04 by D-18 Gap 4 / P-007 during the cron→launchd cutover.
+The file has never existed in any branch in this repo's git history
+(`git log --all -- tests/run_benchmark.py` returns empty), so this is not a
+regression — the prior `crontab` entry was equally broken, just silently
+(no FDA on macOS 14, no fail-loud, no operator-visible signal).
+
+**Location:**
+
+- `installer/macos-pkg/resources/launchd/scheduled/com.miningguardian.scheduled.benchmark.plist`
+  invokes `scheduled_job_launcher.sh tests/run_benchmark.py benchmark` hourly
+  (`StartInterval=3600`).
+- `docs/CRON_SCHEDULE.md` row "Hourly | Benchmark | run_benchmark.py".
+- `scripts/setup.sh::phase_10_scheduled` comment block, line 827.
+- `console/task_registry.py` declares `task_key="benchmark"` row 11 so the
+  D-19 operator console renders the row regardless.
+
+**Behavior at install (intentional):**
+
+`scheduled_job_launcher.sh` exits 1 with the literal line
+`[scheduled_job_launcher][benchmark] FATAL: entrypoint not found: /Library/Application Support/MiningGuardian/tests/run_benchmark.py`
+on every hourly fire until the script is restored. The launcher writes a
+`logs/scheduled/benchmark.last-run.json` stamp with `exit_code=1`, which the
+D-19 operator console will surface as a red row on `/tasks`. **This is the
+opposite of the cron-era silent-failure mode that motivated D-18 Gap 4 in
+the first place** — fail-loud + operator-visible is the design.
+
+**Why this is NOT `tests/run_benchmark.sh`:** A `tests/run_benchmark.sh` does
+exist at HEAD, but it is the interactive 60-hour S21 immersion firmware
+benchmark with manual operator profile-change prompts and 60+ hours of
+sleeps. It is the wrong shape for an hourly cron entrypoint and must not
+be substituted.
+
+### Merge-readiness audit (PR #123, P-007), 2026-05-04
+
+**Decision:** Not a P-007 merge blocker. PR #123 ships as authored.
+
+**Reasoning:**
+
+1. PR #123's scope is the cron→launchd cutover (Gap 4). It does not introduce
+   the missing-script defect — the script has never existed.
+2. The launcher's FATAL-on-missing-entrypoint behavior is the explicit
+   design fix for the cron-era silent failure that motivated this PR. Any
+   "noisy logs once an hour" complaint cuts in the right direction: fail-loud
+   beats fail-silent, every time.
+3. Inventing an hourly benchmark script in this PR would violate scope
+   discipline (no drive-by feature work) and the task constraint "do not
+   invent broad benchmark functionality" the audit task carried explicitly.
+4. The customer-readiness impact is bounded: one stamped-failed row in the
+   D-19 operator console, hourly. No data corruption, no service-loop
+   interference, no Slack noise (this plist does not post to Slack).
+
+**Future fix paths (not in PR #123):**
+
+- **Path A — restore the script.** Recover/author a `tests/run_benchmark.py`
+  that does the hourly performance sample described by `docs/CRON_SCHEDULE.md`
+  ("Performance tracking"). This is the right long-term answer once the
+  intended sample shape is decided. Out of scope here.
+- **Path B — disable the plist until A lands.** A small follow-up PR can
+  add `<key>Disabled</key><true/>` to `com.miningguardian.scheduled.benchmark.plist`
+  so launchd registers the schedule (operator console row stays) but does
+  not fire it hourly. Pure noise reduction; reversible by deleting two
+  lines once Path A lands.
+- **Path C — drop the row entirely.** If "Hourly Benchmark" turns out to
+  not be wanted on customer Minis at all, remove the plist + launcher arg
+  + `task_registry.py` row + `CRON_SCHEDULE.md` row in one PR.
+
+The choice between A/B/C is a product question for Bobby, not a P-007
+mechanical fix. P-007 is delivered as scoped.
+
+### References
+
+- PR #123 (`mg/v103-gap4-scheduled-launchd`) merge-readiness audit, 2026-05-04
+- `docs/CRON_SCHEDULE.md` row "Hourly | Benchmark"
+- `installer/macos-pkg/resources/launchd/launchers/scheduled_job_launcher.sh`
+  exit-1-on-missing-entrypoint contract (lines 57-60)
+- `console/task_registry.py` row `task_key="benchmark"` for D-19 console visibility
+
+---
+
 # Process Notes
 
 - New bugs go in here **before** any cleanup or refactor that would erase the
