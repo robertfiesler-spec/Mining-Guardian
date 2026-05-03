@@ -1,0 +1,76 @@
+{% extends "_base.html" %}
+{% block title %}Approvals · Mining Guardian Console{% endblock %}
+{% block content %}
+<section>
+  <h1>Pending Approvals</h1>
+
+  <div class="callout callout-warning" role="note">
+    <strong>Queue-only in v1.</strong>
+    The buttons below <em>only</em> update the
+    <code>pending_approvals</code> row in the database — they do
+    <strong>not</strong> execute remediation (no RESTART, no PDU_CYCLE).
+    The Slack approval flow (<code>#mg-approvals</code>) remains the only
+    path that actually executes remediation in v1.0.3. To act on a row
+    here, mark it for the audit trail, then approve it in Slack so the
+    remediation actually runs. A unified execution path landing through
+    <code>INTERNAL_API_SECRET</code> is tracked as a pre-customer-ready
+    follow-up — see <code>docs/CONSOLE_OPERATIONS_GUIDE.md</code>.
+  </div>
+
+  <p class="muted">Reads PENDING rows from <code>pending_approvals</code>. Mark approved / denied updates the row directly. Snooze records a wake time in <code>system_settings</code>; the row is not hidden in v1.</p>
+
+  {% if rows %}
+    <table class="approval-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Miner</th>
+          <th>Action</th>
+          <th>Reason</th>
+          <th>Classification</th>
+          <th>Created</th>
+          <th>Queue actions (no remediation)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr id="approval-{{ r.id }}">
+            <td>{{ r.id }}</td>
+            <td>{{ r.miner_id }} <span class="muted small">{{ r.ip }}</span></td>
+            <td>{{ r.action_type }}</td>
+            <td class="reason">{{ r.reason }}</td>
+            <td>
+              {{ r.classification or "—" }}
+              {% if r.confidence %}<span class="muted small">{{ "%.2f"|format(r.confidence) }}</span>{% endif %}
+            </td>
+            <td class="muted small">{{ r.created_at }}</td>
+            <td class="actions">
+              <button class="queue-action"
+                      title="Marks the queue row APPROVED. Does NOT execute remediation. Use Slack to actually run the action."
+                      hx-post="/approvals/{{ r.id }}/approve"
+                      hx-target="#approval-{{ r.id }}"
+                      hx-swap="outerHTML"
+                      hx-on::after-request="this.closest('tr').remove()">Mark Approved (queue only)</button>
+              <button class="queue-action"
+                      title="Marks the queue row DENIED. Does NOT execute remediation."
+                      hx-post="/approvals/{{ r.id }}/deny"
+                      hx-target="#approval-{{ r.id }}"
+                      hx-swap="outerHTML"
+                      hx-on::after-request="this.closest('tr').remove()">Mark Denied (queue only)</button>
+              <form style="display:inline" hx-post="/approvals/{{ r.id }}/snooze" hx-swap="none">
+                <input type="number" name="minutes" min="1" max="1440" value="30" style="width: 4em">
+                <button>Snooze</button>
+              </form>
+              {% if r.snoozed_until %}
+                <span class="muted small">snoozed until {{ r.snoozed_until }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No pending approvals. 🎉</p>
+  {% endif %}
+</section>
+{% endblock %}

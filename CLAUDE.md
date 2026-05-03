@@ -223,7 +223,8 @@ canonical doc is created — never let this table go stale again.
 | Confidence scoring system | `docs/CONFIDENCE_SCORING.md` |
 | Fingerprints vs profiles | `docs/FINGERPRINTS_VS_PROFILES.md` |
 | Feedback loop fixes | `docs/FEEDBACK_LOOP_FIXES.md` |
-| Web GUI operator console | `docs/WEB_GUI_OPERATOR_CONSOLE.md` |
+| Web GUI operator console (Bucket 9 §10.1 — `/ui` on approval_api:8686) | `docs/WEB_GUI_OPERATOR_CONSOLE.md` |
+| D-19 customer operator console (10th LaunchDaemon, port 8787) | `docs/CONSOLE_OPERATIONS_GUIDE.md` |
 | Operator schedules | `docs/OPERATOR_SCHEDULES.md` |
 | Per-model profile maps and rated TH/s | `miner_specs.json` + `docs/PROFILE_MAP_QUESTIONS.md` |
 

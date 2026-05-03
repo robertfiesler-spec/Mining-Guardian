@@ -1,8 +1,9 @@
 # Mining Guardian — macOS LaunchDaemon Plists
 
-Bucket 6 / installer rebuild — the 8 plist templates the macOS installer renders
-into `/Library/LaunchDaemons/` during a customer install, mirroring the 8
-`*.service` units running today on the VPS.
+Bucket 6 / installer rebuild — originally 8 plist templates the macOS
+installer rendered into `/Library/LaunchDaemons/`. v1.0.3 / D-19 /
+P-006 added the 9th plist in this directory:
+`com.miningguardian.console.plist` (the customer operator console).
 
 ## Inventory
 
@@ -16,12 +17,13 @@ into `/Library/LaunchDaemons/` during a customer install, mirroring the 8
 | 6 | `com.miningguardian.overnight-automation.plist` | `overnight-automation.service` | `core/overnight_automation.py` | 30s |
 | 7 | `com.miningguardian.alerts.plist` | `mining-guardian-alerts.service` | `api/ams_alert_listener.py` | 10s |
 | 8 | `com.miningguardian.intelligence-report.plist` | `intelligence-report.service` | `api/intelligence_report_api.py` | 5s |
+| 9 | `com.miningguardian.console.plist` | (new — D-19 / P-006) | `python -m console.main` (binds 127.0.0.1:8787) | 10s |
 
-The 9th launchd plist on a Mac Mini install — `com.miningguardian.feedback-loop-daemon.plist` —
+The 10th launchd plist on a Mac Mini install — `com.miningguardian.feedback-loop-daemon.plist` —
 lives separately at `deploy/com.miningguardian.feedback-loop-daemon.plist`
-(D-14 PR-4b) and is rendered by the installer alongside these 8. It is the
-catalog-side feedback-loop daemon and is independent of the 8 operational
-services in this directory.
+(D-14 PR-4b) and is rendered by the installer alongside these 9. It is the
+catalog-side feedback-loop daemon and is independent of the 9 services
+in this directory.
 
 ## Install layout (set up by `installer/macos-pkg/scripts/postinstall.sh`)
 

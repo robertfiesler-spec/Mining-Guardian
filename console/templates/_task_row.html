@@ -1,0 +1,36 @@
+<tr id="task-{{ task.task_key }}">
+  <td>
+    <strong>{{ task.name }}</strong>
+    <div class="muted small">{{ task.description }}</div>
+  </td>
+  <td>{{ task.category }}</td>
+  <td>{{ task.default_schedule }}</td>
+  <td>
+    {% if status.loaded is none %}
+      <span class="pill pill-unknown">in-process</span>
+    {% elif status.loaded and status.running %}
+      <span class="pill pill-up">running</span>
+      {% if status.pid %}<span class="muted small">pid {{ status.pid }}</span>{% endif %}
+    {% elif status.loaded %}
+      <span class="pill pill-warn">loaded</span>
+    {% else %}
+      <span class="pill pill-down">stopped</span>
+    {% endif %}
+    {% if flash %}<span class="muted small">— {{ flash }}</span>{% endif %}
+  </td>
+  <td class="actions">
+    {% if task.pausable and task.plist_label %}
+      <button hx-post="/tasks/{{ task.task_key }}/pause"
+              hx-target="#task-{{ task.task_key }}"
+              hx-swap="outerHTML">Pause</button>
+      <button hx-post="/tasks/{{ task.task_key }}/resume"
+              hx-target="#task-{{ task.task_key }}"
+              hx-swap="outerHTML">Resume</button>
+    {% else %}
+      <span class="muted small">—</span>
+    {% endif %}
+    {% if task.schedule_editable %}
+      <a class="link-action" href="/tasks#edit-{{ task.task_key }}">Edit</a>
+    {% endif %}
+  </td>
+</tr>
