@@ -413,20 +413,22 @@ Per `scripts/setup.sh`. Mini-install canonical per `docs/INSTALL_PATHS_2026-05-0
 | 14 | `phase_14_postinstall` | Post-install summary |
 | 15 | `phase_15_snapshot_restore` | Optional snapshot restore via `--restore-from-snapshot=<tarball>` |
 
-### 10.3 The contradiction (live blocker today)
+### 10.3 The contradiction — RESOLVED 2026-05-03 by audit + D-18 / D-19 / D-20
 
-**Both of the following statements are in `main` as of `81ac06e`:**
+**Both of the following statements were in `main` until 2026-05-03:**
 
 - `docs/DECISIONS.md` D-16 step 4: "Install on the customer-site Mini via .pkg double-click with screenshots at every screen (Sunday afternoon)."
-- `docs/INSTALL_PATHS_2026-05-02.md`: "**This path is for the Mini. Do not click the `.pkg` on the Mini.**" plus "The `.pkg` is **never** the right path for the Mini." plus "What does the install ship? | Postgres + Grafana + Ollama + Tailscale + scheduled tasks + viewer | Viewer only |".
+- `docs/INSTALL_PATHS_2026-05-02.md`: "do NOT click the `.pkg` on the Mini" plus "What does the install ship? | Postgres + Grafana + Ollama + Tailscale + scheduled tasks + viewer | Viewer only |".
 
-**Resolution status:** PENDING AUDIT. A v1.0.2 .pkg audit subagent is running (or has just returned) to compare what the .pkg postinstall actually installs vs the operator's customer-vision. Three outcomes possible:
+**Resolution:** Both statements are wrong as written. Per the v1.0.2 .pkg audit (`docs/audits/PKG_AUDIT_v1.0.2_FINDINGS_2026-05-03.md`):
 
-1. **Full-install** — .pkg does everything `setup.sh` does. D-16 is right; INSTALL_PATHS is wrong and must be amended. Safe to click .pkg on Mini today.
-2. **Viewer-only** — .pkg installs a thin viewer + Slack handler. INSTALL_PATHS is right; D-16 step 4 is wrong and must be amended. Use `setup.sh` on Mini.
-3. **Partial / hybrid** — .pkg does some things but not others. Specify which; either amend the .pkg postinstall (build v1.0.3) or amend D-16 / INSTALL_PATHS to specify the actual hybrid behaviour.
+- **Outcome C — partial / hybrid.** The v1.0.2 .pkg is NEITHER full-install NOR viewer-only. It is a partial operations install: postinstall.sh creates Postgres in Colima, installs Ollama, copies 9 launchd plists and `launchctl bootstrap`s them, and writes a partial `.env` (only `MG_DB_PASSWORD` + Postgres connection vars). It does NOT install Grafana, does NOT seed the 320-row catalog, does NOT install the Python venv (despite the launcher wrappers and step_baseline_scan referencing `${MG_INSTALL_ROOT}/venv/bin/python`), does NOT install scheduled tasks (no cron, no `StartCalendarInterval`), does NOT collect AMS/SLACK customer credentials. Every LaunchDaemon would crash-loop within 10 seconds because the venv path does not exist and the `.env` lacks the AMS/SLACK keys the launcher wrappers source. Apple's notarization stack would still confirm "install completed" — apparent success, real silence.
+- **D-16 step 4 amended by D-18:** "Install on the customer-site Mini via v1.0.3 .pkg double-click with screenshots at every screen — when v1.0.3 is verified green on a clean Mac VM (UTM/Tart)."
+- **`INSTALL_PATHS_2026-05-02.md` superseded by `INSTALL_PATHS_2026-05-03.md` per D-18.** The 2026-05-02 doc retains a SUPERSEDED notice at its top.
+- **D-19** locks the customer operator console as the 10th LaunchDaemon (Cloudflare-fronted at `mg.fieslerfamily.com`).
+- **D-20** locks the importer (`mg_import_tool/`) as operator-only forever; it is NOT bundled into the customer .pkg.
 
-**This document does not pick a winner.** The reconciliation lands in a follow-up D-? decision once the audit returns.
+**Mini cutover state:** PAUSED. The Mini will not be cut over until v1.0.3 is built, signed, notarized, and smoke-tested green on a clean Mac VM per D-18's verification gate. The Hostinger VPS continues running production. ROBS-PC's catalog volume stays intact.
 
 ---
 
@@ -434,29 +436,51 @@ Per `scripts/setup.sh`. Mini-install canonical per `docs/INSTALL_PATHS_2026-05-0
 
 | Item | Status | Owner / artifact |
 |---|---|---|
-| v1.0.2 .pkg audit | In progress (subagent running). Output at `/tmp/mg-audit/PKG_AUDIT_FINDINGS.md`. | Computer (audit subagent) |
-| D-18 protocol drafting | Drafted but cancelled mid-flight. Will reattempt after PROGRAM_STATE.md (this doc) lands. | Computer |
-| Mini cutover | PAUSED pending v1.0.2 .pkg audit findings. The Mini is empty / fresh / Tailscale up at `100.69.66.32`. Repo not yet cloned to `~/code/Mining-Guardian`. | Operator + Computer |
-| HANDOFF_2026-05-03 | Open. Will be appended with end-of-day update at session close. | This file's sibling under `docs/handoffs/` |
-| Open question 2 from 2026-05-02 | Still open: should `docs/INTEL_CATALOG_FULL_BRIEF_2026-05-02.md` be edited to clarify "ROBS-PC superseded at runtime, retained as masters until Mini-verified-green, then decommissioned"? Recommendation: defer until after Mini-verified-green. | Operator |
+| v1.0.2 .pkg audit | ✅ Complete and committed at `docs/audits/PKG_AUDIT_v1.0.2_FINDINGS_2026-05-03.md`. | Computer |
+| D-18 / D-19 / D-20 | ✅ Locked in DECISIONS.md (this PR). | Operator + Computer |
+| INSTALL_PATHS rewrite | ✅ `docs/INSTALL_PATHS_2026-05-03.md` is the new authoritative; 2026-05-02 carries a SUPERSEDED notice. | Computer |
+| v1.0.3 build | 🔴 QUEUED. Per D-18 implementation plan: discovery first (approval queue + Live Action Queue panel + `mg_import_tool/` payload audit), then per-gap PR train (venv, catalog seed, customer-info conf flow, Grafana, scheduled-tasks plists, console, copy-bug fixes, uninstall.sh, version bump + release notes), then build + sign + notarize, then smoke-test on clean VM. New chat session opens 2026-05-04. | Computer (new chat) |
+| Operator console (D-19) build | 🔴 QUEUED as part of v1.0.3 PR train. FastAPI under `console/`, Jinja2 + HTMX, binds 127.0.0.1:8686, Cloudflare-fronted at `mg.fieslerfamily.com`. | Computer (new chat) |
+| Mini cutover | PAUSED until v1.0.3 verified green on clean Mac VM (per D-18 verification gate). The Mini is empty / fresh / Tailscale up at `100.69.66.32`. Repo not yet cloned to `~/code/Mining-Guardian`. | Operator + Computer |
+| HANDOFF_2026-05-03 | Closed at end-of-day. | `docs/handoffs/HANDOFF_2026-05-03.md` |
+| HANDOFF_2026-05-04_NEW_CHAT | ✅ Created. The next agent reads this BEFORE anything else. | `docs/handoffs/HANDOFF_2026-05-04_NEW_CHAT.md` |
+| Open question 2 from 2026-05-02 | Still open: should `docs/INTEL_CATALOG_FULL_BRIEF_2026-05-02.md` be edited to clarify "ROBS-PC superseded at runtime, retained as masters until Mini-verified-green, then decommissioned"? Recommendation: defer until after v1.0.3 ships and Mini is verified green. | Operator |
 
 ---
 
 ## Section 12 — What's NEXT (Monday and beyond)
 
-Order is fixed per D-16 cutover plan. Every item below blocks on the cutover landing today.
+**Order amended 2026-05-03 by D-18.** Every Mini-cutover item is deferred until v1.0.3 ships and is verified green on a clean Mac VM. The Hostinger VPS continues running production. ROBS-PC's catalog volume stays intact.
 
-1. **Today / Sunday 2026-05-03:** Mac Mini cutover via the install path the audit confirms is correct (Section 10). Capture screenshots at every Phase 4 + Phase 5 boundary per HANDOFF_2026-05-03 plan.
-2. **Today end-of-day:** Append the cutover results to `HANDOFF_2026-05-03.md`. Draft `HANDOFF_2026-05-04.md`.
-3. **Monday 2026-05-04 morning:** Finalize the install PDF from screenshots (per D-16 step 6 + D-11 cutover gate criterion 8).
-4. **Monday 2026-05-04 morning, AFTER Mini-verified-green:** Shut down the ROBS-PC Docker container `mining-guardian-db` (per D-16 step 7).
-5. **Monday 2026-05-04 morning, AFTER Mini-verified-green:** Decommission the Hostinger VPS (per D-16 step 8).
-6. **Post-cutover (no fixed date):** D-17 reconciliation — schedule the monthly ROBS-PC → Mini catalog sync over Tailscale.
-7. **Post-cutover:** Anti-drift sweep of all companion docs against `docs/DECISIONS.md`. The D-16 vs INSTALL_PATHS contradiction is the trigger. Every companion doc that contradicts a locked D-? gets amended or deleted in a single reconciliation PR.
-8. **Post-cutover:** D-14 implementation PRs — drop the 5-min cache in `ai/catalog_context.py`, wire `core/mining_guardian.py` to consult the catalog on every miner evaluation, make catalog read failure raise / log at ERROR, build the C5 NOTIFY/LISTEN daemon (`feedback_loop_daemon`), point AI consumers at psycopg-direct.
-9. **Post-cutover:** Begin the customer-facing app project (per D-16 step 9 + the operator quote "we can then shut down the container and the vps and move on to the app").
-10. **Post-cutover security backlog:** S-5, S-7, S-8, S-9, S-10, S-11, S-14 from MG_UNIFIED_TODO_LIST.md (carried forward in HANDOFF_2026-05-03 priority list).
-11. **Post-cutover catalog backlog:** C1, C2, C3, C4, C5 (catalog API surface fix, watcher rewrites, NOTIFY/LISTEN daemon, installer catalog seed step).
+1. **New chat session opens 2026-05-04 morning** — agent reads `docs/handoffs/HANDOFF_2026-05-04_NEW_CHAT.md` BEFORE anything else, then `docs/PROGRAM_STATE.md` (this file), then DECISIONS.md (D-1 through D-20), then the v1.0.2 audit.
+2. **Discovery (no code):** verify what `mg_import_tool/` actually exposes today, what the Grafana "Live Action Queue" panel does today (display-only or interactive Approve/Deny?), whether approval data persists in Postgres or only in Slack. Output: `docs/discoveries/DISCOVERY_2026-05-04.md`.
+3. **v1.0.3 PR train per D-18 implementation plan, in dependency order:**
+   1. venv creation in postinstall (closes Gap 5).
+   2. Catalog DB + 320-row seed in postinstall (closes Gap 2).
+   3. Customer-info Desktop conf flow in postinstall (closes Gap 1 + Integration bug 4).
+   4. Grafana vendoring + provisioning + LaunchDaemon (closes Gap 3).
+   5. Scheduled-tasks launchd plists replacing the cron entries from setup.sh phase_10 (closes Gap 4).
+   6. Operator console (D-19) — full FastAPI / Jinja2 / HTMX build under `console/`.
+   7. Copy-bug fixes in welcome.html + conclusion.html (closes Copy bugs 1, 2, 4).
+   8. Real `bin/uninstall.sh` (closes Copy bug 3).
+   9. Cloudflare Tunnel + Access setup in postinstall (D-19).
+   10. `MG_DB_PASSWORD` self-generation in postinstall (closes Integration bug 1).
+   11. `GUARDIAN_PG_USER` + `PGUSER` dual-write in postinstall (closes Integration bug 2).
+   12. Tailscale-status check + Cocoa dialog (closes Integration bug 3).
+   13. Version bump + `docs/RELEASE_NOTES_v1.0.3.md`.
+4. **Build v1.0.3 .pkg, sign, notarize, staple** on operator's laptop.
+5. **Smoke-test v1.0.3 on a clean macOS 14 VM (UTM/Tart).** Iterate until all D-18 verification-gate criteria pass.
+6. **Install on the Mini.** Screenshots at every Phase 4 + Phase 5 boundary per the existing HANDOFF_2026-05-03 plan.
+7. **Verify Mini green per D-16 + D-18.**
+8. **AFTER Mini-verified-green only:** shut down the ROBS-PC Docker container `mining-guardian-db` (per D-16 step 7, deferred from Monday 2026-05-04).
+9. **AFTER Mini-verified-green only:** decommission the Hostinger VPS (per D-16 step 8, deferred from Monday 2026-05-04).
+10. **Post-cutover (no fixed date):** D-17 reconciliation — schedule the monthly ROBS-PC → Mini catalog sync over Tailscale.
+11. **Post-cutover:** Anti-drift sweep of all companion docs against `docs/DECISIONS.md`. The D-16 vs INSTALL_PATHS contradiction was the trigger; the sweep prevents the next contradiction.
+12. **Post-cutover:** D-14 implementation PRs — drop the 5-min cache in `ai/catalog_context.py`, wire `core/mining_guardian.py` to consult the catalog on every miner evaluation, make catalog read failure raise / log at ERROR, build the C5 NOTIFY/LISTEN daemon (`feedback_loop_daemon`), point AI consumers at psycopg-direct.
+13. **Post-cutover:** Begin the customer-facing phone-app project. Once the phone app ships, the operator console (D-19) is retired.
+14. **Post-cutover:** Build the operator-side delta-push tool for D-20 (Tailscale rsync or postgres dump-restore from operator → customer Mini Postgres).
+15. **Post-cutover security backlog:** S-5, S-7, S-8, S-9, S-10, S-11, S-14 from MG_UNIFIED_TODO_LIST.md.
+16. **Post-cutover catalog backlog:** C1, C2, C3, C4, C5 (catalog API surface fix, watcher rewrites, NOTIFY/LISTEN daemon, installer catalog seed step — most of which v1.0.3 closes inline).
 12. **Eventual:** Edit `docs/INTEL_CATALOG_FULL_BRIEF_2026-05-02.md` to reconcile "ROBS-PC superseded at runtime" with "ROBS-PC retains masters" per D-16.
 
 ---

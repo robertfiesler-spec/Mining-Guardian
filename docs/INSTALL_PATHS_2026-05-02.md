@@ -1,9 +1,14 @@
 # Mining Guardian — Install Paths (architecture)
 
+> **SUPERSEDED 2026-05-03 by `INSTALL_PATHS_2026-05-03.md` per D-18.**
+> The "viewer only" framing in this document is factually wrong per the v1.0.2 .pkg audit
+> (`docs/audits/PKG_AUDIT_v1.0.2_FINDINGS_2026-05-03.md`). This document is retained for
+> historical context only.
+
 **Date:** 2026-05-02
 **Closes backlog item:** B-3 (`docs/INSTALLER_UX_BACKLOG_2026-05-01.md`)
 **Decision recorded in:** `docs/DECISIONS.md` (D-15/D-16 family)
-**Status:** Authoritative. All runbooks and customer docs link here for the install-path question.
+**Status:** SUPERSEDED 2026-05-03 per D-18. Retained for historical context only.
 
 ---
 
