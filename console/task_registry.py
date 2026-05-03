@@ -238,6 +238,22 @@ TASK_REGISTRY: List[TaskDefinition] = [
         pausable=True,
         schedule_editable=True,
     ),
+    # D-18 Gap 4 / P-007 — refinement_chain was a separate cron entry in
+    # the legacy schedule (`0 1 * * *` per docs/CRON_SCHEDULE.md row "Pass
+    # 3+4 - Qwen reflection + Claude merge (1 AM)"). The P-006 console
+    # foundation bundled it into weekly_training's description; this row
+    # restores it as its own task so the operator can see Pass 3+4 status
+    # independently of Pass 2.
+    TaskDefinition(
+        task_key="refinement_chain",
+        name="Refinement Chain (Qwen + Claude)",
+        category="scheduled",
+        plist_label="com.miningguardian.scheduled.refinement-chain",
+        default_schedule="01:00 daily",
+        description="Pass 3 (Qwen reflection) + Pass 4 (Claude merge) of the learning chain.",
+        pausable=True,
+        schedule_editable=True,
+    ),
 ]
 
 

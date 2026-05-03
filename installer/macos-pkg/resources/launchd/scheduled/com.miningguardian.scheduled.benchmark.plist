@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.scheduled.benchmark.plist — D-18 Gap 4 / P-007 (v1.0.3)
+
+  Replaces the cron entry in setup.sh::phase_10_cron for tests/run_benchmark.py.
+  Hourly performance tracking. CRON_SCHEDULE.md row 'Hourly'. Note: tests/run_benchmark.py is missing in HEAD as of 2026-05-04 — see docs/LATENT_BUGS.md row added in this PR. The plist still ships so the schedule is in place once the script is restored; the launcher exits 1 with a clear FATAL until then.
+
+  Time semantics: StartCalendarInterval fires in the Mac's local timezone.
+  Per docs/CRON_SCHEDULE.md "All times are CDT (Mac Mini timezone)" —
+  set the Mini's timezone before install.
+
+  No KeepAlive — scheduled jobs run, exit, and wait for the next fire.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.scheduled.benchmark</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scheduled_job_launcher.sh</string>
+        <string>tests/run_benchmark.py</string>
+        <string>benchmark</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/benchmark.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/benchmark.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
