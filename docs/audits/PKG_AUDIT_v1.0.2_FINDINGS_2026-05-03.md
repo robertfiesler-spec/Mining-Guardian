@@ -217,11 +217,19 @@ Five hard installation gaps. Four user-facing copy bugs. Four integration bugs (
 - **What is actually there:** Zero scheduled-task logic in postinstall.sh. setup.sh `phase_10_cron()` installs 11 crontab entries (lines 815-869). The .pkg has no equivalent.
 - **Effect:** No `morning_briefing.py` at 7 AM. No `daily_deep_dive.py` at 4 PM. No `weekly_train.py` Sunday midnight. No `db_maintenance.sh` at 3:30 AM. No `backup_knowledge.py` at 4 AM. No `daily_operator_review.py` at 8 AM. The operational rhythm the operator's mantras describe ("morning briefing", "deep dive", "weekly training") does not happen on a .pkg-installed Mini.
 
-### Gap 5 — Python venv + pip install (BLOCKER for the baseline scan and every service)
+### Gap 5 — Python venv + pip install (BLOCKER for the baseline scan and every service) — RESOLVED in v1.0.3 (PR mg/v103-gap5-postinstall-venv)
 
 - **Where it should be:** postinstall.sh as a venv-create + pip-install step.
 - **What is actually there:** `step_baseline_scan` at postinstall.sh lines 392-404 executes `${MG_INSTALL_ROOT}/venv/bin/python` to fire a baseline scan — but **nothing in postinstall.sh creates `${MG_INSTALL_ROOT}/venv`.** Verified by `grep -n 'python -m venv\|virtualenv\|pip install' installer/macos-pkg/scripts/postinstall.sh` returning zero matches outside `${MG_INSTALL_ROOT}/venv/bin/python` references. Every launcher wrapper (e.g. `scanner_launcher.sh` line 16: `VENV_PYTHON="${INSTALL_ROOT}/venv/bin/python"`) checks `[[ ! -x "${VENV_PYTHON}" ]]` and exits with FATAL when missing. setup.sh `phase_06_repo_venv()` creates `python3.12 -m venv venv && pip install -r requirements.txt`.
 - **Effect:** Even before the AMS/Slack credentials issue from Gap 1 fires, every launchd service exits at the first `[[ ! -x "${VENV_PYTHON}" ]]` check in its launcher wrapper. The scanner launcher's exact line: `echo "[scanner_launcher] FATAL: ${VENV_PYTHON} missing or not executable" >&2`. Every service exits 1. launchd restarts. They crash again. The baseline scan in `step_baseline_scan` itself fails because `venv/bin/python` does not exist.
+- **Resolution (v1.0.3 PR mg/v103-gap5-postinstall-venv, 2026-05-04):** Added `step_create_venv` to `installer/macos-pkg/scripts/postinstall.sh`, called between `step_install_launcher_wrappers` and `step_install_plists_and_bootstrap` so launchd services see the venv at first start. The step:
+  1. Resolves a Homebrew `python3.12` interpreter (Apple-supplied python3 is 3.9; refused).
+  2. Creates `${MG_INSTALL_ROOT}/venv` (idempotent — re-uses an existing venv if `bin/python` is executable).
+  3. Pip-installs from a vendored wheel directory at `<payload>/python-wheels/` against `<payload>/requirements.txt`, with `--no-index --find-links --only-binary=:all:` (no PyPI fallback, no source builds).
+  4. Hard-fails (exit 38) if the wheels dir is empty, the requirements file is missing, or pip exits non-zero.
+  - `installer/macos-pkg/scripts/build_pkg.sh` step 4e copies `${HOME}/MiningGuardian-vendor/python-wheels/` into the payload at build time; step 4f stages the canonical pin file from `installer/macos-pkg/payload-requirements.txt` (committed to git, ported from `setup.sh phase_06_repo_venv`).
+  - Regression test at `tests/installer/test_postinstall_venv.sh` (24 assertions; gates ordering, offline guarantees, exit code, and shellcheck baseline).
+  - Preserves the no-network-for-pip rule: the only network call at install time remains the Ollama model pull (Vision Anchor 7).
 
 ### Copy bug 1 — "four services" (welcome.html line 194, 214; conclusion.html lines 168, 188)
 

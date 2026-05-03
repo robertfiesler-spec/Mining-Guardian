@@ -55,6 +55,29 @@
 
 **End-of-day status (4:15 PM CDT):** PR #54 is OPEN, MERGEABLE, CLEAN — single rebased commit `a2b1261` on top of main `9e24a94`. Eight files: 3 customer PDFs + `docs/customer/README.md` + `welcome.html` + `conclusion.html` + `background.png` + this TODO update. Awaiting merge + `make pkg` rebuild on Robert's Mac. The currently-distributed `.pkg` (`MiningGuardian-1.0.0-978ff61126ea.pkg`, sha `c7030d69…65f8`) on the USB stick "MG Install" and on the GitHub Release is the **unbranded** build — it stays in place until the rebuild produces a new `.pkg`, then we replace the file on the USB (do not erase) and clobber-upload to the Release. See `docs/RUNBOOK_PKG_REBUILD.md` (added in this PR) for paste-along blocks A–H.
 
+## 1.2 v1.0.3 installer train (D-18 — locked 2026-05-03)
+
+The PR train below closes the v1.0.2 .pkg audit gaps (`docs/audits/PKG_AUDIT_v1.0.2_FINDINGS_2026-05-03.md`). Order is locked in D-18 implementation plan and `docs/handoffs/HANDOFF_2026-05-04_NEW_CHAT.md`.
+
+| # | Audit Gap / Bug | Status | PR / Notes |
+|---|---|---|---|
+| 1 | Gap 5 — Python venv + offline pip install | ✅ | PR `mg/v103-gap5-postinstall-venv` (2026-05-04) — `step_create_venv` + vendored wheels + payload-requirements.txt + tests/installer/test_postinstall_venv.sh; exit code 38 reserved |
+| 2 | Gap 2 — Catalog DB + 320-row seed | 🔴 | Next PR after Gap 5 — postinstall creates `mining_guardian_catalog` + applies `intelligence-catalog/seed-data/seed_miner_models.sql` |
+| 3 | Gap 1 — Customer-info Desktop conf flow | 🔴 | Postinstall reads `~/Desktop/MiningGuardian.conf`, validates per B-2, Cocoa-dialog on missing/invalid |
+| 4 | Gap 3 — Grafana vendoring + provisioning + LaunchDaemon | 🔴 | Vendor `grafana.app`, provisioning yaml, 11th LaunchDaemon |
+| 5 | Gap 4 — Scheduled-tasks launchd plists (replaces setup.sh phase_10 cron) | 🔴 | New plist set under `installer/macos-pkg/resources/launchd/scheduled/` |
+| 6 | D-19 console (10th service, Cloudflare-fronted) | 🔴 | FastAPI/Jinja2/HTMX under `console/`, `com.miningguardian.console.plist`, Cloudflare Tunnel + Access |
+| 7 | Copy bug 1+2+4 — welcome.html/conclusion.html service counts + ports | 🔴 | "ten background services", `:8585` dashboard, `:8686` console, `:3000` Grafana, all 10 services in verify code block |
+| 8 | Copy bug 3 — real `bin/uninstall.sh` | 🔴 | `launchctl bootout` for 10 services + remove `/Library/Application Support/MiningGuardian` + remove plists from `/Library/LaunchDaemons` + leave `postgres-data` intact |
+| 9 | Cloudflare Tunnel + Access setup | 🔴 | Postinstall step gated on Cloudflare token in Desktop conf |
+| 10 | Version bump + RELEASE_NOTES_v1.0.3.md | 🔴 | After all above merged |
+| 11 | Build, sign, notarize, staple v1.0.3 .pkg | 🔴 | Operator's laptop |
+| 12 | Smoke-test on clean Mac VM (UTM/Tart) | 🔴 | D-18 verification gate (HARD) — must pass before Mini cutover |
+| 13 | Install on Mini + screenshots | 🔴 | Only AFTER VM smoke-test passes |
+| 14 | VPS decommission + ROBS-PC container shutdown | 🔴 | Only AFTER Mini verified green per D-16 + D-18 |
+
+**Operator constraints (from D-18 + HANDOFF_2026-05-04_NEW_CHAT.md):** No Mini install before v1.0.3 verified. No VPS decommission before Mini verified. No `setup.sh` on Mini before v1.0.3 (per INSTALL_PATHS_2026-05-03.md).
+
 
 ---
 

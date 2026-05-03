@@ -228,11 +228,55 @@ step_4_assemble_payload() {
     local vendor_dir="${HOME}/MiningGuardian-vendor"
     if [[ -d "$vendor_dir" ]]; then
         install -d -m 0755 "${PAYLOAD_DIR}/runtime"
-        /usr/bin/rsync -a "${vendor_dir}/" "${PAYLOAD_DIR}/runtime/"
-        _log "  vendored runtime from ${vendor_dir}"
+        # Exclude python-wheels/ from the runtime/ rsync — wheels are
+        # surfaced at <payload>/python-wheels/ (step 4e) so postinstall
+        # step_create_venv (D-18 Gap 5) does not need to know about the
+        # vendor-dir layout.
+        /usr/bin/rsync -a --exclude 'python-wheels/' \
+            "${vendor_dir}/" "${PAYLOAD_DIR}/runtime/"
+        _log "  vendored runtime from ${vendor_dir} (python-wheels/ split out — see step 4e)"
     else
         _log "  WARN ${vendor_dir} missing — runtime/ left empty (postinstall will fail at install time, but pkg build proceeds for layout testing)"
     fi
+
+    # 4e. Vendored Python wheels — D-18 Gap 5. Postinstall's
+    # step_create_venv pip-installs offline from <payload>/python-wheels/
+    # against <payload>/requirements.txt. No network for pip.
+    #
+    # Operator is expected to populate the vendor dir BEFORE running
+    # build_pkg.sh:
+    #   mkdir -p ${HOME}/MiningGuardian-vendor/python-wheels
+    #   /opt/homebrew/opt/python@3.12/bin/python3.12 -m pip download \
+    #       --only-binary=:all: --platform macosx_11_0_arm64 \
+    #       --python-version 3.12 \
+    #       -d ${HOME}/MiningGuardian-vendor/python-wheels \
+    #       -r installer/macos-pkg/payload-requirements.txt
+    # See docs/RUNBOOK_PKG_REBUILD.md (updated in this PR) for the
+    # full step-by-step.
+    local wheels_src="${HOME}/MiningGuardian-vendor/python-wheels"
+    if [[ -d "$wheels_src" ]]; then
+        install -d -m 0755 "${PAYLOAD_DIR}/python-wheels"
+        /usr/bin/rsync -a "${wheels_src}/" "${PAYLOAD_DIR}/python-wheels/"
+        local wheel_count
+        wheel_count="$(/usr/bin/find "${PAYLOAD_DIR}/python-wheels" -maxdepth 1 -type f -name '*.whl' | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+        _log "  vendored ${wheel_count} python wheel(s) from ${wheels_src}"
+        if (( wheel_count < 1 )); then
+            _die 43 "step 4e: ${wheels_src} contained no .whl files — postinstall step_create_venv would fail at install time"
+        fi
+    else
+        _log "  WARN ${wheels_src} missing — postinstall step_create_venv (D-18 Gap 5) will fail at install time"
+    fi
+
+    # 4f. requirements.txt — single source of truth for the install-time
+    # pip install. Lives at installer/macos-pkg/payload-requirements.txt
+    # (committed to git; deliberately separate from any future repo-root
+    # requirements.txt so the .pkg pin set is reviewed independently).
+    local payload_req_src="${PKG_DIR}/payload-requirements.txt"
+    if [[ ! -r "$payload_req_src" ]]; then
+        _die 43 "step 4f: payload requirements pin file missing: ${payload_req_src}"
+    fi
+    install -m 0644 "$payload_req_src" "${PAYLOAD_DIR}/requirements.txt"
+    _log "  staged requirements.txt from ${payload_req_src}"
 
     # 4d. Scripts — preinstall.sh, postinstall.sh, and the lib/ helpers
     # all go under STAGE/scripts/, which productbuild reads with
