@@ -414,6 +414,24 @@ step_4_assemble_payload() {
     fi
     _log "step 4i OK: ${#scheduled_labels[@]} scheduled-job plists + scheduled_job_launcher.sh staged (D-18 Gap 4)"
 
+    # 4j. Uninstaller script assertion (D-18 Copy bug 3 / P-008,
+    # v1.0.3). postinstall.sh::step_install_uninstall_script copies
+    # ${PKG_DIR}/resources/uninstall.sh into ${MG_INSTALL_ROOT}/bin/
+    # uninstall.sh and is the action that fulfills the
+    # `sudo /Library/Application Support/MiningGuardian/bin/uninstall.sh`
+    # path referenced from conclusion.html. A missing source file would
+    # surface as exit 37 at install time on the customer Mac, after
+    # notarization has already burned a round-trip; assert here in the
+    # source tree so the build hard-fails earlier with exit 48.
+    local uninstall_src="${PKG_DIR}/resources/uninstall.sh"
+    if [[ ! -r "$uninstall_src" ]]; then
+        _die 48 "step 4j: uninstall.sh missing in source tree: ${uninstall_src} (D-18 Copy bug 3 / P-008)"
+    fi
+    if [[ ! -x "$uninstall_src" ]]; then
+        _die 48 "step 4j: uninstall.sh not executable: ${uninstall_src} (chmod +x committed source)"
+    fi
+    _log "step 4j OK: uninstall.sh staged from ${uninstall_src} (D-18 Copy bug 3)"
+
     _log "step 4 OK: payload assembled at ${PAYLOAD_DIR}"
 }
 

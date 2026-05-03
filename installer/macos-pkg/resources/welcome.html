@@ -191,7 +191,8 @@
   <li>Lays down the Mining Guardian application at <code>/Library/Application Support/MiningGuardian</code>.</li>
   <li>Stands up a local Postgres&nbsp;16 database in a Colima-managed container, bound to <code>127.0.0.1:5432</code> only.</li>
   <li>Installs Ollama and pulls a local LLM model sized to your Mac's RAM (16&nbsp;GB &rsaquo; <code>llama3.2:3b</code>; 24&nbsp;GB+ &rsaquo; <code>qwen2.5:14b-instruct-q4_K_M</code>).</li>
-  <li>Registers four background services so Mining Guardian comes up automatically every time this Mac boots.</li>
+  <li>Registers ten background services so Mining Guardian comes up automatically every time this Mac boots.</li>
+  <li>Registers eleven scheduled jobs (nightly briefings, weekly training, hourly benchmarks, log collection) using the macOS-native launchd scheduler &mdash; no Full Disk Access prompt, no extra setup.</li>
 </ul>
 
 <div class="callout">
@@ -207,13 +208,15 @@
   <li>At least 16&nbsp;GB of RAM and 20&nbsp;GB of free disk on the boot volume.</li>
   <li>Network access for the one-time Ollama model pull (~2&nbsp;GB at the 16&nbsp;GB tier; ~9&nbsp;GB at the 24&nbsp;GB+ tier).</li>
   <li>Your Mac's administrator password &mdash; Installer.app will ask for it when you click <strong>Install</strong>.</li>
+  <li>The pre-filled <code>MiningGuardian.conf</code> on this Mac's Desktop &mdash; the Mining Guardian operator will hand it to you. The installer reads it once at install time and writes its values into the local <code>.env</code>; nothing leaves the Mac.</li>
 </ul>
 
 <h2>What happens after install</h2>
 <p>
-  Once the installer finishes, the four Mining Guardian services start
+  Once the installer finishes, the ten Mining Guardian services start
   immediately and a baseline scan runs in the background. You can open
-  the dashboard at <code>http://127.0.0.1:8080/</code> within about 30
+  the dashboard at <code>http://127.0.0.1:8585/</code> and the operator
+  console at <code>http://127.0.0.1:8787/</code> within about 30
   seconds.
 </p>
 

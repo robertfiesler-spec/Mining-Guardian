@@ -140,3 +140,124 @@ and what we have to do, this is for you not me."
 
 That document is `docs/PROGRAM_STATE.md`. Read it before this file. Read it again at the start
 of every session.
+
+
+---
+
+## EOD addendum — P-008 (welcome/conclusion copy + real `bin/uninstall.sh`)
+
+**Branch:** `mg/v103-p008-installer-copy-and-uninstall`
+**Closes:** D-18 Copy bugs 1, 2, 3, 4 (rows 7 + 8 of `docs/MG_UNIFIED_TODO_LIST.md`).
+**Off-limits per workstream brief:** Grafana UI/provisioning (Gap 3, row 4), Cloudflare
+Access (row 9), version bump / build / sign / notarize / smoke-test (rows 10-12).
+
+### What changed (for the next agent)
+
+1. `installer/macos-pkg/resources/welcome.html`
+   - "four background services" → "ten background services"
+   - Added eleven scheduled jobs line (launchd wording; no `crontab` literal)
+   - Added Desktop `MiningGuardian.conf` hand-off bullet under "What you'll need"
+   - Dashboard URL `:8080` → `:8585`; added operator console URL `:8787`
+
+2. `installer/macos-pkg/resources/conclusion.html`
+   - "All four" → "All ten" services; added scheduled-jobs sentence
+   - Quick-link grid: dashboard `:8585`, approval API `:8686`, operator console `:8787`,
+     scheduled-job logs path
+   - Verify code block enumerates all 10 service labels and adds a
+     `launchctl list | grep com.miningguardian.scheduled.` hint
+   - Uninstall blurb now mentions `--dry-run` and `--purge-data`
+
+3. `installer/macos-pkg/resources/uninstall.sh` (new, mode 0755, shellcheck-clean)
+   - Bootouts all 10 service + 11 scheduled-job LaunchDaemons
+   - Removes `mining-guardian-db` Postgres container (best-effort)
+   - Stops `mining-guardian` Colima profile (best-effort, never fatal)
+   - Removes `${MG_INSTALL_ROOT}` content **except `postgres-data/`** by default
+   - Removes `/etc/mining-guardian/install-receipt.json`
+   - Flags: `--help` / `--dry-run` / `--yes` / `--purge-data` / `--purge-logs`
+   - Refuses non-root with exit 1; refuses non-TTY without `--yes` with exit 1;
+     unknown flag exit 2; reserves 10/11/12/13 for hard failures
+
+4. `installer/macos-pkg/scripts/postinstall.sh`
+   - New `step_install_uninstall_script` (called from `main()` after the scheduled
+     plists, before `step_write_install_receipt`)
+   - Stale `:8080` / `:8081` log lines in `main()` corrected to `:8585` / `:8686` / `:8787`
+
+5. `installer/macos-pkg/scripts/build_pkg.sh`
+   - New `step 4j` source-tree assertion: `${PKG_DIR}/resources/uninstall.sh` must
+     exist and be executable; aborts with exit 48 otherwise
+
+6. Tests
+   - `tests/installer/test_installer_copy.sh` — 43 assertions (welcome + conclusion)
+   - `tests/installer/test_uninstall_script.sh` — 50 assertions (uninstall + drift)
+
+7. Docs
+   - `docs/DECISIONS.md` D-18 Copy bugs 1-4 marked SHIPPED
+   - `docs/INSTALL_PATHS_2026-05-03.md` lines 78-79 updated for the canonical
+     console port `:8787` (was incorrectly `:8686`)
+   - `docs/MG_UNIFIED_TODO_LIST.md` rows 7 + 8 flipped 🔴 → ✅ in this commit
+
+### How to run uninstall (when v1.0.3 is on a Mac)
+
+```bash
+# Preview first — never mutates the box
+sudo /Library/Application\ Support/MiningGuardian/bin/uninstall.sh --dry-run
+
+# Default uninstall — preserves postgres-data and /var/log/mining-guardian
+sudo /Library/Application\ Support/MiningGuardian/bin/uninstall.sh
+
+# Full purge — operational history destroyed; combine with --yes for non-TTY
+sudo /Library/Application\ Support/MiningGuardian/bin/uninstall.sh --purge-data --purge-logs
+```
+
+What it removes by default:
+* 10 service LaunchDaemons + 11 scheduled-job LaunchDaemons (`launchctl bootout` then plist `rm`)
+* `mining-guardian-db` Postgres container (`docker rm -f`)
+* `mining-guardian` Colima profile stopped (best-effort)
+* `${MG_INSTALL_ROOT}` content except `postgres-data/`
+* `/etc/mining-guardian/install-receipt.json`
+
+What it preserves by default (data-deletion is opt-in):
+* `${MG_INSTALL_ROOT}/postgres-data/` — operational history (pass `--purge-data` to remove)
+* `/var/log/mining-guardian/` — install + service logs (pass `--purge-logs` to remove)
+* Customer's Desktop `MiningGuardian.conf` (operator-owned)
+* Tailscale / Slack / AMS / Cloudflare config (out of scope)
+
+### Tests run (commands + results)
+
+| Command | Result |
+|---|---|
+| `bash -n installer/macos-pkg/scripts/postinstall.sh` | OK |
+| `bash -n installer/macos-pkg/scripts/build_pkg.sh` | OK |
+| `bash -n installer/macos-pkg/resources/uninstall.sh` | OK |
+| `shellcheck installer/macos-pkg/resources/uninstall.sh` | clean (0 warnings) |
+| `shellcheck installer/macos-pkg/scripts/build_pkg.sh \| grep -c '^In '` | 2 (no regression) |
+| `bash tests/installer/test_installer_copy.sh` | 43/43 pass |
+| `bash tests/installer/test_uninstall_script.sh` | 50/50 pass |
+| `bash tests/installer/test_postinstall_scheduled_jobs.sh` | 115/115 pass |
+| `bash tests/installer/test_postinstall_customer_info.sh` | 76/76 pass |
+| `bash tests/installer/test_postinstall_catalog_seed.sh` | 24/24 pass |
+| `bash tests/installer/test_postinstall_venv.sh` | 24/24 pass |
+| `bash tests/installer/test_d20_importer_payload_reconciliation.sh` | 32/32 pass |
+| `python3 -m pytest tests/console/ -q` | 63/63 pass |
+
+Total installer + console: 364 + 63 = **427 assertions green**.
+
+### Remaining work (not in this PR)
+
+* Row 4 — Grafana vendoring + provisioning + LaunchDaemon (Gap 3) — out of scope per
+  workstream brief (Rob: do not fix Grafana right now).
+* Row 9 — Cloudflare Tunnel + Access auto-provisioning.
+* Row 10 — Version bump + `RELEASE_NOTES_v1.0.3.md`.
+* Row 11 — Build, sign, notarize, staple v1.0.3 .pkg.
+* Row 12 — Smoke-test on clean Mac VM (UTM/Tart) — D-18 verification gate.
+* Row 13 — Install on Mini.
+
+### Safety to merge
+
+* No live system touched — every change is in the source tree.
+* No secrets touched.
+* No Postgres data touched.
+* No Mini / VPS / ROBS-PC behavior altered.
+* Branch was created off `main` (commit `ade63ef`) per the §"Working Practices"
+  rule against stacked feature PRs.
+* Safe to squash-merge to `main` once reviewed.
