@@ -198,6 +198,42 @@ else
 fi
 
 # ---------------------------------------------------------------------
+section "8. P-014 — step 4d rsync excludes build_pkg.sh from staging"
+# ---------------------------------------------------------------------
+# P-014 (2026-05-04). build_pkg.sh lives in installer/macos-pkg/scripts/
+# alongside preinstall.sh and postinstall.sh. Without an exclude, the
+# step 4d rsync `${PKG_DIR}/scripts/` → `${SCRIPTS_DIR}/` copies it into
+# the package-script staging directory. After the .sh→extensionless
+# rename, build_pkg.sh remains as a top-level *.sh — which (a) trips the
+# P-013 belt-and-suspenders guard with exit 43, and (b) if the guard
+# were ever removed, would cause pkgbuild to silently ignore both
+# preinstall and postinstall (the original P-013 failure mode).
+#
+# Symptom Rob saw on 2026-05-04 after merging PR #130: `make pkg`
+# aborted at step 4d with the leftover-*.sh guard listing build_pkg.sh.
+# The fix excludes build_pkg.sh at rsync time so staging contains only
+# preinstall.sh, postinstall.sh, and lib/.
+#
+# Assertion: the live (non-comment) rsync invocation in step 4d MUST
+# pass `--exclude 'build_pkg.sh'`. Use multiline grep so the flag can
+# sit on its own line (current style) or inline.
+if /usr/bin/grep -Pzo '(?s)/usr/bin/rsync -a[^\n]*\n\s*--exclude[[:space:]]+'"'"'build_pkg\.sh'"'"'[^\n]*\n\s*"\$\{PKG_DIR\}/scripts/"' "$BUILD_PKG" >/dev/null 2>&1; then
+    ok "build_pkg.sh step 4d rsync passes --exclude 'build_pkg.sh' (P-014)"
+elif echo "$live_body" | /usr/bin/tr '\n' ' ' | /usr/bin/grep -qE "rsync[[:space:]]+-a[[:space:]]+--exclude[[:space:]]+'build_pkg\.sh'[[:space:]]+\"\\\$\{PKG_DIR\}/scripts/\""; then
+    ok "build_pkg.sh step 4d rsync passes --exclude 'build_pkg.sh' (P-014)"
+else
+    fail "build_pkg.sh step 4d rsync missing --exclude 'build_pkg.sh' before \"\${PKG_DIR}/scripts/\" — would re-trigger P-013 leftover-*.sh guard"
+fi
+
+# Cheap forensics: future agents searching for "P-014" in the repo find
+# the rsync exclude block immediately.
+if /usr/bin/grep -qE 'P-014' "$BUILD_PKG"; then
+    ok "build_pkg.sh references P-014 (audit marker)"
+else
+    fail "build_pkg.sh has no P-014 reference — add a comment marker for future-grep"
+fi
+
+# ---------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------
 echo

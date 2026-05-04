@@ -343,15 +343,23 @@ step_4_assemble_payload() {
     # rename happens here at staging time, just before pkgbuild snapshots.
     #
     # Strategy:
-    #   1. rsync EVERYTHING under installer/macos-pkg/scripts/ (lib/ + the
-    #      .sh files) into ${SCRIPTS_DIR} so the lib/ helpers travel
-    #      alongside the scripts that source them via SCRIPT_DIR/lib/...
+    #   1. rsync the package-script content under installer/macos-pkg/scripts/
+    #      (lib/ + preinstall.sh + postinstall.sh) into ${SCRIPTS_DIR} so the
+    #      lib/ helpers travel alongside the scripts that source them via
+    #      SCRIPT_DIR/lib/... build_pkg.sh itself lives in the same source
+    #      directory but is NOT a package script — it is the build-host
+    #      entry point. Excluding it here is mandatory: pkgbuild ignores
+    #      the package-script archive entirely if it sees any top-level
+    #      *.sh next to preinstall/postinstall (P-013), and the leftover
+    #      build_pkg.sh would also leak the build-host source path into
+    #      the customer .pkg. P-014 (2026-05-04) — see REPAIR_LOG.md.
     #   2. Move the .sh files in place to extensionless names. We keep
     #      both files under the same SCRIPTS_DIR (no copies) so there's
     #      exactly one preinstall and one postinstall in the archive.
     #   3. Re-assert executable bits on the renamed entry points and on
     #      every shell helper under lib/.
     /usr/bin/rsync -a \
+        --exclude 'build_pkg.sh' \
         "${PKG_DIR}/scripts/" \
         "${SCRIPTS_DIR}/"
 
