@@ -962,3 +962,30 @@ After this PR merges, the operator runs `./installer/macos-pkg/scripts/build_pkg
 
 If any step fails, `sudo /Library/Application\ Support/MiningGuardian/bin/uninstall.sh` is the rollback. The `setup.sh` path remains a backstop (also at the new install root after this PR).
 
+# SECTION 18 — Update 2026-05-04 (Monday EOD addendum) — v1.0.3 install paused before `sudo installer`
+
+## 18.1 Status flips landed in this PR (`docs/v103-paused-before-mini-install-2026-05-04`)
+
+| Row | From | To | Notes |
+|---|---|---|---|
+| §1.2 row 11 — Build, sign, notarize, staple v1.0.3 .pkg | 🔴 OPEN | ✅ DONE | `MiningGuardian-1.0.3-a35728dcfc8c.pkg` from commit `a35728d`. Notary submission `1598b56f-f4da-4926-a319-6567a4d6d5bf` accepted. Stapled. Gatekeeper accepted on build Mac. SHA-256 sidecar at `build/MiningGuardian-1.0.3-a35728dcfc8c.pkg.sha256`. See `docs/handoffs/HANDOFF_2026-05-04_PAUSED_BEFORE_MINI_INSTALL.md`. |
+| §1.2 row 12 — Smoke-test on clean Mac VM (UTM/Tart) | 🔴 OPEN | 🚫 SKIPPED (per D-22) | Operator decision 2026-05-04: skip VM, use Mac Mini as the first clean-target install. D-22 captures the rationale and the unchanged D-18 pass criteria, evaluated post-install on the Mini. |
+| §1.2 row 13 — Install on Mini + screenshots | 🔴 OPEN | 🟡 STAGED — paused before `sudo installer` | Package on Mini at `/Users/miningguardian/Downloads/MiningGuardian-1.0.3-a35728dcfc8c.pkg`; checksum and Gatekeeper passed; Desktop conf created and shape-checked (7/7 OK); operator paused for a meeting. Resume per `docs/handoffs/HANDOFF_2026-05-04_PAUSED_BEFORE_MINI_INSTALL.md`. |
+
+## 18.2 Customer-onboarding UX gaps — forward-looking, NOT v1.0.3 scope (per D-23)
+
+These rows track gaps the 2026-05-04 install staging surfaced. They are forward-looking ONLY. The v1.0.3 .pkg already on the Mini ships unchanged. See `docs/CUSTOMER_ONBOARDING_UX_GAPS_2026-05-04.md` for the consolidated brief.
+
+| # | UX Gap | Status | Notes |
+|---|---|---|---|
+| 18-1 | Replace hand-edited Desktop `MiningGuardian.conf` with native installer form (Installer.app pane plugin) or first-run setup assistant with format hints, inline validation, live credential testing | 🔴 OPEN | Triggered by 2026-05-04 incident where `nano`-edited conf had `REPLACE_ME_SITE_NAME` instead of `CUSTOMER_NAME`. Acceptance: customer never sees `nano`, never types a config-key name, every credential is verified live before any system change. |
+| 18-2 | Tailscale guided onboarding (detect state, install if missing, walk customer through `tailscale up`, show Mini's tailnet name + URLs, add a second device) | 🔴 OPEN | Operator quote: "customers can use the free Tailscale option for a small/two-computer setup." Acceptance: customer with no prior Tailscale account ends up with a working tailnet and at least one of their other devices joined; never copies an auth key by hand. |
+| 18-3 | Grafana dashboard auto-provisioning — vendor `Grafana.app`, drop datasource + dashboard provisioning yaml, vendor every dashboard JSON, register 11th LaunchDaemon if needed, open AI & Learning dashboard on first boot | 🔴 OPEN | Tied to D-18 Gap 3 / row 4 of §1.2. Default Grafana admin credentials must be rotated per-install (same `openssl rand -hex 32` discipline as `MG_DB_PASSWORD`). Acceptance: no "Import JSON" step; no manual datasource setup. |
+| 18-4 | Pre-install Slack / AMS connectivity validation (Slack webhook ping, AMS `/api/v1/login` round-trip, workspace ID resolution) before any system state change | 🔴 OPEN | Today validation is shape-only (regex format checks). Acceptance: typo in AMS password or Slack signing secret blocks "Continue" with a plain-language error; customer fixes in-place without re-running .pkg. |
+| 18-5 | Support-bundle export (single command + console button) — last 24h logs from each of 10 services + `launchctl list` + last-run JSON stamps + service status + redacted `.env` shape + version + commit SHA + notarization status, into one tar.gz on Desktop | 🔴 OPEN | Acceptance: zero credential values leave the Mini; operator can reproduce customer state without further questions. |
+| 18-6 | `MG_DRY_RUN=true` safe-default for customer-facing templates + dry-run banner in operator console + one-click "Switch to live mode" gated on confirmation | 🔴 OPEN | Acceptance: new customer cannot accidentally enable live remediation on day one; banner is impossible to miss when in dry-run. |
+| 18-7 | Surface recovery / uninstall in operator console — "Reset Mining Guardian" button that runs `bin/uninstall.sh --dry-run` first, shows preview, asks confirmation; destructive `--purge-data` requires red affordance + double-confirm; "Re-run setup assistant" for credential rotation | 🔴 OPEN | P-008 already shipped `bin/uninstall.sh` with data-preserving default. This row wires it into the console UI. |
+| 18-8 | Screenshot-ready customer runbook PDF/web doc walking every dialog in order with annotated screenshots; updated whenever a dialog string changes | 🔴 OPEN | Acceptance: nontechnical customer can install end-to-end with the PDF and no live support. |
+
+**All §18 rows are forward-looking under D-23.** Do NOT pull any of them into the current pause-resume work. Open a separate work train against `main` after the Mini install is verified green.
+
