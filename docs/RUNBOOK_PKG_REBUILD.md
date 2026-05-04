@@ -22,6 +22,56 @@ git log -1 --stat
 
 If `git pull --ff-only` rejects, you have local commits or uncommitted work. Stop, sort that out before continuing.
 
+## Block Pre-A — Populate the vendor wheelhouse (D-18 Gap 5, P-010 hard gate)
+
+> **One-time per build host. Re-run this only when `installer/macos-pkg/payload-requirements.txt` changes.**
+> Skipping this block is now a hard build error — `build_pkg.sh` step 4e exits 43 if `${HOME}/MiningGuardian-vendor/python-wheels/` is missing or empty (P-010, 2026-05-04). Catching it here saves an Apple notarization round-trip on a dead .pkg.
+
+Why this exists: `postinstall.sh::step_create_venv` runs `pip install --no-index --find-links <payload>/python-wheels --only-binary=:all: -r <payload>/requirements.txt` on the customer Mac. No network for pip. The wheels must be vendored offline at build time, on the operator's Mac, against the macOS Apple Silicon target ABI.
+
+```zsh
+# 1. Confirm Homebrew python@3.12 is installed on the build host.
+#    The .pkg DOES NOT vendor a Python interpreter — postinstall expects
+#    /opt/homebrew/opt/python@3.12/bin/python3.12 on the customer Mac.
+#    The same interpreter is used at build time to download the wheels so
+#    the ABI tags match.
+/opt/homebrew/opt/python@3.12/bin/python3.12 --version
+# Expect: Python 3.12.x
+# If missing: brew install python@3.12
+
+# 2. Make a clean wheelhouse — wipe any older download to avoid mixing
+#    stale wheels from a previous payload-requirements.txt.
+rm -rf "${HOME}/MiningGuardian-vendor/python-wheels"
+mkdir -p "${HOME}/MiningGuardian-vendor/python-wheels"
+
+# 3. Download the FULL transitive closure for macosx_11_0_arm64 / cp312.
+#    --only-binary=:all: refuses sdists (no compiler on the customer Mini).
+#    --platform / --python-version / --implementation / --abi force the
+#    correct wheel ABI tags even when running this on a different host.
+/opt/homebrew/opt/python@3.12/bin/python3.12 -m pip download \
+    --only-binary=:all: \
+    --platform macosx_11_0_arm64 \
+    --python-version 3.12 \
+    --implementation cp \
+    --abi cp312 \
+    -d "${HOME}/MiningGuardian-vendor/python-wheels" \
+    -r installer/macos-pkg/payload-requirements.txt
+
+# 4. Sanity-count what landed. Expect ~80-150 wheels (full transitive
+#    closure of the 49 lines in payload-requirements.txt).
+ls "${HOME}/MiningGuardian-vendor/python-wheels"/*.whl | wc -l
+```
+
+**If pip download fails on a specific package**, the most common causes are:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Could not find a version that satisfies the requirement X (from versions: ...)` for a package that lists only sdists | Package has no arm64 cp312 wheel on PyPI | Pin a different version that does (`pip index versions X`), update `payload-requirements.txt` |
+| `weasyprint`, `psycopg2-binary`, `cryptography`, `paramiko` resolver complaints | Build-host Python is 3.13 or 3.14, not 3.12 | Re-run with the explicit `/opt/homebrew/opt/python@3.12/bin/python3.12` path |
+| Empty wheelhouse with no error | Network blocked / VPN | Disconnect VPN, retry |
+
+After this block succeeds you do NOT need to re-run it for subsequent builds unless `installer/macos-pkg/payload-requirements.txt` changes. The wheelhouse is intentionally outside the repo (`${HOME}/MiningGuardian-vendor/`) so it never gets committed.
+
 ## Block A — Build, sign, notarize, staple (one command)
 
 ```zsh

@@ -164,6 +164,22 @@ else
     fail "build_pkg.sh does not copy payload-requirements.txt — Gap 5 partial"
 fi
 
+# P-010 (2026-05-04) — missing wheelhouse must abort the build, not WARN.
+# Pre-P-010: the missing-dir branch only logged a WARN and proceeded; the
+# build signed/notarized cleanly but the resulting .pkg's postinstall would
+# exit 38 at install time. Assert the WARN string is gone and the
+# `_die 43` for a missing wheelhouse is wired into step 4e.
+if /usr/bin/grep -qE 'WARN[[:space:]]+\$\{wheels_src\}[[:space:]]+missing' "$BUILD_PKG"; then
+    fail "build_pkg.sh still WARNs and proceeds when ${HOME}/MiningGuardian-vendor/python-wheels is missing — P-010 not applied"
+else
+    ok "build_pkg.sh no longer WARN-and-proceeds on missing wheelhouse (P-010)"
+fi
+if /usr/bin/grep -qE '_die 43 "step 4e: vendor wheelhouse missing' "$BUILD_PKG"; then
+    ok "build_pkg.sh aborts with exit 43 when wheelhouse missing (P-010)"
+else
+    fail "build_pkg.sh missing _die 43 for absent wheelhouse — P-010 regression"
+fi
+
 # ---------------------------------------------------------------------
 section "8. payload-requirements.txt sanity"
 # ---------------------------------------------------------------------

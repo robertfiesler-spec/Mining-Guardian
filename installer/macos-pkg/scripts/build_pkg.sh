@@ -272,18 +272,35 @@ step_4_assemble_payload() {
     #       -r installer/macos-pkg/payload-requirements.txt
     # See docs/RUNBOOK_PKG_REBUILD.md (updated in this PR) for the
     # full step-by-step.
+    # P-010 (2026-05-04): missing wheelhouse must abort the build, not WARN.
+    # The pre-P-010 path emitted a WARN and proceeded; the resulting .pkg
+    # signed and notarized cleanly but its postinstall step_create_venv
+    # would exit 38 at install time on the customer Mac because
+    # <payload>/python-wheels/ was absent. That burns an Apple notarization
+    # round-trip on a dead .pkg. Treat a missing wheelhouse the same way
+    # we already treat an empty wheelhouse: fail step 4e with exit 43
+    # before signing.
+    #
+    # Operator populates the wheelhouse ONCE per build host using:
+    #   mkdir -p ${HOME}/MiningGuardian-vendor/python-wheels
+    #   /opt/homebrew/opt/python@3.12/bin/python3.12 -m pip download \
+    #       --only-binary=:all: --platform macosx_11_0_arm64 \
+    #       --python-version 3.12 --implementation cp --abi cp312 \
+    #       -d ${HOME}/MiningGuardian-vendor/python-wheels \
+    #       -r installer/macos-pkg/payload-requirements.txt
+    # See docs/RUNBOOK_PKG_REBUILD.md "Block Pre-A — populate the
+    # wheelhouse" for the full step-by-step.
     local wheels_src="${HOME}/MiningGuardian-vendor/python-wheels"
-    if [[ -d "$wheels_src" ]]; then
-        install -d -m 0755 "${PAYLOAD_DIR}/python-wheels"
-        /usr/bin/rsync -a "${wheels_src}/" "${PAYLOAD_DIR}/python-wheels/"
-        local wheel_count
-        wheel_count="$(/usr/bin/find "${PAYLOAD_DIR}/python-wheels" -maxdepth 1 -type f -name '*.whl' | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
-        _log "  vendored ${wheel_count} python wheel(s) from ${wheels_src}"
-        if (( wheel_count < 1 )); then
-            _die 43 "step 4e: ${wheels_src} contained no .whl files — postinstall step_create_venv would fail at install time"
-        fi
-    else
-        _log "  WARN ${wheels_src} missing — postinstall step_create_venv (D-18 Gap 5) will fail at install time"
+    if [[ ! -d "$wheels_src" ]]; then
+        _die 43 "step 4e: vendor wheelhouse missing: ${wheels_src} — postinstall step_create_venv (D-18 Gap 5) would fail at install time. Populate it with the pip download command in docs/RUNBOOK_PKG_REBUILD.md before re-running build_pkg.sh."
+    fi
+    install -d -m 0755 "${PAYLOAD_DIR}/python-wheels"
+    /usr/bin/rsync -a "${wheels_src}/" "${PAYLOAD_DIR}/python-wheels/"
+    local wheel_count
+    wheel_count="$(/usr/bin/find "${PAYLOAD_DIR}/python-wheels" -maxdepth 1 -type f -name '*.whl' | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    _log "  vendored ${wheel_count} python wheel(s) from ${wheels_src}"
+    if (( wheel_count < 1 )); then
+        _die 43 "step 4e: ${wheels_src} contained no .whl files — postinstall step_create_venv would fail at install time"
     fi
 
     # 4f. requirements.txt — single source of truth for the install-time
