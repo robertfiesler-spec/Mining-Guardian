@@ -320,18 +320,71 @@ step_4_assemble_payload() {
     install -m 0644 "$payload_req_src" "${PAYLOAD_DIR}/requirements.txt"
     _log "  staged requirements.txt from ${payload_req_src}"
 
-    # 4d. Scripts — preinstall.sh, postinstall.sh, and the lib/ helpers
-    # all go under STAGE/scripts/, which productbuild reads with
-    # --scripts.
+    # 4d. Scripts — preinstall, postinstall, and the lib/ helpers all go
+    # under STAGE/scripts/, which pkgbuild reads with --scripts.
+    #
+    # P-013 (2026-05-04). macOS PackageKit honors EXACTLY two top-level
+    # script names in a component pkg's scripts archive: `preinstall` and
+    # `postinstall`, with NO extension. Anything else (preinstall.sh,
+    # postinstall.sh, my-preinstall, etc.) is silently ignored — Installer.app
+    # lays down the payload, writes the BOM/receipt, reports success, and
+    # the scripts never fire. That is exactly the failure mode v1.0.3 hit
+    # on Rob's Mac mini install of build a35728d (2026-05-04): payload
+    # extracted, receipt registered, but `/var/log/mining-guardian/install-postinstall.log`,
+    # `/etc/mining-guardian/install-receipt.json`, `.env`, `venv`, and
+    # every other postinstall artifact were absent because the scripts
+    # were named preinstall.sh/postinstall.sh in the .pkg's Scripts
+    # archive. See `man pkgbuild`:
+    #     "If this directory contains scripts named preinstall and/or
+    #      postinstall, these will be run as the top-level scripts of
+    #      the package."
+    # The repo-side filenames keep the .sh extension so editors highlight
+    # them, shellcheck recognizes them, and `bash -n` works in CI; the
+    # rename happens here at staging time, just before pkgbuild snapshots.
+    #
+    # Strategy:
+    #   1. rsync EVERYTHING under installer/macos-pkg/scripts/ (lib/ + the
+    #      .sh files) into ${SCRIPTS_DIR} so the lib/ helpers travel
+    #      alongside the scripts that source them via SCRIPT_DIR/lib/...
+    #   2. Move the .sh files in place to extensionless names. We keep
+    #      both files under the same SCRIPTS_DIR (no copies) so there's
+    #      exactly one preinstall and one postinstall in the archive.
+    #   3. Re-assert executable bits on the renamed entry points and on
+    #      every shell helper under lib/.
     /usr/bin/rsync -a \
         "${PKG_DIR}/scripts/" \
         "${SCRIPTS_DIR}/"
 
-    # productbuild expects preinstall + postinstall to be at the top of
-    # the scripts directory and named exactly so. Anything in lib/ is
-    # also copied because the scripts source it relative to themselves.
-    chmod +x "${SCRIPTS_DIR}/preinstall.sh" "${SCRIPTS_DIR}/postinstall.sh"
+    if [[ ! -r "${SCRIPTS_DIR}/preinstall.sh" ]]; then
+        _die 43 "step 4d: preinstall.sh missing in staged scripts dir: ${SCRIPTS_DIR}/preinstall.sh"
+    fi
+    if [[ ! -r "${SCRIPTS_DIR}/postinstall.sh" ]]; then
+        _die 43 "step 4d: postinstall.sh missing in staged scripts dir: ${SCRIPTS_DIR}/postinstall.sh"
+    fi
+    /bin/mv -f "${SCRIPTS_DIR}/preinstall.sh"  "${SCRIPTS_DIR}/preinstall"
+    /bin/mv -f "${SCRIPTS_DIR}/postinstall.sh" "${SCRIPTS_DIR}/postinstall"
+    chmod 0755 "${SCRIPTS_DIR}/preinstall" "${SCRIPTS_DIR}/postinstall"
     chmod +x "${SCRIPTS_DIR}/lib/"*.sh
+
+    # P-013 belt-and-suspenders: refuse to proceed unless the staged
+    # scripts directory has the two extensionless entry points executable
+    # and zero leftover *.sh entries at its top level (those would mean
+    # the rename failed silently, e.g. file system case-insensitivity or
+    # a future refactor that copied instead of moved).
+    if [[ ! -x "${SCRIPTS_DIR}/preinstall" ]]; then
+        _die 43 "step 4d: ${SCRIPTS_DIR}/preinstall not present or not executable after rename (P-013)"
+    fi
+    if [[ ! -x "${SCRIPTS_DIR}/postinstall" ]]; then
+        _die 43 "step 4d: ${SCRIPTS_DIR}/postinstall not present or not executable after rename (P-013)"
+    fi
+    local stray_sh
+    stray_sh="$(/usr/bin/find "${SCRIPTS_DIR}" -maxdepth 1 -type f -name '*.sh' 2>/dev/null)"
+    if [[ -n "$stray_sh" ]]; then
+        _log "step 4d FAIL: leftover top-level *.sh in scripts staging dir:"
+        echo "$stray_sh" >&2
+        _die 43 "step 4d: top-level *.sh files in ${SCRIPTS_DIR} after rename — pkgbuild --scripts would ignore preinstall/postinstall (P-013)"
+    fi
+    _log "step 4d OK: scripts staged as preinstall/postinstall (extensionless, executable) — P-013"
 
     # 4g. Catalog seed assertion (D-18 Gap 2). postinstall.sh
     # step_provision_catalog_db_and_seed expects deploy_schema.sql and
