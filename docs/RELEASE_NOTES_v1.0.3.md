@@ -36,6 +36,7 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-012 | `resign_wheel.py` 3.9 compat for `/usr/bin/python3` on macOS | `mg/v103-p012-resign-wheel-py39-compat` | _stamped on merge_ | `a35728d` |
 | P-013 | pkgbuild scripts must be staged with extensionless names (`preinstall`, `postinstall`); `MiningGuardian-1.0.3-a35728dcfc8c.pkg` was payload-only because PackageKit silently ignored `preinstall.sh` / `postinstall.sh` | `mg/v103-p013-pkg-scripts-naming` | _this PR_ | _stamped on merge_ |
 | P-014 | `build_pkg.sh` step 4d rsync excludes `build_pkg.sh` itself from scripts staging — first `make pkg` after P-013 merged hit the new P-013 leftover-`*.sh` guard because `build_pkg.sh` lives next to `preinstall.sh`/`postinstall.sh` and was being rsync'd into the package-script staging dir | `mg/v103-d18-p014-staging-exclude-build-pkg` | _this PR_ | _stamped on merge_ |
+| P-015 | Preinstall arch gate Rosetta-safe (`sysctl hw.optional.arm64`, never `uname -m`) — `MiningGuardian-1.0.3-2b48f98e6b77.pkg` first install on customer Mac mini hard-failed at `gate_apple_silicon` because `/usr/bin/uname -m` returned `x86_64` under a Rosetta-translated `/bin/bash` even though the Mac is M-series | `mg/v103-d18-p015-arch-gate-rosetta-safe` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -206,6 +207,86 @@ make pkg
 ```
 
 The next `make pkg` should clear step 4d cleanly and proceed through pkgbuild + productbuild + productsign + notarytool.
+
+---
+
+### P-015 — preinstall arch gate Rosetta-safe (this PR)
+
+**Problem:**
+First install of the corrected v1.0.3 .pkg `MiningGuardian-1.0.3-2b48f98e6b77.pkg` (built from `main` 2b48f98 with P-013 + P-014 in) on the customer Mac mini hard-failed at `gate_apple_silicon`. `/var/log/mining-guardian/install-preinstall.log` showed:
+
+```
+… [preinstall] OK gate_root: running as root
+… [preinstall] OK gate_macos_version: 26.4.1 >= 13.0
+… [preinstall] FATAL (12) this build supports Apple Silicon (arm64) only; detected 'x86_64'
+… [preinstall] Aborting install. See /var/log/mining-guardian/install-preinstall.log for full context.
+```
+
+The Mac mini is documented in `CLAUDE.md` as M-series. The signal misled.
+
+**Root cause:**
+`gate_apple_silicon` called `/usr/bin/uname -m` and compared the result to `arm64`. `uname -m` reports the architecture of the **calling process**, not the hardware. On Apple Silicon, if Installer.app spawns the preinstall under a Rosetta-translated `/bin/bash` (Terminal.app's "Open using Rosetta" preference, or `arch -x86_64 sudo installer ...`), `uname -m` returns `x86_64` even though the Mac is M-series. This is documented Apple behavior, not a hardware question.
+
+The kernel-authoritative hardware indicator is `sysctl hw.optional.arm64`, which the kernel sets from the SoC and which does NOT change under Rosetta translation:
+
+| Probe | Apple Silicon (native) | Apple Silicon (Rosetta) | Intel |
+|---|---|---|---|
+| `uname -m` | `arm64` | **`x86_64`** ← lies | `x86_64` |
+| `sysctl -n hw.optional.arm64` | `1` | `1` | `0` (or missing) |
+| `sysctl -n sysctl.proc_translated` | `0` | `1` | missing |
+
+Only `hw.optional.arm64` is invariant under translation.
+
+**Fix:**
+`installer/macos-pkg/scripts/preinstall.sh::gate_apple_silicon` rewritten to read `sysctl -n hw.optional.arm64` first:
+
+- `=1` → Apple Silicon hardware → accept regardless of `uname -m`. If `sysctl.proc_translated=1`, log a Rosetta-context WARN line so the operator knows the install proceeded under translation.
+- `=0` → Intel hardware → `fail 12` with a precise error mentioning the sysctl value.
+- sysctl unreadable / missing key → fall back to `uname -m`. Accept only when uname agrees with `arm64`. If uname says `x86_64` here we have NO authoritative arm64 evidence and must `fail 12` rather than risk accepting an Intel Mac.
+
+`sysctl.proc_translated` is logged for diagnostics but does NOT gate — a Rosetta-translated preinstall on Apple Silicon hardware is a valid install; the postinstall and the daemon will run native arm64 once LaunchDaemons fire.
+
+Intel-only support remains explicitly out of scope per `CLAUDE.md` / D-18 / Vision Anchor 2 (Mini IS the product, M-series only).
+
+**Tests:**
+- New `tests/installer/test_preinstall_arch_gate.sh` (11 assertions, all green) — 6 static drift guards (bash -n, sysctl reads, `hw_arm64` decision branch retained, `fail 12` rejection path retained, P-015 audit marker present) + 5 functional scenarios using a PATH-shadowed `sysctl`/`uname` mock harness:
+  1. Native Apple Silicon (`hw.optional.arm64=1`, `proc_translated=0`, `uname -m=arm64`) → exit 0.
+  2. Apple Silicon under Rosetta (`hw.optional.arm64=1`, `proc_translated=1`, `uname -m=x86_64`) → exit 0 — the bug being fixed.
+  3. Intel hardware (`hw.optional.arm64=0`, `proc_translated=missing`, `uname -m=x86_64`) → exit 12.
+  4. sysctl unreadable + `uname -m=x86_64` → exit 12 (defensive reject).
+  5. sysctl unreadable + `uname -m=arm64` → exit 0 (defensive accept only when uname agrees).
+- All 10 prior installer test suites still green.
+
+**No build_pkg.sh / payload / notarization-relevant code touched.** Source-tree change is preinstall.sh only. The rebuilt .pkg's payload is byte-identical to 2b48f98 modulo the script-archive bytes for `preinstall`.
+
+**Operator-side diagnostic to confirm hardware (run on the Mac mini):**
+
+```
+sysctl -n hw.optional.arm64
+sysctl -n sysctl.proc_translated
+uname -m
+arch
+system_profiler SPHardwareDataType | grep -E '^\s*(Model Identifier|Model Name|Chip):'
+```
+
+Expected on the M-series Mac mini: `hw.optional.arm64` prints `1`; `sysctl.proc_translated` prints `0` if you ran the command from a native Terminal or `1` if your Terminal is set to "Open using Rosetta"; `Model Identifier` is `MacXX,Y` (M-series) and `Chip` is `Apple Mxx`. If `hw.optional.arm64` returns `1` and the install still fails, the install had a different cause and we'll dig from `/var/log/mining-guardian/install-preinstall.log`.
+
+**Operator commands after merge:**
+
+```
+git checkout main
+git pull --ff-only origin main
+make pkg
+```
+
+The rebuilt .pkg replaces `MiningGuardian-1.0.3-2b48f98e6b77.pkg`. Install path on the Mini (no payload-only carryover, no scripts ran on the prior attempt, just retry):
+
+```
+sudo rm -f /var/log/mining-guardian/install-preinstall.log
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+```
+
+If the operator's Terminal is set to "Open using Rosetta," the preinstall will now still succeed on the M-series Mini (with the diagnostic WARN line in the log). If the operator wants the entire install chain native arm64, uncheck Terminal.app → Get Info → "Open using Rosetta" before installing, OR invoke via `arch -arm64 sudo installer …`.
 
 ---
 
