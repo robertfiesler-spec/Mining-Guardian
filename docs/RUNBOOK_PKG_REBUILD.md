@@ -274,7 +274,7 @@ Commit. Done.
 |---|---|---|
 | `make pkg` errors at productsign | Keychain locked | `security unlock-keychain ~/Library/Keychains/login.keychain-db` |
 | notarytool says "In Progress" >10 min | Apple notary slow | Wait. It can take up to 30 min on bad days. Don't kill `make pkg`. |
-| notarytool says "Invalid" | Inner binary not codesigned, or .app bundle seal broken | This is what PR #51 fixed. Check the notary log: `xcrun notarytool log <submission-id> --keychain-profile mg-notary` |
+| notarytool says "Invalid" | Inner binary not codesigned, or .app bundle seal broken, or vendored Python wheel `.so` not signed (P-011) | First check the auto-fetched detail log next to the .pkg: `build/MiningGuardian-<version>-<sha>.notarization-detail.json` (P-011 added this auto-fetch). If it lists rejections under `python-wheels/*.whl/*.so`, P-011's `step_4c_resign_inner_wheels` should have caught them — confirm `installer/macos-pkg/scripts/lib/resign_wheel.py` ran and that the `[resign_wheel]` summary line shows `0 failure(s)`. If `.app` / `.framework` rejections appear, this is the PR #51 path: check the bundle's `_CodeSignature/CodeResources` seal. Manual fetch fallback: `xcrun notarytool log <submission-id> --keychain-profile mg-notary`. |
 | `spctl --assess` says "rejected" on the downloaded copy | staple didn't survive download | Re-staple, re-upload. Apple CDNs sometimes strip xattrs; the stapled ticket should NOT be one of those (it's embedded). |
 | USB shows old file even after `cp` | macOS Finder cached, or `cp` didn't actually finish | `sync && diskutil eject "MG Install"`, replug, verify |
 
@@ -287,6 +287,52 @@ Commit. Done.
 ---
 
 *Written 2026-04-28. Pair with `docs/RUNBOOK_DISTRIBUTION_v1.0.0.md` (which covers the first-time chain) and `docs/SESSION_LOG_2026-04-28.md` (which covers the day this runbook was forged).*
+
+---
+
+## Addendum 2026-05-04 — P-011 wheel re-signing (Apple notary `Invalid` on inner `.so`)
+
+Added after the v1.0.3 first build (`MiningGuardian-1.0.3-295aec38f2ee.pkg`, submission `750c089f-f0a1-4d40-bf15-e8c295828027`) returned `Invalid` from Apple notary with rejections inside vendored Python wheels (aiohttp `_http_writer`, `_http_parser`, `_websocket/mask`, `_websocket/reader_c`; bcrypt `_bcrypt.abi3.so` x86_64+arm64 in the universal2 wheel; matplotlib's compiled extensions; etc.).
+
+**Root cause.** Upstream Python wheels (PyPI) ship Mach-O binaries signed by their package maintainer's certificate, NOT with our Developer ID Application identity, AND without a secure timestamp, AND in many cases without hardened runtime opted in. Apple notary walks every Mach-O file inside the .pkg payload — including ones embedded inside `.whl` zip archives — and rejects the submission if any of them fails the three-criteria check. The notary log lines look like:
+
+```
+Path: Payload/.../python-wheels/aiohttp-3.13.5-cp312-cp312-macosx_*.whl/aiohttp/_http_writer.cpython-312-darwin.so
+Architecture: arm64
+Issue: not signed with valid Developer ID certificate
+Issue: no secure timestamp
+```
+
+**The fix.** `build_pkg.sh` now runs `step_4c_resign_inner_wheels` between `step_4b_codesign_inner_binaries` (which signs loose runtime binaries) and `step_5_pkgbuild_and_sign`. The new step shells out to `installer/macos-pkg/scripts/lib/resign_wheel.py`, which for every `*.whl` in `<payload>/python-wheels/`:
+
+1. Extracts the wheel into a temp dir.
+2. Finds every Mach-O via `file -b` (covers `.so`, `.dylib`, fat universal2 binaries).
+3. `codesign --force --sign "$APPLE_DEV_ID_APPLICATION" --options runtime --timestamp` on each.
+4. Recomputes sha256 + size and rewrites the wheel's `*.dist-info/RECORD` manifest line for every modified file.
+5. Re-zips the wheel deterministically and atomic-moves over the original.
+6. Runs a post-rewrite verify pass (sha256 + size of every RECORD entry vs the actual zip bytes) — fails the build with exit 49 if RECORD has drifted, so we catch a programmer error here rather than ship a wheel that bricks `pip install` on the customer Mac.
+
+Pure-Python wheels are skipped (no Mach-O → nothing to do, RECORD untouched, pip install still works offline).
+
+**What this means for the operator.**
+
+* No new manual step. `make pkg` keeps running end-to-end exactly as before. The 4c step adds maybe 10–60 s to the build depending on how many C-extension wheels are in the closure (108 wheels in the v1.0.3 closure ⇒ ~12 wheels with Mach-O ⇒ ~30–60 codesign calls plus their TSA round-trips).
+* If `step_4c_resign_inner_wheels` fails, `build_pkg.sh` exits 49 with the failing wheel's name in the `[resign_wheel]` log lines just above. Common causes: keychain locked (re-run `security unlock-keychain ~/Library/Keychains/login.keychain-db`), TSA unreachable (transient — retry), or a corrupted vendored wheel (re-run Block Pre-A's `pip download`).
+* If notary still returns `Invalid` after a clean P-011 build, the `step_6_notarize` auto-fetch (also added in P-011) writes the detailed JSON to `build/MiningGuardian-<version>-<sha>.notarization-detail.json` next to the summary log. Read that first before re-running.
+
+**Why this didn't bite us before v1.0.3.** Pre-v1.0.3 `.pkg` builds did not vendor Python wheels — the install assumed an internet-connected Mac that could `pip install` from PyPI at install time (out of spec for the local-first Mac Mini deployment). D-18 Gap 5 (P-002, 2026-05-04) added the offline wheelhouse to `<payload>/python-wheels/`. P-011 (this addendum) closes the loop by re-signing the wheels' inner binaries so the offline-vendored payload survives Apple notary.
+
+**Files touched in P-011.**
+
+| File | Change |
+|---|---|
+| `installer/macos-pkg/scripts/build_pkg.sh` | New `step_4c_resign_inner_wheels`; main() ordering 4 → 4b → 4c → 5; `step_6_notarize` auto-fetches detail log on failure; exit code 49 documented |
+| `installer/macos-pkg/scripts/lib/resign_wheel.py` | New helper (440 lines, stdlib-only) |
+| `tests/installer/test_wheel_resign.sh` | New regression test (15 assertions) |
+| `docs/MG_UNIFIED_TODO_LIST.md` | New row 10c |
+| `docs/RUNBOOK_PKG_REBUILD.md` | This addendum + Common failures row updated |
+| `docs/DECISIONS.md` | New decision entry for the wheel-resign approach |
+| `docs/LATENT_BUGS.md` | Note added so future sessions don't re-discover the same notary failure mode |
 
 ---
 
