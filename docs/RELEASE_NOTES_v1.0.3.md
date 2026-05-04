@@ -31,6 +31,10 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-007 | D-18 Gap 4 — 11 scheduled-task launchd plists (replaces `setup.sh::phase_10_cron`) | `mg/v103-gap4-scheduled-launchd` | [#123](https://github.com/robertfiesler-spec/Mining-Guardian/pull/123) | `ade63ef` |
 | P-008 | D-18 Copy bugs 1/2/4 + Copy bug 3 real `bin/uninstall.sh` | `mg/v103-p008-installer-copy-and-uninstall` | [#124](https://github.com/robertfiesler-spec/Mining-Guardian/pull/124) | `c450d12` |
 | P-009 | Version bump 1.0.2 → 1.0.3 + this RELEASE_NOTES file + pre-build readiness audit | `mg/v103-version-bump-and-release-notes` | _this PR_ | _stamped on merge_ |
+| P-010 | Wheelhouse hard-fail in `build_pkg.sh` step 4e | `mg/v103-p010-wheelhouse-fail-hard` | _stamped on merge_ | `295aec3` |
+| P-011 | Re-sign Mach-O inside vendored Python wheels (Apple notary `Invalid` for `750c089f-…`) | `mg/v103-p011-wheel-resign` | _stamped on merge_ | `d8bbed5` |
+| P-012 | `resign_wheel.py` 3.9 compat for `/usr/bin/python3` on macOS | `mg/v103-p012-resign-wheel-py39-compat` | _stamped on merge_ | `a35728d` |
+| P-013 | pkgbuild scripts must be staged with extensionless names (`preinstall`, `postinstall`); `MiningGuardian-1.0.3-a35728dcfc8c.pkg` was payload-only because PackageKit silently ignored `preinstall.sh` / `postinstall.sh` | `mg/v103-p013-pkg-scripts-naming` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -126,6 +130,42 @@ Bitcoin SHA-256 miners only. Local-only by design.
 - `docs/handoffs/HANDOFF_2026-05-04.md` — new EOD handoff per D-15 protocol.
 
 **No code changes outside the version stamp.** No installer logic touched. No tests changed beyond the new drift guard. No payload shape change. The .pkg the operator builds tomorrow uses the EXACT source tree that P-001 through P-008 produced; the only delta is the version stamp on the filename and build receipt.
+
+### P-013 — pkgbuild scripts must be staged with extensionless names (this PR)
+
+**Problem:**
+On 2026-05-04 Rob installed signed/notarized v1.0.3 build `a35728d` on the customer Mac mini with `sudo installer -pkg "MiningGuardian-1.0.3-a35728dcfc8c.pkg" -target /`. The installer reported success and `BUILD_STAMP.json` showed v1.0.3 `a35728dcfc8c` at `/Library/Application Support/MiningGuardian`. But every postinstall artifact was missing — no `/etc/mining-guardian/install-receipt.json`, no `/var/log/mining-guardian/install-postinstall.log`, no `.env`, no `venv`, no `logs`, no `postgres-data`, no `bin/`. `/var/log/install.log` showed PackageKit extracted the payload + wrote the receipt + logged "Installed Mining Guardian (1.0.3)", but ZERO preinstall/postinstall script execution lines.
+
+**Root cause:**
+Apple's `pkgbuild --scripts` honors EXACTLY two top-level filenames in the Scripts archive: `preinstall` and `postinstall`, with NO extension. From `man pkgbuild`: *"If this directory contains scripts named preinstall and/or postinstall, these will be ran as the top-level scripts of the package."* PackageKit silently ignores any other filename — including `preinstall.sh` and `postinstall.sh`. `build_pkg.sh::step_4_assemble_payload` step 4d staged the scripts under their repo names `preinstall.sh` / `postinstall.sh`, so PackageKit silently ignored them — payload was laid down, BOM + receipt were written, install reported "success", and the scripts NEVER fired.
+
+**Fix:**
+`build_pkg.sh::step_4_assemble_payload` step 4d now `mv -f` the staged scripts into extensionless names inside `${BUILD_DIR}/stage/scripts/`:
+
+```
+${SCRIPTS_DIR}/preinstall.sh  → ${SCRIPTS_DIR}/preinstall   (chmod 0755)
+${SCRIPTS_DIR}/postinstall.sh → ${SCRIPTS_DIR}/postinstall  (chmod 0755)
+```
+
+After the rename, step 4d runs `find -maxdepth 1 -type f -name '*.sh'` against the staging dir and aborts the build with exit 43 if anything `*.sh` remains at the top level (belt-and-suspenders against a future refactor that copies instead of moves). Source files retain the `.sh` extension on disk so editor highlighting, shellcheck, and `bash -n` keep working — the rename only happens at build-time staging.
+
+**Tests:**
+- `tests/installer/test_pkg_scripts_naming.sh` — 15 assertions, all green. Covers source-tree `.sh` presence + executable bits, `bash -n`, the rename live-line, the chmod 0755 line, the `find` guard, the post-rename `[[ -x ]]` assertions, and a "no stray live reference to `${SCRIPTS_DIR}/(pre|post)install.sh` outside the rename block" drift check.
+- All 9 prior installer test suites still green; `build_pkg.sh` shellcheck baseline unchanged at 2.
+
+**Detection (durable):**
+For any future build, expand the .pkg and inspect the Scripts archive:
+
+```
+pkgutil --expand build/MiningGuardian-1.0.3-<sha>.pkg /tmp/mg-pkg-check
+ls /tmp/mg-pkg-check/core.pkg/Scripts/
+# MUST show exactly:  preinstall  postinstall  lib/   (and resign_wheel.py)
+# MUST NOT show:      preinstall.sh  postinstall.sh
+rm -rf /tmp/mg-pkg-check
+```
+
+**Critical operator note:**
+The existing `MiningGuardian-1.0.3-a35728dcfc8c.pkg` is NOT a shippable artifact. It has signed payload + valid Gatekeeper acceptance + valid receipt, but no postinstall ever ran. The Mac mini currently has a payload-only install. The cleanup + rebuild + reinstall path is in the PR description and `docs/RUNBOOK_PKG_REBUILD.md` Block-Cleanup. After P-013 lands, the next `make pkg` produces a shippable .pkg from the EXACT same source tree (no payload changes, only the staging-time rename).
 
 ---
 
