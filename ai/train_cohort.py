@@ -254,9 +254,9 @@ def summarize_cohort(conn: "_PgConnWrapper", cohort_key: Tuple,
     agg = conn.execute(f'''
         SELECT
             COUNT(DISTINCT miner_id) as miner_count,
-            ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
-            ROUND((MIN(hashrate_pct))::numeric, 1) as min_hr,
-            ROUND((MAX(hashrate_pct))::numeric, 1) as max_hr,
+            ROUND((AVG(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as avg_hr,
+            ROUND((MIN(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as min_hr,
+            ROUND((MAX(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as max_hr,
             ROUND((AVG(CASE WHEN temp_chip > 0 THEN temp_chip END))::numeric, 1) as avg_temp,
             MAX(temp_chip) as max_temp,
             COUNT(*) as total_readings,
@@ -296,7 +296,7 @@ def summarize_cohort(conn: "_PgConnWrapper", cohort_key: Tuple,
         # Compute per-miner average HR over the week
         hr_rows = conn.execute(f'''
             SELECT miner_id, ip,
-                   ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
+                   ROUND((AVG(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as avg_hr,
                    ROUND((AVG(CASE WHEN temp_chip > 0 THEN temp_chip END))::numeric, 1) as avg_temp
             FROM miner_readings
             WHERE miner_id IN ({placeholders})
