@@ -360,3 +360,46 @@ This is the canonical log of decisions that are committed and not subject to re-
 - **Rollback plan:** If P-011 itself misbehaves (e.g., RECORD rewrite breaks a wheel that was previously fine), the operator can revert the PR and rebuild — but the v1.0.3 .pkg `MiningGuardian-1.0.3-295aec38f2ee.pkg` already exists on disk in a notary-rejected state, and the wheel re-signing approach is the only forward path for a vendored-wheels payload. An alternative would be to replace every C-extension wheel with a pure-Python equivalent, which is not feasible for `psycopg2-binary`, `cryptography`, `pillow`, `numpy`, etc.
 
 ---
+
+## D-22 — Skip separate clean-VM smoke test; Mac Mini is the first clean-target install
+
+- **Date locked:** 2026-05-04
+- **Decided by:** Operator (Rob)
+- **Decision:** D-18's verification gate originally required a clean macOS 14 VM smoke test (UTM/Tart) BEFORE any Mac Mini install of the v1.0.3 .pkg. That step is skipped by operator decision. The Mac Mini becomes the first clean-target install for `MiningGuardian-1.0.3-a35728dcfc8c.pkg`. Every other safeguard from D-18 still applies — postinstall step ordering, Cocoa-dialog + exit-41 behavior on customer-info validation failure, `bin/uninstall.sh` rollback, and the post-install verification stages all remain in force.
+- **Why:** Operator quote: no VM available; preferred to transfer the installer over the network rather than buy or use a USB-C adapter and burn a day on a UTM image. The package itself was built, signed, notarized, stapled, AirDropped to the Mini, checksum-verified (`MiningGuardian-1.0.3-a35728dcfc8c.pkg: OK`), Gatekeeper-accepted on the Mini (`accepted, source=Notarized Developer ID, origin=Developer ID Installer: Robert Fiesler (ARJZ5FYU94)`), and the Desktop conf passed all seven shape checks before the operator paused for a meeting. Skipping the VM step does not skip verification — it consolidates it onto the Mini.
+- **Reconciles with D-18:** D-18 §"v1.0.3 verification gate" item 2 ("Smoke-test on a clean macOS 14 VM (UTM/Tart). Required pass criteria: …") is amended for the v1.0.3 install only. The same pass criteria still apply, but they are evaluated against the Mini after install rather than against a separate VM beforehand. Items 1 and 3 of that gate (build/sign/notarize/staple, then install on Mini AFTER VM passes) collapse into "build/sign/notarize/staple, then install on Mini and run the same pass criteria there."
+- **Reconciles with D-16:** Unchanged. The Hostinger VPS continues running production. ROBS-PC catalog masters stay intact. VPS decommission and ROBS-PC container shutdown still happen only AFTER the Mini is verified green per D-16 + D-18 + this D-22.
+- **Implication for future installs:** This is a one-off for the v1.0.3 install on Rob's first Mini. Customer-grade releases must restore a VM smoke gate or an equivalent isolated-target gate. A real customer install cannot be "first clean-target install + screenshots." See `docs/CUSTOMER_ONBOARDING_UX_GAPS_2026-05-04.md` and D-23 for the customer-grade direction.
+- **Source of truth on the pause point:** `docs/handoffs/HANDOFF_2026-05-04_PAUSED_BEFORE_MINI_INSTALL.md`. Includes the package SHA, notary submission ID, transfer chain, validated-config shape checks, and the resume checklist.
+- **Implementation status:**
+  - Locked 2026-05-04.
+  - **2026-05-04 — Captured in `docs/handoffs/HANDOFF_2026-05-04_PAUSED_BEFORE_MINI_INSTALL.md`** alongside the full pause-state record. Postinstall verification pulls the same pass criteria as D-18 §"v1.0.3 verification gate" item 2, evaluated post-install on the Mini.
+
+---
+
+## D-23 — Customer-onboarding UX gaps captured as forward-looking scope; not v1.0.3
+
+- **Date locked:** 2026-05-04
+- **Decided by:** Operator (Rob)
+- **Decision:** The 2026-05-04 install staging surfaced a set of customer-onboarding UX gaps that are NOT in v1.0.3 scope and must NOT be pulled into the current pause-resume work. They are tracked in `docs/CUSTOMER_ONBOARDING_UX_GAPS_2026-05-04.md` and `docs/MG_UNIFIED_TODO_LIST.md` §18 for a future installer iteration that targets nontechnical customers rather than the operator. The v1.0.3 .pkg already on disk on the Mac Mini ships unchanged.
+- **Gaps in scope of this decision (forward-looking only):**
+  1. Customer-info collection should not be a hand-edited Desktop file. Replace `MiningGuardian.conf` `nano` editing with a native Installer.app form pane (InstallerPane plugin) or a first-run setup assistant with format hints, inline validation, and live credential testing.
+  2. Tailscale guided onboarding: detect state, install if missing, walk the customer through `tailscale up`, show the Mini's tailnet name and the URLs they will use after, and add at least one of the customer's other devices to the same tailnet. Free-tier Tailscale is acceptable for Mining Guardian's typical deployment shape.
+  3. Grafana dashboard auto-provisioning: vendor `Grafana.app`, drop datasource + dashboard provisioning yaml under `/usr/local/etc/grafana/provisioning/`, vendor every dashboard JSON under the install root, register an 11th LaunchDaemon if required, and open the customer to the AI & Learning dashboard on first boot. Tied to D-18 Gap 3 / `MG_UNIFIED_TODO_LIST.md` §1.2 row 4.
+  4. Pre-install Slack / AMS connectivity validation: validate values actually work (Slack webhook ping, AMS `/api/v1/login` round-trip, workspace ID resolution) BEFORE any system state is touched. Plain-language error messages per failure mode; customer fixes typo in-place.
+  5. Support bundle: a single `mg-support-bundle` command (also a button in the operator console) that captures last 24h of logs, `launchctl list`, last-run JSON stamps, service status, redacted `.env` shape (keys present, values redacted), package version + commit SHA + notarization status, into a single tar.gz on the Desktop. Zero credential values ever leave the Mini.
+  6. `MG_DRY_RUN=true` as the safe default with a customer-facing explanation, a banner in the operator console when in dry-run, and a one-click "Switch to live mode" path gated on customer confirmation.
+  7. Recovery / uninstall path surfaced in the operator console — "Reset Mining Guardian" button that runs `bin/uninstall.sh --dry-run` first, shows a preview, and asks for confirmation. Destructive `--purge-data` requires red affordance + double-confirm. "Re-run setup assistant" path for customers who want to rotate AMS or Slack credentials.
+  8. Screenshot-ready customer runbook (PDF or web doc, SVG-first) walking every dialog the customer will see in order, with annotated screenshots; updated whenever a dialog string changes.
+- **Why:** Operator quote 2026-05-04: "customers should be guided through Tailscale setup if they need private remote access; customers can use the free Tailscale option for a small/two-computer setup; the installer or first-run UX should help customers sign up for or connect Tailscale when needed; the UX should also help customers get Grafana running, including loading Mining Guardian dashboard JSON automatically rather than asking them to build charts by hand." Combined with the 2026-05-04 install-staging incident where a manually-edited `MiningGuardian.conf` typo'd `CUSTOMER_NAME` as `REPLACE_ME_SITE_NAME` and would have failed shape validation if not caught manually. Today's installer is "easy enough for the operator who built it." This decision locks the direction toward "easy enough for someone who barely knows a computer" without committing to a specific implementation.
+- **Explicitly NOT v1.0.3 scope:** None of the above is implemented for the v1.0.3 .pkg sitting on the Mini. The current pause-resume work continues as-is. Any session that picks up this scope must open a separate work train against `main` after the Mini install is verified green.
+- **Reconciles with:**
+  - D-18 — Gap 3 (Grafana) and Cloudflare Tunnel auto-provisioning (D-19 step 5) are already deferred under D-18 / `MG_UNIFIED_TODO_LIST.md` §1.2 rows 4 and 9. D-23 captures the customer-grade expansion of Gap 3 (dashboard JSON auto-load, datasource provisioning, default-credential rotation) without changing the row-4 deferral.
+  - D-19 — Operator console at `:8787` is the eventual home for the support-bundle button, the dry-run banner, the "Switch to live mode" toggle, and the "Reset Mining Guardian" button. The "Re-run setup assistant" path is also a console addition.
+  - D-22 — Skipping the VM smoke gate is one-off for the v1.0.3 Mini install. Customer-grade releases per D-23 must restore an isolated-target gate equivalent to the original D-18 VM step.
+- **Source of truth on the gaps:** `docs/CUSTOMER_ONBOARDING_UX_GAPS_2026-05-04.md`. New rows in `docs/MG_UNIFIED_TODO_LIST.md` §18.
+- **Implementation status:**
+  - Locked 2026-05-04.
+  - **2026-05-04 — Forward-looking scope captured in `docs/CUSTOMER_ONBOARDING_UX_GAPS_2026-05-04.md` (8 gaps with acceptance criteria) + `docs/MG_UNIFIED_TODO_LIST.md` §18 (8 rows, all 🔴 OPEN).** No code touched. No installer logic changed. The v1.0.3 .pkg sitting in `~/Downloads` on the Mini is unchanged.
+
+---
