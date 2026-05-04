@@ -121,12 +121,83 @@ gate_macos_version() {
 }
 
 gate_apple_silicon() {
-    local arch
-    arch="$(/usr/bin/uname -m 2>/dev/null || echo unknown)"
-    if [[ "$arch" != "$EXPECTED_ARCH" ]]; then
-        fail 12 "this build supports Apple Silicon (${EXPECTED_ARCH}) only; detected '${arch}'"
+    # P-015 — `uname -m` reports the architecture of the CURRENT PROCESS, not
+    # the hardware. On Apple Silicon, if Installer.app spawns the preinstall
+    # under a Rosetta-translated /bin/bash (common when the operator's
+    # Terminal.app has "Open using Rosetta" checked, or when `installer` is
+    # invoked via `arch -x86_64 sudo installer ...`), `uname -m` returns
+    # `x86_64` even though the Mac is M-series. v1.0.3 build 2b48f98 hit this
+    # exact false negative on Bobby's Mac mini 2026-05-04, with the
+    # preinstall log showing "FATAL (12) ... detected 'x86_64'" on what is
+    # documented as an M-series box.
+    #
+    # The kernel-authoritative hardware indicator is `sysctl hw.optional.arm64`,
+    # which is set by the kernel based on the SoC and does NOT change under
+    # Rosetta translation:
+    #   * `=1` on Apple Silicon hardware (M1/M2/M3/M4/...), regardless of
+    #     whether the calling process is Rosetta-translated.
+    #   * `=0` (or sysctl key not present, returning non-zero exit) on Intel
+    #     Macs.
+    #
+    # `sysctl.proc_translated` is the per-process Rosetta indicator
+    # (=1 iff the current process is running under Rosetta 2; =0 native;
+    # missing on Intel). We log it for diagnostics but do NOT gate on it —
+    # a Rosetta-translated preinstall on Apple Silicon hardware should still
+    # succeed; the postinstall and the daemon will run native arm64 once
+    # the LaunchDaemons fire.
+    #
+    # Intel-only support is explicitly out of scope per CLAUDE.md / D-18 /
+    # Vision Anchor 2 (Mini IS the product, M-series only). This gate must
+    # still hard-refuse Intel — only the false-negative on Apple Silicon is
+    # being fixed here.
+
+    local hw_arm64 sysctl_rc translated translated_rc uname_arch
+    # Capture sysctl exit code separately from value. `set -e` is in effect
+    # so we wrap the assignment in an explicit if so a non-zero rc (missing
+    # key on Intel, sysctl binary missing) does NOT abort the script.
+    if hw_arm64="$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)"; then
+        sysctl_rc=0
+    else
+        sysctl_rc=$?
+        hw_arm64=""
     fi
-    log "OK gate_apple_silicon: arch=${arch}"
+    if translated="$(/usr/sbin/sysctl -n sysctl.proc_translated 2>/dev/null)"; then
+        translated_rc=0
+    else
+        translated_rc=$?
+        translated=""
+    fi
+    uname_arch="$(/usr/bin/uname -m 2>/dev/null || echo unknown)"
+
+    log "gate_apple_silicon probes: hw.optional.arm64='${hw_arm64}' (rc=${sysctl_rc}) sysctl.proc_translated='${translated}' (rc=${translated_rc}) uname -m='${uname_arch}'"
+
+    # Authoritative path: hw.optional.arm64 readable AND equals 1 → Apple
+    # Silicon hardware, accept regardless of process arch.
+    if [[ "$hw_arm64" == "1" ]]; then
+        if [[ "$translated" == "1" ]]; then
+            log "WARN gate_apple_silicon: preinstall is running under Rosetta 2 translation (sysctl.proc_translated=1); hardware is Apple Silicon so install will proceed, but the operator should re-run with a native /bin/bash (Terminal.app → Get Info → uncheck 'Open using Rosetta', or invoke 'arch -arm64 sudo installer ...') if they hit any other arch-sensitive failure"
+        fi
+        log "OK gate_apple_silicon: hw.optional.arm64=1 (Apple Silicon hardware confirmed; uname -m='${uname_arch}')"
+        return 0
+    fi
+
+    # hw.optional.arm64 readable AND equals 0 → Intel hardware. Refuse.
+    if [[ "$hw_arm64" == "0" ]]; then
+        fail 12 "this build supports Apple Silicon only; sysctl hw.optional.arm64=0 (Intel hardware)"
+    fi
+
+    # sysctl unreadable / missing key (rc != 0 or empty value): we cannot
+    # trust uname -m alone (it lies under Rosetta). The defensive choice is
+    # to fall back to uname -m only when uname AGREES with arm64 — that's
+    # the only path where both signals point at Apple Silicon. If uname
+    # says x86_64 here, we have NO authoritative arm64 evidence and must
+    # refuse rather than accept a likely-Intel Mac.
+    if [[ "$uname_arch" == "$EXPECTED_ARCH" ]]; then
+        log "WARN gate_apple_silicon: sysctl hw.optional.arm64 unreadable (rc=${sysctl_rc}, value='${hw_arm64}'); falling back to uname -m='${uname_arch}' which agrees with Apple Silicon"
+        return 0
+    fi
+
+    fail 12 "this build supports Apple Silicon (${EXPECTED_ARCH}) only; sysctl hw.optional.arm64='${hw_arm64}' (rc=${sysctl_rc}), uname -m='${uname_arch}'"
 }
 
 gate_ram() {
