@@ -35,6 +35,7 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-011 | Re-sign Mach-O inside vendored Python wheels (Apple notary `Invalid` for `750c089f-…`) | `mg/v103-p011-wheel-resign` | _stamped on merge_ | `d8bbed5` |
 | P-012 | `resign_wheel.py` 3.9 compat for `/usr/bin/python3` on macOS | `mg/v103-p012-resign-wheel-py39-compat` | _stamped on merge_ | `a35728d` |
 | P-013 | pkgbuild scripts must be staged with extensionless names (`preinstall`, `postinstall`); `MiningGuardian-1.0.3-a35728dcfc8c.pkg` was payload-only because PackageKit silently ignored `preinstall.sh` / `postinstall.sh` | `mg/v103-p013-pkg-scripts-naming` | _this PR_ | _stamped on merge_ |
+| P-014 | `build_pkg.sh` step 4d rsync excludes `build_pkg.sh` itself from scripts staging — first `make pkg` after P-013 merged hit the new P-013 leftover-`*.sh` guard because `build_pkg.sh` lives next to `preinstall.sh`/`postinstall.sh` and was being rsync'd into the package-script staging dir | `mg/v103-d18-p014-staging-exclude-build-pkg` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -166,6 +167,45 @@ rm -rf /tmp/mg-pkg-check
 
 **Critical operator note:**
 The existing `MiningGuardian-1.0.3-a35728dcfc8c.pkg` is NOT a shippable artifact. It has signed payload + valid Gatekeeper acceptance + valid receipt, but no postinstall ever ran. The Mac mini currently has a payload-only install. The cleanup + rebuild + reinstall path is in the PR description and `docs/RUNBOOK_PKG_REBUILD.md` Block-Cleanup. After P-013 lands, the next `make pkg` produces a shippable .pkg from the EXACT same source tree (no payload changes, only the staging-time rename).
+
+### P-014 — step 4d rsync excludes `build_pkg.sh` from scripts staging (this PR)
+
+**Problem:**
+First `make pkg` after PR #130 (P-013) merged aborted at the new P-013 belt-and-suspenders guard:
+
+```
+[build_pkg] step 4d FAIL: leftover top-level *.sh in scripts staging dir:
+/Users/BigBobby/Documents/GitHub/Mining-Guardian/build/stage/scripts/build_pkg.sh
+[build_pkg] FATAL (43) step 4d: top-level *.sh files in .../build/stage/scripts after rename
+```
+
+**Root cause:**
+`installer/macos-pkg/scripts/build_pkg.sh` lives in the same source directory as `preinstall.sh` and `postinstall.sh`. The step 4d rsync `${PKG_DIR}/scripts/` → `${SCRIPTS_DIR}/` had no exclude, so it copied `build_pkg.sh` into the package-script staging dir alongside the two real scripts. After the .sh→extensionless rename, `build_pkg.sh` was the only stray top-level `*.sh` left — which (a) tripped the P-013 leftover-`*.sh` guard with exit 43 (working as designed — guard caught the regression before the build burned an Apple notarization round-trip), and (b) if the guard were ever removed, would re-trigger the original P-013 silent-ignore failure mode (PackageKit ignores the entire scripts archive when it sees unrecognized top-level filenames next to `preinstall`/`postinstall`).
+
+**Fix:**
+Add `--exclude 'build_pkg.sh'` to the step 4d rsync. After the fix the staging dir contains only:
+
+```
+${SCRIPTS_DIR}/preinstall      (renamed from preinstall.sh,  chmod 0755)
+${SCRIPTS_DIR}/postinstall     (renamed from postinstall.sh, chmod 0755)
+${SCRIPTS_DIR}/lib/            (helper shell + python files)
+```
+
+The P-013 leftover-`*.sh` guard is unchanged and continues to assert zero top-level `*.sh` after the rename — it will still catch any future stray, including a non-`build_pkg.sh` filename.
+
+**Tests:**
+- `tests/installer/test_pkg_scripts_naming.sh` — extended from 15 → 17 assertions. New §8 verifies the rsync line passes `--exclude 'build_pkg.sh'` (multiline grep so the flag can stay on its own line) and that the source has a `P-014` audit marker for cheap forensics.
+- All 17 assertions green; all 9 prior installer test suites still green.
+
+**Operator commands after merge:**
+
+```
+git checkout main
+git pull --ff-only origin main
+make pkg
+```
+
+The next `make pkg` should clear step 4d cleanly and proceed through pkgbuild + productbuild + productsign + notarytool.
 
 ---
 
