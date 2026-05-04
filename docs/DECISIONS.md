@@ -326,3 +326,37 @@ This is the canonical log of decisions that are committed and not subject to re-
 ---
 
 *Append new decisions below this line. Do not edit history.*
+
+---
+
+## D-21 — Build-time re-signing of Mach-O inside vendored Python wheels
+
+- **Date locked:** 2026-05-04
+- **Decided by:** Operator (Rob), implemented by P-011 PR train
+- **Decision:** Mach-O binaries inside vendored Python wheels (`<payload>/python-wheels/*.whl/**/*.so` and `*.dylib`) MUST be re-signed at .pkg build time with the Developer ID Application identity, hardened runtime, and a secure timestamp. The wheel's `*.dist-info/RECORD` manifest MUST be rewritten with the new sha256 + size for every modified file so that pip still accepts the wheel as a valid install source on the customer Mac (offline `--no-index` install).
+- **Why this exists:** Apple notary submission `750c089f-f0a1-4d40-bf15-e8c295828027` (v1.0.3 first build, sha `295aec38f2ee`, 2026-05-04) returned `Invalid` with rejections inside aiohttp, bcrypt (universal2), matplotlib, and other wheels. PyPI wheels ship binaries signed by the package maintainer's certificate, NOT with our Developer ID, AND without a secure timestamp, AND without hardened runtime. Apple notary walks every Mach-O including those embedded inside zip archives, so vendored wheels with C extensions break notarization unless we re-sign them at build time.
+- **Why we own the re-signing in `build_pkg.sh`, not on the customer Mac:**
+  - The Developer ID Application private key lives only on the build host. Re-signing at install time would require shipping the key (security regression) or signing with an ad-hoc identity (still rejected by notary since notary runs at build time, not install time).
+  - The customer Mac is the consumer of an already-notarized .pkg; once stapled, no further signing happens at install time.
+- **Why we rewrite RECORD in place rather than mark wheels as un-installable:**
+  - pip verifies sha256 + size of every file in RECORD on install. A naive zip edit breaks pip install. The only correct approaches are (a) rewrite RECORD, or (b) bypass pip and unpack manually. (b) loses pip's metadata layer (entry points, console scripts, dist-info installation tracking) and would diverge from the upstream `pip install` contract that postinstall expects.
+  - Approach (a) is what `installer/macos-pkg/scripts/lib/resign_wheel.py` implements, with a post-rewrite verify pass that catches RECORD/contents drift before the .pkg is signed.
+- **Why we keep this stdlib-only Python and not a .sh script:**
+  - sha256 + base64-urlsafe-no-pad encoding (PEP 376) and zip read/write are clean in `hashlib` + `zipfile`. Doing the same in shell would need `openssl dgst -sha256 -binary | base64 | tr +/ -_ | tr -d =` per file — error-prone and slow.
+  - We use `/usr/bin/python3` (the OS-stub Python that ships with macOS) so we don't add a second dependency on the Homebrew `python@3.12` install path that postinstall already pins.
+- **Out of scope for this decision:**
+  - Re-signing Mach-O inside .app or .framework bundles embedded inside wheels — wheels do not currently ship those, and even if they did, the bundle would need `--deep` re-sealing which differs from per-file signing. Add a guard if/when the case appears.
+  - Pure-Python wheels (no Mach-O) — RECORD is left byte-identical.
+- **Files touched:**
+  - `installer/macos-pkg/scripts/build_pkg.sh` — new `step_4c_resign_inner_wheels`, ordering 4 → 4b → 4c → 5; `step_6_notarize` auto-fetches detail log on failure; new exit code 49.
+  - `installer/macos-pkg/scripts/lib/resign_wheel.py` — new helper, stdlib-only.
+  - `tests/installer/test_wheel_resign.sh` — new regression test (15 assertions).
+  - `docs/RUNBOOK_PKG_REBUILD.md`, `docs/MG_UNIFIED_TODO_LIST.md`, `docs/LATENT_BUGS.md` — updates.
+- **Verification gate:** D-18's "clean macOS 14 VM smoke test" remains the gate. After this PR merges, the operator must:
+  1. `git pull` on the build host.
+  2. Re-run `make pkg` per `docs/RUNBOOK_PKG_REBUILD.md` Block A. The new step 4c runs automatically; expect a new `[resign_wheel]` summary line in the build log.
+  3. Watch for `notarization status: Accepted` in step 6.
+  4. Smoke-test the resulting .pkg on a clean macOS 14 VM before re-running on the Mini.
+- **Rollback plan:** If P-011 itself misbehaves (e.g., RECORD rewrite breaks a wheel that was previously fine), the operator can revert the PR and rebuild — but the v1.0.3 .pkg `MiningGuardian-1.0.3-295aec38f2ee.pkg` already exists on disk in a notary-rejected state, and the wheel re-signing approach is the only forward path for a vendored-wheels payload. An alternative would be to replace every C-extension wheel with a pure-Python equivalent, which is not feasible for `psycopg2-binary`, `cryptography`, `pillow`, `numpy`, etc.
+
+---

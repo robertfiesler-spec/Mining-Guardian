@@ -54,6 +54,12 @@
 #   45  — notarytool submission failed or timed out
 #   46  — staple failed
 #   47  — final integrity check failed
+#   49  — wheel re-signing failed (P-011, step 4c). Mach-O binaries inside
+#         vendored Python wheels could not be signed with Developer ID
+#         Application + hardened runtime + secure timestamp, OR the
+#         RECORD manifest rewrite produced a wheel that fails its own
+#         post-rewrite verify (would brick `pip install` on the customer
+#         Mac if shipped). See installer/macos-pkg/scripts/lib/resign_wheel.py.
 
 set -euo pipefail
 
@@ -561,6 +567,94 @@ step_4b_codesign_inner_binaries() {
     _log "step 4b OK: re-sealed ${count_bundles} bundle(s), codesigned ${count_loose} loose Mach-O"
 }
 
+step_4c_resign_inner_wheels() {
+    # P-011 (2026-05-04). Apple notarization rejects vendored Python wheels
+    # whose embedded Mach-O binaries (.so / .dylib) are not signed with our
+    # Developer ID Application + hardened runtime + secure timestamp.
+    #
+    # Apple notary submission 750c089f-f0a1-4d40-bf15-e8c295828027
+    # (v1.0.3 first build, sha 295aec38f2ee, 2026-05-04) returned `Invalid`
+    # listing rejections inside aiohttp, bcrypt (universal2), matplotlib,
+    # and other wheels — all upstream-signed by their package maintainers
+    # but not with our identity. The detailed log surfaced lines like:
+    #   "not signed with valid Developer ID certificate ... no secure timestamp"
+    # against paths of the form
+    #   Payload/.../python-wheels/<wheel>.whl/<inner>/<file>.so
+    #
+    # The fix walks every *.whl in <payload>/python-wheels/, extracts it,
+    # codesigns each inner Mach-O with --options runtime --timestamp, and
+    # rewrites the wheel's *.dist-info/RECORD manifest so pip still accepts
+    # the modified wheel as a valid install source. The Python helper
+    # (`installer/macos-pkg/scripts/lib/resign_wheel.py`) implements all of
+    # that with a post-rewrite verify pass that fails fast if RECORD and
+    # the actual zip contents have drifted (would brick the customer's
+    # `pip install --no-index` step at install time).
+    #
+    # We DO NOT touch wheels that contain no Mach-O — those are pure-Python
+    # and pip accepts them unmodified. Most of the 108 wheels in the v1.0.3
+    # closure fall in this category; only the C-extension wheels (aiohttp,
+    # bcrypt, matplotlib, numpy, pandas, psycopg2-binary, pillow, frozenlist,
+    # multidict, yarl, charset-normalizer, propcache, regex, ruamel.yaml.clib,
+    # cryptography, lxml, pyzmq, etc.) need signing.
+    #
+    # Why this runs at step 4c, not 4b: 4b signs the loose vendored runtime
+    # binaries (Colima, lima, qemu-img). Those live at <payload>/runtime/
+    # and were never inside an archive; they sign in place. Wheel internals
+    # need extract + sign + RECORD rewrite + repack, which is a different
+    # shape and gets its own step. The wheels MUST be re-signed before
+    # pkgbuild snapshots the payload at step 5.
+    local wheels_dir="${PAYLOAD_DIR}/python-wheels"
+    if [[ ! -d "$wheels_dir" ]]; then
+        # Should never happen — step 4e exits 43 if the wheelhouse is missing.
+        # Belt-and-suspenders: do not silently skip.
+        _die 49 "step 4c: ${wheels_dir} missing — step 4e should have caught this"
+    fi
+
+    local wheel_total
+    wheel_total="$(/usr/bin/find "$wheels_dir" -maxdepth 1 -type f -name '*.whl' | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    if (( wheel_total < 1 )); then
+        _die 49 "step 4c: ${wheels_dir} contains no .whl (step 4e should have caught this)"
+    fi
+
+    local resigner="${PKG_DIR}/scripts/lib/resign_wheel.py"
+    if [[ ! -r "$resigner" ]]; then
+        _die 49 "step 4c: resign_wheel.py missing at ${resigner}"
+    fi
+
+    _log "step 4c: re-signing inner Mach-O across ${wheel_total} vendored wheel(s) in ${wheels_dir}"
+
+    # /usr/bin/python3 ships on macOS as the Apple-stub Python; it's
+    # sufficient for the helper's stdlib-only needs (zipfile, hashlib,
+    # subprocess). We do NOT use the Homebrew /opt/homebrew/opt/python@3.12
+    # interpreter here — keeping the build-time helper on the OS Python
+    # avoids a second dependency on a specific Homebrew install path.
+    if ! /usr/bin/python3 "$resigner" \
+            --identity "$APPLE_DEV_ID_APPLICATION" \
+            "$wheels_dir"; then
+        _die 49 "step 4c: resign_wheel.py failed (see [resign_wheel] log lines above for the failing wheel)"
+    fi
+
+    # Post-flight: every wheel must still open as a valid zip and contain
+    # exactly one *.dist-info/RECORD. The helper already runs an internal
+    # verify, but we double-check here so a future refactor can't
+    # accidentally bypass it.
+    local whl
+    while IFS= read -r -d '' whl; do
+        if ! /usr/bin/python3 -c "
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], 'r') as zf:
+    names = zf.namelist()
+    rec = [n for n in names if n.endswith('.dist-info/RECORD')]
+    if len(rec) != 1:
+        sys.exit(f'expected one RECORD, got {len(rec)} in {sys.argv[1]}')
+" "$whl" >/dev/null 2>&1; then
+            _die 49 "step 4c: post-resign verify failed for ${whl#${PAYLOAD_DIR}/}"
+        fi
+    done < <(/usr/bin/find "$wheels_dir" -maxdepth 1 -type f -name '*.whl' -print0)
+
+    _log "step 4c OK: ${wheel_total} wheel(s) re-signed and RECORD-verified (P-011)"
+}
+
 step_5_pkgbuild_and_sign() {
     cd "$BUILD_DIR"
 
@@ -614,6 +708,7 @@ step_5_pkgbuild_and_sign() {
 
 step_6_notarize() {
     local notlog="${BUILD_DIR}/MiningGuardian-${BUILD_VERSION}-${BUILD_SHA}.notarization-log.txt"
+    local detail_log="${BUILD_DIR}/MiningGuardian-${BUILD_VERSION}-${BUILD_SHA}.notarization-detail.json"
 
     /usr/bin/xcrun notarytool submit \
         "$FINAL_PKG" \
@@ -626,7 +721,30 @@ step_6_notarize() {
         2>&1 | tee "$notlog"
 
     if ! grep -q 'status: Accepted' "$notlog"; then
-        _die 45 "notarization not accepted; see ${notlog}"
+        # P-011 follow-up (low-risk auto-fetch). When notary returns Invalid,
+        # the only way to know which Mach-O failed is `xcrun notarytool log
+        # <submission-id>`. Auto-fetch it here so the operator gets the
+        # detailed JSON in the same build/ directory as the summary log.
+        # Failure of the auto-fetch itself MUST NOT mask the original
+        # _die 45 — we always exit non-zero below.
+        local sub_id
+        sub_id="$(/usr/bin/awk '/^[[:space:]]*id:[[:space:]]/{print $2; exit}' "$notlog" | /usr/bin/tr -d '\r')"
+        if [[ -n "$sub_id" ]]; then
+            _log "step 6: notarization not Accepted; fetching detailed log for submission ${sub_id}"
+            /usr/bin/xcrun notarytool log \
+                "$sub_id" \
+                --key       "$APPLE_NOTARIZATION_KEY_PATH" \
+                --key-id    "$APPLE_NOTARIZATION_KEY_ID" \
+                --issuer    "$APPLE_NOTARIZATION_ISSUER_UUID" \
+                --team-id   "$APPLE_TEAM_ID" \
+                "$detail_log" 2>&1 || true
+            if [[ -s "$detail_log" ]]; then
+                _log "step 6: detailed notarization log written to ${detail_log}"
+            fi
+        else
+            _log "step 6: could not parse submission id from ${notlog}; skip detail fetch"
+        fi
+        _die 45 "notarization not accepted; see ${notlog} and ${detail_log}"
     fi
     _log "step 6 OK: notarization Accepted"
 }
@@ -683,6 +801,7 @@ main() {
     step_3_stamp
     step_4_assemble_payload
     step_4b_codesign_inner_binaries
+    step_4c_resign_inner_wheels
     step_5_pkgbuild_and_sign
     step_6_notarize
     step_7_staple
