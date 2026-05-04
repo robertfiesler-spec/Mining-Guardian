@@ -203,7 +203,13 @@ def _rewrite_record(record_path: Path, extract_root: Path,
             else:
                 new_lines.append(raw)
 
-    record_path.write_text("".join(new_lines), encoding="utf-8", newline="")
+    # Path.write_text(newline=...) only exists in Python 3.10+. build_pkg.sh
+    # invokes us with /usr/bin/python3 (Apple-stub), which is 3.9 on current
+    # macOS — fall back to the file-handle API, which has supported `newline`
+    # since 3.0. Pass newline="" so no \n→\r\n translation happens here; we
+    # already preserved the original trailers when we built `new_lines`.
+    with record_path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write("".join(new_lines))
     return rewritten
 
 

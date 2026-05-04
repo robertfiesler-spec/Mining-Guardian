@@ -287,6 +287,118 @@ else
 fi
 
 # ---------------------------------------------------------------------
+section "10. Apple-stub Python 3.9 compatibility (P-012 regression guard)"
+# ---------------------------------------------------------------------
+# build_pkg.sh invokes resign_wheel.py with /usr/bin/python3, which on
+# current macOS (Sonoma/Sequoia) is the Apple-stub Python 3.9. Some
+# pathlib APIs added in 3.10 — notably Path.write_text(..., newline=...) —
+# raise TypeError under 3.9 and crash step 4c before signing/notarization.
+# This is exactly how P-012 broke the build on 2026-05-04.
+#
+# Lint via AST so any reintroduction of write_text(..., newline=...) on a
+# Path object is caught regardless of formatting. Any 3.10+ pathlib-only
+# kwarg should be added to FORBIDDEN_KWARGS as we discover them.
+/usr/bin/env python3 - "$RESIGN_PY" <<'PYEOF'
+import ast, sys
+from pathlib import Path
+
+src_path = Path(sys.argv[1])
+tree = ast.parse(src_path.read_text(encoding="utf-8"))
+
+FORBIDDEN = {
+    "write_text": {"newline"},  # added in 3.10
+    "read_text":  {"newline"},  # added in 3.13
+}
+
+violations = []
+for node in ast.walk(tree):
+    if not isinstance(node, ast.Call):
+        continue
+    func = node.func
+    if not isinstance(func, ast.Attribute):
+        continue
+    if func.attr not in FORBIDDEN:
+        continue
+    bad = FORBIDDEN[func.attr]
+    for kw in node.keywords:
+        if kw.arg in bad:
+            violations.append(
+                f"line {node.lineno}: .{func.attr}(..., {kw.arg}=...) "
+                f"is not available on /usr/bin/python3 (3.9) — use the "
+                f"file-handle .open(..., {kw.arg}=...) form instead"
+            )
+
+if violations:
+    print("FORBIDDEN_API_USED")
+    for v in violations:
+        print("  " + v)
+    sys.exit(1)
+print("COMPAT_OK")
+PYEOF
+if [[ $? -eq 0 ]]; then
+    ok "resign_wheel.py uses no Python 3.10+-only pathlib kwargs (P-012 fix)"
+else
+    fail "resign_wheel.py uses a pathlib kwarg unavailable on /usr/bin/python3 — P-012 will reoccur"
+fi
+
+# ---------------------------------------------------------------------
+section "11. Functional: RECORD rewrite under simulated Python 3.9"
+# ---------------------------------------------------------------------
+# Direct functional check: invoke _rewrite_record() with a synthetic
+# wheel layout AFTER monkey-patching Path.write_text so it raises the same
+# TypeError Python 3.9 would, simulating /usr/bin/python3 on the Mac.
+# A correct implementation reaches the file-handle write branch and never
+# touches the broken kwarg API.
+/usr/bin/env python3 - "$RESIGN_PY" <<'PYEOF'
+import importlib.util, sys, tempfile
+from pathlib import Path
+
+resign_py = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("resign_wheel", resign_py)
+rw = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(rw)
+
+real_write_text = Path.write_text
+
+def stub_write_text(self, data, encoding=None, errors=None, newline=None):
+    if newline is not None:
+        raise TypeError(
+            "write_text() got an unexpected keyword argument 'newline'"
+        )
+    return real_write_text(self, data, encoding=encoding, errors=errors)
+
+Path.write_text = stub_write_text
+try:
+    tmp = Path(tempfile.mkdtemp())
+    extract_root = tmp / "extract"
+    (extract_root / "pkg").mkdir(parents=True)
+    so_path = extract_root / "pkg" / "fake.so"
+    so_path.write_bytes(b"\xcf\xfa\xed\xfeXXXX")
+    record_path = extract_root / "pkg-1.0.0.dist-info"
+    record_path.mkdir(parents=True)
+    record_file = record_path / "RECORD"
+    record_file.write_text(
+        "pkg/fake.so,sha256=oldhash,4\n"
+        "pkg-1.0.0.dist-info/RECORD,,\n",
+        encoding="utf-8",
+    )
+    rewritten = rw._rewrite_record(record_file, extract_root, [so_path])
+    assert rewritten == 1, f"expected 1 rewritten line, got {rewritten}"
+    new_record = record_file.read_text(encoding="utf-8")
+    assert "sha256=oldhash" not in new_record, "RECORD line not actually rewritten"
+    assert "pkg/fake.so," in new_record, "fake.so line missing from rewritten RECORD"
+finally:
+    Path.write_text = real_write_text
+
+print("PY39_COMPAT_OK")
+PYEOF
+if [[ $? -eq 0 ]]; then
+    ok "_rewrite_record works when Path.write_text rejects newline= (Python 3.9 sim)"
+else
+    fail "_rewrite_record still depends on Path.write_text(newline=) — P-012 fix incomplete"
+fi
+
+# ---------------------------------------------------------------------
 section "Summary"
 # ---------------------------------------------------------------------
 echo
