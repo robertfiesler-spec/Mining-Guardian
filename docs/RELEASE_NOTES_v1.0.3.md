@@ -40,7 +40,11 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-016 | Postinstall hang fix (`_cocoa_alert` osascript) + operator-user resolver — `MiningGuardian-1.0.3-cf1691e2998c.pkg` install on customer Mac mini hard-failed with `PackageKit: Terminating PKInstallTask. Task has exceeded its 600 seconds of runtime.` after `INFO loaded helper libs`, no FATAL line. **Bug A (the actual hang):** `_cocoa_alert` ran `osascript display dialog` synchronously with no timeout; postinstall runs as root with no Window Server, dialog blocks forever, PackageKit's 600 s watchdog kills the script. Fixed with `with giving up after 5` + pure-bash `kill -KILL` watchdog (10 s wall-clock cap, no `timeout(1)` dependency) + delivery via `launchctl asuser` to the GUI console user. **Bug B (wrong target file):** Installer.app exports `USER=root`, so `${SUDO_USER:-${USER}}` resolved to `root` and the script checked `/Users/root/Desktop/MiningGuardian.conf` instead of `/Users/miningguardian/Desktop/...`. Fixed with `_resolve_install_user()` helper (three bounded probes: `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan), exported as `MG_INSTALL_OPERATOR_USER`. All 22 in-line `${SUDO_USER:-${USER}}` sites updated. Added env-probe log line in `main()` for future debuggability. | `mg/p016-postinstall-desktop-user-resolution` | _this PR_ | `9318062` |
 | P-017 | Postinstall `MG_PKG_PAYLOAD` resolves to install root, not scripts sandbox — first install of the P-016 build (`9318062`) on the Mini exited 31 in `install_colima_runtime` with `vendored colima runtime not found at /tmp/PKInstallSandbox.<rand>/Scripts/.../../payload/runtime/colima` because `pkgbuild` extracts scripts to a private sandbox while extracting the payload to the install location, and the legacy `${SCRIPT_DIR}/../payload` resolved into the sandbox. Fixed by preferring `${MG_INSTALL_ROOT}` when `${MG_INSTALL_ROOT}/runtime` exists, with the legacy path retained as the dev / smoke-test fallback. | `mg/p017-payload-path-install-root` | [#136](https://github.com/robertfiesler-spec/Mining-Guardian/pull/136) | `bae1891` |
 | P-018 | Installer helper libs (`installer/macos-pkg/scripts/lib/install_colima.sh`, `install_ollama.sh`) drop the legacy `${SUDO_USER:-${USER}}` pattern and consume `MG_INSTALL_OPERATOR_USER` (exported by `postinstall.sh::main()`). Closes B-12 in `docs/LATENT_BUGS.md` — without this, the next install after P-017 would have run `colima start` / `docker load` / `docker run mining-guardian-db` / `ollama pull` as `root`, leaving colima state in `/var/root/.colima`, the LLM model in `/var/root/.ollama` (invisible to the launchd ollama service that runs as the operator), and `pgdata` chowned to root. Each helper now carries an `_op_user` resolver: prefer `MG_INSTALL_OPERATOR_USER` → `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan; refuse to silently return `root`. `install_colima_runtime` also resolves the operator's home via `dscl . -read NFSHomeDirectory` rather than hard-coding `/Users/<u>`. **No `postinstall.sh`, `build_pkg.sh`, payload, or notarization-relevant change** — pure helper-lib logic. | `mg/p018-helper-user-resolution` | _stamped on merge_ | `32ec2dc` |
-| P-019 | `install_colima.sh` and `postinstall.sh` propagate PATH (incl. `/usr/local/bin`) under `sudo -u` so colima/docker can find `limactl` — `MiningGuardian-1.0.3-32ec2dcad973.pkg` (the P-018 build) installed clean on the customer Mac mini and progressed through `INFO copied colima + lima (VZ-only, no QEMU) to /usr/local/bin` and `INFO colima will run as miningguardian (home=/Users/miningguardian)`, then `colima start` exited inside `install_colima_runtime` with `lima compatibility error: error checking Lima version: exec: "limactl": executable file not found in $PATH` and postinstall fail 31. **Root cause:** macOS `sudo -u` strips PATH and substitutes sudoers' `secure_path` (`/usr/bin:/bin:/usr/sbin:/sbin` — no `/usr/local/bin`); colima's `os/exec.LookPath("limactl")` then fails even though limactl was installed two lines earlier. Same trap applies to `docker` (a colima-context shim). **Fix:** new `_op_path` helpers in `install_colima.sh` and `postinstall.sh` return a PATH that starts with `/usr/local/bin`; every `sudo -u` site invoking `colima`/`docker` now wraps with `/usr/bin/env PATH="$(_op_path)" HOME="${op_home}"`. New `_verify_limactl` in `install_colima.sh` asserts limactl exists at the install destination *before* `colima start` so a missing limactl produces a clear log line, not the misleading colima `$PATH` error. Sites updated: 5 in `install_colima.sh` (1 colima-start, 4 docker), 10 in `postinstall.sh` (docker exec/cp). `install_ollama.sh` unchanged — invokes `/usr/local/bin/ollama` by absolute path, no sibling-helper lookup. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure shell-level PATH hygiene. | `mg/p019-colima-limactl-path` | _this PR_ | _stamped on merge_ |
+| P-019 | `install_colima.sh` and `postinstall.sh` propagate PATH (incl. `/usr/local/bin`) under `sudo -u` so colima/docker can find `limactl` — `MiningGuardian-1.0.3-32ec2dcad973.pkg` (the P-018 build) installed clean on the customer Mac mini and progressed through `INFO copied colima + lima (VZ-only, no QEMU) to /usr/local/bin` and `INFO colima will run as miningguardian (home=/Users/miningguardian)`, then `colima start` exited inside `install_colima_runtime` with `lima compatibility error: error checking Lima version: exec: "limactl": executable file not found in $PATH` and postinstall fail 31. **Root cause:** macOS `sudo -u` strips PATH and substitutes sudoers' `secure_path` (`/usr/bin:/bin:/usr/sbin:/sbin` — no `/usr/local/bin`); colima's `os/exec.LookPath("limactl")` then fails even though limactl was installed two lines earlier. Same trap applies to `docker` (a colima-context shim). **Fix:** new `_op_path` helpers in `install_colima.sh` and `postinstall.sh` return a PATH that starts with `/usr/local/bin`; every `sudo -u` site invoking `colima`/`docker` now wraps with `/usr/bin/env PATH="$(_op_path)" HOME="${op_home}"`. New `_verify_limactl` in `install_colima.sh` asserts limactl exists at the install destination *before* `colima start` so a missing limactl produces a clear log line, not the misleading colima `$PATH` error. Sites updated: 5 in `install_colima.sh` (1 colima-start, 4 docker), 10 in `postinstall.sh` (docker exec/cp). `install_ollama.sh` unchanged — invokes `/usr/local/bin/ollama` by absolute path, no sibling-helper lookup. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure shell-level PATH hygiene. | `mg/p019-colima-limactl-path` | _stamped on merge_ | `47efd65` |
+| P-020 | `install_colima.sh::install_colima_runtime` walks both `${src}/limactl` and `${src}/bin/limactl` so a Lima 2.x vendor layout is supported. | `mg/p020-p021-vz-entitlement-codesign` | _stamped on merge_ | `e514c12` |
+| P-021 | `build_pkg.sh::step_4b_codesign_inner_binaries` re-passes `com.apple.security.virtualization` entitlement when re-signing Lima/Colima VZ binaries. | `mg/p020-p021-vz-entitlement-codesign` | _stamped on merge_ | `e514c12` |
+| P-022 | `step_drop_dotenv` exports `MG_DB_PASSWORD` (and friends) into the calling shell scope, not just into a `local` frame. | `mg/p022-postinstall-env-handoff` | _stamped on merge_ | `b66b864` |
+| P-023 | New `migrations/006a_layer2_prereqs.sql` bootstraps `uuid-ossp` extension, `set_updated_at()` trigger function, and stub `hardware.miner_models` / `pool.mining_pools` FK targets in the operational DB so migration `007_layer2_resolver.sql` (relocated from the importer's catalog DB in P-004) succeeds on a fresh `mining_guardian` DB. `MiningGuardian-1.0.3-b66b86440400.pkg` (the P-022 build, main `b66b864`) installed cleanly past every prior gate and applied migrations 001 → 006, then 007 hard-failed with `ERROR: function uuid_generate_v4() does not exist`. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure new SQL file picked up by `step_apply_migrations`'s `*.sql` glob. 006 and 007 stay byte-identical to their importer-side originals (D-20 contract preserved). | `mg/p023-migration-007-layer2-prereqs` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -664,6 +668,95 @@ sudo cat /var/log/mining-guardian/install-postinstall.log | head -200
 ```
 
 The new postinstall log should reach `INFO loaded generated env keys into postinstall shell: MG_DB_PASSWORD …` (the new P-022 line), then `INFO step_provision_postgres preflight OK: required env keys present`, then progress through `INFO postgres ready after Ns`, into `step_apply_migrations` and `step_provision_catalog_db_and_seed` (`INFO catalog seed verified: hardware.miner_models has 320 rows`), then `step_install_ollama_and_pull_model`. If the log still shows `MG_DB_PASSWORD missing from environment` anywhere, the export has regressed and we want to investigate before merging.
+
+---
+
+### P-023 — Migration 007 layer-2 resolver prerequisites in operational DB (this PR)
+
+`MiningGuardian-1.0.3-b66b86440400.pkg` (the P-022 build, main `b66b864`) is the first installer that exports `MG_DB_PASSWORD` correctly into the postinstall shell; the install on the customer Mac mini progressed past every gate from P-015 through P-022. Postinstall log:
+
+```
+INFO loaded generated env keys into postinstall shell: MG_DB_PASSWORD ...
+INFO step_provision_postgres preflight OK: required env keys present
+INFO limactl present at /usr/local/bin/limactl
+INFO Starting VZ ...
+INFO postgres image loaded
+INFO postgres ready after 18s
+INFO applying 001_initial_schema.sql
+INFO applying 003_c5_notify_triggers.sql
+INFO applying 004_drop_dead_stubs.sql
+INFO applying 004_system_settings.sql
+INFO applying 005_system_schedules.sql
+INFO applying 006_field_log_bootstrap.sql
+INFO applying 007_layer2_resolver.sql
+ERROR:  function uuid_generate_v4() does not exist
+LINE 2:     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+HINT:  No function matches the given name and argument types.
+[postinstall] FATAL (32) migration 007_layer2_resolver.sql failed
+```
+
+**Root cause.** `migrations/007_layer2_resolver.sql` was relocated 2026-05-04 in P-004 (D-20 importer-payload reconciliation) from `mg_import_tool/sql/migrations/002_layer2_and_learning_foundation.sql` into the canonical operational migrations chain. The importer-side original ran against the catalog DB `mining_guardian_catalog`, where its prerequisites — the `uuid-ossp` extension, the `public.set_updated_at()` trigger function, and the `hardware.miner_models` / `pool.mining_pools` FK target tables — are all created by `intelligence-catalog/seed-data/intelligence_catalog_schema.sql`. The operational DB `mining_guardian` is a SEPARATE database (provisioned by `step_provision_catalog_db_and_seed` later in postinstall, in a different DB on the same Colima container) and has none of those prerequisites; 007's first `uuid_generate_v4()` call fails immediately. The byte-identical contract from P-004 (`tests/installer/test_d20_importer_payload_reconciliation.sh §8`) prevents patching 006 or 007 in place — those file bodies must continue to match the importer-side originals at `mg_import_tool/sql/migrations/`.
+
+**Fix.** New `migrations/006a_layer2_prereqs.sql` runs lexically between 006 and 007 (no rename of either; byte-identical contract preserved) and bootstraps exactly what 007 needs in the operational DB:
+
+1. `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"` — provides `uuid_generate_v4()` for every `mg.*` table's PK default. Also re-declares `pg_trgm` (already created by 001) for defense-in-depth.
+2. `CREATE OR REPLACE FUNCTION public.set_updated_at()` — mirrors the catalog DB definition so 007's section-9 `CREATE TRIGGER ... EXECUTE FUNCTION set_updated_at()` block resolves.
+3. `CREATE SCHEMA IF NOT EXISTS hardware` + stub `hardware.miner_models(id UUID PRIMARY KEY)` — FK target for `mg.unresolved_models.resolved_to_miner_model_id`, `mg.rma_records.miner_model_id`, `mg.dormant_miners.miner_model_id`, and `knowledge.field_log_miner_identity.resolved_miner_model_id`.
+4. `CREATE SCHEMA IF NOT EXISTS pool` + stub `pool.mining_pools(id UUID PRIMARY KEY)` — FK target for `mg.pool_observations.linked_pool_id`.
+
+The stubs are intentionally minimal (id-only) because the operational DB never stores authoritative catalog rows; the FK columns in `mg.*` tables are populated by application code with UUID pointers into the catalog DB and are nullable, so the FK constraint is satisfied trivially. Adding more columns here would risk drift between this stub and the real catalog table.
+
+**Idempotency.** `CREATE EXTENSION IF NOT EXISTS` / `CREATE OR REPLACE FUNCTION` / `CREATE SCHEMA IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` — entire body wrapped in BEGIN/COMMIT, safe to re-apply. Verified on Postgres 17 against (a) a fresh DB and (b) a DB with a real catalog-shape `hardware.miner_models` (no clobber, seeded rows preserved).
+
+**No `build_pkg.sh`, payload, or notarization-relevant code changed.** Pure new SQL file in `migrations/`, picked up automatically by `step_apply_migrations`'s `*.sql` glob (the P-004 / D-20 reconciliation guarantees that glob is unchanged; `tests/installer/test_d20_importer_payload_reconciliation.sh §10` still asserts it).
+
+**Tests.** New `tests/installer/test_migration_007_prereqs.sh` (16 assertions, all green):
+
+- §1 file presence + balanced BEGIN/COMMIT.
+- §2 every migration that calls `uuid_generate_v4()` is preceded (lexically) by a migration that creates the `uuid-ossp` extension. Catches the regression where a future migration reintroduces `uuid_generate_v4()` calls without ensuring the extension is present, or where 006a is deleted/renamed.
+- §3 every migration that does `EXECUTE FUNCTION set_updated_at()` is preceded by a migration that defines the function.
+- §4 every migration that declares `REFERENCES hardware.miner_models(id)` / `REFERENCES pool.mining_pools(id)` is preceded by a migration that creates that FK target table.
+- §5 P-023 audit marker present.
+- §6 `step_apply_migrations` still globs `*.sql` (no hand-picked subset that would skip 006a).
+- §7 RUNTIME — opt-in via `MG_RUN_PG_TESTS=1`, creates a throwaway DB, applies every `migrations/*.sql` in lexical order with `-v ON_ERROR_STOP=1` (mirrors the customer Mac mini install path), checks five post-conditions (uuid-ossp, `set_updated_at()`, `hardware.miner_models`, `pool.mining_pools`, all 5 `mg.*` tables), and re-applies 006a + 007 to confirm idempotency.
+
+All adjacent installer suites still green: `test_d20_importer_payload_reconciliation` 32/32 (006/007 still byte-identical to importer-side originals), `test_postinstall_env_handoff` 38/38, `test_postinstall_payload_path` 12/12, `test_postinstall_catalog_seed` 24/24, `test_pkg_scripts_naming` 17/17.
+
+**Operator cleanup before next reinstall.** The `b66b864` attempt got far enough to bring up Postgres and apply migrations 001 → 006, but 007 failed; Postgres has the operational schema partially populated and `mining_guardian_catalog` was never created. `bin/uninstall.sh` is NOT installed yet (`step_install_uninstall_script` runs after `step_apply_migrations`, which fired the FATAL). Manual cleanup:
+
+```bash
+# Bootout any service plists that did get installed (none expected, but harmless)
+sudo /bin/launchctl bootout system /Library/LaunchDaemons/com.miningguardian.*.plist 2>/dev/null || true
+
+# Wipe install root, logs, and Colima state
+sudo rm -rf "/Library/Application Support/MiningGuardian"
+sudo rm -rf /var/log/mining-guardian
+sudo -u miningguardian /usr/local/bin/colima stop --force 2>/dev/null || true
+sudo -u miningguardian /usr/local/bin/colima delete --force 2>/dev/null || true
+
+# Operator's laptop — rebuild + sign + notarize from merged main, then reinstall
+cd ~/Documents/GitHub/Mining-Guardian
+git fetch origin && git checkout main && git pull
+bash docs/RUNBOOK_PKG_REBUILD.md  # follow Block A through Block H
+
+# Mac mini — install the new build
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+sudo cat /var/log/mining-guardian/install-postinstall.log | head -250
+```
+
+The new postinstall log should reach `INFO applying 006_field_log_bootstrap.sql`, then `INFO applying 006a_layer2_prereqs.sql` (the new P-023 line), then `INFO applying 007_layer2_resolver.sql` (now succeeds), then `INFO all migrations applied`, then `INFO catalog seed verified: hardware.miner_models has 320 rows` (catalog DB), then `step_install_ollama_and_pull_model`. If the log still shows `function uuid_generate_v4() does not exist` anywhere, 006a regressed and the fix needs to be re-applied.
+
+**Detection (operator-side, after install).** Both of these must succeed after reinstall:
+
+```bash
+docker exec mining-guardian-db psql -U mg -d mining_guardian -c \
+    "SELECT extname FROM pg_extension WHERE extname='uuid-ossp';"
+# Expected: 1 row, extname=uuid-ossp
+
+docker exec mining-guardian-db psql -U mg -d mining_guardian -c \
+    "SELECT to_regclass('hardware.miner_models'), to_regclass('pool.mining_pools'), to_regclass('mg.model_family_aliases');"
+# Expected: all three to_regclass values non-NULL
+```
 
 ---
 
