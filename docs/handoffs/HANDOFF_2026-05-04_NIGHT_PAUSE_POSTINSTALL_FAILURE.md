@@ -500,3 +500,188 @@ worked (cf1691e build, transfer, Gatekeeper, preinstall + P-015) and what
 remains unknown (the postinstall failure mode), which is exactly the
 context-loss failure pattern this handoff protocol was created to prevent
 (`docs/handoffs/README.md`).
+
+---
+
+# Addendum 2026-05-05 — Round 3 (build 9318062) — P-016 confirmed live, P-017 surfaced
+
+## What just happened (Round 3)
+
+Round 3 install on the customer Mac mini, this morning, with
+`MiningGuardian-1.0.3-9318062cad3e.pkg` (the first build that includes
+P-016's `_cocoa_alert` hard-bound and `_resolve_install_user` helper).
+
+**P-016 confirmed live in production.** The new postinstall log:
+
+```
+2026-05-05T15:51:35Z [postinstall] INFO env probe: SUDO_USER='<unset>' USER='root' LOGNAME='root' HOME='/Users/miningguardian'
+2026-05-05T15:51:35Z [postinstall] INFO resolved install operator user: miningguardian
+2026-05-05T15:51:35Z [postinstall] INFO reading customer config: /Users/miningguardian/Desktop/MiningGuardian.conf
+2026-05-05T15:51:35Z [postinstall] INFO customer config OK: site='R & D' ams='https://api-staging.dev.bixbit.io/api/v1' dry_run='true'
+2026-05-05T15:51:35Z [postinstall] INFO laid out install root at /Library/Application Support/MiningGuardian
+2026-05-05T15:51:35Z [postinstall] INFO wrote /Library/Application Support/MiningGuardian/.env (mode 0600) with full customer + secret payload
+2026-05-05T15:51:35Z [ollama] FATAL vendored colima runtime not found at /tmp/PKInstallSandbox.sJTxI0/Scripts/com.miningguardian.installer.core.Hy5Eby/../payload/runtime/colima
+2026-05-05T15:51:35Z [postinstall] FATAL (31) colima runtime install failed
+```
+
+Both halves of P-016 work:
+* env probe shows the actual stripped Installer.app environment
+  (`SUDO_USER='<unset>'`, `USER='root'`)
+* `_resolve_install_user` walked through to probe 3
+  (`/Users/*/Desktop/MiningGuardian.conf`) and returned `miningguardian`
+* the Desktop conf was read + validated, the `.env` was written
+  (mode 0600, owner `miningguardian:staff`).
+
+The new failure is a separate bug: **P-017**.
+
+## P-017 root cause
+
+`postinstall.sh` set `MG_PKG_PAYLOAD="${SCRIPT_DIR}/../payload"`. With the
+v1.0.3 .pkg shape (`pkgbuild --root ${PAYLOAD_DIR} --scripts ${SCRIPTS_DIR}
+--install-location "/Library/Application Support/MiningGuardian"`),
+Installer.app at install time:
+
+* extracts the *scripts* archive into a private sandbox like
+  `/tmp/PKInstallSandbox.<rand>/Scripts/com.miningguardian.installer.core.<rand>/`
+  and runs `preinstall` / `postinstall` from there;
+* extracts the *payload* archive directly to the install location
+  (`/Library/Application Support/MiningGuardian/`).
+
+Those are two separate directories. `${SCRIPT_DIR}/../payload` resolves
+to a path inside the scripts sandbox that does not exist (the scripts
+sandbox holds only the script archive contents). The first read that
+touches that path is `install_colima.sh::install_colima_runtime` line 60
+(`local src="${payload}/runtime/colima"`), which exits 31. Every
+payload-relative read in the script (migrations, intelligence-catalog,
+deploy/, python-wheels/, requirements.txt, BUILD_STAMP.json) would have
+failed with the same shape; install_colima fired first because
+step_provision_postgres runs first in `main()`.
+
+## P-017 fix (PR `mg/p017-payload-path-install-root`)
+
+`postinstall.sh` now resolves `MG_PKG_PAYLOAD` from `MG_INSTALL_ROOT`
+when `${MG_INSTALL_ROOT}/runtime` exists (production .pkg path) and
+falls back to `${SCRIPT_DIR}/../payload` only when the install-root tree
+is absent (dev / smoke-test invocations of postinstall.sh outside a real
+.pkg). No `build_pkg.sh` changes — the .pkg layout itself is correct,
+only the install-time path resolution in postinstall.sh was wrong.
+
+## Tests
+
+New: `tests/installer/test_postinstall_payload_path.sh` — 12 assertions,
+all green. Static drift guards (install-root branch present + ordering;
+helper libs unchanged; P-017 + PKInstallSandbox markers present) plus
+two functional probes that exercise both branches of the new
+`if [[ -d "${MG_INSTALL_ROOT}/runtime" ]]` decision.
+
+Other installer suites still green:
+* `test_postinstall_user_resolver.sh` 12/12
+* `test_postinstall_cocoa_alert_bounded.sh` 9/9
+* `test_pkg_scripts_naming.sh` 17/17
+* `test_preinstall_arch_gate.sh` 11/11
+* `test_postinstall_customer_info.sh` 76/76
+
+## Round-3 Mac Mini cleanup before reinstall
+
+The P-017 attempt left partial state on the Mini:
+
+* `/Library/Application Support/MiningGuardian/` exists with `.env`
+  (mode 0600 — holds rotated AMS + Slack creds) and the laid-down
+  payload tree (runtime/, intelligence-catalog/, deploy/, migrations/,
+  python-wheels/, etc.).
+* `/var/log/mining-guardian/install-postinstall.log` exists with the
+  FATAL line above.
+* No Colima profile, no Postgres container, no `.venv`, no
+  LaunchDaemons, no `/etc/mining-guardian/install-receipt.json`,
+  **no `bin/uninstall.sh`** (`step_install_uninstall_script` runs after
+  the failed step, so the bundled uninstaller is NOT installed).
+
+`bin/uninstall.sh` is not on the Mini, so cleanup is manual. Per
+CLAUDE.md "Critical Safety Rules" the explicit back-up-then-remove
+pattern applies.
+
+```bash
+# 1. Back up the install log + .env (env file holds rotated AMS + Slack creds).
+sudo mkdir -p "/var/log/mining-guardian/p017-pre-reinstall-$(date -u +%Y%m%dT%H%M%SZ)"
+sudo cp /var/log/mining-guardian/install-postinstall.log \
+        /var/log/mining-guardian/p017-pre-reinstall-*/
+sudo cp "/Library/Application Support/MiningGuardian/.env" \
+        /var/log/mining-guardian/p017-pre-reinstall-*/.env.bak
+
+# 2. Defensive: confirm there is NO Colima profile or Postgres container
+#    (the install never reached those steps, but verify).
+colima list 2>/dev/null || true
+docker ps -a --filter name=mining-guardian-db 2>/dev/null || true
+
+# 3. Remove the half-installed install root and the install logs.
+sudo rm -rf "/Library/Application Support/MiningGuardian"
+sudo rm -rf /var/log/mining-guardian
+sudo rm -rf /etc/mining-guardian   # may not exist; rm -rf is idempotent
+
+# 4. Verify clean.
+ls -la "/Library/Application Support/MiningGuardian" 2>&1 | head -3
+# Expect: ls: ...: No such file or directory
+
+# 5. Confirm Desktop conf still in place (install never modifies it).
+ls -la /Users/miningguardian/Desktop/MiningGuardian.conf
+```
+
+## Rebuild + reinstall sequence (Round 4)
+
+After this PR merges, on the build Mac:
+
+```bash
+cd ~/Documents/GitHub/Mining-Guardian
+git checkout main
+git pull
+# Verify P-017 fix is on main:
+grep -n 'P-017' installer/macos-pkg/scripts/postinstall.sh | head -3
+# Run build_pkg.sh:
+./installer/macos-pkg/scripts/build_pkg.sh
+# Expect: signed + notarized + stapled .pkg at
+# build/MiningGuardian-1.0.3-<sha>.pkg
+```
+
+Transfer the new .pkg to the Mini (USB or Tailscale `scp`), then on the
+Mini:
+
+```bash
+# Verify checksum after transfer.
+shasum -a 256 ~/Downloads/MiningGuardian-1.0.3-*.pkg
+
+# Install with the standard CLI command.
+sudo installer -pkg ~/Downloads/MiningGuardian-1.0.3-*.pkg -target /
+
+# Tail the postinstall log live in another terminal:
+tail -F /var/log/mining-guardian/install-postinstall.log
+```
+
+The next FATAL — if any — should NOT be an `MG_PKG_PAYLOAD`-related
+"vendored X not found at /tmp/PKInstallSandbox.../payload/..." line.
+
+## Known follow-up: B-12 / P-018 (latent, NOT in P-017 PR)
+
+`installer/macos-pkg/scripts/lib/install_colima.sh` and `install_ollama.sh`
+still resolve the operator account via the legacy `${SUDO_USER:-${USER}}`
+pattern (8 sites in install_colima.sh, 1 in install_ollama.sh). P-016
+fixed this in postinstall.sh but did not reach the helper libs. Under
+Installer.app's stripped environment, the legacy pattern picks `root`,
+which would lead to `home="/Users/root"` (does not exist on a stock
+customer Mac) and `sudo -u root colima start` (wrong owner for
+`~/.colima`).
+
+This bug has NOT been observed live yet because P-017 caused the helpers
+to exit on the missing-payload check before reaching the user-resolution
+sites. Once P-017 lands, Round 4 will likely hit B-12.
+
+Logged in `docs/LATENT_BUGS.md` row B-12 with the operator gating note.
+Earmarked for follow-up PR `mg/p018-helper-libs-operator-user`. **If
+Round 4 fails with a `/Users/root` reference in the log, that is B-12,
+not a regression of P-017.**
+
+## Status flips on P-017 merge
+
+* `docs/MG_UNIFIED_TODO_LIST.md` row 10i (P-017) — flips 🟡 → ✅ on merge.
+* Row 11 (Build, sign, notarize, staple v1.0.3 .pkg) — stays 🟡 because
+  the operator owes one more rebuild.
+* Row 13 (Install on Mini) — stays 🔴 until Round 4 succeeds.

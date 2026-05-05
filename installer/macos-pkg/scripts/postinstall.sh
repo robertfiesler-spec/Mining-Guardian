@@ -148,12 +148,51 @@ INSTALL_TARGET_DIR="${2:-}"  # where the payload was extracted (often /)
 TARGET_VOLUME="${3:-/}"      # the disk the user picked
 INSTALL_KIND="${4:-}"        # "/" or system identifier
 
-# The payload directory inside the pkg — this is where we vendored
-# Colima, Ollama, the Postgres image, and the migration .sql files.
-# Installer.app stages the package into a working dir under
-# /private/tmp/.../<pkgname>/Resources at script time.
+# The payload directory at install time — this is where Installer.app
+# laid down everything we vendored: Colima, Ollama, the Postgres image,
+# the migration .sql files, intelligence-catalog seed data, deploy/
+# tree, python-wheels/, requirements.txt, BUILD_STAMP.json.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export MG_PKG_PAYLOAD="${SCRIPT_DIR}/../payload"
+#
+# P-017 (2026-05-05) — `MG_PKG_PAYLOAD` resolution rewritten.
+#
+# The legacy `${SCRIPT_DIR}/../payload` was wrong for the .pkg install
+# path. With `pkgbuild --root ${PAYLOAD_DIR} --scripts ${SCRIPTS_DIR}
+# --install-location "/Library/Application Support/MiningGuardian"`,
+# Installer.app at install time:
+#   * extracts the *scripts* archive into a private sandbox like
+#     /tmp/PKInstallSandbox.<rand>/Scripts/com.miningguardian.installer.core.<rand>/
+#     and runs preinstall/postinstall from there;
+#   * extracts the *payload* archive directly to the install location
+#     `/Library/Application Support/MiningGuardian/`.
+#
+# Those are TWO DIFFERENT directories. `${SCRIPT_DIR}/../payload`
+# resolves to a path inside the scripts sandbox that does not exist —
+# the scripts sandbox holds only the scripts archive contents, never the
+# payload. The 9318062 install attempt on the customer Mini (the first
+# build whose postinstall got past P-016 to actually run the colima step)
+# exited 31 in `install_colima_runtime` with `vendored colima runtime
+# not found at .../Scripts/...../../payload/runtime/colima`. Earlier
+# builds in the train (a35728d/2b48f98/cf1691e) failed before this code
+# ran — P-013/P-015/P-016 each blocked the install ahead of step 31 — so
+# this regression was not visible until P-016 cleared the path.
+#
+# The payload is at the install location at install time. Same path as
+# MG_INSTALL_ROOT. We export both so anything sourcing the helper libs
+# below (install_colima.sh, install_ollama.sh) sees the correct paths
+# without having to know the pkgbuild internals.
+#
+# Fallback: if MG_INSTALL_ROOT/runtime/ is absent (e.g. dev / smoke-test
+# invocations of postinstall.sh outside of a real .pkg install where the
+# payload was never laid down), fall back to ${SCRIPT_DIR}/../payload —
+# this matches the historical dev-time path layout used by the test
+# suites in tests/installer/. Production .pkg installs always take the
+# install-root branch.
+if [[ -d "${MG_INSTALL_ROOT}/runtime" ]]; then
+    export MG_PKG_PAYLOAD="${MG_INSTALL_ROOT}"
+else
+    export MG_PKG_PAYLOAD="${SCRIPT_DIR}/../payload"
+fi
 
 readonly LIB_COLIMA="${SCRIPT_DIR}/lib/install_colima.sh"
 readonly LIB_OLLAMA="${SCRIPT_DIR}/lib/install_ollama.sh"
