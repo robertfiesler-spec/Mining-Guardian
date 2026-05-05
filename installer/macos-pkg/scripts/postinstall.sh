@@ -130,6 +130,26 @@
 #
 # An `INFO env probe` log line in main() makes any future stripped-env
 # regression debuggable from the postinstall log alone.
+#
+# P-022 (2026-05-05) — env handoff from step_drop_dotenv to
+# step_provision_postgres. The e514c12 install on the customer Mac mini
+# successfully started Colima (P-019/P-020/P-021 all green) and loaded
+# the postgres:16-bookworm image, then crashed in
+# provision_postgres() with
+#     `FATAL MG_DB_PASSWORD missing from environment; postinstall did
+#     not source .env`
+# Root cause: step_drop_dotenv declared MG_DB_PASSWORD / CATALOG_API_KEY
+# / INTERNAL_API_SECRET as `local` and called `export MG_DB_PASSWORD`
+# as the last line of the function. In bash, `export` on a `local`
+# variable only marks it for export within the function frame; once
+# the function returns, the local goes out of scope and the calling
+# shell never sees the value. Fix: declare the secrets unscoped (so
+# they land in the script-shell scope) and explicitly `export` every
+# key the helper libs consume directly, including the GUARDIAN_PG_*
+# / PG* family. A defensive preflight check at the head of
+# step_provision_postgres asserts the contract before any colima or
+# docker call runs, so a future regression fails fast with a self-
+# pointing log line BEFORE Colima is touched.
 
 set -euo pipefail
 
@@ -667,7 +687,20 @@ step_drop_dotenv() {
     if ! command -v openssl >/dev/null 2>&1; then
         fail 31 "openssl not on PATH; cannot generate per-install secrets"
     fi
-    local MG_DB_PASSWORD CATALOG_API_KEY INTERNAL_API_SECRET
+    # P-022 (2026-05-05) — these MUST NOT be `local`. The legacy code
+    # declared them `local` and then `export`-ed at the end of the
+    # function, but `local` confines the variable to the function
+    # frame; the trailing `export` only sets the export attribute on
+    # that local — once `step_drop_dotenv` returns, the variable is
+    # gone. The next step (`step_provision_postgres` →
+    # `provision_postgres` in lib/install_colima.sh) then ran with
+    # MG_DB_PASSWORD unset and exited 31 with
+    #     `FATAL MG_DB_PASSWORD missing from environment; postinstall
+    #     did not source .env`
+    # — observed live on the e514c12 install on the customer Mac mini
+    # (postinstall round 4, 2026-05-05). Leaving these unscoped (i.e.
+    # at function-shell scope, not function-local) allows the explicit
+    # `export` below to propagate them to every later step.
     MG_DB_PASSWORD="$(openssl rand -hex 32)"
     CATALOG_API_KEY="$(openssl rand -hex 32)"
     INTERNAL_API_SECRET="$(openssl rand -hex 32)"
@@ -749,11 +782,74 @@ EOF
 
     log "INFO wrote ${env_file} (mode 0600) with full customer + secret payload"
 
-    # Re-export so subsequent steps (Postgres provisioning) see it.
-    export MG_DB_PASSWORD
+    # P-022 (2026-05-05) — re-export every key the downstream helper
+    # libs read directly from the environment. The on-disk .env is
+    # written for the launchd services (which source it on first
+    # start), but the postinstall script itself NEVER re-sources the
+    # file — it walks straight into `step_provision_postgres`, which
+    # calls `provision_postgres` in lib/install_colima.sh, which reads
+    # `MG_DB_PASSWORD` directly via `${MG_DB_PASSWORD:-}`. The legacy
+    # code only re-exported MG_DB_PASSWORD here, but it was declared
+    # `local` above so the export was a no-op once the function
+    # returned. The fix is two-pronged: declare unscoped (above) AND
+    # explicitly export every key the helpers consume so any future
+    # helper that gains a new env-key dependency picks it up without a
+    # second drop-dotenv rewrite.
+    #
+    # Logged: KEY NAMES ONLY. Never values. The .env file is the only
+    # place any secret value should ever appear.
+    GUARDIAN_PG_HOST=127.0.0.1
+    GUARDIAN_PG_PORT=5432
+    GUARDIAN_PG_USER=mg
+    GUARDIAN_PG_PASSWORD="${MG_DB_PASSWORD}"
+    GUARDIAN_PG_DBNAME=mining_guardian
+    GUARDIAN_PG_TEST_DBNAME=mining_guardian_test
+    GUARDIAN_PG_CATALOG_DBNAME=mining_guardian_catalog
+    PGHOST=127.0.0.1
+    PGPORT=5432
+    PGUSER=mg
+    PGDATABASE=mining_guardian
+    export MG_DB_PASSWORD CATALOG_API_KEY INTERNAL_API_SECRET
+    export GUARDIAN_PG_HOST GUARDIAN_PG_PORT GUARDIAN_PG_USER \
+           GUARDIAN_PG_PASSWORD GUARDIAN_PG_DBNAME \
+           GUARDIAN_PG_TEST_DBNAME GUARDIAN_PG_CATALOG_DBNAME
+    export PGHOST PGPORT PGUSER PGDATABASE
+
+    log "INFO loaded generated env keys into postinstall shell:" \
+        "MG_DB_PASSWORD CATALOG_API_KEY INTERNAL_API_SECRET" \
+        "GUARDIAN_PG_HOST GUARDIAN_PG_PORT GUARDIAN_PG_USER" \
+        "GUARDIAN_PG_PASSWORD GUARDIAN_PG_DBNAME" \
+        "GUARDIAN_PG_TEST_DBNAME GUARDIAN_PG_CATALOG_DBNAME" \
+        "PGHOST PGPORT PGUSER PGDATABASE"
 }
 
 step_provision_postgres() {
+    # P-022 (2026-05-05) — fail-fast sanity check. The helper
+    # `provision_postgres` (lib/install_colima.sh) already refuses to
+    # run when MG_DB_PASSWORD is missing, but its FATAL line buries
+    # the root cause inside the colima/docker path. The e514c12 install
+    # on the customer Mac mini exited 31 here AFTER colima had been
+    # started and the postgres image had been loaded — meaning Rob now
+    # has a half-installed system to clean up before retrying.
+    #
+    # Asserting the contract at the top of this step turns a 30-second
+    # dance through colima into an immediate FATAL with a self-pointing
+    # log line, BEFORE any system-state change made by
+    # install_colima_runtime / load_postgres_image. Catches any future
+    # regression in `step_drop_dotenv` (e.g., someone re-introduces
+    # `local`, drops the export, or adds a new helper-required key).
+    #
+    # KEYS LOGGED, NEVER VALUES.
+    local missing=()
+    [[ -z "${MG_DB_PASSWORD:-}" ]] && missing+=("MG_DB_PASSWORD")
+    [[ -z "${GUARDIAN_PG_USER:-}" ]] && missing+=("GUARDIAN_PG_USER")
+    [[ -z "${PGUSER:-}" ]] && missing+=("PGUSER")
+    [[ -z "${GUARDIAN_PG_DBNAME:-}" ]] && missing+=("GUARDIAN_PG_DBNAME")
+    if (( ${#missing[@]} > 0 )); then
+        fail 31 "step_drop_dotenv did not export required env keys: ${missing[*]} (P-022 regression — see step_drop_dotenv)"
+    fi
+    log "INFO step_provision_postgres preflight OK: required env keys present"
+
     install_colima_runtime || fail 31 "colima runtime install failed"
     load_postgres_image    || fail 31 "postgres image load failed"
     provision_postgres     || fail 31 "postgres container provisioning failed"
