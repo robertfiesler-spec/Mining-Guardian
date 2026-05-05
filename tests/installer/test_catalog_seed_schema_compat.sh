@@ -219,6 +219,46 @@ else
 fi
 
 # ---------------------------------------------------------------------
+section "6. P-025 — hardware.miner_models.primary_source_id has default"
+# ---------------------------------------------------------------------
+# D-18 P-025: seed_miner_models.sql INSERTs omit primary_source_id (320
+# rows). Schema must default to the canonical 'catalog_research_2026'
+# UUID so the NOT NULL constraint passes without per-row column data.
+SCHEMA_FILE="intelligence-catalog/seed-data/intelligence_catalog_schema.sql"
+DEFAULT_UUID="a0000000-0000-0000-0000-00000000000e"
+
+# Match within hardware.miner_models CREATE TABLE. The line should now
+# read approximately:
+#   primary_source_id  UUID NOT NULL DEFAULT '<uuid>'::uuid REFERENCES knowledge.sources(id),
+miner_models_psid_line="$(/usr/bin/awk -v u="$DEFAULT_UUID" '
+    /CREATE TABLE hardware\.miner_models/ { in_block = 1; next }
+    in_block && /^[[:space:]]*primary_source_id[[:space:]]+UUID/ { print; exit }
+' "$SCHEMA_FILE")"
+if [[ "$miner_models_psid_line" == *DEFAULT* ]] \
+   && [[ "$miner_models_psid_line" == *"$DEFAULT_UUID"* ]]; then
+    ok "hardware.miner_models.primary_source_id has DEFAULT '${DEFAULT_UUID}' (P-025)"
+else
+    fail "hardware.miner_models.primary_source_id missing DEFAULT '${DEFAULT_UUID}' (P-025) — got: ${miner_models_psid_line:-<not found>}"
+fi
+
+# Also assert deploy_schema.sql still seeds the canonical sources row so
+# the default UUID resolves to a real foreign-key target.
+if /usr/bin/grep -qF "$DEFAULT_UUID" "$DEPLOY_FILE"; then
+    ok "deploy_schema.sql seeds the canonical knowledge.sources row (${DEFAULT_UUID})"
+else
+    fail "deploy_schema.sql does not seed knowledge.sources(${DEFAULT_UUID}) — primary_source_id default would FK-violate"
+fi
+
+# Confirm the seed file still omits primary_source_id (the whole point
+# of the default — if seed rows started supplying it, the default would
+# not need to exist).
+if /usr/bin/grep -qE 'primary_source_id' "$SEED_FILE"; then
+    fail "seed_miner_models.sql now references primary_source_id — re-evaluate whether the schema default is still needed (P-025)"
+else
+    ok "seed_miner_models.sql still omits primary_source_id (default in schema carries the rows)"
+fi
+
+# ---------------------------------------------------------------------
 section "Summary"
 # ---------------------------------------------------------------------
 echo

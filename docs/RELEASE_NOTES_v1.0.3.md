@@ -843,6 +843,54 @@ docker exec mining-guardian-db psql -U mg -d mining_guardian_catalog -tAc \
 
 **Future sessions: never add an `INSERT INTO hardware.manufacturers` to `seed_miner_models.sql`.** Manufacturers are owned by `deploy_schema.sql` exclusively. If a new brand is needed, add it to the `deploy_schema.sql` INSERT (using `legal_name` / `common_name` / `country_of_origin` / `website_url`) AND add the brand to `public.manufacturer_brand` enum extensions in `deploy_schema.sql`. The new regression test §2/§4 will catch any attempt to put manufacturer inserts back into the seed file.
 
+### P-025 — Pre-build full preflight audit P0 fixes (this PR)
+
+After P-024 merged, a full pre-build audit of the installer surface caught three P0 blockers chained behind P-024 that would each have failed an install on the customer Mini. This PR resolves all three (audit findings A-2, A-3, A-4) in one bundle so we never burn another notarization round-trip on a known-broken pkg.
+
+**A-2 — `hardware.miner_models.primary_source_id NOT NULL` with no seed value.**
+
+`intelligence-catalog/seed-data/intelligence_catalog_schema.sql:822` declared `primary_source_id UUID NOT NULL REFERENCES knowledge.sources(id)`, but all 320 `INSERT INTO hardware.miner_models` rows in `seed_miner_models.sql` omit that column. The seed transaction would have rolled back with `null value in column "primary_source_id" violates not-null constraint` on the very first row — the same exit-39 path the P-024 install hit, just one column to the right.
+
+Fix: add a `DEFAULT 'a0000000-0000-0000-0000-00000000000e'::uuid` to the schema column. That UUID is the `catalog_research_2026` row already seeded by `deploy_schema.sql:78` (the canonical "Mining Guardian Catalog Research" knowledge.sources entry), which `deploy_schema.sql` always applies before `seed_miner_models.sql`. Seed rows that explicitly set `primary_source_id` (none today, but future rows can) still override the default. No data shape change, no new column, one line in the schema.
+
+**A-3 — `${SCRIPT_DIR}/../resources/...` does not exist at install time.**
+
+P-017 fixed `MG_PKG_PAYLOAD` to resolve to the install root (the path the payload archive lays down) but `postinstall.sh` still read four installer-owned trees through `${SCRIPT_DIR}/../resources/...`:
+
+| Constant | Old path | What it feeds |
+|---|---|---|
+| `PLISTS_SRC` | `${SCRIPT_DIR}/../resources/launchd` | 9 service plists for `step_install_plists_and_bootstrap` |
+| `LAUNCHERS_SRC` | `${SCRIPT_DIR}/../resources/launchd/launchers` | 10 launcher wrappers for `step_install_launcher_wrappers` |
+| `SCHEDULED_PLISTS_SRC` | `${SCRIPT_DIR}/../resources/launchd/scheduled` | 11 scheduled-job plists for `step_install_scheduled_plists_and_bootstrap` |
+| `UNINSTALL_SH_SRC` | `${SCRIPT_DIR}/../resources/uninstall.sh` | `bin/uninstall.sh` for `step_install_uninstall_script` |
+
+At .pkg install time `${SCRIPT_DIR}` resolves inside Installer.app's private scripts sandbox at `/tmp/PKInstallSandbox.<rand>/Scripts/com.miningguardian.installer.core.<rand>/`. That sandbox holds ONLY the scripts archive (lib/ + preinstall + postinstall) — productbuild's `--resources` content (Distribution.xml, branding, welcome/conclusion HTML, license text, **and** resources/launchd/, resources/uninstall.sh) is package metadata and never lands on disk alongside the scripts. So all four `${SCRIPT_DIR}/../resources/...` paths point at directories that simply do not exist when postinstall fires. The install would fail at exit 37 (service plist missing) or 40 (scheduled plist missing) the moment the path resolution is exercised.
+
+Fix: `build_pkg.sh` now stages installer-owned resources into the customer payload at `<payload>/installer-resources/` (new step 4k). `postinstall.sh` adds an `INSTALLER_RESOURCES_SRC` resolver that reads from `${MG_PKG_PAYLOAD}/installer-resources/` when present, falling back to `${SCRIPT_DIR}/../resources` for dev / smoke-test invocations of postinstall.sh in the source tree. The four readonly source-path constants (`PLISTS_SRC`, `LAUNCHERS_SRC`, `SCHEDULED_PLISTS_SRC`, `UNINSTALL_SH_SRC`) all derive from `INSTALLER_RESOURCES_SRC`. The legacy `installer/macos-pkg/resources/` tree continues to feed `productbuild --resources` for the metadata-only content (Distribution.xml, branding, etc.) — only the install-time path consumers move into the payload.
+
+**A-4 — `scripts/***` not in the build_pkg.sh rsync include list.**
+
+8 of the 11 scheduled-job plists (`com.miningguardian.scheduled.ams-cleanup`, `db-maintenance`, `log-collection`, `log-failure-report`, `morning-briefing`, `operator-review`, plus `benchmark`/`weekly-training`-adjacent code paths) invoke entrypoints under `scripts/*.{py,sh}`. The 4a rsync include list had `core/***`, `clients/***`, `notifiers/***`, `monitoring/***`, `api/***`, `ai/***`, `console/***`, `intelligence-catalog/***`, `docs/***`, `branding/***`, `deploy/***`, `migrations/***` — but no `scripts/***`. The plists would install, the scheduled-job launcher would source `.env` correctly, then exit 1 with `entrypoint not found: ${INSTALL_ROOT}/scripts/cleanup_ams_logs.py` on first fire. Silent-success-then-silent-fail in the worst place.
+
+Fix: add `--include 'scripts/***'` to the 4a rsync. Add a step-4b assertion that `<payload>/scripts/` exists after the rsync, and that each of the 6 currently-scheduled `scripts/` entrypoints (the .py and .sh files referenced in the scheduled plists' ProgramArguments) is readable in the staged payload. The `tests/run_benchmark.py` entrypoint is a known pre-existing latent bug (the .py never existed in HEAD; only `tests/run_benchmark.sh` does — see plist comment + docs/LATENT_BUGS.md) and is NOT addressed in P-025; the audit's P0 set stops at the scripts/ omission.
+
+**Tests.** New `tests/installer/test_p025_installer_resources.sh` (27 assertions, all green):
+
+- §1 `bash -n` parses both `postinstall.sh` and `build_pkg.sh`.
+- §2 `INSTALLER_RESOURCES_SRC` declared with the payload-first / dev-fallback two-branch resolver, marked `readonly` after assignment.
+- §3 all four readonly source-path constants (`PLISTS_SRC`, `LAUNCHERS_SRC`, `SCHEDULED_PLISTS_SRC`, `UNINSTALL_SH_SRC`) derive from `INSTALLER_RESOURCES_SRC`.
+- §4 no install-time path-constant assignment in `postinstall.sh` still reads `${SCRIPT_DIR}/../resources/...`. Comments and the `INSTALLER_RESOURCES_SRC` dev-fallback are exempt; everything else must route through the resolver.
+- §5 `build_pkg.sh` step 4k stages `resources/launchd/` and `resources/uninstall.sh` into `<payload>/installer-resources/`.
+- §6 `build_pkg.sh` asserts `<payload>/scripts/` is present after the 4a rsync.
+- §7 4a rsync list contains `--include 'scripts/***'`.
+- §8 every scheduled-plist `ProgramArguments` entrypoint either resolves in the source tree (so the 4a rsync would carry it into the payload) or is the documented `tests/run_benchmark.py` latent bug.
+
+`test_catalog_seed_schema_compat.sh` extended with §6 (3 assertions): `hardware.miner_models.primary_source_id` carries the `DEFAULT 'a0000000-0000-0000-0000-00000000000e'` column attribute, `deploy_schema.sql` still seeds the canonical UUID, and `seed_miner_models.sql` still omits the column (the whole point of the default).
+
+All 21 installer tests still green: `test_uninstall_script.sh`, `test_postinstall_payload_path.sh`, `test_postinstall_scheduled_jobs.sh`, `test_pkg_scripts_naming.sh`, `test_d20_importer_payload_reconciliation.sh`, etc., all pass against the post-P-025 tree.
+
+**No new install attempt before this PR merges.** Per operator instruction 2026-05-05: do not rebuild / sign / notarize the .pkg until P-025 is in main. The next round on the Mini gets the P-025 build directly.
+
 ---
 
 ## What is NOT in v1.0.3 (deferred, with the open-row reference)

@@ -819,7 +819,12 @@ CREATE TABLE hardware.miner_models (
     msrp_usd                NUMERIC(10,2),
     msrp_date               DATE,
     -- Source tracking
-    primary_source_id       UUID NOT NULL REFERENCES knowledge.sources(id),
+    -- D-18 P-025 (2026-05-05): seed_miner_models.sql INSERTs omit primary_source_id
+    -- (320 rows). Default to the canonical "catalog_research_2026" knowledge.sources
+    -- row (a0000000-0000-0000-0000-00000000000e) seeded by deploy_schema.sql so the
+    -- NOT NULL constraint passes without per-row column data. Explicit values still
+    -- override.
+    primary_source_id       UUID NOT NULL DEFAULT 'a0000000-0000-0000-0000-00000000000e'::uuid REFERENCES knowledge.sources(id),
     confidence              public.confidence_level NOT NULL DEFAULT 'high',
     -- Full-text search
     notes                   TEXT,
