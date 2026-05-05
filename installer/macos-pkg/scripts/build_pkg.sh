@@ -530,6 +530,33 @@ step_4b_codesign_inner_binaries() {
     # codesign each one in place here, BEFORE pkgbuild snapshots the
     # payload.
     #
+    # P-021 (2026-05-05). Lima/Colima's VZ driver requires the
+    # `com.apple.security.virtualization` entitlement on the process
+    # that creates the VZVirtualMachine. Upstream Lima's Makefile signs
+    # both `_output/bin/limactl` and `_output/libexec/lima/lima-driver-vz`
+    # with `codesign -f -v --entitlements vz.entitlements -s -`. When
+    # we re-sign every Mach-O with Developer ID Application + hardened
+    # runtime + secure timestamp here, codesign REPLACES the upstream
+    # signature wholesale — including any embedded entitlements. Without
+    # passing `--entitlements` ourselves, every VZ-needing binary loses
+    # the virtualization entitlement, and `colima start --vm-type vz`
+    # on Apple Silicon fails inside Lima's VZ driver subprocess with:
+    #     Error Domain=VZErrorDomain Code=2
+    #     "Invalid virtual machine configuration. The process doesn't
+    #      have the "com.apple.security.virtualization" entitlement."
+    # Observed live on the customer Mac mini against
+    # `MiningGuardian-1.0.3-47efd658f16a.pkg` (postinstall round 4,
+    # 2026-05-05): `colima start` succeeded through Lima version
+    # handshake, downloaded + converted the disk image, then VZ rejected
+    # the configuration. ha.stderr.log captured the exact entitlement
+    # rejection.
+    # Fix: pass our `vz.entitlements` plist to the Pass 2 codesign call
+    # for every loose Mach-O whose basename matches the upstream-signed
+    # set (limactl, lima-driver-vz, lima). Other binaries (colima,
+    # docker, qemu-img if present) re-sign without entitlements as
+    # before — they don't host VZ sessions and don't need the
+    # entitlement.
+    #
     # We also drop runtime/colima/share/lima/lima-guestagent.Darwin-aarch64.gz —
     # that's the Linux guest agent for QEMU mode. We're VZ-only on Apple
     # Silicon (PR #47), so the guest agent is dead weight AND notarization
@@ -540,6 +567,30 @@ step_4b_codesign_inner_binaries() {
         _log "step 4b SKIP: no runtime/ in payload (vendor dir was missing)"
         return 0
     fi
+
+    # P-021. Locate the entitlements plist that pairs with the codesign
+    # call below. Co-located with the helper libs at
+    # installer/macos-pkg/scripts/lib/vz.entitlements (same directory
+    # as resign_wheel.py / install_colima.sh — it ships with the build
+    # script, NOT the customer payload).
+    local vz_entitlements="${PKG_DIR}/scripts/lib/vz.entitlements"
+    if [[ ! -r "$vz_entitlements" ]]; then
+        _die 44 "step 4b: VZ entitlements plist missing at ${vz_entitlements} (P-021)"
+    fi
+
+    # P-021. Set of basenames that need the VZ entitlement passed to
+    # codesign. Mirrors upstream lima-vm/lima Makefile, which signs
+    # `_output/bin/limactl` and `_output/libexec/lima/lima-driver-vz`
+    # with the same plist. We add `lima` (the client) defensively —
+    # Lima 2.x exec's lima-driver-vz from limactl, but a future driver-
+    # less mode where `lima` itself talks to VZ would already be
+    # covered. Keep this list small and explicit; over-broad
+    # entitlement application is itself a notarization risk.
+    local vz_binary_names=(
+        "limactl"
+        "lima-driver-vz"
+        "lima"
+    )
 
     # Drop the Linux guest agent — VZ doesn't use it.
     local guestagent_gz="${runtime_dir}/colima/share/lima/lima-guestagent.Darwin-aarch64.gz"
@@ -561,8 +612,9 @@ step_4b_codesign_inner_binaries() {
     # every level (helpers, frameworks, dylibs, the main executable).
     #
     # Pass 2: codesign every loose Mach-O file that is NOT inside a
-    # .app or .framework bundle (Pass 1 already handled those).
-    local count_bundles=0 count_loose=0 failed=0 path file_out
+    # .app or .framework bundle (Pass 1 already handled those). For
+    # VZ-needing binaries we additionally pass --entitlements (P-021).
+    local count_bundles=0 count_loose=0 count_vz=0 failed=0 path file_out base
 
     # Pass 1 — .app and .framework bundles. -prune so find doesn't
     # descend into them after we list them.
@@ -597,16 +649,49 @@ step_4b_codesign_inner_binaries() {
         if [[ "$file_out" != *"Mach-O"* ]]; then
             continue
         fi
-        if /usr/bin/codesign \
-                --force \
-                --sign "$APPLE_DEV_ID_APPLICATION" \
-                --options runtime \
-                --timestamp \
-                "$path" >/dev/null 2>&1; then
-            count_loose=$((count_loose + 1))
+
+        # P-021. Decide whether this binary needs the VZ entitlement.
+        # Match by basename only — the vendor layout shifts between
+        # Lima 1.x (limactl in colima/) and Lima 2.x (limactl in
+        # colima/bin/, lima-driver-vz in colima/libexec/lima/), and
+        # we want the rule to bind to the binary identity, not its
+        # source path.
+        base="$(basename "$path")"
+        local needs_vz=0 vz_name
+        for vz_name in "${vz_binary_names[@]}"; do
+            if [[ "$base" == "$vz_name" ]]; then
+                needs_vz=1
+                break
+            fi
+        done
+
+        if (( needs_vz == 1 )); then
+            if /usr/bin/codesign \
+                    --force \
+                    --sign "$APPLE_DEV_ID_APPLICATION" \
+                    --options runtime \
+                    --timestamp \
+                    --entitlements "$vz_entitlements" \
+                    "$path" >/dev/null 2>&1; then
+                count_loose=$((count_loose + 1))
+                count_vz=$((count_vz + 1))
+                _log "  signed with VZ entitlements: ${path#${PAYLOAD_DIR}/}"
+            else
+                failed=$((failed + 1))
+                _log "  WARN codesign+entitlements failed for ${path#${PAYLOAD_DIR}/}"
+            fi
         else
-            failed=$((failed + 1))
-            _log "  WARN codesign failed for ${path#${PAYLOAD_DIR}/}"
+            if /usr/bin/codesign \
+                    --force \
+                    --sign "$APPLE_DEV_ID_APPLICATION" \
+                    --options runtime \
+                    --timestamp \
+                    "$path" >/dev/null 2>&1; then
+                count_loose=$((count_loose + 1))
+            else
+                failed=$((failed + 1))
+                _log "  WARN codesign failed for ${path#${PAYLOAD_DIR}/}"
+            fi
         fi
     done < <(/usr/bin/find "$runtime_dir" -type f -print0)
 
@@ -625,7 +710,51 @@ step_4b_codesign_inner_binaries() {
     done < <(/usr/bin/find "$runtime_dir" \
         \( -name '*.app' -o -name '*.framework' \) -prune -print0)
 
-    _log "step 4b OK: re-sealed ${count_bundles} bundle(s), codesigned ${count_loose} loose Mach-O"
+    # P-021 verify-after-sign — every VZ-needing binary present in the
+    # payload must now carry com.apple.security.virtualization. The
+    # build hard-fails here rather than burning a notarization round-
+    # trip on a .pkg whose VZ binaries are missing the entitlement
+    # (which would not be caught by Apple notary — the entitlement is
+    # legal to omit; the failure surfaces only at install-time `colima
+    # start`). We use `codesign -d --entitlements - <bin>` and grep the
+    # output for the entitlement key. limactl is mandatory; the others
+    # are optional (Lima 2.x ships lima-driver-vz, Lima 1.x does not).
+    local vz_check_path vz_check_base
+    while IFS= read -r -d '' vz_check_path; do
+        vz_check_base="$(basename "$vz_check_path")"
+        local match=0 vz_name
+        for vz_name in "${vz_binary_names[@]}"; do
+            if [[ "$vz_check_base" == "$vz_name" ]]; then
+                match=1
+                break
+            fi
+        done
+        if (( match == 0 )); then
+            continue
+        fi
+        case "$vz_check_path" in
+            */*.app/*|*/*.framework/*) continue ;;
+        esac
+        if [[ "$(/usr/bin/file -b "$vz_check_path" 2>/dev/null || true)" != *"Mach-O"* ]]; then
+            continue
+        fi
+        if ! /usr/bin/codesign -d --entitlements - "$vz_check_path" 2>/dev/null \
+                | /usr/bin/grep -q 'com.apple.security.virtualization'; then
+            _die 44 "step 4b: VZ entitlement missing after codesign on ${vz_check_path#${PAYLOAD_DIR}/} (P-021)"
+        fi
+    done < <(/usr/bin/find "$runtime_dir" -type f -print0)
+
+    # P-021 mandatory-presence check. limactl MUST be present in the
+    # payload — without it the install_colima.sh helper exits 1 at
+    # install time anyway, but we want the build to fail fast (and
+    # before notarization burns the cert + Apple round-trip). The
+    # other VZ binaries are version-dependent and may legitimately be
+    # absent.
+    if [[ -z "$(/usr/bin/find "$runtime_dir" -type f -name 'limactl' -print -quit 2>/dev/null)" ]]; then
+        _die 44 "step 4b: limactl not found anywhere under ${runtime_dir} — vendor layout is wrong (P-020)"
+    fi
+
+    _log "step 4b OK: re-sealed ${count_bundles} bundle(s), codesigned ${count_loose} loose Mach-O (${count_vz} with VZ entitlements — P-021)"
 }
 
 step_4c_resign_inner_wheels() {

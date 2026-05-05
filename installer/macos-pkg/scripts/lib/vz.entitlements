@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  installer/macos-pkg/scripts/lib/vz.entitlements
+
+  D-18 P-021. Apple Virtualization.framework entitlement plist applied
+  to every Lima/Colima Mach-O that creates or hosts a VZ virtual
+  machine: limactl, the Lima 2.x external lima-driver-vz driver, and
+  the lima binary itself.
+
+  Without com.apple.security.virtualization, "colima start" with
+  vm-type vz on Apple Silicon fails inside Lima's VZ driver with:
+
+      Error Domain=VZErrorDomain Code=2
+      "Invalid virtual machine configuration. The process doesn't have
+       the com.apple.security.virtualization entitlement."
+
+  Observed live on the customer Mac mini (postinstall round 4,
+  2026-05-05) against MiningGuardian-1.0.3-47efd658f16a.pkg: colima
+  start succeeded through Lima version handshake, downloaded plus
+  converted the disk image, then the VZ driver subprocess hit the
+  entitlement check and exited 1.
+
+  Mirrors the upstream lima-vm/lima vz.entitlements (top-level file in
+  that repo, applied via codesign with the entitlements flag in lima's
+  Makefile to both _output/bin/limactl and
+  _output/libexec/lima/lima-driver-vz). Our build_pkg.sh
+  (step_4b_codesign_inner_binaries) re-signs every vendored Mach-O
+  with Developer ID Application + hardened runtime + secure timestamp
+  for Apple notarization; that re-sign drops the upstream ad-hoc
+  entitlements unless we explicitly re-pass them via the entitlements
+  flag. The fix is to pass this file on the codesign call for every
+  VZ-needing binary.
+
+  Network entitlements are included to match upstream lima. Lima's VZ
+  driver creates the VM's vmnet attachment from inside its own
+  process, and bridged-network-device attachment requires both
+  com.apple.security.network.server and com.apple.security.network.client.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.virtualization</key>
+    <true/>
+</dict>
+</plist>
