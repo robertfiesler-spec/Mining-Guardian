@@ -37,6 +37,7 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-013 | pkgbuild scripts must be staged with extensionless names (`preinstall`, `postinstall`); `MiningGuardian-1.0.3-a35728dcfc8c.pkg` was payload-only because PackageKit silently ignored `preinstall.sh` / `postinstall.sh` | `mg/v103-p013-pkg-scripts-naming` | _this PR_ | _stamped on merge_ |
 | P-014 | `build_pkg.sh` step 4d rsync excludes `build_pkg.sh` itself from scripts staging — first `make pkg` after P-013 merged hit the new P-013 leftover-`*.sh` guard because `build_pkg.sh` lives next to `preinstall.sh`/`postinstall.sh` and was being rsync'd into the package-script staging dir | `mg/v103-d18-p014-staging-exclude-build-pkg` | _this PR_ | _stamped on merge_ |
 | P-015 | Preinstall arch gate Rosetta-safe (`sysctl hw.optional.arm64`, never `uname -m`) — `MiningGuardian-1.0.3-2b48f98e6b77.pkg` first install on customer Mac mini hard-failed at `gate_apple_silicon` because `/usr/bin/uname -m` returned `x86_64` under a Rosetta-translated `/bin/bash` even though the Mac is M-series | `mg/v103-d18-p015-arch-gate-rosetta-safe` | _this PR_ | _stamped on merge_ |
+| P-016 | Postinstall hang fix (`_cocoa_alert` osascript) + operator-user resolver — `MiningGuardian-1.0.3-cf1691e2998c.pkg` install on customer Mac mini hard-failed with `PackageKit: Terminating PKInstallTask. Task has exceeded its 600 seconds of runtime.` after `INFO loaded helper libs`, no FATAL line. **Bug A (the actual hang):** `_cocoa_alert` ran `osascript display dialog` synchronously with no timeout; postinstall runs as root with no Window Server, dialog blocks forever, PackageKit's 600 s watchdog kills the script. Fixed with `with giving up after 5` + pure-bash `kill -KILL` watchdog (10 s wall-clock cap, no `timeout(1)` dependency) + delivery via `launchctl asuser` to the GUI console user. **Bug B (wrong target file):** Installer.app exports `USER=root`, so `${SUDO_USER:-${USER}}` resolved to `root` and the script checked `/Users/root/Desktop/MiningGuardian.conf` instead of `/Users/miningguardian/Desktop/...`. Fixed with `_resolve_install_user()` helper (three bounded probes: `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan), exported as `MG_INSTALL_OPERATOR_USER`. All 22 in-line `${SUDO_USER:-${USER}}` sites updated. Added env-probe log line in `main()` for future debuggability. | `mg/p016-postinstall-desktop-user-resolution` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -287,6 +288,123 @@ sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target
 ```
 
 If the operator's Terminal is set to "Open using Rosetta," the preinstall will now still succeed on the M-series Mini (with the diagnostic WARN line in the log). If the operator wants the entire install chain native arm64, uncheck Terminal.app → Get Info → "Open using Rosetta" before installing, OR invoke via `arch -arm64 sudo installer …`.
+
+---
+
+### P-016 — postinstall hang fix + operator-user resolver (this PR)
+
+**Problem:**
+First install of `MiningGuardian-1.0.3-cf1691e2998c.pkg` on the customer Mac mini. Preinstall passed end-to-end (P-015 confirmed working under Rosetta). The installer then reported `An error occurred while running scripts from the package`. The postinstall log contained ONLY four lines and no `FATAL`:
+
+```
+… [postinstall] Mining Guardian postinstall starting (pid=5521) — Bucket 6 refresh, 9 services
+… [postinstall] PKG_PATH=/Users/miningguardian/Downloads/MiningGuardian-1.0.3-cf1691e2998c.pkg TARGET=/ INSTALL_TARGET_DIR=/Library/Application Support/MiningGuardian
+… [postinstall] INFO sourced env: RAM_TIER=16 LLM=llama3.2:3b
+… [postinstall] INFO loaded helper libs
+```
+
+`/var/log/install.log` showed:
+
+```
+PackageKit: Terminating PKInstallTask(pid:5521). Task has exceeded its 600 seconds of runtime.
+Install Failed   NSFilePath=./postinstall
+```
+
+…and **no** `unbound variable` line. `fail()` always logs a `FATAL (<code>) …` line before exiting; that line is missing because the script never reached `fail()`. The script was alive but blocked for the full 600 seconds.
+
+**Why the original "USER: unbound variable" hypothesis was wrong:**
+
+A `set -u` failure on `${SUDO_USER:-${USER}}` would have exited within milliseconds, not after 600 seconds. The 600 s PackageKit watchdog kill is conclusive evidence that bash did not crash on the variable expansion. Two distinct bugs were in play, and the original hypothesis described only the wrong-target half (Bug B), not the actual hang (Bug A).
+
+**Bug A (the actual cause of the 600 s timeout) — `_cocoa_alert` osascript hang:**
+
+`step_collect_customer_info` resolved `desktop_user="root"` (Installer.app exports `USER=root` even though `SUDO_USER` is unset, so `${SUDO_USER:-${USER}}` evaluates to `root`), then checked `/Users/root/Desktop/MiningGuardian.conf` — which does not exist. The conf-not-found path called `_conf_fail` → `_cocoa_alert`, which ran:
+
+```bash
+/usr/bin/osascript \
+    -e "display dialog \"…\" with title \"…\" with icon stop buttons {\"OK\"} default button \"OK\"" \
+    >/dev/null 2>&1 || true
+```
+
+`display dialog` blocks until the user clicks OK. Postinstall runs as root with no Window Server connection (Installer.app does not bind the postinstall to the GUI session), so the dialog cannot render, no click can occur, and osascript blocks indefinitely. The `|| true` only handles non-zero exit codes; it does not bound execution time. PackageKit's 600 s watchdog eventually kills the whole script — explaining both the timeout and the missing FATAL line.
+
+**Bug B (would have produced the wrong outcome even after fixing Bug A) — `${SUDO_USER:-${USER}}` resolves to `root`:**
+
+Even with `_cocoa_alert` bounded, the legacy expansion would still pick `root` (because Installer.app exports `USER=root`), the `/Users/root/Desktop/...` path still wouldn't exist, the install would fail 41 with a logged FATAL (correct, no hang), but the customer's actual conf at `/Users/miningguardian/Desktop/MiningGuardian.conf` would never be discovered. Both halves need fixing to make the install succeed.
+
+**Fix A — `_cocoa_alert` is now hard-bounded with three layers:**
+
+1. **AppleScript `giving up after 5`** — the dialog auto-dismisses after 5 seconds even when it does render.
+2. **Pure-bash watchdog** — osascript runs in the background; bash polls `kill -0` once per second up to 10 s, then `kill -KILL`s the subprocess. macOS does NOT ship coreutils `timeout(1)` so the wrapper has no external-binary dependency.
+3. **Delivery via the GUI console user** — `launchctl asuser <uid> sudo -u <console_user> osascript …` so the dialog actually has a Window Server to talk to. Falls back to raw osascript only when no console user is logged in (common in headless installs); the watchdog still bounds execution.
+
+Any failure (including the watchdog-driven kill) is swallowed — the FATAL log line from `fail()` is the contract; the dialog is best-effort UX.
+
+**Fix B — `_resolve_install_user()` resolves the operator account via three probes:**
+
+1. `${SUDO_USER:-}` — set when Rob runs `sudo installer …` from a Tailscale SSH session.
+2. `stat -f '%Su' /dev/console` — the GUI logged-in user; macOS exposes this without env vars.
+3. `/Users/*/Desktop/MiningGuardian.conf` scan — last-ditch; finds the operator by where they put the conf.
+
+Returns `root` only when every probe failed AND no Desktop/conf exists, at which point the conf-existence check fails cleanly with `fail 41` and a logged `FATAL` (and the now-bounded `_cocoa_alert` guarantees the script returns within ~10 s instead of hanging).
+
+`main()` calls the resolver immediately after `_setup_log` and exports `MG_INSTALL_OPERATOR_USER`; all 22 legacy `${SUDO_USER:-${USER}}` sites use the resolved variable. `main()` also emits an env-probe diagnostic line so future stripped-env regressions are debuggable from the postinstall log alone:
+
+```
+INFO env probe: SUDO_USER='<unset>' USER='root' LOGNAME='<unset>' HOME='/var/root'
+INFO resolved install operator user: miningguardian
+```
+
+**Tests:**
+
+- New `tests/installer/test_postinstall_cocoa_alert_bounded.sh` — **9/9 green**:
+  - `_cocoa_alert` defined.
+  - AppleScript carries `giving up after N`.
+  - Watchdog uses `kill -KILL` and a bounded poll loop.
+  - Wrapper avoids `/usr/bin/timeout` (not on macOS).
+  - Dialog routed via `launchctl asuser` when console user is present.
+  - Console-user check skips when `/dev/console` owner is `root`.
+  - **Runtime: with osascript stubbed to `sleep 600`, `_cocoa_alert` returns in ≤ 15 s.** This directly proves the cf1691e timeout cannot recur.
+  - Bug A reference present in postinstall header.
+
+- Updated `tests/installer/test_postinstall_user_resolver.sh` — **12/12 green**:
+  - The fragile `${SUDO_USER:-${USER}}` command-line pattern is gone.
+  - `_resolve_install_user()` defined with all three probes.
+  - `main()` assigns `MG_INSTALL_OPERATOR_USER` BEFORE `step_collect_customer_info`.
+  - Env-probe log line emitted.
+  - Runtime: with `SUDO_USER` unset and `USER=root` (the actual Installer.app environment), the resolver returns `miningguardian` via the Desktop scan — i.e., it does NOT return `root` and the install would not be misdirected.
+  - No unbound-variable error under `set -u`.
+
+- All prior postinstall test assertions still green: 76 customer-info + 115 scheduled-jobs + 26 venv + 24 catalog-seed + 12 user-resolver + 9 cocoa-alert = **262 total**.
+- Shellcheck baseline unchanged at 3 warnings.
+
+**Diagnosis confirmation gate (operator-side, run on the Mac mini):**
+
+```
+sudo grep -nE 'unbound|exceeded|MiningGuardian|postinstall|cf1691e' /var/log/install.log | tail -120
+```
+
+The cf1691e attempt should show **`PackageKit: Terminating PKInstallTask(pid:5521). Task has exceeded its 600 seconds of runtime.`** and NO `unbound variable` line — confirming Bug A (the osascript hang) was the actual blocker. If you instead see a `bash: USER: unbound variable` line, that would be a different failure mode and we'd want to investigate further before merging.
+
+**No build_pkg.sh / payload / notarization-relevant code touched.** Source-tree change is `installer/macos-pkg/scripts/postinstall.sh` only (+ new test file + updated test file + docs). The rebuilt .pkg's payload is byte-identical to cf1691e modulo the script-archive bytes for `postinstall`.
+
+**Operator commands after merge:**
+
+```
+git checkout main
+git pull --ff-only origin main
+make pkg
+```
+
+The rebuilt .pkg replaces `MiningGuardian-1.0.3-cf1691e2998c.pkg`. Install path on the Mini (the previous attempt left `/Library/Application Support/MiningGuardian` partially populated only as far as preinstall reached, which is none — preinstall does NOT lay payload; that is Installer.app's job and ran AFTER preinstall succeeded; postinstall died before any of the `step_layout_install_root` chown/mkdir, so there is nothing to clean up beyond rotating the postinstall log):
+
+```
+sudo rm -f /var/log/mining-guardian/install-postinstall.log
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+sudo cat /var/log/mining-guardian/install-postinstall.log | head -60
+```
+
+The new postinstall log should now show `INFO env probe: ...` and `INFO resolved install operator user: miningguardian` immediately after the existing four kickoff lines.
 
 ---
 

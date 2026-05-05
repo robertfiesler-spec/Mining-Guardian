@@ -100,6 +100,36 @@
 # Vision Anchor 7 honored: only one network call (model pull); every
 # other byte is vendored inside the .pkg.
 # Vision Anchor 6 honored: no altcoin paths anywhere in the install.
+#
+# P-016 (2026-05-05) — TWO independent bugs, both addressed in one PR.
+# The cf1691e Mac mini install showed only `INFO loaded helper libs` in
+# postinstall log, then 600 s of silence, then a PackageKit "exceeded
+# 600 seconds of runtime" kill. No FATAL line. The 600-second timeout
+# rules out a fast `set -u` crash; bash didn't error out, the script
+# was still alive when PackageKit killed it.
+#
+#   Bug A (the actual hang) — `_cocoa_alert` runs `osascript display
+#   dialog` synchronously with no timeout. Postinstall runs as root with
+#   no Window Server connection, so `display dialog` blocks forever
+#   waiting for a click that can't come. PackageKit's 600 s watchdog
+#   eventually kills the whole script. Fix: hardened `_cocoa_alert`
+#   with three bounds — `with giving up after 5` (AppleScript), a
+#   pure-bash 10 s watchdog (no coreutils `timeout(1)` dependency), and
+#   delivery routed through the GUI console user via launchctl asuser
+#   so the dialog can actually render when one is logged in.
+#
+#   Bug B (the wrong target file) — Installer.app exports `USER=root`
+#   but does NOT export `SUDO_USER`, so the legacy `${SUDO_USER:-${USER}}`
+#   resolves to `root`, and the script reads
+#   `/Users/root/Desktop/MiningGuardian.conf` — a file that never exists.
+#   Even after fixing Bug A, the install would correctly fail 41 instead
+#   of finding the customer's real conf. Fix: `_resolve_install_user()`
+#   resolves the operator account via three bounded probes (SUDO_USER →
+#   /dev/console owner → /Users/*/Desktop scan) and exports
+#   MG_INSTALL_OPERATOR_USER for every later step.
+#
+# An `INFO env probe` log line in main() makes any future stripped-env
+# regression debuggable from the postinstall log alone.
 
 set -euo pipefail
 
@@ -235,6 +265,57 @@ fail() {
 }
 
 # ---------------------------------------------------------------------------
+# Operator-user resolver (P-016 — Bug B)
+# ---------------------------------------------------------------------------
+#
+# Installer.app runs postinstall as root with a stripped environment: it
+# does NOT export SUDO_USER (Installer.app does not invoke scripts via
+# sudo) but does export USER=root. The legacy `${SUDO_USER:-${USER}}`
+# pattern therefore evaluates to `root` and the script reads
+# `/Users/root/Desktop/MiningGuardian.conf` — a file that does not exist
+# on the customer Mini, where the conf lives at
+# `/Users/miningguardian/Desktop/MiningGuardian.conf` (Rob confirmed,
+# 2026-05-04). On the cf1691e attempt the conf-not-found path then hit
+# the synchronous osascript hang in `_cocoa_alert` (see Bug A above).
+# This resolver fixes the wrong-target-file half independently.
+#
+# Three bounded probes, none of which reference unset variables:
+#   1. SUDO_USER (set when Rob runs `sudo installer ...`; covers the
+#      preferred install path).
+#   2. /dev/console owner via `stat -f '%Su' /dev/console` (the GUI
+#      logged-in user; macOS exposes this without env vars).
+#   3. /Users/*/Desktop/MiningGuardian.conf scan (last-ditch; finds the
+#      operator by where they put the conf).
+#
+# Returns "root" only when every probe failed AND no Desktop/conf was
+# located — at which point the conf-existence check below fails cleanly
+# with exit 41 and a logged FATAL (and the now-bounded `_cocoa_alert`
+# guarantees the script returns within ~10 s instead of hanging).
+_resolve_install_user() {
+    local u=""
+    if [[ -n "${SUDO_USER:-}" ]]; then
+        u="$SUDO_USER"
+    fi
+    if [[ -z "$u" || "$u" == "root" ]]; then
+        if [[ -e /dev/console ]]; then
+            u="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
+        fi
+    fi
+    if [[ -z "$u" || "$u" == "root" ]]; then
+        local d
+        for d in /Users/*; do
+            [[ -e "${d}/Desktop/MiningGuardian.conf" ]] || continue
+            u="$(basename "$d")"
+            break
+        done
+    fi
+    if [[ -z "$u" ]]; then
+        u="root"
+    fi
+    printf '%s' "$u"
+}
+
+# ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 
@@ -266,24 +347,92 @@ step_layout_install_root() {
     install -d -m 0755 "${MG_INSTALL_ROOT}/bin"
     install -d -m 0755 "${MG_INSTALL_ROOT}/logs"
     install -d -m 0700 "${MG_INSTALL_ROOT}/postgres-data"
-    chown -R "${SUDO_USER:-${USER}}:staff" "$MG_INSTALL_ROOT"
+    chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$MG_INSTALL_ROOT"
     log "INFO laid out install root at ${MG_INSTALL_ROOT}"
 }
 
 _cocoa_alert() {
-    # Best-effort macOS GUI dialog. AppleScript is the simplest path that
-    # works without bundling a helper binary; if osascript is missing or
-    # blocked we silently fall through (the FATAL log line is still
-    # emitted by fail()).
+    # Best-effort macOS GUI dialog.
+    #
+    # P-016 (2026-05-05) HARD CORRECTNESS FIX. The original implementation
+    # blocked indefinitely on the cf1691e Mac mini install: postinstall runs
+    # as root with no Window Server connection, `osascript display dialog`
+    # waits forever for a click that can never come from root, and the only
+    # bound is PackageKit's 600-second postinstall watchdog. install.log
+    # showed `PKInstallTask exceeded its 600 seconds of runtime` and no
+    # FATAL line — proof the script never returned from osascript.
+    #
+    # Three layers of bounding so this can never hang again:
+    #
+    #   1. AppleScript-level: `with giving up after 5` — the dialog
+    #      auto-dismisses after 5 seconds even if osascript IS connected
+    #      to a Window Server. Caps the time the customer can stare at
+    #      a dialog that root posted into a session it doesn't own.
+    #
+    #   2. Process-level: a backgrounded osascript subprocess + a bash
+    #      watchdog that kills it after 10 wall-clock seconds. macOS
+    #      does not ship coreutils `timeout(1)` so we cannot rely on it;
+    #      this pure-bash wrapper has no external-binary dependency.
+    #
+    #   3. Delivery-level: route through the GUI logged-in user via
+    #      `launchctl asuser <uid> sudo -u <user> osascript ...` so the
+    #      script actually has a Window Server to talk to. Falls back to
+    #      raw osascript only if no console user is resolvable.
+    #
+    # Any failure (including timeout) is swallowed — the FATAL log line
+    # from fail() is the contract, the dialog is best-effort UX.
     local title="$1"; shift
     local msg="$*"
-    if command -v /usr/bin/osascript >/dev/null 2>&1; then
-        # Best-effort — never let a dialog failure cascade into a second
-        # error from the caller. Errors swallowed.
-        /usr/bin/osascript \
-            -e "display dialog \"${msg//\"/\\\"}\" with title \"${title//\"/\\\"}\" with icon stop buttons {\"OK\"} default button \"OK\"" \
-            >/dev/null 2>&1 || true
+
+    if ! command -v /usr/bin/osascript >/dev/null 2>&1; then
+        return 0
     fi
+
+    local script
+    script="display dialog \"${msg//\"/\\\"}\" with title \"${title//\"/\\\"}\" with icon stop buttons {\"OK\"} default button \"OK\" giving up after 5"
+
+    # Probe for a console GUI user. /dev/console owner is what's logged
+    # in at the Aqua login window. id -u resolves the uid for launchctl
+    # asuser. If either fails, fall through to raw osascript with the
+    # bash watchdog still in effect — the dialog won't render but the
+    # function will return within ~10s.
+    local console_user="" console_uid=""
+    console_user="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
+    if [[ -n "${console_user}" && "${console_user}" != "root" ]]; then
+        console_uid="$(/usr/bin/id -u "${console_user}" 2>/dev/null || true)"
+    fi
+
+    # Run osascript backgrounded; bash watchdog enforces the wall-clock cap.
+    # set -e is on, so we explicitly tolerate non-zero from every step.
+    local osa_pid
+    if [[ -n "${console_uid}" ]]; then
+        ( /bin/launchctl asuser "${console_uid}" \
+            /usr/bin/sudo -u "${console_user}" \
+            /usr/bin/osascript -e "${script}" \
+            >/dev/null 2>&1 ) &
+    else
+        # Last-resort fallback. Will likely no-op (root has no Window
+        # Server) but the watchdog below guarantees we return within ~10s.
+        ( /usr/bin/osascript -e "${script}" >/dev/null 2>&1 ) &
+    fi
+    osa_pid=$!
+
+    # Watchdog: poll once per second up to 10 seconds, then SIGKILL the
+    # whole process group. Last `wait` swallows the exit status so this
+    # function always returns 0 to the caller.
+    local i=0
+    while (( i < 10 )); do
+        if ! kill -0 "$osa_pid" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        i=$(( i + 1 ))
+    done
+    if kill -0 "$osa_pid" 2>/dev/null; then
+        kill -KILL "$osa_pid" 2>/dev/null || true
+    fi
+    wait "$osa_pid" 2>/dev/null || true
+    return 0
 }
 
 _conf_fail() {
@@ -392,7 +541,7 @@ step_collect_customer_info() {
     # dialog tells the customer where the file should be and what
     # specifically failed validation (matching message wording the
     # operator pre-trains the customer on).
-    local desktop_user="${SUDO_USER:-${USER}}"
+    local desktop_user="${MG_INSTALL_OPERATOR_USER}"
     local conf_path="/Users/${desktop_user}/Desktop/MiningGuardian.conf"
 
     if [[ ! -e "$conf_path" ]]; then
@@ -468,7 +617,7 @@ step_drop_dotenv() {
     # (any drift = launchd services crash on first start because the
     # Python code looks for keys this file did not write).
     cat > "$env_file" <<EOF
-# /Library/Application Support/MiningGuardian/.env  mode=0600  owner=${SUDO_USER:-${USER}}:staff
+# /Library/Application Support/MiningGuardian/.env  mode=0600  owner=${MG_INSTALL_OPERATOR_USER}:staff
 # Generated by Mining Guardian installer postinstall.sh
 # Generated at $(date -u +%Y-%m-%dT%H:%M:%SZ)  Site: ${CUSTOMER_NAME}
 # DO NOT COMMIT. DO NOT LOG. DO NOT SHARE.
@@ -527,7 +676,7 @@ MG_INSTALL_RAM_TIER=${MG_INSTALL_RAM_TIER:-}
 MG_INSTALL_LLM_MODEL=${MG_INSTALL_LLM_MODEL:-}
 EOF
     chmod 0600 "$env_file"
-    chown "${SUDO_USER:-${USER}}:staff" "$env_file"
+    chown "${MG_INSTALL_OPERATOR_USER}:staff" "$env_file"
 
     # Defensive: if a stale /tmp/mg_install_env_secret was left from an
     # older v1.0.2 build, scrub it. v1.0.3 postinstall does not consume
@@ -563,7 +712,7 @@ step_apply_migrations() {
     for sql in "${mig_dir}"/*.sql; do
         [[ -f "$sql" ]] || continue
         log "INFO applying $(basename "$sql")"
-        if ! sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
                 psql -U mg -d mining_guardian -v ON_ERROR_STOP=1 < "$sql" \
                 2>&1 | tee -a "$MG_INSTALL_LOG"; then
             fail 32 "migration $(basename "$sql") failed"
@@ -639,7 +788,7 @@ step_provision_catalog_db_and_seed() {
     # DATABASE cannot run inside a transaction, so we issue it with -tAc
     # only when the row count comes back zero.
     local exists
-    exists="$(sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+    exists="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
         psql -U mg -d postgres -tAc \
         "SELECT 1 FROM pg_database WHERE datname='${catalog_db}';" \
         2>>"$MG_INSTALL_LOG" || true)"
@@ -647,7 +796,7 @@ step_provision_catalog_db_and_seed() {
     if [[ "${exists:-}" != "1" ]]; then
         log "INFO creating catalog database ${catalog_db}"
         # shellcheck disable=SC2024  # log file is owned by root; redirect is opened by parent shell pre-sudo, intentional (matches step_baseline_scan / step_create_venv).
-        if ! sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
                 psql -U mg -d postgres -v ON_ERROR_STOP=1 -c \
                 "CREATE DATABASE ${catalog_db} OWNER mg;" \
                 >>"$MG_INSTALL_LOG" 2>&1; then
@@ -663,12 +812,12 @@ step_provision_catalog_db_and_seed() {
     # container so the relative includes resolve.
     local container_seed_dir="/tmp/mg-catalog-seed-$$"
     # shellcheck disable=SC2024  # see SC2024 disable note above.
-    if ! sudo -u "${SUDO_USER:-${USER}}" docker exec "$container" \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec "$container" \
             mkdir -p "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1; then
         fail 39 "could not create staging dir inside container: ${container_seed_dir}"
     fi
     # shellcheck disable=SC2024
-    if ! sudo -u "${SUDO_USER:-${USER}}" docker cp \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker cp \
             "${seed_dir}/." "${container}:${container_seed_dir}/" \
             >>"$MG_INSTALL_LOG" 2>&1; then
         fail 39 "docker cp of seed-data into container failed"
@@ -681,7 +830,7 @@ step_provision_catalog_db_and_seed() {
     # TYPE / CREATE TABLE / CREATE SCHEMA are themselves IF NOT EXISTS.
     log "INFO applying catalog schema (deploy_schema.sql)"
     # shellcheck disable=SC2024
-    if ! sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
             psql -U mg -d "$catalog_db" \
             -v ON_ERROR_STOP=0 \
             -f "${container_seed_dir}/deploy_schema.sql" \
@@ -696,7 +845,7 @@ step_provision_catalog_db_and_seed() {
     # name. We treat that case as "already seeded — re-use" by checking
     # the row count first.
     local row_count
-    row_count="$(sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+    row_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
         psql -U mg -d "$catalog_db" -tAc \
         "SELECT count(*) FROM hardware.miner_models;" \
         2>>"$MG_INSTALL_LOG" || echo 0)"
@@ -706,7 +855,7 @@ step_provision_catalog_db_and_seed() {
     else
         log "INFO seeding 320 Bitcoin SHA-256 miner models into ${catalog_db}"
         # shellcheck disable=SC2024
-        if ! sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
                 psql -U mg -d "$catalog_db" -v ON_ERROR_STOP=1 \
                 -f "${container_seed_dir}/seed_miner_models.sql" \
                 >>"$MG_INSTALL_LOG" 2>&1; then
@@ -715,7 +864,7 @@ step_provision_catalog_db_and_seed() {
     fi
 
     # Verify final row count meets the v1.0.3 verification-gate floor.
-    row_count="$(sudo -u "${SUDO_USER:-${USER}}" docker exec -i "$container" \
+    row_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
         psql -U mg -d "$catalog_db" -tAc \
         "SELECT count(*) FROM hardware.miner_models;" \
         2>>"$MG_INSTALL_LOG" || echo 0)"
@@ -728,7 +877,7 @@ step_provision_catalog_db_and_seed() {
     # Best-effort cleanup of the in-container staging dir; not fatal if
     # it fails (the container is ephemeral relative to the install root).
     # shellcheck disable=SC2024
-    sudo -u "${SUDO_USER:-${USER}}" docker exec "$container" \
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec "$container" \
         rm -rf "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1 || true
 }
 
@@ -768,7 +917,7 @@ step_install_launcher_wrappers() {
         if [[ ! -r "$src" ]]; then
             fail 37 "launcher wrapper missing in payload: ${src}"
         fi
-        install -m 0755 -o "${SUDO_USER:-${USER}}" -g staff "$src" "$dst"
+        install -m 0755 -o "${MG_INSTALL_OPERATOR_USER}" -g staff "$src" "$dst"
         log "INFO installed launcher: ${f}"
     done
 
@@ -780,10 +929,10 @@ step_install_launcher_wrappers() {
     if [[ ! -r "$fbd_src" ]]; then
         fail 37 "feedback_loop_daemon launcher missing in payload: ${fbd_src}"
     fi
-    install -m 0755 -o "${SUDO_USER:-${USER}}" -g staff "$fbd_src" "$fbd_dst"
+    install -m 0755 -o "${MG_INSTALL_OPERATOR_USER}" -g staff "$fbd_src" "$fbd_dst"
     log "INFO installed launcher: feedback_loop_daemon_launcher.sh (from deploy/)"
 
-    chown -R "${SUDO_USER:-${USER}}:staff" "$bin"
+    chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$bin"
     log "INFO installed 9 launcher wrappers in ${bin}"
 }
 
@@ -879,7 +1028,7 @@ step_create_venv() {
     # but the baseline-scan path drops to ${SUDO_USER}, and operator
     # debug runs the venv as ${SUDO_USER} too. Match the install-root
     # ownership pattern from step_layout_install_root.
-    chown -R "${SUDO_USER:-${USER}}:staff" "$venv_dir"
+    chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$venv_dir"
 
     local venv_pip="${venv_dir}/bin/pip"
     if [[ ! -x "$venv_pip" ]]; then
@@ -891,7 +1040,7 @@ step_create_venv() {
     # offline guarantee; `--find-links` points at the vendored dir.
     log "INFO upgrading pip from vendored wheels"
     # shellcheck disable=SC2024  # log is owned by root; redirect is opened by parent shell pre-sudo, which is the intended behavior (matches step_baseline_scan).
-    if ! sudo -u "${SUDO_USER:-${USER}}" \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
             "$venv_pip" install \
             --no-index --find-links "$wheels_dir" \
             --upgrade pip \
@@ -909,7 +1058,7 @@ step_create_venv() {
     # ${HOME}/MiningGuardian-vendor/python-wheels/` before `make pkg`.
     log "INFO installing python deps from ${req_file} (offline, vendored wheels)"
     # shellcheck disable=SC2024  # log is owned by root; redirect is opened by parent shell pre-sudo, which is the intended behavior (matches step_baseline_scan).
-    if ! sudo -u "${SUDO_USER:-${USER}}" \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
             "$venv_pip" install \
             --no-index --find-links "$wheels_dir" \
             --only-binary=:all: \
@@ -996,7 +1145,7 @@ step_install_scheduled_plists_and_bootstrap() {
     fi
 
     install -d -m 0755 "${MG_INSTALL_ROOT}/logs/scheduled"
-    chown "${SUDO_USER:-${USER}}:staff" "${MG_INSTALL_ROOT}/logs/scheduled"
+    chown "${MG_INSTALL_OPERATOR_USER}:staff" "${MG_INSTALL_ROOT}/logs/scheduled"
 
     local label src
     for label in "${SCHEDULED_PLIST_LABELS[@]}"; do
@@ -1081,7 +1230,7 @@ step_baseline_scan() {
     log "INFO triggering first-run baseline scan (non-blocking)"
     # Quoted because MG_INSTALL_ROOT now contains a space
     # ("/Library/Application Support/MiningGuardian" — B-13 fix, v1.0.1).
-    sudo -u "${SUDO_USER:-${USER}}" \
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
         "${MG_INSTALL_ROOT}/venv/bin/python" \
         "${MG_INSTALL_ROOT}/core/mining_guardian.py" --once \
         >> "${MG_INSTALL_LOG}" 2>&1 &
@@ -1096,6 +1245,21 @@ main() {
     _setup_log
     log "Mining Guardian postinstall starting (pid=$$) — Bucket 6 refresh, 9 services"
     log "PKG_PATH=${PKG_PATH} TARGET=${TARGET_VOLUME} INSTALL_TARGET_DIR=${INSTALL_TARGET_DIR}"
+
+    # P-016 — env-state probe. Installer.app's postinstall environment is
+    # stripped; SUDO_USER is unset and USER is not reliably exported. Log
+    # what we have so future failures are debuggable from the log alone.
+    log "INFO env probe: SUDO_USER='${SUDO_USER:-<unset>}' USER='${USER:-<unset>}' LOGNAME='${LOGNAME:-<unset>}' HOME='${HOME:-<unset>}'"
+
+    # P-016 — resolve the operator account ONCE, before any step that
+    # needs it. Replaces the 22 in-line `${SUDO_USER:-${USER}}` sites
+    # that crashed the script under `set -u` when USER was unset. Export
+    # so later steps and helper libs see the same value. Split declare
+    # and assign per shellcheck SC2155 (so the resolver's exit status is
+    # not masked by `export`).
+    MG_INSTALL_OPERATOR_USER="$(_resolve_install_user)"
+    export MG_INSTALL_OPERATOR_USER
+    log "INFO resolved install operator user: ${MG_INSTALL_OPERATOR_USER}"
 
     step_source_env
     step_load_libs
