@@ -200,6 +200,18 @@ step_4_assemble_payload() {
     # (logged in docs/INSTALLER_UX_BACKLOG_2026-05-01.md as B-13).
     local app_root="${PAYLOAD_DIR}"
     install -d -m 0755 "$app_root"
+    # D-18 P-025 (2026-05-05) — `scripts/***` added.
+    # 6 of the 11 scheduled-job plists invoke entrypoints under
+    # `scripts/` (cleanup_ams_logs.py, db_maintenance.sh,
+    # direct_collect_logs.py, daily_log_failure_report.py,
+    # morning_briefing.py, daily_operator_review.py). Without scripts/
+    # in the payload, scheduled_job_launcher.sh exits 1 on first fire
+    # with `entrypoint not found: ${INSTALL_ROOT}/scripts/...`, leaving
+    # the plist installed but every scheduled run failing silently.
+    # The benchmark plist's `tests/run_benchmark.py` entrypoint is a
+    # known pre-existing latent bug (see plist comment + docs/LATENT_BUGS.md);
+    # `tests/` is not added here because the only scheduled .py inside
+    # it is the missing one. P-025 scope stops at the audit's P0 list.
     /usr/bin/rsync -a --delete \
         --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' \
         --exclude 'build' --exclude 'venv' --exclude '.venv' \
@@ -218,6 +230,7 @@ step_4_assemble_payload() {
         --include 'branding/***' \
         --include 'deploy/***' \
         --include 'migrations/***' \
+        --include 'scripts/***' \
         --exclude '*' \
         "${REPO_ROOT}/" "${app_root}/"
 
@@ -246,6 +259,29 @@ step_4_assemble_payload() {
     if [[ ! -d "${PAYLOAD_DIR}/migrations" ]]; then
         _die 43 "step 4b: <payload>/migrations/ missing after 4a rsync — `--include 'migrations/***'` must be present in the include list above"
     fi
+
+    # D-18 P-025 (2026-05-05): scripts/ is required for 6 of the 11
+    # scheduled-job plists. A missing scripts/ in the payload would
+    # leave the plists installed but every scheduled run failing with
+    # exit 1 the first time it fires. Belt-and-suspenders here so a
+    # future include-list edit cannot silently drop scripts/.
+    if [[ ! -d "${PAYLOAD_DIR}/scripts" ]]; then
+        _die 43 "step 4b: <payload>/scripts/ missing after 4a rsync — `--include 'scripts/***'` must be present in the include list above (D-18 P-025)"
+    fi
+    local mg_scheduled_scripts=(
+        "scripts/cleanup_ams_logs.py"
+        "scripts/db_maintenance.sh"
+        "scripts/direct_collect_logs.py"
+        "scripts/daily_log_failure_report.py"
+        "scripts/morning_briefing.py"
+        "scripts/daily_operator_review.py"
+    )
+    local sched_script
+    for sched_script in "${mg_scheduled_scripts[@]}"; do
+        if [[ ! -r "${PAYLOAD_DIR}/${sched_script}" ]]; then
+            _die 43 "step 4b: scheduled-job entrypoint missing in payload: ${sched_script} (D-18 P-025)"
+        fi
+    done
 
     # 4c. Vendored runtime: Colima, lima, qemu-img, Ollama.app,
     # postgres-16-bookworm.tar. These come from a vendor/ directory the
@@ -515,6 +551,59 @@ step_4_assemble_payload() {
         _die 48 "step 4j: uninstall.sh not executable: ${uninstall_src} (chmod +x committed source)"
     fi
     _log "step 4j OK: uninstall.sh staged from ${uninstall_src} (D-18 Copy bug 3)"
+
+    # 4k. Installer-owned resources staging (D-18 P-025, 2026-05-05).
+    #
+    # postinstall.sh used to read launchd plists, launcher wrappers, the
+    # scheduled-job plists, and uninstall.sh from `${SCRIPT_DIR}/../resources/...`.
+    # That path resolves inside Installer.app's private scripts sandbox
+    # at install time (`/tmp/PKInstallSandbox.<rand>/Scripts/...`), where
+    # only preinstall + postinstall + lib/ exist — productbuild
+    # --resources content is metadata-only and never lands on disk
+    # alongside the scripts. Result: every install attempted to read
+    # plists out of a directory the .pkg never created, which would have
+    # surfaced as exit 37 / exit 40 the moment the path resolution was
+    # exercised on a real Mini.
+    #
+    # Fix: copy the same `installer/macos-pkg/resources/launchd/` tree
+    # plus `installer/macos-pkg/resources/uninstall.sh` into the payload
+    # at `<payload>/installer-resources/`. At install time the payload is
+    # laid down at `${MG_INSTALL_ROOT}/installer-resources/`, which
+    # postinstall.sh now resolves through MG_PKG_PAYLOAD via the new
+    # INSTALLER_RESOURCES_SRC constant (see postinstall.sh, just below
+    # the MG_PKG_PAYLOAD assignment).
+    #
+    # The legacy `${PKG_DIR}/resources/` tree continues to feed
+    # productbuild --resources for Distribution.xml, branding, welcome /
+    # conclusion HTML, license text, etc. — that content remains
+    # metadata-only and is unchanged. Only the install-time path
+    # consumers move into the payload.
+    local installer_resources_dst="${PAYLOAD_DIR}/installer-resources"
+    install -d -m 0755 "$installer_resources_dst" "${installer_resources_dst}/launchd"
+    /usr/bin/rsync -a \
+        --exclude 'README.md' \
+        "${PKG_DIR}/resources/launchd/" \
+        "${installer_resources_dst}/launchd/"
+    install -m 0755 "$uninstall_src" "${installer_resources_dst}/uninstall.sh"
+    # Re-assert exec bits on launcher wrappers — rsync should preserve
+    # them from the source tree, but a future operator-side checkout
+    # without --keep-exec or a Windows-style filesystem could drop them.
+    /bin/chmod +x "${installer_resources_dst}/launchd/launchers/"*.sh
+    # Belt-and-suspenders: every label this build claims to ship must
+    # exist in the staged payload tree. Drift here would silently let a
+    # postinstall path resolution fall through to its dev-fallback at
+    # install time (which would be `${SCRIPT_DIR}/../resources` — the
+    # exact bug P-025 fixes), so we hard-fail the build instead.
+    local stage_label
+    for stage_label in "${scheduled_labels[@]}"; do
+        if [[ ! -r "${installer_resources_dst}/launchd/scheduled/${stage_label}.plist" ]]; then
+            _die 47 "step 4k: scheduled plist missing in staged installer-resources: ${stage_label}.plist (D-18 P-025)"
+        fi
+    done
+    if [[ ! -x "${installer_resources_dst}/uninstall.sh" ]]; then
+        _die 48 "step 4k: staged installer-resources/uninstall.sh not executable (D-18 P-025)"
+    fi
+    _log "step 4k OK: installer-resources staged at ${installer_resources_dst} (D-18 P-025)"
 
     _log "step 4 OK: payload assembled at ${PAYLOAD_DIR}"
 }

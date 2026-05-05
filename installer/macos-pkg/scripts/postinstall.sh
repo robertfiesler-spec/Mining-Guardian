@@ -217,19 +217,49 @@ fi
 readonly LIB_COLIMA="${SCRIPT_DIR}/lib/install_colima.sh"
 readonly LIB_OLLAMA="${SCRIPT_DIR}/lib/install_ollama.sh"
 
+# D-18 P-025 (2026-05-05) — installer-owned resources resolver.
+#
+# The legacy `${SCRIPT_DIR}/../resources/...` paths only resolve in the
+# repo source tree. At .pkg install time, Installer.app extracts the
+# scripts archive (lib/ + preinstall + postinstall) into a private sandbox
+# like `/tmp/PKInstallSandbox.<rand>/Scripts/com.miningguardian.installer.core.<rand>/`.
+# `${SCRIPT_DIR}/../resources` then resolves to a path inside that
+# sandbox that does NOT exist — productbuild --resources content (which
+# IS where resources/launchd/ and resources/uninstall.sh live in the
+# .pkg) is metadata-only and does not get laid down on disk.
+#
+# Fix: build_pkg.sh step 4k stages `installer/macos-pkg/resources/launchd/`
+# and `installer/macos-pkg/resources/uninstall.sh` into the customer
+# payload at `<payload>/installer-resources/`. At install time, that
+# directory lives at `${MG_INSTALL_ROOT}/installer-resources/` (=
+# `${MG_PKG_PAYLOAD}/installer-resources/`).
+#
+# Fallback: if `${MG_PKG_PAYLOAD}/installer-resources/` is absent
+# (smoke-test invocations of postinstall.sh in the source tree, where
+# tests run preinstall/postinstall directly without a real Installer.app
+# round-trip), fall back to `${SCRIPT_DIR}/../resources`. The dev tests
+# under tests/installer/ use the source tree and rely on this branch.
+if [[ -d "${MG_PKG_PAYLOAD}/installer-resources" ]]; then
+    INSTALLER_RESOURCES_SRC="${MG_PKG_PAYLOAD}/installer-resources"
+else
+    INSTALLER_RESOURCES_SRC="${SCRIPT_DIR}/../resources"
+fi
+readonly INSTALLER_RESOURCES_SRC
+
 # launchd plist staging — copied INTO LaunchDaemons/ at install time.
-# Source dirs live inside the pkg's Resources tree (set by .pkg build script
-# to mirror the repo layout under installer/macos-pkg/resources/).
-readonly PLISTS_SRC="${SCRIPT_DIR}/../resources/launchd"
-readonly LAUNCHERS_SRC="${SCRIPT_DIR}/../resources/launchd/launchers"
+# D-18 P-025: resolved through INSTALLER_RESOURCES_SRC (payload-staged at
+# install time, source-tree at dev time).
+readonly PLISTS_SRC="${INSTALLER_RESOURCES_SRC}/launchd"
+readonly LAUNCHERS_SRC="${INSTALLER_RESOURCES_SRC}/launchd/launchers"
 readonly PLISTS_DEST="/Library/LaunchDaemons"
 
-# v1.0.3 D-18 Copy bug 3 / P-008 — bin/uninstall.sh ships from this
-# Resources path and lands at ${MG_INSTALL_ROOT}/bin/uninstall.sh. Source
-# is committed at installer/macos-pkg/resources/uninstall.sh. Tests in
+# v1.0.3 D-18 Copy bug 3 / P-008 — bin/uninstall.sh ships in the payload's
+# installer-resources/ tree (D-18 P-025) and lands at
+# ${MG_INSTALL_ROOT}/bin/uninstall.sh. Source is committed at
+# installer/macos-pkg/resources/uninstall.sh. Tests in
 # tests/installer/test_uninstall_script.sh assert it exists with mode
 # 0755 in the source tree.
-readonly UNINSTALL_SH_SRC="${SCRIPT_DIR}/../resources/uninstall.sh"
+readonly UNINSTALL_SH_SRC="${INSTALLER_RESOURCES_SRC}/uninstall.sh"
 
 # Bucket 6: 9 services. v1.0.3 D-19 (P-006): 10th service added — the
 # customer operator console (com.miningguardian.console).
@@ -282,7 +312,7 @@ readonly LAUNCHER_FILES=(
 # Labels match the plist_label values declared by the operator console
 # (console/task_registry.py). Drift here breaks the console's
 # /tasks page launchctl probe.
-readonly SCHEDULED_PLISTS_SRC="${SCRIPT_DIR}/../resources/launchd/scheduled"
+readonly SCHEDULED_PLISTS_SRC="${INSTALLER_RESOURCES_SRC}/launchd/scheduled"
 readonly SCHEDULED_PLIST_LABELS=(
     "com.miningguardian.scheduled.weekly-training"
     "com.miningguardian.scheduled.refinement-chain"
