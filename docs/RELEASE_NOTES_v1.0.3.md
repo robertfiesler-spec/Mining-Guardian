@@ -575,6 +575,98 @@ If the log still shows `executable file not found in $PATH` anywhere, the wrap h
 
 ---
 
+### P-022 — `step_drop_dotenv` exports `MG_DB_PASSWORD` (and friends) into the calling shell, not just into a `local` frame (this PR)
+
+**Problem:**
+`MiningGuardian-1.0.3-e514c122367a.pkg` (the P-020/P-021 build, main `e514c12`) is the first installer that signs the Lima VZ binaries with the virtualization entitlement; the install on the customer Mac mini progressed past every gate from P-015 through P-021. Postinstall log:
+
+```
+INFO resolved install operator user: miningguardian
+INFO reading customer config: /Users/miningguardian/Desktop/MiningGuardian.conf
+INFO customer config OK
+INFO laid out install root
+INFO wrote /Library/Application Support/MiningGuardian/.env (mode 0600)
+[colima] INFO copied limactl from runtime/colima/limactl to /usr/local/bin/limactl
+[colima] INFO copied docker CLI to /usr/local/bin/docker
+[colima] INFO colima started (vz, 4 cpu, 8 GB, 60 GB disk)
+[colima] INFO loaded postgres:16-bookworm into colima
+[colima] INFO created persistent postgres volume at /Library/Application Support/MiningGuardian/postgres-data (owner=miningguardian)
+[colima] FATAL MG_DB_PASSWORD missing from environment; postinstall did not source .env
+[postinstall] FATAL (31) postgres container provisioning failed
+```
+
+The `.env` file landed correctly with mode 0600 and a non-empty `MG_DB_PASSWORD` line — `step_drop_dotenv` did its job on disk. The crash is downstream: `provision_postgres` (in `lib/install_colima.sh`) reads `${MG_DB_PASSWORD:-}` directly from its own environment and bails when the value is empty.
+
+**Root cause:**
+`step_drop_dotenv` declared the three generated secrets as bash `local` variables:
+
+```bash
+local MG_DB_PASSWORD CATALOG_API_KEY INTERNAL_API_SECRET
+MG_DB_PASSWORD="$(openssl rand -hex 32)"
+…
+export MG_DB_PASSWORD
+```
+
+In bash, `export` on a `local` variable only sets the EXPORT attribute on that local — once the function returns, the local goes out of scope and the calling shell never sees the value. `step_provision_postgres` then ran with `MG_DB_PASSWORD` unset and the helper bailed.
+
+This trap was masked through P-015 → P-021 because every prior failure exited 31 inside `install_colima_runtime` or `load_postgres_image`, before `provision_postgres` got control. With P-021 clearing those, `provision_postgres` finally ran — and the `local` scope leak surfaced as the visible bug.
+
+**Fix:**
+
+1. `step_drop_dotenv` no longer declares `MG_DB_PASSWORD` / `CATALOG_API_KEY` / `INTERNAL_API_SECRET` as `local`. They are assigned directly so they land in the script-shell scope, then explicitly `export`-ed at the bottom of the function alongside the `GUARDIAN_PG_*` / `PG*` family that the codebase reads directly from the environment. A future helper that gains a new env-key dependency can be added to that single `export` block instead of needing a second drop-dotenv rewrite.
+2. New `INFO loaded generated env keys into postinstall shell: <key names>` log line. **Names only — never values.** The on-disk `.env` (mode 0600) is the only place any secret value appears.
+3. `step_provision_postgres` now does a fail-fast preflight check — empty `MG_DB_PASSWORD`, `GUARDIAN_PG_USER`, `PGUSER`, or `GUARDIAN_PG_DBNAME` raises `fail 31 "step_drop_dotenv did not export required env keys: …"` BEFORE calling `install_colima_runtime`. This converts a 30-second crawl through colima/docker into an immediate FATAL with a self-pointing log line, and means a regression in `step_drop_dotenv` no longer leaves Rob with a half-installed system to clean up.
+4. Header comment updated with the P-022 narrative.
+
+**No `build_pkg.sh`, payload, or notarization-relevant code changed** — pure shell-level bash-scoping fix. The .pkg the operator rebuilds after merge will hash differently only because of the script-archive bytes.
+
+**Tests:** new `tests/installer/test_postinstall_env_handoff.sh` — **38/38 green**:
+
+- §1 `step_drop_dotenv` does not declare `MG_DB_PASSWORD` / `CATALOG_API_KEY` / `INTERNAL_API_SECRET` as `local`.
+- §2 `step_drop_dotenv` exports every required key (13 keys total): `MG_DB_PASSWORD`, `CATALOG_API_KEY`, `INTERNAL_API_SECRET`, `GUARDIAN_PG_HOST`, `GUARDIAN_PG_PORT`, `GUARDIAN_PG_USER`, `GUARDIAN_PG_PASSWORD`, `GUARDIAN_PG_DBNAME`, `GUARDIAN_PG_CATALOG_DBNAME`, `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`.
+- §3 `step_drop_dotenv` emits the `loaded generated env keys` log marker; the marker line lists `MG_DB_PASSWORD` as a key name.
+- §4 `step_provision_postgres` references `MG_DB_PASSWORD`, exits 31 on missing keys, and the `fail 31` line precedes the `install_colima_runtime ||` invocation.
+- §5 No log line in `postinstall.sh` interpolates `${MG_DB_PASSWORD}`, `${CATALOG_API_KEY}`, `${INTERNAL_API_SECRET}`, or `${GUARDIAN_PG_PASSWORD}` (leak prevention).
+- §6 Runtime: invoking `step_drop_dotenv` in a stripped-env subshell causes `MG_DB_PASSWORD` (length ≥ 32), `CATALOG_API_KEY`, `INTERNAL_API_SECRET`, `GUARDIAN_PG_USER=mg`, `PGUSER=mg`, and `GUARDIAN_PG_DBNAME=mining_guardian` to all survive the function return. **Proves the actual bug fix.**
+- §7 Runtime: the install log written by the function does NOT contain the generated secret values (extracted from `.env` and grepped against the log file); positive control — log DOES contain the `loaded generated env keys` marker.
+- §8 P-022 audit marker present in `postinstall.sh`.
+- §9 `bash -n` parse on `postinstall.sh`.
+
+All adjacent installer suites still green: `test_postinstall_user_resolver` 12/12, `test_postinstall_helper_user_resolver` 26/26, `test_postinstall_colima_path` 21/21, `test_postinstall_payload_path` 12/12, `test_postinstall_customer_info` 76/76, `test_postinstall_cocoa_alert_bounded` 9/9.
+
+**Operator commands after merge:**
+
+```
+git checkout main
+git pull --ff-only origin main
+make pkg
+```
+
+The rebuilt .pkg replaces `MiningGuardian-1.0.3-e514c122367a.pkg`. **Cleanup before reinstall on the Mini** — the e514c12 attempt got far enough to start Colima and load the postgres image, so cleanup must reach into Colima too:
+
+```
+# Kill any half-bootstrapped LaunchDaemons (none survived to bootstrap; safe to skip if no labels show)
+sudo /bin/launchctl bootout system /Library/LaunchDaemons/com.miningguardian.*.plist 2>/dev/null || true
+
+# Remove the half-installed root (.env + bin/ + postgres-data/ + logs/)
+sudo rm -rf "/Library/Application Support/MiningGuardian"
+
+# Wipe the postinstall log so the next run is unambiguous
+sudo rm -rf /var/log/mining-guardian
+
+# Stop + delete the Colima VM (pull the operator's docker context first; running as root would point at /Users/root/.colima)
+sudo -u miningguardian /usr/local/bin/colima stop --force 2>/dev/null || true
+sudo -u miningguardian /usr/local/bin/colima delete --force 2>/dev/null || true
+
+# Now reinstall with the new .pkg
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+sudo cat /var/log/mining-guardian/install-postinstall.log | head -200
+```
+
+The new postinstall log should reach `INFO loaded generated env keys into postinstall shell: MG_DB_PASSWORD …` (the new P-022 line), then `INFO step_provision_postgres preflight OK: required env keys present`, then progress through `INFO postgres ready after Ns`, into `step_apply_migrations` and `step_provision_catalog_db_and_seed` (`INFO catalog seed verified: hardware.miner_models has 320 rows`), then `step_install_ollama_and_pull_model`. If the log still shows `MG_DB_PASSWORD missing from environment` anywhere, the export has regressed and we want to investigate before merging.
+
+---
+
 ## What is NOT in v1.0.3 (deferred, with the open-row reference)
 
 | Item | Status | Tracked at |
