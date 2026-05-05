@@ -44,7 +44,8 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-020 | `install_colima.sh::install_colima_runtime` walks both `${src}/limactl` and `${src}/bin/limactl` so a Lima 2.x vendor layout is supported. | `mg/p020-p021-vz-entitlement-codesign` | _stamped on merge_ | `e514c12` |
 | P-021 | `build_pkg.sh::step_4b_codesign_inner_binaries` re-passes `com.apple.security.virtualization` entitlement when re-signing Lima/Colima VZ binaries. | `mg/p020-p021-vz-entitlement-codesign` | _stamped on merge_ | `e514c12` |
 | P-022 | `step_drop_dotenv` exports `MG_DB_PASSWORD` (and friends) into the calling shell scope, not just into a `local` frame. | `mg/p022-postinstall-env-handoff` | _stamped on merge_ | `b66b864` |
-| P-023 | New `migrations/006a_layer2_prereqs.sql` bootstraps `uuid-ossp` extension, `set_updated_at()` trigger function, and stub `hardware.miner_models` / `pool.mining_pools` FK targets in the operational DB so migration `007_layer2_resolver.sql` (relocated from the importer's catalog DB in P-004) succeeds on a fresh `mining_guardian` DB. `MiningGuardian-1.0.3-b66b86440400.pkg` (the P-022 build, main `b66b864`) installed cleanly past every prior gate and applied migrations 001 → 006, then 007 hard-failed with `ERROR: function uuid_generate_v4() does not exist`. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure new SQL file picked up by `step_apply_migrations`'s `*.sql` glob. 006 and 007 stay byte-identical to their importer-side originals (D-20 contract preserved). | `mg/p023-migration-007-layer2-prereqs` | _this PR_ | _stamped on merge_ |
+| P-023 | New `migrations/006a_layer2_prereqs.sql` bootstraps `uuid-ossp` extension, `set_updated_at()` trigger function, and stub `hardware.miner_models` / `pool.mining_pools` FK targets in the operational DB so migration `007_layer2_resolver.sql` (relocated from the importer's catalog DB in P-004) succeeds on a fresh `mining_guardian` DB. `MiningGuardian-1.0.3-b66b86440400.pkg` (the P-022 build, main `b66b864`) installed cleanly past every prior gate and applied migrations 001 → 006, then 007 hard-failed with `ERROR: function uuid_generate_v4() does not exist`. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure new SQL file picked up by `step_apply_migrations`'s `*.sql` glob. 006 and 007 stay byte-identical to their importer-side originals (D-20 contract preserved). | `mg/p023-migration-007-layer2-prereqs` | _stamped on merge_ | `dd482af` |
+| P-024 | Remove broken duplicate `INSERT INTO hardware.manufacturers` block from `intelligence-catalog/seed-data/seed_miner_models.sql`. The block referenced columns (`full_name`, `country`, `website`, `notes`) that do not exist in the catalog schema — the schema has `legal_name` / `common_name` / `country_of_origin` / `website_url`. `MiningGuardian-1.0.3-dd482af746ad.pkg` (the P-023 build, main `dd482af`) progressed through every prior gate, schema deploy completed (`Schema deployment complete \| sources_count 23 \| manufacturers_count 17`), then `seed_miner_models.sql` line 39 hard-failed with `ERROR: column "full_name" of relation "manufacturers" does not exist / [postinstall] FATAL (39) seed_miner_models.sql apply failed against mining_guardian_catalog`. Manufacturers are already seeded by `deploy_schema.sql` (which postinstall runs first and which uses the correct column names) for all 17 brands — the seed_miner_models.sql block was dead duplicate code. Removed the block; `seed_miner_models.sql` now contains miner_models INSERTs only (320 rows preserved). Source generator `intelligence-catalog/seed-data/compile_all_miners.py` updated in the same change so future regenerations don't re-emit the broken block. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure SQL/Python source fix; postinstall flow unchanged. | `mg/p024-catalog-seed-manufacturers-schema` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -757,6 +758,90 @@ docker exec mining-guardian-db psql -U mg -d mining_guardian -c \
     "SELECT to_regclass('hardware.miner_models'), to_regclass('pool.mining_pools'), to_regclass('mg.model_family_aliases');"
 # Expected: all three to_regclass values non-NULL
 ```
+
+### P-024 — `seed_miner_models.sql` referenced non-existent `hardware.manufacturers` columns (this PR)
+
+`MiningGuardian-1.0.3-dd482af746ad.pkg` (the P-023 build, main `dd482af`) is the first installer that gets through every prior gate from P-015 through P-023 — preinstall arch gate, env handoff, helper-user resolution, PATH propagation, VZ entitlement, Colima start, postgres image load, `mining_guardian` ready, all operational migrations 001 → 006 → 006a → 007. Postinstall log on the customer Mac mini:
+
+```
+INFO all migrations applied
+INFO creating catalog database mining_guardian_catalog
+INFO applying catalog schema (deploy_schema.sql)
+... Schema deployment complete | sources_count 23 | manufacturers_count 17
+INFO seeding 320 Bitcoin SHA-256 miner models into mining_guardian_catalog
+psql:/tmp/mg-catalog-seed-17352/seed_miner_models.sql:39: ERROR:  column "full_name" of relation "manufacturers" does not exist
+LINE 1: INSERT INTO hardware.manufacturers (brand, full_name, countr...
+[postinstall] FATAL (39) seed_miner_models.sql apply failed against mining_guardian_catalog
+```
+
+**Root cause.** `intelligence-catalog/seed-data/seed_miner_models.sql` carried a 13-row `INSERT INTO hardware.manufacturers (brand, full_name, country, website, notes)` block at the top of the BEGIN transaction. Those four non-`brand` column names are wrong:
+
+| Column used by seed | Actual schema column |
+|---|---|
+| `full_name` | `legal_name` (NOT NULL) + `common_name` (NOT NULL) |
+| `country` | `country_of_origin` |
+| `website` | `website_url` |
+| `notes` | _(no equivalent — schema has `metadata JSONB`)_ |
+
+`hardware.manufacturers` is defined in `intelligence-catalog/seed-data/intelligence_catalog_schema.sql` lines 445–473. The block was dead code anyway — `intelligence-catalog/seed-data/deploy_schema.sql` lines 92–116 (which postinstall always runs first, just before `seed_miner_models.sql`) already seeds **all 17 manufacturer rows** using the correct column names. The postinstall log even prints `manufacturers_count 17` immediately before the seed step fails. Every brand the broken block tried to insert (`innosilicon`, `bitdeer`, `kncminer`, `spondoolies`, `butterfly_labs`, `halong`, `strongu`, `auradine`, `ebang`, `bitfury`, `bitaxe`) is in the deploy_schema.sql seed.
+
+The seed file's source generator (`intelligence-catalog/seed-data/compile_all_miners.py`, an offline dev tool — NOT invoked at install time) emitted the same broken block as a static preamble. Re-running the generator after the fact would re-introduce the bug.
+
+**Fix.**
+
+1. Delete the broken `INSERT INTO hardware.manufacturers (brand, full_name, ...)` block (lines 25–39) from `intelligence-catalog/seed-data/seed_miner_models.sql`. Replace with an explicit comment that points at `deploy_schema.sql` as the single owner of manufacturer seeding. `BEGIN;` / `COMMIT;` envelope and the 320 `INSERT INTO hardware.miner_models` rows stay byte-untouched.
+2. Make the same change in `compile_all_miners.py`'s `write_sql` preamble so future `python compile_all_miners.py` runs do not re-emit the broken block.
+3. New regression test `tests/installer/test_catalog_seed_schema_compat.sh` (17 assertions, all green) — see Tests below.
+
+**No `build_pkg.sh`, postinstall.sh, payload-rsync, or notarization-relevant change.** The catalog-seed step in postinstall is unchanged: it still applies `deploy_schema.sql` (which seeds 17 manufacturers using the right columns), then applies `seed_miner_models.sql` (which now contains miner_models INSERTs only), then asserts `hardware.miner_models` has ≥ 320 rows. Idempotency on re-install is preserved (manufacturer block was already `ON CONFLICT (brand) DO NOTHING`, removing it just turns a hard-error into a no-op since deploy_schema.sql owns the rows).
+
+**Tests.** New `tests/installer/test_catalog_seed_schema_compat.sh` (17 assertions, all green):
+
+- §1 file presence (seed file, deploy file, schema bundle: v1 + v2 + v3 + staging).
+- §2 `seed_miner_models.sql` does NOT `INSERT INTO hardware.manufacturers` (P-024 regression — the broken block must never come back).
+- §3 every column referenced in any `INSERT INTO hardware.<table> (...)` in `seed_miner_models.sql` exists as a `CREATE TABLE` column in the catalog schema bundle. Awk extracts 1232 unique column identifiers from the schema and checks all 5440 column references across 320 INSERT blocks resolve. This catches column-name drift on any catalog table, not just `manufacturers`.
+- §4 `hardware.manufacturers` schema has the correct column names (`legal_name`, `common_name`, `country_of_origin`, `website_url` — so `deploy_schema.sql`'s INSERT remains valid) AND `seed_miner_models.sql` does NOT reference the broken names (`full_name`, `country`, `website`).
+- §5 `deploy_schema.sql` seeds every brand referenced by `seed_miner_models.sql`'s miner INSERTs (14 brands: bitmain, microbt, canaan, auradine, bitdeer, innosilicon, ebang, strongu, bitfury, kncminer, spondoolies, butterfly_labs, halong, bitaxe). If a future seed-row references a brand not seeded by `deploy_schema.sql`, the FK lookup fails and we want the test to fail before the .pkg ships, not at install time on a customer Mini.
+
+Adjacent installer suites still green: `test_postinstall_catalog_seed.sh` 24/24 (seed file row count and ordering still pass).
+
+**Operator cleanup before next reinstall** (the `dd482af` attempt got far enough to bring up Postgres, apply all 8 operational migrations, create `mining_guardian_catalog`, and apply the catalog schema; the catalog DB exists but its `hardware.miner_models` table is empty because the seed transaction rolled back):
+
+```bash
+sudo /bin/launchctl bootout system /Library/LaunchDaemons/com.miningguardian.*.plist 2>/dev/null || true
+sudo rm -rf "/Library/Application Support/MiningGuardian"
+sudo rm -rf /var/log/mining-guardian
+sudo -u miningguardian /usr/local/bin/colima stop --force 2>/dev/null || true
+sudo -u miningguardian /usr/local/bin/colima delete --force 2>/dev/null || true
+```
+
+Then rebuild + sign + notarize + staple a new .pkg from the merged main and reinstall:
+
+```bash
+# Operator laptop — rebuild from merged main
+git fetch origin && git checkout main && git pull
+bash docs/RUNBOOK_PKG_REBUILD.md  # follow Block A through Block H
+
+# Mac mini — install the new build
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+sudo cat /var/log/mining-guardian/install-postinstall.log | tail -250
+```
+
+The new postinstall log should reach `INFO applying catalog schema (deploy_schema.sql)`, then `Schema deployment complete | sources_count 23 | manufacturers_count 17`, then `INFO seeding 320 Bitcoin SHA-256 miner models into mining_guardian_catalog`, then `INFO catalog seed verified: hardware.miner_models has 320 rows`, then `step_install_ollama_and_pull_model`. If the log still shows `column "full_name" of relation "manufacturers" does not exist` anywhere, the broken block has come back and 006a regressed.
+
+**Detection (operator-side, after install).** Both of these must succeed after reinstall:
+
+```bash
+docker exec mining-guardian-db psql -U mg -d mining_guardian_catalog -tAc \
+    "SELECT count(*) FROM hardware.miner_models;"
+# Expected: 320
+
+docker exec mining-guardian-db psql -U mg -d mining_guardian_catalog -tAc \
+    "SELECT count(*) FROM hardware.manufacturers;"
+# Expected: 17
+```
+
+**Future sessions: never add an `INSERT INTO hardware.manufacturers` to `seed_miner_models.sql`.** Manufacturers are owned by `deploy_schema.sql` exclusively. If a new brand is needed, add it to the `deploy_schema.sql` INSERT (using `legal_name` / `common_name` / `country_of_origin` / `website_url`) AND add the brand to `public.manufacturer_brand` enum extensions in `deploy_schema.sql`. The new regression test §2/§4 will catch any attempt to put manufacturer inserts back into the seed file.
 
 ---
 

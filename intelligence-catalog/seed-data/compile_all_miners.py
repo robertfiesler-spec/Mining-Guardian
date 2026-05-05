@@ -2192,25 +2192,13 @@ def write_sql(miners, path):
 -- ALTER TYPE public.manufacturer_brand ADD VALUE IF NOT EXISTS 'bitaxe';
 --
 -- Also requires manufacturer rows in hardware.manufacturers for each brand.
--- Run enum updates and manufacturer inserts before this file.
+-- Manufacturer rows and enum extensions are now provisioned by
+-- deploy_schema.sql (which the postinstall.sh catalog-seed step always
+-- applies first). The previous manufacturer INSERT block here used
+-- non-existent column names (full_name / country / website / notes) and
+-- broke the v1.0.3 Mac Mini install (D-18 P-024). Removed in P-024.
 
 BEGIN;
-
--- Manufacturer reference inserts (idempotent)
-INSERT INTO hardware.manufacturers (brand, full_name, country, website, notes)
-VALUES
-  ('innosilicon', 'Innosilicon Technology', 'CN', 'https://www.innosilicon.com', 'SHA-256 T2/T3 series'),
-  ('bitdeer', 'Bitdeer Technologies Group', 'SG', 'https://www.bitdeer.com', 'SealMiner A-series, SEAL01/SEAL02 chips'),
-  ('kncminer', 'KnCMiner AB', 'SE', NULL, 'Defunct 2016 — Neptune, Titan, Solar series'),
-  ('spondoolies', 'Spondoolies-Tech', 'IL', NULL, 'Defunct 2016 — SP20, SP31, SP35'),
-  ('butterfly_labs', 'Butterfly Labs', 'US', NULL, 'Defunct/sued by FTC — Jalapeno, Monarch'),
-  ('halong', 'Halong Mining', 'CN', NULL, 'DragonMint T1 (2018), company went silent'),
-  ('strongu', 'StrongU Technologies', 'CN', 'https://www.strongu.com.cn', 'STU-U series, Hornbill H-series'),
-  ('auradine', 'Auradine Inc', 'US', 'https://www.auradine.com', 'Teraflux AT/AH/AI series'),
-  ('ebang', 'Ebang International Holdings', 'CN', 'https://www.ebang.com.cn', 'Ebit E-series'),
-  ('bitfury', 'Bitfury Group', 'NL', 'https://bitfury.com', 'B8 and Tardis enterprise miners'),
-  ('bitaxe', 'Open Source Miners United / Bitaxe', 'US', 'https://bitaxe.org', 'Open-source SHA-256 ASIC miner family. BM1366/BM1368/BM1370 chips sourced from Bitmain S19 XP / S21 / S21 Pro hashboards.')
-ON CONFLICT (brand) DO NOTHING;
 
 """
 
