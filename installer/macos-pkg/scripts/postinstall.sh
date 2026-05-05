@@ -101,14 +101,35 @@
 # other byte is vendored inside the .pkg.
 # Vision Anchor 6 honored: no altcoin paths anywhere in the install.
 #
-# P-016 (2026-05-05) — operator-user resolver hardening. Installer.app
-# does NOT export SUDO_USER/USER, so the legacy `${SUDO_USER:-${USER}}`
-# expansion crashed under `set -u` before any FATAL log line could fire
-# (cf1691e Mac mini install). New `_resolve_install_user()` resolves the
-# operator account once via three bounded probes (SUDO_USER → /dev/console
-# owner → /Users/*/Desktop scan) and exports MG_INSTALL_OPERATOR_USER for
-# every later step. Env-probe log line in main() prevents future silent
-# stripped-env failures.
+# P-016 (2026-05-05) — TWO independent bugs, both addressed in one PR.
+# The cf1691e Mac mini install showed only `INFO loaded helper libs` in
+# postinstall log, then 600 s of silence, then a PackageKit "exceeded
+# 600 seconds of runtime" kill. No FATAL line. The 600-second timeout
+# rules out a fast `set -u` crash; bash didn't error out, the script
+# was still alive when PackageKit killed it.
+#
+#   Bug A (the actual hang) — `_cocoa_alert` runs `osascript display
+#   dialog` synchronously with no timeout. Postinstall runs as root with
+#   no Window Server connection, so `display dialog` blocks forever
+#   waiting for a click that can't come. PackageKit's 600 s watchdog
+#   eventually kills the whole script. Fix: hardened `_cocoa_alert`
+#   with three bounds — `with giving up after 5` (AppleScript), a
+#   pure-bash 10 s watchdog (no coreutils `timeout(1)` dependency), and
+#   delivery routed through the GUI console user via launchctl asuser
+#   so the dialog can actually render when one is logged in.
+#
+#   Bug B (the wrong target file) — Installer.app exports `USER=root`
+#   but does NOT export `SUDO_USER`, so the legacy `${SUDO_USER:-${USER}}`
+#   resolves to `root`, and the script reads
+#   `/Users/root/Desktop/MiningGuardian.conf` — a file that never exists.
+#   Even after fixing Bug A, the install would correctly fail 41 instead
+#   of finding the customer's real conf. Fix: `_resolve_install_user()`
+#   resolves the operator account via three bounded probes (SUDO_USER →
+#   /dev/console owner → /Users/*/Desktop scan) and exports
+#   MG_INSTALL_OPERATOR_USER for every later step.
+#
+# An `INFO env probe` log line in main() makes any future stripped-env
+# regression debuggable from the postinstall log alone.
 
 set -euo pipefail
 
@@ -244,30 +265,32 @@ fail() {
 }
 
 # ---------------------------------------------------------------------------
-# Operator-user resolver (P-016)
+# Operator-user resolver (P-016 — Bug B)
 # ---------------------------------------------------------------------------
 #
 # Installer.app runs postinstall as root with a stripped environment: it
 # does NOT export SUDO_USER (Installer.app does not invoke scripts via
-# sudo) and does NOT reliably export USER. The legacy postinstall used
-# the pattern `\${SUDO_USER:-\${USER}}` in 22 places, which under
-# `set -euo pipefail` triggers `USER: unbound variable` and exits the
-# shell BEFORE any FATAL log line can be written — exactly the silent
-# failure mode observed on Mac mini install attempt with cf1691e
-# (postinstall log stops at "INFO loaded helper libs", no FATAL).
+# sudo) but does export USER=root. The legacy `${SUDO_USER:-${USER}}`
+# pattern therefore evaluates to `root` and the script reads
+# `/Users/root/Desktop/MiningGuardian.conf` — a file that does not exist
+# on the customer Mini, where the conf lives at
+# `/Users/miningguardian/Desktop/MiningGuardian.conf` (Rob confirmed,
+# 2026-05-04). On the cf1691e attempt the conf-not-found path then hit
+# the synchronous osascript hang in `_cocoa_alert` (see Bug A above).
+# This resolver fixes the wrong-target-file half independently.
 #
-# This helper resolves the human operator account once, with three
-# bounded probes that never reference unset variables:
+# Three bounded probes, none of which reference unset variables:
 #   1. SUDO_USER (set when Rob runs `sudo installer ...`; covers the
 #      preferred install path).
 #   2. /dev/console owner via `stat -f '%Su' /dev/console` (the GUI
 #      logged-in user; macOS exposes this without env vars).
-#   3. /Users/*/Desktop/MiningGuardian.conf owner (last-ditch; finds the
+#   3. /Users/*/Desktop/MiningGuardian.conf scan (last-ditch; finds the
 #      operator by where they put the conf).
 #
 # Returns "root" only when every probe failed AND no Desktop/conf was
-# located — at which point the conf-existence check below will fail
-# cleanly with exit 41 and a logged FATAL.
+# located — at which point the conf-existence check below fails cleanly
+# with exit 41 and a logged FATAL (and the now-bounded `_cocoa_alert`
+# guarantees the script returns within ~10 s instead of hanging).
 _resolve_install_user() {
     local u=""
     if [[ -n "${SUDO_USER:-}" ]]; then
@@ -329,19 +352,87 @@ step_layout_install_root() {
 }
 
 _cocoa_alert() {
-    # Best-effort macOS GUI dialog. AppleScript is the simplest path that
-    # works without bundling a helper binary; if osascript is missing or
-    # blocked we silently fall through (the FATAL log line is still
-    # emitted by fail()).
+    # Best-effort macOS GUI dialog.
+    #
+    # P-016 (2026-05-05) HARD CORRECTNESS FIX. The original implementation
+    # blocked indefinitely on the cf1691e Mac mini install: postinstall runs
+    # as root with no Window Server connection, `osascript display dialog`
+    # waits forever for a click that can never come from root, and the only
+    # bound is PackageKit's 600-second postinstall watchdog. install.log
+    # showed `PKInstallTask exceeded its 600 seconds of runtime` and no
+    # FATAL line — proof the script never returned from osascript.
+    #
+    # Three layers of bounding so this can never hang again:
+    #
+    #   1. AppleScript-level: `with giving up after 5` — the dialog
+    #      auto-dismisses after 5 seconds even if osascript IS connected
+    #      to a Window Server. Caps the time the customer can stare at
+    #      a dialog that root posted into a session it doesn't own.
+    #
+    #   2. Process-level: a backgrounded osascript subprocess + a bash
+    #      watchdog that kills it after 10 wall-clock seconds. macOS
+    #      does not ship coreutils `timeout(1)` so we cannot rely on it;
+    #      this pure-bash wrapper has no external-binary dependency.
+    #
+    #   3. Delivery-level: route through the GUI logged-in user via
+    #      `launchctl asuser <uid> sudo -u <user> osascript ...` so the
+    #      script actually has a Window Server to talk to. Falls back to
+    #      raw osascript only if no console user is resolvable.
+    #
+    # Any failure (including timeout) is swallowed — the FATAL log line
+    # from fail() is the contract, the dialog is best-effort UX.
     local title="$1"; shift
     local msg="$*"
-    if command -v /usr/bin/osascript >/dev/null 2>&1; then
-        # Best-effort — never let a dialog failure cascade into a second
-        # error from the caller. Errors swallowed.
-        /usr/bin/osascript \
-            -e "display dialog \"${msg//\"/\\\"}\" with title \"${title//\"/\\\"}\" with icon stop buttons {\"OK\"} default button \"OK\"" \
-            >/dev/null 2>&1 || true
+
+    if ! command -v /usr/bin/osascript >/dev/null 2>&1; then
+        return 0
     fi
+
+    local script
+    script="display dialog \"${msg//\"/\\\"}\" with title \"${title//\"/\\\"}\" with icon stop buttons {\"OK\"} default button \"OK\" giving up after 5"
+
+    # Probe for a console GUI user. /dev/console owner is what's logged
+    # in at the Aqua login window. id -u resolves the uid for launchctl
+    # asuser. If either fails, fall through to raw osascript with the
+    # bash watchdog still in effect — the dialog won't render but the
+    # function will return within ~10s.
+    local console_user="" console_uid=""
+    console_user="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
+    if [[ -n "${console_user}" && "${console_user}" != "root" ]]; then
+        console_uid="$(/usr/bin/id -u "${console_user}" 2>/dev/null || true)"
+    fi
+
+    # Run osascript backgrounded; bash watchdog enforces the wall-clock cap.
+    # set -e is on, so we explicitly tolerate non-zero from every step.
+    local osa_pid
+    if [[ -n "${console_uid}" ]]; then
+        ( /bin/launchctl asuser "${console_uid}" \
+            /usr/bin/sudo -u "${console_user}" \
+            /usr/bin/osascript -e "${script}" \
+            >/dev/null 2>&1 ) &
+    else
+        # Last-resort fallback. Will likely no-op (root has no Window
+        # Server) but the watchdog below guarantees we return within ~10s.
+        ( /usr/bin/osascript -e "${script}" >/dev/null 2>&1 ) &
+    fi
+    osa_pid=$!
+
+    # Watchdog: poll once per second up to 10 seconds, then SIGKILL the
+    # whole process group. Last `wait` swallows the exit status so this
+    # function always returns 0 to the caller.
+    local i=0
+    while (( i < 10 )); do
+        if ! kill -0 "$osa_pid" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        i=$(( i + 1 ))
+    done
+    if kill -0 "$osa_pid" 2>/dev/null; then
+        kill -KILL "$osa_pid" 2>/dev/null || true
+    fi
+    wait "$osa_pid" 2>/dev/null || true
+    return 0
 }
 
 _conf_fail() {

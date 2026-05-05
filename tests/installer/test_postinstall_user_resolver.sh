@@ -2,24 +2,33 @@
 # tests/installer/test_postinstall_user_resolver.sh
 #
 # D-18 P-016 — postinstall.sh _resolve_install_user + Installer.app
-# environment hardening.
+# environment hardening (Bug B half of P-016; see
+# test_postinstall_cocoa_alert_bounded.sh for the Bug A half — the
+# osascript hang that was the actual cause of the cf1691e timeout).
 #
-# Root cause confirmed by the cf1691e install attempt: postinstall.sh
-# used the pattern `${SUDO_USER:-${USER}}` in 22 places. Installer.app
-# runs the postinstall as root with a stripped environment — SUDO_USER
-# is unset (the installer does not invoke scripts via sudo) and USER
-# may not be exported either. Under `set -euo pipefail`, evaluating the
-# default-value expansion `${SUDO_USER:-${USER}}` when both are unset
-# triggers `USER: unbound variable` and exits the shell BEFORE any
-# log() call can run — exactly the silent failure mode observed
-# (postinstall log stops at "INFO loaded helper libs" with no FATAL).
+# Bug B: Installer.app runs postinstall as root with a stripped
+# environment — SUDO_USER is unset (the installer does not invoke
+# scripts via sudo) and USER is exported as `root`. The legacy
+# `${SUDO_USER:-${USER}}` pattern therefore resolves to `root` and the
+# script reads `/Users/root/Desktop/MiningGuardian.conf` — a file that
+# does not exist on the customer Mini, where the conf is at
+# `/Users/miningguardian/Desktop/MiningGuardian.conf`. The conf-not-found
+# path then went into `_conf_fail` → `_cocoa_alert`, which hung
+# (Bug A — fixed separately).
+#
+# Note: this test originally hypothesised that the failure was a
+# `set -u` "USER: unbound variable" crash. That is inconsistent with
+# the cf1691e PackageKit log, which shows a 600-second timeout (a fast
+# bash crash would not exhibit a 600 s timeout). The resolver fix is
+# still the right shape for the wrong-target-file half, and the
+# assertions below remain valid; only the narrative moved.
 #
 # This test asserts:
 #   1. The fragile `${SUDO_USER:-${USER}}` pattern is gone.
 #   2. _resolve_install_user is defined and uses the three documented
 #      probes (SUDO_USER → /dev/console → /Users/*/Desktop scan).
-#   3. The resolver returns a usable account name when SUDO_USER and
-#      USER are both unset (the Installer.app environment).
+#   3. The resolver returns a usable account name when SUDO_USER is
+#      unset and USER='root' (the actual Installer.app environment).
 #   4. main() probes the env and resolves the user BEFORE any step that
 #      touches MG_INSTALL_OPERATOR_USER.
 #   5. Every chown / install / sudo -u site uses the resolved variable.
@@ -174,7 +183,10 @@ touch "${FAKE_USERS}/miningguardian/Desktop/MiningGuardian.conf"
     ' "$POSTINSTALL"
     cat <<'DRIVER'
 unset SUDO_USER
-unset USER
+# Installer.app exports USER=root in postinstall. Mirror that exactly
+# so the test reflects production conditions, not a hypothetical
+# stripped-USER state.
+USER=root
 result="$(_resolve_install_user)"
 echo "RESULT=${result}"
 DRIVER
@@ -187,28 +199,31 @@ else
     fail "extracted resolver has syntax errors"
 fi
 
-# Run with both SUDO_USER and USER unset (mirrors Installer.app's env).
-out="$(env -i HOME=/var/root PATH=/usr/bin:/bin bash "$EXTRACT" 2>&1)" || true
+# Run with SUDO_USER unset and USER=root (mirrors Installer.app's env).
+out="$(env -i HOME=/var/root PATH=/usr/bin:/bin USER=root bash "$EXTRACT" 2>&1)" || true
 if echo "$out" | /usr/bin/grep -q '^RESULT='; then
     result="${out#*RESULT=}"
     result="${result%%$'\n'*}"
     if [[ "$result" == "miningguardian" ]]; then
-        ok "resolver finds operator via Desktop scan: '${result}'"
-    elif [[ -n "$result" ]]; then
-        ok "resolver returns non-empty value with stripped env: '${result}'"
+        ok "resolver finds operator via Desktop scan even with USER=root: '${result}'"
+    elif [[ -n "$result" && "$result" != "root" ]]; then
+        ok "resolver returns non-root value with Installer.app env: '${result}'"
+    elif [[ "$result" == "root" ]]; then
+        fail "resolver returned 'root' — would still hit /Users/root/Desktop/* (the cf1691e symptom)"
     else
         fail "resolver returned empty value"
     fi
 else
-    fail "resolver crashed under stripped env: ${out}"
+    fail "resolver crashed under Installer.app env: ${out}"
 fi
 
-# Critically: the resolver must NOT emit "USER: unbound variable" — that
-# is the bug we are fixing.
-if echo "$out" | /usr/bin/grep -q 'USER: unbound variable'; then
-    fail "resolver still triggers USER: unbound variable"
+# Defensive: the resolver must not trigger any unbound-variable error
+# even though that is no longer the believed root cause. set -u safety
+# is still a property worth asserting.
+if echo "$out" | /usr/bin/grep -qE 'unbound variable'; then
+    fail "resolver triggered an unbound-variable error: ${out}"
 else
-    ok "resolver does not trigger 'USER: unbound variable' under set -u"
+    ok "resolver does not trigger any unbound-variable error under set -u"
 fi
 
 # ---------------------------------------------------------------------
