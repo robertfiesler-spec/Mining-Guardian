@@ -178,7 +178,29 @@ install_colima_runtime() {
 
     install -d -m 0755 "$target_bin"
     install -m 0755 "${src}/colima"  "${target_bin}/colima"
-    install -m 0755 "${src}/limactl" "${target_bin}/limactl"
+
+    # P-020 (2026-05-05). Locate limactl in the vendored payload. Lima
+    # 1.x ships it directly under `${src}/limactl`; Lima 2.x ships it
+    # under `${src}/bin/limactl`. The earlier hard-coded `${src}/limactl`
+    # would `install` exit non-zero (set -e) on Lima 2.x layouts and
+    # leave the operator with no clear log line about why. Walk the two
+    # known locations explicitly, and refuse to proceed (with the path
+    # we searched logged) if neither is present. Build-time
+    # step_4b_codesign_inner_binaries also asserts at least one
+    # `limactl` exists anywhere under runtime/, so a vendor-dir layout
+    # that hides limactl elsewhere would already fail the build.
+    local limactl_src=""
+    if [[ -f "${src}/limactl" ]]; then
+        limactl_src="${src}/limactl"
+    elif [[ -f "${src}/bin/limactl" ]]; then
+        limactl_src="${src}/bin/limactl"
+    fi
+    if [[ -z "$limactl_src" ]]; then
+        _die "vendored limactl not found at ${src}/limactl or ${src}/bin/limactl (P-020)"
+        return 1
+    fi
+    install -m 0755 "$limactl_src" "${target_bin}/limactl"
+    _log "INFO copied limactl from ${limactl_src#${payload}/} to ${target_bin}/limactl"
 
     # Docker CLI — client only. Daemon runs inside the Colima VM.
     # Vendored at <payload>/runtime/docker/docker (alongside colima/).
