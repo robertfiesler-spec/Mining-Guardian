@@ -137,7 +137,7 @@ def get_overnight_summary() -> dict:
     # Top flagged miners in last 24h
     top_flagged = conn.execute("""
         SELECT miner_id, ip, model, COUNT(*) as flags,
-               AVG(temp_chip) as avg_temp, AVG(hashrate_pct) as avg_hr
+               AVG(temp_chip) as avg_temp, AVG(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END) as avg_hr
         FROM miner_readings
         WHERE scanned_at >= %s AND action IS NOT NULL AND action != 'MONITOR'
         GROUP BY miner_id, ip, model

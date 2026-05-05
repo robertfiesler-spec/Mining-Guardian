@@ -67,9 +67,9 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
     scan = conn.execute("""
         SELECT MIN(model) as model, MIN(ip) as ip,
                COUNT(*) as scan_count,
-               ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
-               ROUND((MIN(hashrate_pct))::numeric, 1) as min_hr,
-               ROUND((MAX(hashrate_pct))::numeric, 1) as max_hr,
+               ROUND((AVG(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as avg_hr,
+               ROUND((MIN(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as min_hr,
+               ROUND((MAX(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as max_hr,
                ROUND((AVG(CASE WHEN temp_chip > 0 THEN temp_chip END))::numeric, 1) as avg_temp,
                MAX(temp_chip) as max_temp,
                ROUND((AVG(pdu_power))::numeric, 3) as avg_pdu_kw,
@@ -587,7 +587,7 @@ def get_cross_miner_correlations(conn) -> str:
                COUNT(*) as scan_count,
                SUM(CASE WHEN action NOT IN ('MONITOR','') AND action IS NOT NULL
                    THEN 1 ELSE 0 END) as times_flagged,
-               ROUND((AVG(hashrate_pct))::numeric, 1) as avg_hr,
+               ROUND((AVG(CASE WHEN hashrate_pct < 120 THEN hashrate_pct END))::numeric, 1) as avg_hr,
                string_agg(DISTINCT action::text, ',') as actions
         FROM miner_readings
         GROUP BY miner_id
