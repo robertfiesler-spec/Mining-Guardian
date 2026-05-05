@@ -37,7 +37,9 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-013 | pkgbuild scripts must be staged with extensionless names (`preinstall`, `postinstall`); `MiningGuardian-1.0.3-a35728dcfc8c.pkg` was payload-only because PackageKit silently ignored `preinstall.sh` / `postinstall.sh` | `mg/v103-p013-pkg-scripts-naming` | _this PR_ | _stamped on merge_ |
 | P-014 | `build_pkg.sh` step 4d rsync excludes `build_pkg.sh` itself from scripts staging — first `make pkg` after P-013 merged hit the new P-013 leftover-`*.sh` guard because `build_pkg.sh` lives next to `preinstall.sh`/`postinstall.sh` and was being rsync'd into the package-script staging dir | `mg/v103-d18-p014-staging-exclude-build-pkg` | _this PR_ | _stamped on merge_ |
 | P-015 | Preinstall arch gate Rosetta-safe (`sysctl hw.optional.arm64`, never `uname -m`) — `MiningGuardian-1.0.3-2b48f98e6b77.pkg` first install on customer Mac mini hard-failed at `gate_apple_silicon` because `/usr/bin/uname -m` returned `x86_64` under a Rosetta-translated `/bin/bash` even though the Mac is M-series | `mg/v103-d18-p015-arch-gate-rosetta-safe` | _this PR_ | _stamped on merge_ |
-| P-016 | Postinstall hang fix (`_cocoa_alert` osascript) + operator-user resolver — `MiningGuardian-1.0.3-cf1691e2998c.pkg` install on customer Mac mini hard-failed with `PackageKit: Terminating PKInstallTask. Task has exceeded its 600 seconds of runtime.` after `INFO loaded helper libs`, no FATAL line. **Bug A (the actual hang):** `_cocoa_alert` ran `osascript display dialog` synchronously with no timeout; postinstall runs as root with no Window Server, dialog blocks forever, PackageKit's 600 s watchdog kills the script. Fixed with `with giving up after 5` + pure-bash `kill -KILL` watchdog (10 s wall-clock cap, no `timeout(1)` dependency) + delivery via `launchctl asuser` to the GUI console user. **Bug B (wrong target file):** Installer.app exports `USER=root`, so `${SUDO_USER:-${USER}}` resolved to `root` and the script checked `/Users/root/Desktop/MiningGuardian.conf` instead of `/Users/miningguardian/Desktop/...`. Fixed with `_resolve_install_user()` helper (three bounded probes: `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan), exported as `MG_INSTALL_OPERATOR_USER`. All 22 in-line `${SUDO_USER:-${USER}}` sites updated. Added env-probe log line in `main()` for future debuggability. | `mg/p016-postinstall-desktop-user-resolution` | _this PR_ | _stamped on merge_ |
+| P-016 | Postinstall hang fix (`_cocoa_alert` osascript) + operator-user resolver — `MiningGuardian-1.0.3-cf1691e2998c.pkg` install on customer Mac mini hard-failed with `PackageKit: Terminating PKInstallTask. Task has exceeded its 600 seconds of runtime.` after `INFO loaded helper libs`, no FATAL line. **Bug A (the actual hang):** `_cocoa_alert` ran `osascript display dialog` synchronously with no timeout; postinstall runs as root with no Window Server, dialog blocks forever, PackageKit's 600 s watchdog kills the script. Fixed with `with giving up after 5` + pure-bash `kill -KILL` watchdog (10 s wall-clock cap, no `timeout(1)` dependency) + delivery via `launchctl asuser` to the GUI console user. **Bug B (wrong target file):** Installer.app exports `USER=root`, so `${SUDO_USER:-${USER}}` resolved to `root` and the script checked `/Users/root/Desktop/MiningGuardian.conf` instead of `/Users/miningguardian/Desktop/...`. Fixed with `_resolve_install_user()` helper (three bounded probes: `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan), exported as `MG_INSTALL_OPERATOR_USER`. All 22 in-line `${SUDO_USER:-${USER}}` sites updated. Added env-probe log line in `main()` for future debuggability. | `mg/p016-postinstall-desktop-user-resolution` | _this PR_ | `9318062` |
+| P-017 | Postinstall `MG_PKG_PAYLOAD` resolves to install root, not scripts sandbox — first install of the P-016 build (`9318062`) on the Mini exited 31 in `install_colima_runtime` with `vendored colima runtime not found at /tmp/PKInstallSandbox.<rand>/Scripts/.../../payload/runtime/colima` because `pkgbuild` extracts scripts to a private sandbox while extracting the payload to the install location, and the legacy `${SCRIPT_DIR}/../payload` resolved into the sandbox. Fixed by preferring `${MG_INSTALL_ROOT}` when `${MG_INSTALL_ROOT}/runtime` exists, with the legacy path retained as the dev / smoke-test fallback. | `mg/p017-payload-path-install-root` | [#136](https://github.com/robertfiesler-spec/Mining-Guardian/pull/136) | `bae1891` |
+| P-018 | Installer helper libs (`installer/macos-pkg/scripts/lib/install_colima.sh`, `install_ollama.sh`) drop the legacy `${SUDO_USER:-${USER}}` pattern and consume `MG_INSTALL_OPERATOR_USER` (exported by `postinstall.sh::main()`). Closes B-12 in `docs/LATENT_BUGS.md` — without this, the next install after P-017 would have run `colima start` / `docker load` / `docker run mining-guardian-db` / `ollama pull` as `root`, leaving colima state in `/var/root/.colima`, the LLM model in `/var/root/.ollama` (invisible to the launchd ollama service that runs as the operator), and `pgdata` chowned to root. Each helper now carries an `_op_user` resolver: prefer `MG_INSTALL_OPERATOR_USER` → `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan; refuse to silently return `root`. `install_colima_runtime` also resolves the operator's home via `dscl . -read NFSHomeDirectory` rather than hard-coding `/Users/<u>`. **No `postinstall.sh`, `build_pkg.sh`, payload, or notarization-relevant change** — pure helper-lib logic. | `mg/p018-helper-user-resolution` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -405,6 +407,81 @@ sudo cat /var/log/mining-guardian/install-postinstall.log | head -60
 ```
 
 The new postinstall log should now show `INFO env probe: ...` and `INFO resolved install operator user: miningguardian` immediately after the existing four kickoff lines.
+
+### P-017 — postinstall `MG_PKG_PAYLOAD` resolves to install root, not scripts sandbox (merged 2026-05-05 as `bae1891`)
+
+**Problem:**
+First install of `MiningGuardian-1.0.3-9318062cad3e.pkg` (the P-016 build) on the customer Mac mini progressed past every P-015 / P-016 gate (env probe logged, operator user resolved to `miningguardian`, Desktop conf read + validated, `.env` written at mode 0600), then exited 31 in `install_colima_runtime` with:
+
+```
+FATAL vendored colima runtime not found at
+/tmp/PKInstallSandbox.sJTxI0/Scripts/com.miningguardian.installer.core.Hy5Eby/../payload/runtime/colima
+```
+
+**Root cause:** `pkgbuild --root … --scripts … --install-location "/Library/Application Support/MiningGuardian"` produces a flat `.pkg` whose Installer.app extracts:
+- the **scripts** archive into a private sandbox at `/tmp/PKInstallSandbox.<rand>/Scripts/com.miningguardian.installer.core.<rand>/` (preinstall + postinstall run from there);
+- the **payload** archive directly to the install location `/Library/Application Support/MiningGuardian/`.
+
+Those are TWO DIFFERENT directories. `postinstall.sh` set `MG_PKG_PAYLOAD="${SCRIPT_DIR}/../payload"`, which resolved into the scripts sandbox — a path that contains only the script-archive contents, never the vendored payload.
+
+**Fix:** prefer `${MG_INSTALL_ROOT}` when `${MG_INSTALL_ROOT}/runtime` exists at script-load time; fall back to the legacy `${SCRIPT_DIR}/../payload` only for dev / smoke-test invocations of `postinstall.sh` outside a real .pkg install.
+
+**Tests:** new `tests/installer/test_postinstall_payload_path.sh` — 12/12 green.
+
+### P-018 — installer helper libs use `MG_INSTALL_OPERATOR_USER`, not `${SUDO_USER:-${USER}}` (this PR)
+
+**Problem:**
+P-016 replaced the legacy `${SUDO_USER:-${USER}}` pattern in `postinstall.sh` with the `_resolve_install_user` helper exported as `MG_INSTALL_OPERATOR_USER`. The helper libs `installer/macos-pkg/scripts/lib/install_colima.sh` (8 sites across `install_colima_runtime`, `load_postgres_image`, and `provision_postgres`) and `install_ollama.sh` (1 site in `pull_llm_model`) were not updated in that PR. Tracked as B-12 in `docs/LATENT_BUGS.md`.
+
+The bug had not yet been observed live because P-017 (the missing-payload check) caused `install_colima_runtime` to exit on `vendored colima runtime not found` BEFORE reaching the user-resolution sites. With P-017 merged, the next install would have hit B-12 in three places:
+
+1. `install_colima.sh:107` — `home="/Users/${SUDO_USER:-${USER}}"` → `home="/Users/root"`. `/Users/root` does not exist on a stock customer Mac, so `[[ ! -d "$home" ]]` would have raised `_die "could not resolve operator home directory"`.
+2. `install_colima.sh:116` (and 6 other sites) — `sudo -u "${SUDO_USER:-${USER}}" colima start …` → `sudo -u root colima start …`. Even if that succeeded, colima state would have landed in `/var/root/.colima` rather than the operator's home, and the docker socket would have lived under `/var/root/`, invisible to subsequent `docker load` and `docker run` calls.
+3. `install_ollama.sh:124` — `sudo -u "${SUDO_USER:-${USER}}" ollama pull …` → `sudo -u root ollama pull …`. The model would have downloaded into `/var/root/.ollama`, invisible to the launchd ollama service that runs as the operator.
+
+**Fix:**
+Each helper lib now defines an `_op_user` resolver that prefers `MG_INSTALL_OPERATOR_USER` (exported by `postinstall.sh::main()` before either helper is sourced) and falls back through three bounded probes (`SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan), refusing to silently return `root` when no real operator account resolves. `install_colima.sh::install_colima_runtime` also resolves the operator's home via `dscl . -read /Users/<u> NFSHomeDirectory` rather than hard-coding `/Users/<u>`, so a relocated home directory does not silently fail.
+
+Every `chown` / `sudo -u` / `home="…"` site in both helpers now derives its user from `_op_user`. `_op_user` is duplicated rather than factored into a third file so each helper remains sourceable in isolation under tests.
+
+**No `postinstall.sh`, `build_pkg.sh`, payload, or notarization-relevant code changed** — pure helper-lib logic.
+
+**Tests:** new `tests/installer/test_postinstall_helper_user_resolver.sh` — **26/26 green**:
+
+- §1 No command-line `${SUDO_USER:-${USER}}` use remains in either helper (comments allowed for forensic context).
+- §2 `_op_user` defined in both helpers; consumes `MG_INSTALL_OPERATOR_USER` first.
+- §3 All four documented probes present in each helper.
+- §4 Each `_op_user` carries ≥ 3 `!= "root"` guards and a fail-loud `_die "refusing to run … as root"` message.
+- §5 P-018 audit marker present in each helper.
+- §6 `bash -n` parse on both helpers.
+- §7 Runtime tests with mocked `/usr/bin/stat` + fake `/Users` tree:
+  - `MG_INSTALL_OPERATOR_USER=miningguardian` → `_op_user` returns `miningguardian`.
+  - Installer.app env (`MG_INSTALL_OPERATOR_USER` unset, `SUDO_USER` unset, `USER=root`, `/dev/console` owner=`root`) → `_op_user` falls through to the Desktop scan and returns `miningguardian` (NOT `root` — that would be the B-12 symptom).
+  - Empty environment (no console user, no Desktop conf anywhere) → `_op_user` returns non-zero and prints empty stdout (NOT `root` — must fail loud rather than continue as root).
+- §8 `install_colima.sh` has 8 `_op_user` call sites; `install_ollama.sh` has 4 (resolver definition + body + comment + call).
+
+All adjacent installer suites still green: `test_postinstall_user_resolver` 12/12, `test_postinstall_payload_path` 12/12, `test_postinstall_cocoa_alert_bounded` 9/9, `test_pkg_scripts_naming` 17/17, `test_preinstall_arch_gate` 11/11, `test_postinstall_customer_info` 76/76, `test_postinstall_catalog_seed` 24/24, `test_postinstall_venv` 26/26, `test_postinstall_scheduled_jobs` 115/115, `test_uninstall_script` 50/50 = **388 total assertions** across the installer suite.
+
+**Operator commands after merge:**
+
+```
+git checkout main
+git pull --ff-only origin main
+make pkg
+```
+
+The rebuilt .pkg replaces `MiningGuardian-1.0.3-9318062cad3e.pkg`. **Cleanup before reinstall on the Mini** (the P-017-build attempt left install root + `.env` + `/var/log/mining-guardian/` populated but no Colima/Postgres/services; `bin/uninstall.sh` is NOT installed yet because `step_install_uninstall_script` runs after `step_provision_postgres`):
+
+```
+sudo rm -rf "/Library/Application Support/MiningGuardian"
+sudo rm -rf /var/log/mining-guardian
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+sudo cat /var/log/mining-guardian/install-postinstall.log | head -120
+```
+
+The new postinstall log should reach the existing P-017 `INFO env probe …` and `INFO resolved install operator user: miningguardian` lines, then progress past `install_colima_runtime` (look for new `INFO colima will run as miningguardian (home=/Users/miningguardian)` line), through `load_postgres_image` and `provision_postgres`, into `step_apply_migrations` and `step_provision_catalog_db_and_seed`, then `step_install_ollama_and_pull_model` (look for `INFO ollama pull succeeded on try N (as miningguardian)`).
+
+If the log still shows `/Users/root` or `sudo -u root` anywhere, the fix has regressed and we want to investigate before merging.
 
 ---
 
