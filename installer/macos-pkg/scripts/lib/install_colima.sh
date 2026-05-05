@@ -117,6 +117,50 @@ _op_home() {
 }
 
 # ---------------------------------------------------------------------------
+# PATH propagation under `sudo -u` (P-019, 2026-05-05)
+# ---------------------------------------------------------------------------
+#
+# `sudo -u <op>` on macOS clears the inherited PATH and substitutes the
+# `secure_path` from /etc/sudoers (typically `/usr/bin:/bin:/usr/sbin:/sbin`
+# — note the absence of /usr/local/bin). That is fine for invoking colima
+# itself by absolute path, but `colima start` shells out to look up its
+# helpers via `os/exec.LookPath("limactl")`, which obeys the child PATH.
+#
+# Without explicit PATH propagation, the post-`install_colima_runtime`
+# `colima start` invocation crashes with
+#     lima compatibility error: error checking Lima version:
+#     exec: "limactl": executable file not found in $PATH
+# even though we just installed limactl to /usr/local/bin two lines above
+# — observed live on the customer Mac mini against
+# `MiningGuardian-1.0.3-32ec2dcad973.pkg` (postinstall round 3, 2026-05-05).
+#
+# `_op_path` returns the PATH every `sudo -u "$op_user" …` invocation in
+# this file MUST pass through `env PATH=…` so colima/docker can find
+# their helpers (limactl, lima, lima-driver-krunkit). Order matters:
+# /usr/local/bin first so our vendored binaries shadow any older copies
+# that might have ended up in /opt/homebrew or /usr/bin.
+#
+# Same value used by every site below — defined once so a future
+# redirection of /usr/local/bin → /opt/mg/bin is a one-liner.
+_op_path() {
+    printf '%s' "/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+# Verify limactl is present at the expected install location and is
+# executable. Refuse to proceed otherwise — colima will produce a
+# misleading "$PATH" error if limactl is missing entirely, but we want
+# the postinstall log to say which file is missing (P-019).
+_verify_limactl() {
+    local limactl_path="$1"
+    if [[ ! -x "$limactl_path" ]]; then
+        _die "limactl not found at ${limactl_path}; vendored runtime layout is wrong (expected limactl alongside colima)"
+        return 1
+    fi
+    _log "INFO limactl present at ${limactl_path}"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 
@@ -188,10 +232,24 @@ install_colima_runtime() {
     op_home="$(_op_home)" || return 1
     _log "INFO colima will run as ${op_user} (home=${op_home})"
 
+    # P-019 — verify limactl is at the location we just installed it
+    # before we hand control to colima. `colima start` resolves limactl
+    # through `$PATH`, and `sudo -u` strips PATH on macOS — see _op_path
+    # header. A missing limactl would otherwise surface as the misleading
+    # `executable file not found in $PATH` error from colima.
+    _verify_limactl "${target_bin}/limactl" || return 1
+
     # Apple Silicon: use --vm-type vz (Apple's Virtualization.framework).
     # Faster than QEMU, native to M-series, and means we don't need to
     # bundle qemu-system-aarch64 in the .pkg payload (saves ~50 MB).
+    #
+    # P-019 — explicit PATH on the `sudo -u` line via `env PATH=…` so
+    # colima's child-process lookup of `limactl` succeeds. Without it,
+    # the operator inherits sudoers' secure_path (no /usr/local/bin) and
+    # colima fails before any VM bytes are touched. HOME is set so
+    # colima's per-user state lands under the operator's home, not /var/empty.
     sudo -u "${op_user}" \
+        /usr/bin/env PATH="$(_op_path)" HOME="${op_home}" \
         "${target_bin}/colima" start --vm-type vz \
         --runtime docker --memory 8 --cpu 4 --disk 60 \
         2>&1 | tee -a "${MG_INSTALL_LOG}" || {
@@ -219,9 +277,16 @@ load_postgres_image() {
     # as that same user above). Legacy `${SUDO_USER:-${USER}}` would
     # become `root` under Installer.app and `sudo -u root` cannot read
     # the operator's docker context.
-    local op_user
+    local op_user op_home
     op_user="$(_op_user)" || return 1
-    sudo -u "${op_user}" docker load -i "$tarball" \
+    op_home="$(_op_home)" || return 1
+    # P-019 — same PATH propagation rule as install_colima_runtime.
+    # `docker` is a shim that resolves `colima` / `limactl` for context
+    # discovery; without /usr/local/bin on PATH the docker CLI cannot
+    # locate its sibling binaries even though we just installed them.
+    sudo -u "${op_user}" \
+        /usr/bin/env PATH="$(_op_path)" HOME="${op_home}" \
+        docker load -i "$tarball" \
         2>&1 | tee -a "${MG_INSTALL_LOG}" || {
             _die "docker load of postgres image failed"
             return 1
@@ -239,8 +304,13 @@ provision_postgres() {
     # and chowned pgdata to root, then ran every docker call as root —
     # which fails because `colima start` was launched as the operator
     # and the docker socket lives in the operator's home.
-    local op_user
+    local op_user op_home
     op_user="$(_op_user)" || return 1
+    op_home="$(_op_home)" || return 1
+    # P-019 — every `sudo -u` site below uses `env PATH=…` so docker can
+    # resolve its colima/limactl helpers under sudoers' stripped PATH.
+    local op_path
+    op_path="$(_op_path)"
 
     install -d -m 0700 "$pgdata_dir"
     chown "${op_user}:staff" "$pgdata_dir"
@@ -257,8 +327,12 @@ provision_postgres() {
     # NOT publish 5432 to 0.0.0.0 — only to 127.0.0.1 — because the
     # Mini stays on the miner LAN and there's no reason to expose
     # Postgres to other hosts on that network.
-    sudo -u "${op_user}" docker rm -f "$container_name" 2>/dev/null || true
-    sudo -u "${op_user}" docker run -d \
+    sudo -u "${op_user}" \
+        /usr/bin/env PATH="$op_path" HOME="${op_home}" \
+        docker rm -f "$container_name" 2>/dev/null || true
+    sudo -u "${op_user}" \
+        /usr/bin/env PATH="$op_path" HOME="${op_home}" \
+        docker run -d \
         --name "$container_name" \
         --restart unless-stopped \
         -p 127.0.0.1:5432:5432 \
@@ -275,7 +349,9 @@ provision_postgres() {
     # Wait for `pg_isready` for up to 60 s.
     local i=0
     while (( i < 60 )); do
-        if sudo -u "${op_user}" docker exec "$container_name" \
+        if sudo -u "${op_user}" \
+                /usr/bin/env PATH="$op_path" HOME="${op_home}" \
+                docker exec "$container_name" \
                 pg_isready -U mg -d mining_guardian >/dev/null 2>&1; then
             _log "INFO postgres ready after ${i}s"
             return 0
