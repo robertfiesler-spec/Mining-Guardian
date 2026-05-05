@@ -47,6 +47,42 @@ _die() {
 }
 
 # ---------------------------------------------------------------------------
+# Operator-user resolution (P-018, 2026-05-05)
+# ---------------------------------------------------------------------------
+#
+# See lib/install_colima.sh::_op_user header for the full rationale. Same
+# resolver (duplicated here so each helper lib is sourceable in isolation
+# under tests). Postinstall.sh exports MG_INSTALL_OPERATOR_USER before
+# either lib is sourced; this fallback chain keeps dev / smoke-test
+# invocations honest and refuses to silently pick `root`.
+_op_user() {
+    local u="${MG_INSTALL_OPERATOR_USER:-}"
+    if [[ -n "$u" && "$u" != "root" ]]; then
+        printf '%s' "$u"
+        return 0
+    fi
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        printf '%s' "${SUDO_USER}"
+        return 0
+    fi
+    if [[ -e /dev/console ]]; then
+        u="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
+        if [[ -n "$u" && "$u" != "root" ]]; then
+            printf '%s' "$u"
+            return 0
+        fi
+    fi
+    local d
+    for d in /Users/*; do
+        [[ -e "${d}/Desktop/MiningGuardian.conf" ]] || continue
+        printf '%s' "$(basename "$d")"
+        return 0
+    done
+    _die "could not resolve a non-root operator account; refusing to run ollama as root"
+    return 1
+}
+
+# ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 
@@ -117,14 +153,23 @@ pull_llm_model() {
 
     _log "INFO pulling ollama model: ${MG_INSTALL_LLM_MODEL}"
 
+    # P-018 — resolve once via _op_user (prefers MG_INSTALL_OPERATOR_USER
+    # exported by postinstall.sh). The legacy `${SUDO_USER:-${USER}}`
+    # pattern resolved to `root` under Installer.app and would have
+    # written the model into `/var/root/.ollama` rather than the
+    # operator's `~/.ollama` — leaving the model invisible to the
+    # launchd service that runs as the operator.
+    local op_user
+    op_user="$(_op_user)" || return 1
+
     # 3 retries with exponential backoff. ollama pull is itself
     # resumable, so retrying is safe.
     local tries=0 max_tries=3 delay=5
     while (( tries < max_tries )); do
-        if sudo -u "${SUDO_USER:-${USER}}" \
+        if sudo -u "${op_user}" \
                 /usr/local/bin/ollama pull "$MG_INSTALL_LLM_MODEL" \
                 2>&1 | tee -a "${MG_INSTALL_LOG}"; then
-            _log "INFO ollama pull succeeded on try $(( tries + 1 ))"
+            _log "INFO ollama pull succeeded on try $(( tries + 1 )) (as ${op_user})"
             return 0
         fi
         tries=$(( tries + 1 ))

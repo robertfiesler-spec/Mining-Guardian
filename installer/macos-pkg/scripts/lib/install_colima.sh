@@ -47,6 +47,76 @@ _die() {
 }
 
 # ---------------------------------------------------------------------------
+# Operator-user resolution (P-018, 2026-05-05)
+# ---------------------------------------------------------------------------
+#
+# Postinstall.sh resolves the operator account once (via three bounded
+# probes — see postinstall.sh::_resolve_install_user) and exports the
+# value as MG_INSTALL_OPERATOR_USER before sourcing this helper. Use that
+# value in every `chown` / `sudo -u` site so we never accidentally fall
+# back to the legacy `${SUDO_USER:-${USER}}` pattern, which evaluates to
+# `root` under Installer.app (USER=root, SUDO_USER unset) and would (a)
+# point colima at /Users/root (does not exist) and (b) own colima/docker
+# state as root rather than the operator.
+#
+# `_op_user` mirrors postinstall's resolver as a fallback so dev / smoke-
+# test invocations that source this lib outside a real .pkg install still
+# get a usable, non-root account. Order:
+#
+#   1. ${MG_INSTALL_OPERATOR_USER} if set, non-empty, and not "root".
+#   2. ${SUDO_USER} if set, non-empty, and not "root" (operator-side
+#      `sudo bash install_colima.sh` for testing).
+#   3. /dev/console owner via stat -f '%Su' (the GUI logged-in user).
+#   4. /Users/*/Desktop/MiningGuardian.conf scan (last-ditch — finds the
+#      operator by where they put the conf).
+#   5. Empty + `_die` — refuse to silently pick `root` when a real user
+#      account exists somewhere.
+#
+# Returns the chosen account on stdout; non-zero exit on no usable user.
+_op_user() {
+    local u="${MG_INSTALL_OPERATOR_USER:-}"
+    if [[ -n "$u" && "$u" != "root" ]]; then
+        printf '%s' "$u"
+        return 0
+    fi
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        printf '%s' "${SUDO_USER}"
+        return 0
+    fi
+    if [[ -e /dev/console ]]; then
+        u="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
+        if [[ -n "$u" && "$u" != "root" ]]; then
+            printf '%s' "$u"
+            return 0
+        fi
+    fi
+    local d
+    for d in /Users/*; do
+        [[ -e "${d}/Desktop/MiningGuardian.conf" ]] || continue
+        printf '%s' "$(basename "$d")"
+        return 0
+    done
+    _die "could not resolve a non-root operator account; refusing to run colima as root"
+    return 1
+}
+
+_op_home() {
+    local user
+    user="$(_op_user)" || return 1
+    local home
+    home="$(/usr/bin/dscl . -read "/Users/${user}" NFSHomeDirectory 2>/dev/null \
+              | /usr/bin/awk '/^NFSHomeDirectory:/ { print $2 }')"
+    if [[ -z "$home" ]]; then
+        home="/Users/${user}"
+    fi
+    if [[ ! -d "$home" ]]; then
+        _die "operator home directory not found for ${user}: ${home}"
+        return 1
+    fi
+    printf '%s' "$home"
+}
+
+# ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 
@@ -104,16 +174,24 @@ install_colima_runtime() {
     # Initialise the colima VM in the operator's home. We pin a small VM
     # (4 CPU, 8 GB) — the heavier work is the LLM, which runs on the host
     # not the VM.
-    local home="/Users/${SUDO_USER:-${USER}}"
-    if [[ ! -d "$home" ]]; then
-        _die "could not resolve operator home directory"
-        return 1
-    fi
+    #
+    # P-018 — resolve the operator via _op_user (which prefers
+    # MG_INSTALL_OPERATOR_USER, exported by postinstall.sh::main()
+    # before this helper is sourced). The legacy
+    # `${SUDO_USER:-${USER}}` pattern resolved to `root` under
+    # Installer.app (USER=root, SUDO_USER unset) and would have run
+    # `sudo -u root colima start` while pointing at /Users/root — both
+    # wrong. _op_user refuses to return `root`, so a missing operator
+    # raises `_die` cleanly here.
+    local op_user op_home
+    op_user="$(_op_user)" || return 1
+    op_home="$(_op_home)" || return 1
+    _log "INFO colima will run as ${op_user} (home=${op_home})"
 
     # Apple Silicon: use --vm-type vz (Apple's Virtualization.framework).
     # Faster than QEMU, native to M-series, and means we don't need to
     # bundle qemu-system-aarch64 in the .pkg payload (saves ~50 MB).
-    sudo -u "${SUDO_USER:-${USER}}" \
+    sudo -u "${op_user}" \
         "${target_bin}/colima" start --vm-type vz \
         --runtime docker --memory 8 --cpu 4 --disk 60 \
         2>&1 | tee -a "${MG_INSTALL_LOG}" || {
@@ -135,7 +213,15 @@ load_postgres_image() {
     # docker load is idempotent — it will refuse-with-success if the
     # image already exists at this digest, which is what we want for
     # re-installs.
-    sudo -u "${SUDO_USER:-${USER}}" docker load -i "$tarball" \
+    #
+    # P-018 — `sudo -u <op>` so docker.sock ownership matches the
+    # colima-launching user (lib/install_colima.sh runs `colima start`
+    # as that same user above). Legacy `${SUDO_USER:-${USER}}` would
+    # become `root` under Installer.app and `sudo -u root` cannot read
+    # the operator's docker context.
+    local op_user
+    op_user="$(_op_user)" || return 1
+    sudo -u "${op_user}" docker load -i "$tarball" \
         2>&1 | tee -a "${MG_INSTALL_LOG}" || {
             _die "docker load of postgres image failed"
             return 1
@@ -148,9 +234,17 @@ provision_postgres() {
     local pgdata_dir="${install_root}/postgres-data"
     local container_name="mining-guardian-db"
 
+    # P-018 — resolve once, use everywhere. The legacy
+    # `${SUDO_USER:-${USER}}` pattern picked `root` under Installer.app
+    # and chowned pgdata to root, then ran every docker call as root —
+    # which fails because `colima start` was launched as the operator
+    # and the docker socket lives in the operator's home.
+    local op_user
+    op_user="$(_op_user)" || return 1
+
     install -d -m 0700 "$pgdata_dir"
-    chown "${SUDO_USER:-${USER}}:staff" "$pgdata_dir"
-    _log "INFO created persistent postgres volume at ${pgdata_dir}"
+    chown "${op_user}:staff" "$pgdata_dir"
+    _log "INFO created persistent postgres volume at ${pgdata_dir} (owner=${op_user})"
 
     # Pull MG_DB_PASSWORD from the .env that postinstall.sh dropped
     # before calling us. NEVER hard-code a default here.
@@ -163,8 +257,8 @@ provision_postgres() {
     # NOT publish 5432 to 0.0.0.0 — only to 127.0.0.1 — because the
     # Mini stays on the miner LAN and there's no reason to expose
     # Postgres to other hosts on that network.
-    sudo -u "${SUDO_USER:-${USER}}" docker rm -f "$container_name" 2>/dev/null || true
-    sudo -u "${SUDO_USER:-${USER}}" docker run -d \
+    sudo -u "${op_user}" docker rm -f "$container_name" 2>/dev/null || true
+    sudo -u "${op_user}" docker run -d \
         --name "$container_name" \
         --restart unless-stopped \
         -p 127.0.0.1:5432:5432 \
@@ -181,7 +275,7 @@ provision_postgres() {
     # Wait for `pg_isready` for up to 60 s.
     local i=0
     while (( i < 60 )); do
-        if sudo -u "${SUDO_USER:-${USER}}" docker exec "$container_name" \
+        if sudo -u "${op_user}" docker exec "$container_name" \
                 pg_isready -U mg -d mining_guardian >/dev/null 2>&1; then
             _log "INFO postgres ready after ${i}s"
             return 0
