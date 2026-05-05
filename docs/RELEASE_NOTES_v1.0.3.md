@@ -39,7 +39,8 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-015 | Preinstall arch gate Rosetta-safe (`sysctl hw.optional.arm64`, never `uname -m`) — `MiningGuardian-1.0.3-2b48f98e6b77.pkg` first install on customer Mac mini hard-failed at `gate_apple_silicon` because `/usr/bin/uname -m` returned `x86_64` under a Rosetta-translated `/bin/bash` even though the Mac is M-series | `mg/v103-d18-p015-arch-gate-rosetta-safe` | _this PR_ | _stamped on merge_ |
 | P-016 | Postinstall hang fix (`_cocoa_alert` osascript) + operator-user resolver — `MiningGuardian-1.0.3-cf1691e2998c.pkg` install on customer Mac mini hard-failed with `PackageKit: Terminating PKInstallTask. Task has exceeded its 600 seconds of runtime.` after `INFO loaded helper libs`, no FATAL line. **Bug A (the actual hang):** `_cocoa_alert` ran `osascript display dialog` synchronously with no timeout; postinstall runs as root with no Window Server, dialog blocks forever, PackageKit's 600 s watchdog kills the script. Fixed with `with giving up after 5` + pure-bash `kill -KILL` watchdog (10 s wall-clock cap, no `timeout(1)` dependency) + delivery via `launchctl asuser` to the GUI console user. **Bug B (wrong target file):** Installer.app exports `USER=root`, so `${SUDO_USER:-${USER}}` resolved to `root` and the script checked `/Users/root/Desktop/MiningGuardian.conf` instead of `/Users/miningguardian/Desktop/...`. Fixed with `_resolve_install_user()` helper (three bounded probes: `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan), exported as `MG_INSTALL_OPERATOR_USER`. All 22 in-line `${SUDO_USER:-${USER}}` sites updated. Added env-probe log line in `main()` for future debuggability. | `mg/p016-postinstall-desktop-user-resolution` | _this PR_ | `9318062` |
 | P-017 | Postinstall `MG_PKG_PAYLOAD` resolves to install root, not scripts sandbox — first install of the P-016 build (`9318062`) on the Mini exited 31 in `install_colima_runtime` with `vendored colima runtime not found at /tmp/PKInstallSandbox.<rand>/Scripts/.../../payload/runtime/colima` because `pkgbuild` extracts scripts to a private sandbox while extracting the payload to the install location, and the legacy `${SCRIPT_DIR}/../payload` resolved into the sandbox. Fixed by preferring `${MG_INSTALL_ROOT}` when `${MG_INSTALL_ROOT}/runtime` exists, with the legacy path retained as the dev / smoke-test fallback. | `mg/p017-payload-path-install-root` | [#136](https://github.com/robertfiesler-spec/Mining-Guardian/pull/136) | `bae1891` |
-| P-018 | Installer helper libs (`installer/macos-pkg/scripts/lib/install_colima.sh`, `install_ollama.sh`) drop the legacy `${SUDO_USER:-${USER}}` pattern and consume `MG_INSTALL_OPERATOR_USER` (exported by `postinstall.sh::main()`). Closes B-12 in `docs/LATENT_BUGS.md` — without this, the next install after P-017 would have run `colima start` / `docker load` / `docker run mining-guardian-db` / `ollama pull` as `root`, leaving colima state in `/var/root/.colima`, the LLM model in `/var/root/.ollama` (invisible to the launchd ollama service that runs as the operator), and `pgdata` chowned to root. Each helper now carries an `_op_user` resolver: prefer `MG_INSTALL_OPERATOR_USER` → `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan; refuse to silently return `root`. `install_colima_runtime` also resolves the operator's home via `dscl . -read NFSHomeDirectory` rather than hard-coding `/Users/<u>`. **No `postinstall.sh`, `build_pkg.sh`, payload, or notarization-relevant change** — pure helper-lib logic. | `mg/p018-helper-user-resolution` | _this PR_ | _stamped on merge_ |
+| P-018 | Installer helper libs (`installer/macos-pkg/scripts/lib/install_colima.sh`, `install_ollama.sh`) drop the legacy `${SUDO_USER:-${USER}}` pattern and consume `MG_INSTALL_OPERATOR_USER` (exported by `postinstall.sh::main()`). Closes B-12 in `docs/LATENT_BUGS.md` — without this, the next install after P-017 would have run `colima start` / `docker load` / `docker run mining-guardian-db` / `ollama pull` as `root`, leaving colima state in `/var/root/.colima`, the LLM model in `/var/root/.ollama` (invisible to the launchd ollama service that runs as the operator), and `pgdata` chowned to root. Each helper now carries an `_op_user` resolver: prefer `MG_INSTALL_OPERATOR_USER` → `SUDO_USER` → `stat -f '%Su' /dev/console` → `/Users/*/Desktop/MiningGuardian.conf` scan; refuse to silently return `root`. `install_colima_runtime` also resolves the operator's home via `dscl . -read NFSHomeDirectory` rather than hard-coding `/Users/<u>`. **No `postinstall.sh`, `build_pkg.sh`, payload, or notarization-relevant change** — pure helper-lib logic. | `mg/p018-helper-user-resolution` | _stamped on merge_ | `32ec2dc` |
+| P-019 | `install_colima.sh` and `postinstall.sh` propagate PATH (incl. `/usr/local/bin`) under `sudo -u` so colima/docker can find `limactl` — `MiningGuardian-1.0.3-32ec2dcad973.pkg` (the P-018 build) installed clean on the customer Mac mini and progressed through `INFO copied colima + lima (VZ-only, no QEMU) to /usr/local/bin` and `INFO colima will run as miningguardian (home=/Users/miningguardian)`, then `colima start` exited inside `install_colima_runtime` with `lima compatibility error: error checking Lima version: exec: "limactl": executable file not found in $PATH` and postinstall fail 31. **Root cause:** macOS `sudo -u` strips PATH and substitutes sudoers' `secure_path` (`/usr/bin:/bin:/usr/sbin:/sbin` — no `/usr/local/bin`); colima's `os/exec.LookPath("limactl")` then fails even though limactl was installed two lines earlier. Same trap applies to `docker` (a colima-context shim). **Fix:** new `_op_path` helpers in `install_colima.sh` and `postinstall.sh` return a PATH that starts with `/usr/local/bin`; every `sudo -u` site invoking `colima`/`docker` now wraps with `/usr/bin/env PATH="$(_op_path)" HOME="${op_home}"`. New `_verify_limactl` in `install_colima.sh` asserts limactl exists at the install destination *before* `colima start` so a missing limactl produces a clear log line, not the misleading colima `$PATH` error. Sites updated: 5 in `install_colima.sh` (1 colima-start, 4 docker), 10 in `postinstall.sh` (docker exec/cp). `install_ollama.sh` unchanged — invokes `/usr/local/bin/ollama` by absolute path, no sibling-helper lookup. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure shell-level PATH hygiene. | `mg/p019-colima-limactl-path` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -482,6 +483,95 @@ sudo cat /var/log/mining-guardian/install-postinstall.log | head -120
 The new postinstall log should reach the existing P-017 `INFO env probe …` and `INFO resolved install operator user: miningguardian` lines, then progress past `install_colima_runtime` (look for new `INFO colima will run as miningguardian (home=/Users/miningguardian)` line), through `load_postgres_image` and `provision_postgres`, into `step_apply_migrations` and `step_provision_catalog_db_and_seed`, then `step_install_ollama_and_pull_model` (look for `INFO ollama pull succeeded on try N (as miningguardian)`).
 
 If the log still shows `/Users/root` or `sudo -u root` anywhere, the fix has regressed and we want to investigate before merging.
+
+---
+
+### P-019 — installer propagates PATH (incl. `/usr/local/bin`) under `sudo -u` so colima/docker can find `limactl` (this PR)
+
+**Problem:**
+First install of `MiningGuardian-1.0.3-32ec2dcad973.pkg` (the P-018 build, main `32ec2dc`) on the customer Mac mini progressed past every P-015 / P-016 / P-017 / P-018 gate. The postinstall log shows:
+
+```
+INFO resolved install operator user: miningguardian
+INFO reading customer config: /Users/miningguardian/Desktop/MiningGuardian.conf
+INFO customer config OK
+INFO laid out install root
+INFO wrote .env
+[ollama] INFO copied docker CLI to /usr/local/bin/docker
+[ollama] INFO copied colima + lima (VZ-only, no QEMU) to /usr/local/bin
+[ollama] INFO colima will run as miningguardian (home=/Users/miningguardian)
+time="2026-05-05T12:04:29-05:00" level=fatal msg="lima compatibility error: error checking Lima version: exec: \"limactl\": executable file not found in $PATH"
+[ollama] FATAL colima start failed; see install log
+[postinstall] FATAL (31) colima runtime install failed
+```
+
+**Root cause:**
+macOS `sudo -u <op>` clears the inherited PATH and substitutes sudoers' `secure_path` (typically `/usr/bin:/bin:/usr/sbin:/sbin` — note the absence of `/usr/local/bin`). When `colima start` is invoked under `sudo -u miningguardian`, colima uses Go's `os/exec.LookPath("limactl")` to resolve its lima sibling, and that lookup obeys the child PATH — so even though `install_colima_runtime` had just installed `limactl` to `/usr/local/bin` two lines earlier (the very `INFO copied colima + lima (VZ-only, no QEMU) to /usr/local/bin` line above), colima could not see it.
+
+The same trap applies to every `docker` invocation under `sudo -u`. `docker` is a shim that resolves `colima` for context discovery; without `/usr/local/bin` on PATH, the docker CLI cannot locate its sibling binaries either. That covers `load_postgres_image` (1 docker call), `provision_postgres` (3 docker calls — rm/run/exec), and `postinstall.sh` (10 docker exec/cp calls in `step_apply_migrations` and `step_provision_catalog_db_and_seed`).
+
+**Fix:**
+Add `_op_path` helpers in `install_colima.sh` and `postinstall.sh` that return a PATH starting with `/usr/local/bin`:
+
+```
+/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+```
+
+Every `sudo -u` site that invokes `colima` or `docker` now wraps with `/usr/bin/env PATH="$(_op_path)" HOME="${op_home}"` — order matters: `/usr/local/bin` is first so vendored binaries shadow any older copies in `/opt/homebrew` or `/usr/bin`.
+
+New `_verify_limactl` in `install_colima.sh` asserts limactl exists at the install destination *before* invoking `colima start`. A missing limactl now produces a clear `"limactl not found at /usr/local/bin/limactl"` log line rather than the misleading colima `$PATH` error.
+
+**Sites updated:**
+
+- `install_colima.sh::install_colima_runtime` — 1 colima-start invocation (now wrapped, plus pre-call `_verify_limactl`).
+- `install_colima.sh::load_postgres_image` — 1 docker-load invocation.
+- `install_colima.sh::provision_postgres` — 3 docker invocations (rm/run/exec for `pg_isready` poll).
+- `postinstall.sh::step_apply_migrations` — 1 `docker exec -i … psql` invocation per `<payload>/migrations/*.sql` (the wrapper line is shared via `replace_all`).
+- `postinstall.sh::step_provision_catalog_db_and_seed` — 9 docker invocations (existence probe, schema apply, mkdir, cp, deploy_schema apply, row-count probe, seed apply, post-seed verify, container cleanup).
+
+`install_ollama.sh::pull_llm_model` is unchanged because it invokes `/usr/local/bin/ollama` by absolute path and ollama does not shell out to find sibling helpers.
+
+**No `build_pkg.sh`, payload, or notarization-relevant code changed** — pure shell-level PATH hygiene. The .pkg the operator rebuilds after merge will hash differently only because of the script-archive bytes.
+
+**Tests:** new `tests/installer/test_postinstall_colima_path.sh` — **21/21 green**:
+
+- §1 `_op_path` defined in `install_colima.sh`; PATH starts with `/usr/local/bin`.
+- §2 `_verify_limactl` defined and called before the live `colima start` invocation.
+- §3 Every `sudo -u "${op_user}"` site in `install_colima.sh` is followed within 3 lines by a `/usr/bin/env PATH=` wrapper.
+- §4 `_op_path` defined in `postinstall.sh`; PATH starts with `/usr/local/bin`.
+- §5 Every `sudo -u "${MG_INSTALL_OPERATOR_USER}" … docker` site in `postinstall.sh` is wrapped; total `env PATH=` count ≥ 10.
+- §6 PATH order: `/usr/local/bin` precedes `/usr/bin` in both helpers.
+- §7 Runtime: `_op_path` returns a PATH that starts with `/usr/local/bin` (smoke test of the actual function).
+- §8 Runtime: `_verify_limactl` returns 0 for an executable file and non-zero with a clear `limactl not found` message for a missing one.
+- §9 Runtime: `env PATH="$(_op_path)" command -v limactl` locates a stub `limactl` placed under a fake `/usr/local/bin` even when the parent shell has only `PATH=/usr/bin:/bin` — proving the wrapper really reverses sudoers' PATH strip. Negative control: same probe without the wrap finds nothing.
+- §10 P-019 audit marker present in both files.
+- §11 `bash -n` parse on both files.
+
+All adjacent installer suites still green: `test_postinstall_helper_user_resolver` 26/26, `test_postinstall_user_resolver` 12/12, `test_postinstall_payload_path` 12/12, `test_postinstall_cocoa_alert_bounded` 9/9, `test_pkg_scripts_naming` 17/17, `test_preinstall_arch_gate` 11/11, `test_postinstall_customer_info` 76/76, `test_postinstall_catalog_seed` 24/24, `test_postinstall_venv` 26/26, `test_postinstall_scheduled_jobs` 115/115, `test_uninstall_script` 50/50.
+
+**Operator commands after merge:**
+
+```
+git checkout main
+git pull --ff-only origin main
+make pkg
+```
+
+The rebuilt .pkg replaces `MiningGuardian-1.0.3-32ec2dcad973.pkg`. **Cleanup before reinstall on the Mini** (the P-018-build attempt got far enough to lay down the install root and `.env`, then died inside `install_colima_runtime` before colima ever started; no Postgres container was created, no LaunchDaemons were bootstrapped):
+
+```
+sudo rm -rf "/Library/Application Support/MiningGuardian"
+sudo rm -rf /var/log/mining-guardian
+# best-effort colima cleanup — colima never started, so nothing to clean,
+# but the command is safe to run unconditionally
+sudo /usr/local/bin/colima delete --force 2>/dev/null || true
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+sudo cat /var/log/mining-guardian/install-postinstall.log | head -200
+```
+
+The new postinstall log should reach `INFO limactl present at /usr/local/bin/limactl` (the new `_verify_limactl` line), then progress past `install_colima_runtime` (look for `INFO colima started (vz, 4 cpu, 8 GB, 60 GB disk)`), through `load_postgres_image` and `provision_postgres` (`INFO postgres ready after Ns`), into `step_apply_migrations` and `step_provision_catalog_db_and_seed` (`INFO catalog seed verified: hardware.miner_models has 320 rows`), then `step_install_ollama_and_pull_model`.
+
+If the log still shows `executable file not found in $PATH` anywhere, the wrap has regressed.
 
 ---
 

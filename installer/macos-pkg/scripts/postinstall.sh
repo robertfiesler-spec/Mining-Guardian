@@ -355,6 +355,28 @@ _resolve_install_user() {
 }
 
 # ---------------------------------------------------------------------------
+# PATH propagation under `sudo -u` (P-019, 2026-05-05)
+# ---------------------------------------------------------------------------
+#
+# The 32ec2dcad973 install on the customer Mac mini exited 31 in
+# `install_colima_runtime` with `lima compatibility error: error checking
+# Lima version: exec: "limactl": executable file not found in $PATH`.
+# Root cause: `sudo -u <op>` on macOS strips PATH and substitutes
+# sudoers' `secure_path` (typically /usr/bin:/bin:/usr/sbin:/sbin —
+# /usr/local/bin is NOT included), so colima/docker — both of which
+# use Go's `os/exec.LookPath` to find limactl/colima/lima — cannot see
+# the binaries we just installed two lines earlier.
+#
+# `_op_path` returns the PATH every `sudo -u` site that invokes
+# colima/docker MUST pass through `env PATH=…`. install_colima.sh
+# defines an identical helper for its own use; this one covers the
+# postinstall sites (migrations, catalog seed apply, baseline scan).
+# Order: /usr/local/bin first so vendored binaries shadow homebrew.
+_op_path() {
+    printf '%s' "/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+# ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 
@@ -751,7 +773,9 @@ step_apply_migrations() {
     for sql in "${mig_dir}"/*.sql; do
         [[ -f "$sql" ]] || continue
         log "INFO applying $(basename "$sql")"
-        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
+        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
                 psql -U mg -d mining_guardian -v ON_ERROR_STOP=1 < "$sql" \
                 2>&1 | tee -a "$MG_INSTALL_LOG"; then
             fail 32 "migration $(basename "$sql") failed"
@@ -827,7 +851,9 @@ step_provision_catalog_db_and_seed() {
     # DATABASE cannot run inside a transaction, so we issue it with -tAc
     # only when the row count comes back zero.
     local exists
-    exists="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
+    exists="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
         psql -U mg -d postgres -tAc \
         "SELECT 1 FROM pg_database WHERE datname='${catalog_db}';" \
         2>>"$MG_INSTALL_LOG" || true)"
@@ -835,7 +861,9 @@ step_provision_catalog_db_and_seed() {
     if [[ "${exists:-}" != "1" ]]; then
         log "INFO creating catalog database ${catalog_db}"
         # shellcheck disable=SC2024  # log file is owned by root; redirect is opened by parent shell pre-sudo, intentional (matches step_baseline_scan / step_create_venv).
-        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
+        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
                 psql -U mg -d postgres -v ON_ERROR_STOP=1 -c \
                 "CREATE DATABASE ${catalog_db} OWNER mg;" \
                 >>"$MG_INSTALL_LOG" 2>&1; then
@@ -851,12 +879,16 @@ step_provision_catalog_db_and_seed() {
     # container so the relative includes resolve.
     local container_seed_dir="/tmp/mg-catalog-seed-$$"
     # shellcheck disable=SC2024  # see SC2024 disable note above.
-    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec "$container" \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec "$container" \
             mkdir -p "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1; then
         fail 39 "could not create staging dir inside container: ${container_seed_dir}"
     fi
     # shellcheck disable=SC2024
-    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker cp \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker cp \
             "${seed_dir}/." "${container}:${container_seed_dir}/" \
             >>"$MG_INSTALL_LOG" 2>&1; then
         fail 39 "docker cp of seed-data into container failed"
@@ -869,7 +901,9 @@ step_provision_catalog_db_and_seed() {
     # TYPE / CREATE TABLE / CREATE SCHEMA are themselves IF NOT EXISTS.
     log "INFO applying catalog schema (deploy_schema.sql)"
     # shellcheck disable=SC2024
-    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
             psql -U mg -d "$catalog_db" \
             -v ON_ERROR_STOP=0 \
             -f "${container_seed_dir}/deploy_schema.sql" \
@@ -884,7 +918,9 @@ step_provision_catalog_db_and_seed() {
     # name. We treat that case as "already seeded — re-use" by checking
     # the row count first.
     local row_count
-    row_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
+    row_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
         psql -U mg -d "$catalog_db" -tAc \
         "SELECT count(*) FROM hardware.miner_models;" \
         2>>"$MG_INSTALL_LOG" || echo 0)"
@@ -894,7 +930,9 @@ step_provision_catalog_db_and_seed() {
     else
         log "INFO seeding 320 Bitcoin SHA-256 miner models into ${catalog_db}"
         # shellcheck disable=SC2024
-        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
+        if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
                 psql -U mg -d "$catalog_db" -v ON_ERROR_STOP=1 \
                 -f "${container_seed_dir}/seed_miner_models.sql" \
                 >>"$MG_INSTALL_LOG" 2>&1; then
@@ -903,7 +941,9 @@ step_provision_catalog_db_and_seed() {
     fi
 
     # Verify final row count meets the v1.0.3 verification-gate floor.
-    row_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec -i "$container" \
+    row_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
         psql -U mg -d "$catalog_db" -tAc \
         "SELECT count(*) FROM hardware.miner_models;" \
         2>>"$MG_INSTALL_LOG" || echo 0)"
@@ -916,7 +956,9 @@ step_provision_catalog_db_and_seed() {
     # Best-effort cleanup of the in-container staging dir; not fatal if
     # it fails (the container is ephemeral relative to the install root).
     # shellcheck disable=SC2024
-    sudo -u "${MG_INSTALL_OPERATOR_USER}" docker exec "$container" \
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec "$container" \
         rm -rf "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1 || true
 }
 
