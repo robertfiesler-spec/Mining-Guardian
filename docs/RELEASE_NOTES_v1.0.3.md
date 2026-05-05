@@ -37,6 +37,7 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-013 | pkgbuild scripts must be staged with extensionless names (`preinstall`, `postinstall`); `MiningGuardian-1.0.3-a35728dcfc8c.pkg` was payload-only because PackageKit silently ignored `preinstall.sh` / `postinstall.sh` | `mg/v103-p013-pkg-scripts-naming` | _this PR_ | _stamped on merge_ |
 | P-014 | `build_pkg.sh` step 4d rsync excludes `build_pkg.sh` itself from scripts staging — first `make pkg` after P-013 merged hit the new P-013 leftover-`*.sh` guard because `build_pkg.sh` lives next to `preinstall.sh`/`postinstall.sh` and was being rsync'd into the package-script staging dir | `mg/v103-d18-p014-staging-exclude-build-pkg` | _this PR_ | _stamped on merge_ |
 | P-015 | Preinstall arch gate Rosetta-safe (`sysctl hw.optional.arm64`, never `uname -m`) — `MiningGuardian-1.0.3-2b48f98e6b77.pkg` first install on customer Mac mini hard-failed at `gate_apple_silicon` because `/usr/bin/uname -m` returned `x86_64` under a Rosetta-translated `/bin/bash` even though the Mac is M-series | `mg/v103-d18-p015-arch-gate-rosetta-safe` | _this PR_ | _stamped on merge_ |
+| P-016 | Postinstall operator-user resolver (Installer.app stripped env) — `MiningGuardian-1.0.3-cf1691e2998c.pkg` install on customer Mac mini hard-failed silently after `step_load_libs` (postinstall log stops at `INFO loaded helper libs`, no FATAL line). Root cause: `step_collect_customer_info` evaluated `${SUDO_USER:-${USER}}` and Installer.app does not export either variable, so under `set -euo pipefail` the shell exited with `USER: unbound variable` BEFORE any `log` call could run. New `_resolve_install_user()` helper resolves the operator account once via three bounded probes (`SUDO_USER`, `stat -f '%Su' /dev/console`, `/Users/*/Desktop/MiningGuardian.conf` scan), exported as `MG_INSTALL_OPERATOR_USER`. All 22 in-line `${SUDO_USER:-${USER}}` sites updated. Added env-probe `INFO env probe: ...` log line in `main()` so future stripped-env failures are debuggable from the log alone. | `mg/p016-postinstall-desktop-user-resolution` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -287,6 +288,105 @@ sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target
 ```
 
 If the operator's Terminal is set to "Open using Rosetta," the preinstall will now still succeed on the M-series Mini (with the diagnostic WARN line in the log). If the operator wants the entire install chain native arm64, uncheck Terminal.app → Get Info → "Open using Rosetta" before installing, OR invoke via `arch -arm64 sudo installer …`.
+
+---
+
+### P-016 — postinstall operator-user resolver (this PR)
+
+**Problem:**
+First install of `MiningGuardian-1.0.3-cf1691e2998c.pkg` on the customer Mac mini. Preinstall passed end-to-end (P-015 confirmed working under Rosetta context). The installer then reported `An error occurred while running scripts from the package`. The postinstall log contained ONLY four lines and no `FATAL`:
+
+```
+… [postinstall] Mining Guardian postinstall starting (pid=5521) — Bucket 6 refresh, 9 services
+… [postinstall] PKG_PATH=/Users/miningguardian/Downloads/MiningGuardian-1.0.3-cf1691e2998c.pkg TARGET=/ INSTALL_TARGET_DIR=/Library/Application Support/MiningGuardian
+… [postinstall] INFO sourced env: RAM_TIER=16 LLM=llama3.2:3b
+… [postinstall] INFO loaded helper libs
+```
+
+`fail()` always logs a `FATAL (<code>) ...` line then a `Aborting install. ...` line before exiting. Neither appears. The script died **between** `step_load_libs` returning and the next `log` call inside `step_collect_customer_info`.
+
+**Root cause:**
+`step_collect_customer_info` (postinstall.sh:444 in the cf1691e build) opened with:
+
+```bash
+local desktop_user="${SUDO_USER:-${USER}}"
+```
+
+Installer.app's postinstall environment is stripped down to a documented minimum:
+
+| Variable | Set by Installer.app? |
+|---|---|
+| Positional args (`$1`..`$4`) | Yes |
+| `INSTALLER_TEMP` | Yes |
+| `HOME` (`=/var/root`) | Yes |
+| `PATH` | Yes |
+| `SUDO_USER` | **No** — `installer` does not invoke scripts via sudo |
+| `USER` | **No** — not part of the documented contract |
+| `LOGNAME` | **No** — same |
+
+Under `set -euo pipefail`, evaluating the default-value expansion `${SUDO_USER:-${USER}}` when both are unset triggers `USER: unbound variable` and exits the shell with status 1. The exit happens INSIDE the bash expansion machinery, BEFORE any `log` call can run. Result: the script's own log file gets no `FATAL` line; only `/var/log/install.log` (which captures the postinstall's stderr) records the bash error.
+
+The same pattern appeared at 21 other call sites (chown / install -o / sudo -u). Even if `set -u` weren't a factor, the fallback value of `root` would still be wrong: the customer's Desktop conf is at `/Users/miningguardian/Desktop/MiningGuardian.conf`, not `/Users/root/Desktop/...`.
+
+**Fix:**
+New `_resolve_install_user()` helper in `installer/macos-pkg/scripts/postinstall.sh` resolves the operator account once with three bounded probes that never reference unset variables:
+
+1. `${SUDO_USER:-}` — set when Rob runs `sudo installer …` from a Tailscale SSH session; covers the preferred path.
+2. `stat -f '%Su' /dev/console` — the GUI logged-in user; macOS exposes this without env vars.
+3. `/Users/*/Desktop/MiningGuardian.conf` scan — last-ditch; finds the operator by where they put the conf.
+
+Returns the literal `root` only when every probe failed AND no Desktop/conf was located, at which point the conf-existence check below fails cleanly with `fail 41` and a logged `FATAL`.
+
+`main()` calls the resolver immediately after `_setup_log` and before any step that needs it, exporting `MG_INSTALL_OPERATOR_USER`. All 22 in-line `${SUDO_USER:-${USER}}` sites switched to `${MG_INSTALL_OPERATOR_USER}`.
+
+`main()` also now emits an env-probe diagnostic line:
+
+```
+INFO env probe: SUDO_USER='<unset>' USER='<unset>' LOGNAME='<unset>' HOME='/var/root'
+```
+
+so any future stripped-env failure is debuggable from the postinstall log alone, without needing `/var/log/install.log`.
+
+**Tests:**
+- New `tests/installer/test_postinstall_user_resolver.sh` (12 assertions, all green):
+  1. The fragile `${SUDO_USER:-${USER}}` command-line pattern is gone (comments are allowed; substantive uses are zero).
+  2. `_resolve_install_user()` defined.
+  3. Probe 1 (SUDO_USER), probe 2 (`stat -f '%Su' /dev/console`), and probe 3 (`/Users/*/Desktop` scan) all present.
+  4. `main()` assigns `MG_INSTALL_OPERATOR_USER` BEFORE `step_collect_customer_info`.
+  5. `main()` emits the env-probe log line.
+  6. Runtime extraction of the resolver under `env -i` (no `SUDO_USER`, no `USER`) returns the operator name via the Desktop scan WITHOUT triggering `USER: unbound variable`. `/usr/bin/stat` is mocked because the test runs on Linux.
+  7. P-016 audit marker present.
+  8. `bash -n` clean.
+- All 253 prior postinstall test assertions still green (76 customer-info + 115 scheduled-jobs + 26 venv + 24 catalog-seed + 12 new = 253).
+- Shellcheck baseline unchanged at 3.
+
+**Diagnosis confirmation gate (operator-side, run on the Mac mini):**
+
+```
+sudo grep -nE 'unbound|MiningGuardian|postinstall|cf1691e' /var/log/install.log | tail -120
+```
+
+If a line like `bash: line N: USER: unbound variable` appears in the time window of the cf1691e install (look for `pid=5521` from the postinstall log timestamps), the hypothesis is confirmed and this PR is the right fix. If a different bash error appears, the resolver fix still addresses the desktop-user fallback bug, but a follow-up PR may be needed for the additional symptom.
+
+**No build_pkg.sh / payload / notarization-relevant code touched.** Source-tree change is `installer/macos-pkg/scripts/postinstall.sh` only (+ new test file + docs). The rebuilt .pkg's payload is byte-identical to cf1691e modulo the script-archive bytes for `postinstall`.
+
+**Operator commands after merge:**
+
+```
+git checkout main
+git pull --ff-only origin main
+make pkg
+```
+
+The rebuilt .pkg replaces `MiningGuardian-1.0.3-cf1691e2998c.pkg`. Install path on the Mini (the previous attempt left `/Library/Application Support/MiningGuardian` partially populated only as far as preinstall reached, which is none — preinstall does NOT lay payload; that is Installer.app's job and ran AFTER preinstall succeeded; postinstall died before any of the `step_layout_install_root` chown/mkdir, so there is nothing to clean up beyond rotating the postinstall log):
+
+```
+sudo rm -f /var/log/mining-guardian/install-postinstall.log
+sudo installer -pkg "$HOME/Downloads/MiningGuardian-1.0.3-<new-sha>.pkg" -target /
+sudo cat /var/log/mining-guardian/install-postinstall.log | head -60
+```
+
+The new postinstall log should now show `INFO env probe: ...` and `INFO resolved install operator user: miningguardian` immediately after the existing four kickoff lines.
 
 ---
 

@@ -221,8 +221,11 @@ if /usr/bin/grep -q 'chmod 0600 "\$env_file"' "$POSTINSTALL"; then
 else
     fail ".env chmod 0600 missing"
 fi
-if /usr/bin/grep -q 'chown "\${SUDO_USER:-\${USER}}:staff" "\$env_file"' "$POSTINSTALL"; then
-    ok ".env chown to SUDO_USER:staff"
+# P-016: .env chown now uses the resolved $MG_INSTALL_OPERATOR_USER (from
+# _resolve_install_user) instead of the brittle `${SUDO_USER:-${USER}}`
+# expansion that crashed under set -u when Installer.app stripped USER.
+if /usr/bin/grep -qE 'chown "\$\{MG_INSTALL_OPERATOR_USER\}:staff" "\$env_file"|chown "\$\{SUDO_USER:-\$\{USER\}\}:staff" "\$env_file"' "$POSTINSTALL"; then
+    ok ".env chown to operator:staff"
 else
     fail ".env chown missing"
 fi
