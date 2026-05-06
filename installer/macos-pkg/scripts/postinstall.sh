@@ -580,7 +580,15 @@ step_layout_install_root() {
     install -d -m 0755 "${MG_INSTALL_ROOT}/logs"
     install -d -m 0700 "${MG_INSTALL_ROOT}/postgres-data"
     chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$MG_INSTALL_ROOT"
-    log "INFO laid out install root at ${MG_INSTALL_ROOT}"
+    # P-019C (2026-05-06) — bin/ and logs/ carry LaunchDaemon artifacts
+    # that launchd reads as root; macOS refuses to bootstrap a root
+    # LaunchDaemon if either the script directory OR the StandardOut/Err
+    # parent directory is writable by non-root, surfacing as
+    # `Bootstrap failed: 5: Input/output error`.
+    chown root:wheel "${MG_INSTALL_ROOT}/bin"
+    chown root:wheel "${MG_INSTALL_ROOT}/logs"
+    chmod 0755 "${MG_INSTALL_ROOT}/bin" "${MG_INSTALL_ROOT}/logs"
+    log "INFO laid out install root at ${MG_INSTALL_ROOT} (bin/+logs/ root:wheel, rest miningguardian:staff)"
 }
 
 _cocoa_alert() {
