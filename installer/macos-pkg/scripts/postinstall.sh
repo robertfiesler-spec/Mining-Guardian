@@ -1726,8 +1726,16 @@ step_install_launcher_wrappers() {
     # `python -m intelligence.feedback_loop_daemon` — that module path
     # never existed (the file lives at intelligence-catalog/db/, not
     # intelligence/). Bucket 7.5 corrects that by pulling from deploy/.
+    # P-019C (2026-05-06): launcher wrappers are now owned root:wheel,
+    # mode 0755 — matching the canonical comment at the top of every
+    # wrapper file. macOS launchd can refuse to bootstrap a LaunchDaemon
+    # (no UserName key, runs as root) whose ProgramArguments[0] points
+    # at a script writable by a non-root account — failure surfaces as
+    # the famously-underspecified `Bootstrap failed: 5: Input/output
+    # error` (B-25). All 10 LaunchDaemons run as root, so all 10
+    # wrappers must be root-owned.
     local bin="${MG_INSTALL_ROOT}/bin"
-    install -d -m 0755 "$bin"
+    install -d -m 0755 -o root -g wheel "$bin"
 
     if [[ ! -d "$LAUNCHERS_SRC" ]]; then
         fail 37 "launcher wrappers directory missing in payload: ${LAUNCHERS_SRC}"
@@ -1740,11 +1748,11 @@ step_install_launcher_wrappers() {
         if [[ ! -r "$src" ]]; then
             fail 37 "launcher wrapper missing in payload: ${src}"
         fi
-        install -m 0755 -o "${MG_INSTALL_OPERATOR_USER}" -g staff "$src" "$dst"
+        install -m 0755 -o root -g wheel "$src" "$dst"
         log "INFO installed launcher: ${f}"
     done
 
-    # 9th wrapper — feedback_loop_daemon, copied from the deploy/ tree
+    # 10th wrapper — feedback_loop_daemon, copied from the deploy/ tree
     # (canonical D-14 PR 4b launcher; uses file path to dodge the
     # hyphenated-package import issue).
     local fbd_src="${MG_PKG_PAYLOAD}/deploy/feedback_loop_daemon_launcher.sh"
@@ -1752,11 +1760,16 @@ step_install_launcher_wrappers() {
     if [[ ! -r "$fbd_src" ]]; then
         fail 37 "feedback_loop_daemon launcher missing in payload: ${fbd_src}"
     fi
-    install -m 0755 -o "${MG_INSTALL_OPERATOR_USER}" -g staff "$fbd_src" "$fbd_dst"
+    install -m 0755 -o root -g wheel "$fbd_src" "$fbd_dst"
     log "INFO installed launcher: feedback_loop_daemon_launcher.sh (from deploy/)"
 
-    chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$bin"
-    log "INFO installed 9 launcher wrappers in ${bin}"
+    # P-019C: explicit re-chown to root:wheel covers any prior install
+    # that left the bin/ tree miningguardian-owned. Without this a
+    # re-install would inherit a non-root-owned bin and the new
+    # `install` flags above would not flatten the existing dir's owner.
+    chown -R root:wheel "$bin"
+    chmod -R u=rwX,go=rX "$bin"
+    log "INFO installed ${#LAUNCHER_FILES[@]} launcher wrappers in ${bin} (root:wheel, 0755)"
 }
 
 step_create_venv() {
