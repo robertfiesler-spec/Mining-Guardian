@@ -276,8 +276,12 @@ The original 21-fix VPS deployment checklist (April 15 2026) is preserved verbat
 
 **1. Environment Variables - Add to .env:**
 ```bash
-# Already present:
-OLLAMA_URL=http://100.110.87.1:11434/api/generate
+# Local Mac Mini Ollama (D-9 / S-13). Postinstall already writes
+# OLLAMA_HOST=http://127.0.0.1:11434 to .env at install time; OLLAMA_URL
+# is the legacy generate-endpoint variable that some code paths still
+# read. Setting both is safe.
+OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_URL=http://127.0.0.1:11434/api/generate
 
 # Need to add:
 DASHBOARD_URL=http://127.0.0.1:8585
