@@ -1275,10 +1275,19 @@ step_create_venv() {
         fail 38 "python3.12 not found in payload (${packaged_py_flat} or ${packaged_py_framework}) and not on this Mac; build_pkg.sh step_4i_stage_python_runtime should have staged the installer-owned runtime — see docs/RUNBOOK_PKG_REBUILD.md 'Block Pre-B — populate the Python runtime' (P-026)"
     fi
 
+    # P-027 (2026-05-06) — quote every interpreter invocation. The
+    # packaged path lives under "/Library/Application Support/MiningGuardian/"
+    # which contains a space; an unquoted `${py312} --version` splits on
+    # whitespace and runs `/Library/Application` as the command, which
+    # exits 127 with `No such file or directory` and silently leaves the
+    # version probe empty so the next assertion fires
+    # `reports version '', expected '3.12'`. Round 9 of the Mac mini
+    # install hit this on 2026-05-05 (post-P-026, package
+    # `MiningGuardian-1.0.3-d0ba6c40a323.pkg`).
     if [[ "$py312_source" == "packaged-flat" || "$py312_source" == "packaged-framework" ]]; then
-        log "INFO using installer-owned Python interpreter (${py312_source}): ${py312} ($(${py312} --version 2>&1))"
+        log "INFO using installer-owned Python interpreter (${py312_source}): ${py312} ($("$py312" --version 2>&1))"
     else
-        log "WARN using FALLBACK Python interpreter (${py312_source}): ${py312} ($(${py312} --version 2>&1)) — this branch is only reachable on dev / smoke-test runs; a real customer .pkg install must carry the runtime in <payload>/runtime/python/ (P-026)"
+        log "WARN using FALLBACK Python interpreter (${py312_source}): ${py312} ($("$py312" --version 2>&1)) — this branch is only reachable on dev / smoke-test runs; a real customer .pkg install must carry the runtime in <payload>/runtime/python/ (P-026)"
     fi
 
     # Sanity-check the interpreter actually reports 3.12.x. We refuse to
@@ -1286,9 +1295,9 @@ step_create_venv() {
     # the cp312 ABI and `pip install` would fail later in this same
     # function with a less-helpful error.
     local py_ver
-    py_ver="$(${py312} -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+    py_ver="$("$py312" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
     if [[ "$py_ver" != "3.12" ]]; then
-        fail 38 "resolved Python interpreter ${py312} reports version '${py_ver}', expected '3.12'; vendored wheels are cp312 only (P-026)"
+        fail 38 "resolved Python interpreter ${py312} reports version '${py_ver}', expected '3.12'; vendored wheels are cp312 only (P-026/P-027)"
     fi
 
     # Create the venv (skip if already present and the python symlink is
