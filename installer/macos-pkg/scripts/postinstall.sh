@@ -1517,10 +1517,23 @@ step_baseline_scan() {
     log "INFO triggering first-run baseline scan (non-blocking)"
     # Quoted because MG_INSTALL_ROOT now contains a space
     # ("/Library/Application Support/MiningGuardian" — B-13 fix, v1.0.1).
-    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
-        "${MG_INSTALL_ROOT}/venv/bin/python" \
-        "${MG_INSTALL_ROOT}/core/mining_guardian.py" --once \
-        >> "${MG_INSTALL_LOG}" 2>&1 &
+    #
+    # P-028 (2026-05-06) — pass MG_INSTALL_ROOT explicitly and cd into
+    # it so the scanner's _resolve_log_dir() lands on
+    # ${MG_INSTALL_ROOT}/logs/ instead of a relative ./logs/. Round-9b
+    # of the customer Mac mini install (`MiningGuardian-1.0.3-2a3de50c4af2`)
+    # hit `PermissionError: [Errno 13] Permission denied: 'logs'`
+    # because postinstall's CWD is the Installer.app scripts sandbox and
+    # `sudo -u miningguardian` then tried to mkdir `/logs` (CWD inherited
+    # from launchd as `/`). The env var is the contract; the cd is
+    # belt-and-suspenders for any future caller that still uses
+    # `Path("logs")`.
+    ( cd "${MG_INSTALL_ROOT}" && \
+      sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+          /usr/bin/env "MG_INSTALL_ROOT=${MG_INSTALL_ROOT}" \
+          "${MG_INSTALL_ROOT}/venv/bin/python" \
+          "${MG_INSTALL_ROOT}/core/mining_guardian.py" --once \
+          >> "${MG_INSTALL_LOG}" 2>&1 ) &
     disown
 }
 

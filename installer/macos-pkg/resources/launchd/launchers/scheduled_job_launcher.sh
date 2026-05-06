@@ -67,6 +67,8 @@ source "${ENV_FILE}"
 set +a
 
 export PYTHONPATH="${INSTALL_ROOT}:${PYTHONPATH:-}"
+# P-028 (2026-05-06) — see scanner_launcher.sh for rationale.
+export MG_INSTALL_ROOT="${INSTALL_ROOT}"
 mkdir -p "${STAMP_DIR}"
 
 cd "${INSTALL_ROOT}"

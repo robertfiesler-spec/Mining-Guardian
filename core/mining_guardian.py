@@ -57,10 +57,39 @@ from notifiers.slack_notifier import SlackNotifier
 from hvac_client import HVACClient, format_hvac_report, poll_all_systems, poll_all_systems_with_db_fallback
 
 
+def _resolve_log_dir() -> Path:
+    """Return the absolute logs directory.
+
+    P-028 (2026-05-06) — never use a relative ``Path("logs")``. Round-9b
+    of the v1.0.3 customer Mac mini install hit
+    ``PermissionError: [Errno 13] Permission denied: 'logs'`` because
+    ``step_baseline_scan`` invoked ``mining_guardian.py --once`` via
+    ``sudo -u miningguardian`` from the postinstall script's CWD (``/``);
+    a relative ``Path("logs")`` resolved to ``/logs`` and ``mkdir`` fails
+    for a non-root user against the sealed system volume. Resolution
+    order:
+
+    1. ``MG_LOG_DIR`` env var (explicit override; respected verbatim).
+    2. ``MG_INSTALL_ROOT`` env var (the canonical install root —
+       ``/Library/Application Support/MiningGuardian`` on Mac Mini
+       deployments).
+    3. The repo / install root inferred from this file's location
+       (``<root>/core/mining_guardian.py`` → ``<root>``). This matches
+       dev-tree invocation from any CWD.
+    """
+    explicit = os.environ.get("MG_LOG_DIR")
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    install_root = os.environ.get("MG_INSTALL_ROOT")
+    if install_root:
+        return Path(install_root).expanduser().resolve() / "logs"
+    return _ROOT / "logs"
+
+
 def _setup_logging() -> logging.Logger:
     """Configure logging to both terminal and a daily rotating log file."""
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
+    log_dir = _resolve_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"guardian_{datetime.now().strftime('%Y-%m-%d')}.log"
 
     fmt = "%(asctime)s %(levelname)s %(message)s"

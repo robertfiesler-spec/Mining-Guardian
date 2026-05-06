@@ -42,6 +42,8 @@ set +a
 # Hard-bind to 127.0.0.1:8787; main.py reads MG_CONSOLE_PORT only.
 export MG_CONSOLE_PORT="${MG_CONSOLE_PORT:-8787}"
 export PYTHONPATH="${INSTALL_ROOT}:${PYTHONPATH:-}"
+# P-028 (2026-05-06) — see scanner_launcher.sh for rationale.
+export MG_INSTALL_ROOT="${INSTALL_ROOT}"
 
 cd "${INSTALL_ROOT}"
 exec "${VENV_PYTHON}" -u -m console.main
