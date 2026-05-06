@@ -137,6 +137,72 @@
 # An `INFO env probe` log line in main() makes any future stripped-env
 # regression debuggable from the postinstall log alone.
 #
+# P-029 (2026-05-06) — shell-safe .env writer + DB-password reconcile +
+# config.json materializer. Round-9b smoke on the customer Mac mini
+# (postinstall round following 23a5af7) found three follow-on bugs once
+# the install completed cleanly:
+#
+#   Bug 1 — shell-unsafe values in the generated .env. `step_drop_dotenv`
+#   wrote `KEY=${VALUE}` raw, so a customer name like `R & D` produced
+#   `MG_CUSTOMER_NAME=R & D` on disk. Every launcher wrapper does
+#   `set -a; source "${ENV_FILE}"; set +a` — bash interprets the line as
+#   `MG_CUSTOMER_NAME=R` (assignment) followed by `&` (background) and
+#   `D` (a command). The customer Mini logged
+#       /Library/Application Support/MiningGuardian/.env: line 47: D:
+#       command not found
+#   for every service, exit 127, all 10 LaunchDaemons failed to start.
+#   Same trap fires for `&`, `$`, `` ` ``, `"`, `'`, `;`, `(`, `)`, `\`,
+#   `*`, `?`, `[`, `]`, `<`, `>`, `|`, `#`, leading/trailing whitespace,
+#   and globs that may match a real file. Customer-supplied fields run
+#   through `_conf_source` / `_conf_validate` first, but those validators
+#   trim only surrounding quote pairs — the value itself can still
+#   contain any of the trap characters above. Fix: a `_shq` helper that
+#   wraps every value in single quotes (POSIX-portable, the only quoting
+#   form bash will not interpret further) and escapes any embedded
+#   single quote via the `'\''` close-reopen idiom; pre-compute *_Q
+#   variables for every customer-tunable + secret value before the
+#   heredoc, and interpolate ONLY the *_Q variant inside the heredoc.
+#   The result is bytes that round-trip exactly under `set -a; source`
+#   regardless of input. The .env still parses cleanly via
+#   `awk -F= '/^KEY=/'` for tooling that grep/sed-extracts a key.
+#
+#   Bug 2 — stale Postgres password on retry. `provision_postgres`
+#   (lib/install_colima.sh L355-369) does `docker rm -f <container>`
+#   then `docker run … -v "${pgdata_dir}:/var/lib/postgresql/data" -e
+#   POSTGRES_PASSWORD="$MG_DB_PASSWORD"`. Postgres ONLY runs initdb on
+#   first boot of a fresh data directory; a re-install over an existing
+#   pgdata directory inherits the prior install's role passwords and
+#   ignores the new POSTGRES_PASSWORD entirely. Round-9b followed an
+#   earlier failed install whose `mg` role still carried the previous
+#   `openssl rand -hex 32` value — `psql -U mg` from the dashboard hit
+#   `password authentication failed for user "mg"` and the `/` route
+#   returned 500. Fix: a new `step_reconcile_postgres_password` runs
+#   right after `provision_postgres` returns. It always issues `ALTER
+#   USER mg PASSWORD '...'` against the running container. The
+#   statement is idempotent and harmless on a brand-new initdb (where
+#   the ENV-supplied password is already the same), and self-healing
+#   on a re-install over existing pgdata. The password value is sent
+#   to psql via stdin (not the command line), so it never appears in
+#   `ps` output.
+#
+#   Bug 3 — no `config.json` materialized at install time. Every
+#   long-running service that imports `core.mining_guardian` or
+#   `api.approval_api` reads `config.json` from the install root for
+#   profile_map, model_aliases, miner_filters, scan/slack intervals,
+#   and approval_mode. Pre-P-029 the postinstall never wrote that file,
+#   so `core/mining_guardian.py::__main__` fell into its
+#   `write_example_config()` fallback and exited with `Create config.json
+#   from config.example.json, then re-run.`, scanner / approval_api /
+#   ams_alert_listener crash-looped, dashboard root returned 500. Fix:
+#   a new `step_drop_config_json` writes `${MG_INSTALL_ROOT}/config.json`
+#   from a vendored template (config/config_template.json — now staged
+#   into the payload via build_pkg.sh `--include 'config/***'`) merged
+#   with the AMS_*/SLACK_* keys as `env:KEY` placeholders that
+#   `GuardianConfig._resolve` looks up at runtime from the .env every
+#   service already sources. Idempotent — refuses to overwrite an
+#   operator-edited config.json on re-install (the customer can tune
+#   profile_map between rounds).
+#
 # P-022 (2026-05-05) — env handoff from step_drop_dotenv to
 # step_provision_postgres. The e514c12 install on the customer Mac mini
 # successfully started Colima (P-019/P-020/P-021 all green) and loaded
@@ -430,6 +496,53 @@ _resolve_install_user() {
 # Order: /usr/local/bin first so vendored binaries shadow homebrew.
 _op_path() {
     printf '%s' "/usr/local/bin:/usr/local/sbin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+
+# ---------------------------------------------------------------------------
+# Shell-safe quoting helper (P-029, 2026-05-06)
+# ---------------------------------------------------------------------------
+#
+# Returns a single-quoted, fully-escaped representation of $1 that is safe
+# to drop into a `KEY=…` line of an .env file consumed by every launchd
+# launcher wrapper via `set -a; source "${ENV_FILE}"; set +a`.
+#
+# Round-9b on the customer Mac mini (post-23a5af7 install) tripped on a
+# customer name of `R & D` written into the heredoc as `MG_CUSTOMER_NAME=R
+# & D`. With `set -a; source` that line parses as:
+#     MG_CUSTOMER_NAME=R       (assignment)
+#     &                         (background marker, terminates the cmd)
+#     D                         (lookup of command `D`)
+# producing `D: command not found` and exit 127 from every wrapper. The
+# `&` is one of many trap characters; the full set in unquoted bash is
+# space, tab, newline, `&`, `;`, `(`, `)`, `<`, `>`, `|`, `*`, `?`, `[`,
+# `]`, `{`, `}`, `$`, `` ` ``, `\`, `"`, `'`, `#` (when leading), and any
+# non-ASCII byte that happens to be a shell metachar in the operator's
+# locale.
+#
+# The only POSIX-portable quoting that bash does NOT further interpret is
+# single quotes. So:
+#   • Wrap the entire value in single quotes.
+#   • If the value contains a literal single quote, close the surrounding
+#     single quotes, emit an escaped single quote (`\'`), and re-open the
+#     surrounding single quotes — i.e. replace every `'` with `'\''`.
+# This is the canonical bash shell-escape idiom. printf %s with a sed
+# substitution does the work in one pass and never touches stdout (the
+# function captures via $() in the caller).
+#
+# Empty input → `''` (a literal empty single-quoted string), which is
+# valid in `set -a; source` and round-trips to an empty string. We keep
+# the explicit `printf "''\n"` branch so a missing optional value (e.g.
+# SLACK_APP_TOKEN) does NOT trigger an unbound-variable error under the
+# script's `set -u`.
+_shq() {
+    local v="${1-}"
+    if [[ -z "$v" ]]; then
+        printf "''"
+        return 0
+    fi
+    # Standard `'\''` escape. The quoted form is single-quoted, so a
+    # literal `'` becomes `'\''` (close, escaped tick, reopen).
+    printf "'%s'" "${v//\'/\'\\\'\'}"
 }
 
 # ---------------------------------------------------------------------------
@@ -741,22 +854,64 @@ step_drop_dotenv() {
     CATALOG_API_KEY="$(openssl rand -hex 32)"
     INTERNAL_API_SECRET="$(openssl rand -hex 32)"
 
+    # P-029 (2026-05-06) — pre-quote every interpolated value through
+    # _shq so the .env round-trips exactly under `set -a; source` for
+    # arbitrary input (`R & D`, names with `$`, `'`, `"`, `\`, `;`, `&`,
+    # `(`, `)`, leading whitespace, glob chars, etc.). The values BEFORE
+    # quoting may contain anything the customer typed into MiningGuardian.conf;
+    # the values AFTER _shq are bytes the launcher wrappers can safely
+    # interpret. We compute a *_Q twin for each value and feed those into
+    # the heredoc — the heredoc itself does NOT do any further bash
+    # parsing of the value content.
+    # NOTE: the *_Q twins below are declared `local` (function-scope
+    # only) — unlike MG_DB_PASSWORD / CATALOG_API_KEY / INTERNAL_API_SECRET
+    # which are deliberately UNSCOPED above (P-022). The *_Q twins are
+    # ephemeral input to the heredoc on this single function call and
+    # never need to escape the function frame. test_postinstall_env_handoff.sh
+    # (§1) asserts that the unsuffixed secret names are NOT on a `local`
+    # line — that contract is preserved here.
+    local _MG_PWD_Q _CAT_KEY_Q _INT_SEC_Q
+    local CUSTOMER_NAME_Q AMS_URL_Q AMS_EMAIL_Q AMS_PASSWORD_Q AMS_WORKSPACE_ID_Q
+    local SLACK_WEBHOOK_URL_Q SLACK_BOT_TOKEN_Q SLACK_SIGNING_SECRET_Q
+    local SLACK_APP_TOKEN_Q AUTHORIZED_SLACK_USER_IDS_Q
+    local SCAN_INTERVAL_Q MG_DRY_RUN_Q
+    local MG_INSTALL_RAM_TIER_Q MG_INSTALL_LLM_MODEL_Q
+    CUSTOMER_NAME_Q="$(_shq "${CUSTOMER_NAME:-}")"
+    AMS_URL_Q="$(_shq "${AMS_URL:-}")"
+    AMS_EMAIL_Q="$(_shq "${AMS_EMAIL:-}")"
+    AMS_PASSWORD_Q="$(_shq "${AMS_PASSWORD:-}")"
+    AMS_WORKSPACE_ID_Q="$(_shq "${AMS_WORKSPACE_ID:-}")"
+    SLACK_WEBHOOK_URL_Q="$(_shq "${SLACK_WEBHOOK_URL:-}")"
+    SLACK_BOT_TOKEN_Q="$(_shq "${SLACK_BOT_TOKEN:-}")"
+    SLACK_SIGNING_SECRET_Q="$(_shq "${SLACK_SIGNING_SECRET:-}")"
+    SLACK_APP_TOKEN_Q="$(_shq "${SLACK_APP_TOKEN:-}")"
+    AUTHORIZED_SLACK_USER_IDS_Q="$(_shq "${AUTHORIZED_SLACK_USER_IDS:-}")"
+    SCAN_INTERVAL_Q="$(_shq "${SCAN_INTERVAL:-300}")"
+    MG_DRY_RUN_Q="$(_shq "${MG_DRY_RUN:-true}")"
+    _MG_PWD_Q="$(_shq "${MG_DB_PASSWORD}")"
+    _CAT_KEY_Q="$(_shq "${CATALOG_API_KEY}")"
+    _INT_SEC_Q="$(_shq "${INTERNAL_API_SECRET}")"
+    MG_INSTALL_RAM_TIER_Q="$(_shq "${MG_INSTALL_RAM_TIER:-}")"
+    MG_INSTALL_LLM_MODEL_Q="$(_shq "${MG_INSTALL_LLM_MODEL:-}")"
+
     local env_file="${MG_INSTALL_ROOT}/.env"
     # Subshell redirect — no secret value ever touches this script's
     # stdout. Heredoc body MUST stay aligned with setup.sh::phase_07_secrets
     # (any drift = launchd services crash on first start because the
-    # Python code looks for keys this file did not write).
+    # Python code looks for keys this file did not write). P-029 — every
+    # interpolated value is the *_Q (pre-quoted) twin; raw integer / URL
+    # constants like `127.0.0.1`, `5432`, `mg` are safe as-is.
     cat > "$env_file" <<EOF
 # /Library/Application Support/MiningGuardian/.env  mode=0600  owner=${MG_INSTALL_OPERATOR_USER}:staff
 # Generated by Mining Guardian installer postinstall.sh
-# Generated at $(date -u +%Y-%m-%dT%H:%M:%SZ)  Site: ${CUSTOMER_NAME}
+# Generated at $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # DO NOT COMMIT. DO NOT LOG. DO NOT SHARE.
 
 # AMS — Bitcoin SHA-256 miners only (S-4: no creds in query strings)
-AMS_BASE_URL=${AMS_URL}
-AMS_EMAIL=${AMS_EMAIL}
-AMS_PASSWORD=${AMS_PASSWORD}
-AMS_WORKSPACE_ID=${AMS_WORKSPACE_ID}
+AMS_BASE_URL=${AMS_URL_Q}
+AMS_EMAIL=${AMS_EMAIL_Q}
+AMS_PASSWORD=${AMS_PASSWORD_Q}
+AMS_WORKSPACE_ID=${AMS_WORKSPACE_ID_Q}
 
 # Postgres — 127.0.0.1 only (S-13: no Tailscale IPs anywhere)
 # Integration bug 2: GUARDIAN_PG_USER + PGUSER both written with the
@@ -764,7 +919,7 @@ AMS_WORKSPACE_ID=${AMS_WORKSPACE_ID}
 GUARDIAN_PG_HOST=127.0.0.1
 GUARDIAN_PG_PORT=5432
 GUARDIAN_PG_USER=mg
-GUARDIAN_PG_PASSWORD=${MG_DB_PASSWORD}
+GUARDIAN_PG_PASSWORD=${_MG_PWD_Q}
 GUARDIAN_PG_DBNAME=mining_guardian
 GUARDIAN_PG_TEST_DBNAME=mining_guardian_test
 GUARDIAN_PG_CATALOG_DBNAME=mining_guardian_catalog
@@ -772,28 +927,28 @@ PGHOST=127.0.0.1
 PGPORT=5432
 PGUSER=mg
 PGDATABASE=mining_guardian
-MG_DB_PASSWORD=${MG_DB_PASSWORD}
+MG_DB_PASSWORD=${_MG_PWD_Q}
 
 # Slack — all values customer-specific (do not copy from VPS; §6.3)
-SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
-SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
-SLACK_APP_TOKEN=${SLACK_APP_TOKEN:-}
-AUTHORIZED_SLACK_USER_IDS=${AUTHORIZED_SLACK_USER_IDS}
+SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL_Q}
+SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN_Q}
+SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET_Q}
+SLACK_APP_TOKEN=${SLACK_APP_TOKEN_Q}
+AUTHORIZED_SLACK_USER_IDS=${AUTHORIZED_SLACK_USER_IDS_Q}
 
 # Catalog API key — S-6 fix: generated fresh; crash-on-startup if absent (PR #65/#66)
-CATALOG_API_KEY=${CATALOG_API_KEY}
+CATALOG_API_KEY=${_CAT_KEY_Q}
 
 # Internal API secret — approval_api.py verify_internal() fail-closed
-INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+INTERNAL_API_SECRET=${_INT_SEC_Q}
 
 # Ollama — local GPU inference on 127.0.0.1 (S-13 fix: no hardcoded Tailscale IPs)
 OLLAMA_HOST=http://127.0.0.1:11434
 
 # Runtime config (D-2: auto_approve=false — explicit opt-in required)
-MG_DRY_RUN=${MG_DRY_RUN}
-MG_SCAN_INTERVAL=${SCAN_INTERVAL}
-MG_CUSTOMER_NAME=${CUSTOMER_NAME}
+MG_DRY_RUN=${MG_DRY_RUN_Q}
+MG_SCAN_INTERVAL=${SCAN_INTERVAL_Q}
+MG_CUSTOMER_NAME=${CUSTOMER_NAME_Q}
 AUTO_APPROVE_ENABLED=false
 
 # Service ports — all 127.0.0.1 (S-13)
@@ -802,8 +957,8 @@ GUARDIAN_APPROVAL_PORT=8686
 GUARDIAN_INTELLIGENCE_PORT=8590
 
 # Install metadata (sourced from preinstall.sh detect_ram.sh — D-13)
-MG_INSTALL_RAM_TIER=${MG_INSTALL_RAM_TIER:-}
-MG_INSTALL_LLM_MODEL=${MG_INSTALL_LLM_MODEL:-}
+MG_INSTALL_RAM_TIER=${MG_INSTALL_RAM_TIER_Q}
+MG_INSTALL_LLM_MODEL=${MG_INSTALL_LLM_MODEL_Q}
 EOF
     chmod 0600 "$env_file"
     chown "${MG_INSTALL_OPERATOR_USER}:staff" "$env_file"
@@ -889,6 +1044,85 @@ step_provision_postgres() {
     install_colima_runtime || fail 31 "colima runtime install failed"
     load_postgres_image    || fail 31 "postgres image load failed"
     provision_postgres     || fail 31 "postgres container provisioning failed"
+}
+
+step_reconcile_postgres_password() {
+    # P-029 (2026-05-06) — reconcile the `mg` Postgres role's password to
+    # the value just written into .env, regardless of whether this is a
+    # fresh initdb or a re-install over an existing pgdata volume.
+    #
+    # Why this is necessary: `provision_postgres` (lib/install_colima.sh
+    # L355-369) always passes `-e POSTGRES_PASSWORD="$MG_DB_PASSWORD"` to
+    # the postgres container, but the postgres image only honors that env
+    # var on FIRST initdb of a fresh data directory. When the operator
+    # re-runs the installer over an existing `${MG_INSTALL_ROOT}/postgres-data/`
+    # volume (every retry round so far), Postgres reads the pre-existing
+    # `pg_authid` / `pg_hba.conf` and silently keeps the prior install's
+    # role passwords — so the new `mg` password in .env diverges from the
+    # actual role. The customer Mini smoke (post-23a5af7) showed this:
+    # dashboard `/` returned 500 with `password authentication failed for
+    # user "mg"` against TCP 127.0.0.1:5432, even though .env carried a
+    # freshly-generated value. (`docker exec psql -U mg` from inside the
+    # container uses peer/trust on the unix socket and so worked — that
+    # masked the bug through migrations and the catalog seed apply.)
+    #
+    # Fix: always issue `ALTER USER mg PASSWORD ...` against the running
+    # container after provision_postgres returns ready. Idempotent: on a
+    # fresh initdb the new password equals the env-supplied password
+    # (no-op); on a re-install over existing pgdata it heals the role.
+    #
+    # Hardening:
+    #   * Password sent to psql via stdin (-c '...' would expose it in
+    #     the docker exec command line and `ps`). We use `\password`-
+    #     equivalent via a single statement read from the parent shell's
+    #     here-string into psql's stdin.
+    #   * MG_DB_PASSWORD is openssl-rand-hex-32 — alnum only — so no
+    #     SQL-quoting trap. Belt and suspenders: enforce that shape
+    #     before issuing the statement (refuse to run if it ever gains a
+    #     character that would need SQL escaping).
+    #   * KEY NAMES LOGGED, NEVER VALUES.
+    if [[ -z "${MG_DB_PASSWORD:-}" ]]; then
+        fail 31 "step_reconcile_postgres_password: MG_DB_PASSWORD missing (P-029 — should have been exported by step_drop_dotenv)"
+    fi
+    if [[ ! "${MG_DB_PASSWORD}" =~ ^[A-Fa-f0-9]+$ ]]; then
+        # openssl rand -hex 32 always emits 64 lowercase hex chars; if
+        # this assertion fires, someone changed the generator and the
+        # SQL-quoting story needs revisiting.
+        fail 31 "step_reconcile_postgres_password: MG_DB_PASSWORD shape unexpected (P-029 — must be hex)"
+    fi
+
+    local container="mining-guardian-db"
+    log "INFO reconciling Postgres role 'mg' password against .env (P-029)"
+    # printf | docker exec -i  →  password reaches psql via stdin only.
+    # ON_ERROR_STOP=1 so a failure here surfaces immediately.
+    # shellcheck disable=SC2024  # log file is owned by root; redirect is opened by parent shell pre-sudo, intentional (matches step_apply_migrations / step_baseline_scan).
+    if ! printf "ALTER USER mg WITH PASSWORD '%s';\n" "${MG_DB_PASSWORD}" \
+            | sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+                psql -U mg -d postgres -v ON_ERROR_STOP=1 \
+                >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 31 "step_reconcile_postgres_password: ALTER USER mg failed (P-029)"
+    fi
+    log "INFO Postgres role 'mg' password reconciled (P-029)"
+
+    # Verify the reconciled password works for a TCP connection (the
+    # path the host-side services actually use). docker exec on the
+    # container's localhost is a strong proxy for what the launchd
+    # services see; it forces the password code path (instead of unix-
+    # socket peer/trust) by connecting to 127.0.0.1.
+    # shellcheck disable=SC2024  # see SC2024 disable note above.
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" PGPASSWORD="${MG_DB_PASSWORD}" \
+            docker exec -i \
+                -e "PGPASSWORD=${MG_DB_PASSWORD}" \
+                "$container" \
+            psql -h 127.0.0.1 -U mg -d postgres \
+                 -v ON_ERROR_STOP=1 -tAc 'SELECT 1;' \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 31 "step_reconcile_postgres_password: TCP auth verification failed (P-029) — see ${MG_INSTALL_LOG}"
+    fi
+    log "INFO Postgres TCP auth verified for role 'mg' (P-029)"
 }
 
 step_apply_migrations() {
@@ -1097,6 +1331,116 @@ step_provision_catalog_db_and_seed() {
 step_install_ollama_and_pull_model() {
     install_ollama_runtime || fail 33 "ollama runtime install failed"
     pull_llm_model         || fail 33 "ollama pull of ${MG_INSTALL_LLM_MODEL:-?} failed"
+}
+
+step_drop_config_json() {
+    # P-029 (2026-05-06) — materialize ${MG_INSTALL_ROOT}/config.json so
+    # every long-running service (scanner, approval_api, ams_alert_listener,
+    # overnight_automation, ...) finds the runtime config it expects on
+    # first start. Pre-P-029 the .pkg path NEVER wrote this file:
+    # `core/mining_guardian.py::__main__` then fell into its
+    # `write_example_config()` fallback, exited with `Create config.json
+    # from config.example.json, then re-run.`, and every dependent service
+    # crash-looped with the dashboard root returning 500.
+    #
+    # Source-of-truth template: <payload>/config/config_template.json.
+    # That file ships in via build_pkg.sh `--include 'config/***'` (added
+    # in this PR). It carries the structural pieces the operator tunes
+    # between releases — profile_map, model_aliases, temp_thresholds,
+    # miner_filters, scan_interval_seconds, slack_interval_seconds.
+    #
+    # Per-install pieces injected here:
+    #   * ams_base_url / ams_email / ams_password / ams_workspace_id —
+    #     written as `env:KEY` placeholders so GuardianConfig._resolve()
+    #     looks them up from the .env every launcher already sources.
+    #     Keeps the actual credentials out of config.json.
+    #   * slack_webhook_url / slack_bot_token — same env: placeholder
+    #     pattern, so a key rotation is a one-line .env edit.
+    #   * dry_run from MG_DRY_RUN (operator decision per site).
+    #   * approval_mode default "manual" (D-2 — explicit opt-in).
+    #
+    # Idempotent: if ${MG_INSTALL_ROOT}/config.json already exists we
+    # do NOT overwrite. Operators tune profile_map between rounds and
+    # wiping their edits silently is exactly the data-loss footgun the
+    # 2-vs-10 rule warns against. A re-install that wants a clean
+    # config.json must remove the file first.
+    #
+    # Owner: ${MG_INSTALL_OPERATOR_USER}:staff, mode 0640. The launcher
+    # wrappers `cd "${INSTALL_ROOT}"` so consumers find it via the
+    # `config_path = os.environ.get("GUARDIAN_CONFIG", "config.json")`
+    # default in core/mining_guardian.py and `_ROOT / "config.json"`
+    # in api/approval_api.py.
+    local dest="${MG_INSTALL_ROOT}/config.json"
+    if [[ -f "$dest" ]]; then
+        log "INFO config.json already present at ${dest} — preserving operator edits (P-029)"
+        return 0
+    fi
+
+    local tmpl="${MG_PKG_PAYLOAD}/config/config_template.json"
+    if [[ ! -r "$tmpl" ]]; then
+        fail 31 "step_drop_config_json: config template missing in payload: ${tmpl} (build_pkg.sh must include 'config/***' — P-029)"
+    fi
+
+    # Use the installer-owned Python interpreter to merge JSON. The venv
+    # is not yet built at this point in main()'s ordering — but the same
+    # packaged interpreter that step_create_venv resolves is available
+    # under <payload>/runtime/python/. Repeats the resolver from
+    # step_create_venv (kept inline rather than factored out so a future
+    # refactor of step_create_venv does not silently change behavior here).
+    local py312=""
+    if [[ -x "${MG_PKG_PAYLOAD}/runtime/python/bin/python3.12" ]]; then
+        py312="${MG_PKG_PAYLOAD}/runtime/python/bin/python3.12"
+    elif [[ -x "${MG_PKG_PAYLOAD}/runtime/python/Python.framework/Versions/3.12/bin/python3.12" ]]; then
+        py312="${MG_PKG_PAYLOAD}/runtime/python/Python.framework/Versions/3.12/bin/python3.12"
+    elif [[ -x "/opt/homebrew/opt/python@3.12/bin/python3.12" ]]; then
+        py312="/opt/homebrew/opt/python@3.12/bin/python3.12"
+    elif [[ -x "/usr/local/opt/python@3.12/bin/python3.12" ]]; then
+        py312="/usr/local/opt/python@3.12/bin/python3.12"
+    else
+        py312="$(command -v python3.12 2>/dev/null || command -v python3 2>/dev/null || true)"
+    fi
+    if [[ -z "$py312" || ! -x "$py312" ]]; then
+        fail 31 "step_drop_config_json: no python3.12 to merge config template (P-029)"
+    fi
+
+    # Merge inline. dry_run is the only customer-tunable boolean; default
+    # true if MG_DRY_RUN is unset or invalid (Vision Anchor 2 — safe by
+    # default). We pass MG_DRY_RUN through the environment, NOT via argv,
+    # so it does not appear in `ps`.
+    log "INFO writing ${dest} (template=${tmpl#${MG_PKG_PAYLOAD}/}) — P-029"
+    local tmp_out="${dest}.partial.$$"
+    if ! MG_TMPL="$tmpl" MG_OUT="$tmp_out" MG_DRY_RUN="${MG_DRY_RUN:-true}" \
+            "$py312" - <<'PYEOF' >>"$MG_INSTALL_LOG" 2>&1
+import json, os, sys
+src = os.environ["MG_TMPL"]
+out = os.environ["MG_OUT"]
+dry = os.environ.get("MG_DRY_RUN", "true").strip().lower() == "true"
+with open(src, "r", encoding="utf-8") as f:
+    cfg = json.load(f)
+cfg["ams_base_url"]      = "env:AMS_BASE_URL"
+cfg["ams_email"]         = "env:AMS_EMAIL"
+cfg["ams_password"]      = "env:AMS_PASSWORD"
+cfg["ams_workspace_id"]  = "env:AMS_WORKSPACE_ID"
+cfg["slack_webhook_url"] = "env:SLACK_WEBHOOK_URL"
+cfg["slack_bot_token"]   = "env:SLACK_BOT_TOKEN"
+cfg["dry_run"]           = dry
+cfg.setdefault("approval_mode", "manual")
+cfg.setdefault("rules", [])
+cfg.setdefault("miner_filters", {})
+with open(out, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2, sort_keys=False)
+    f.write("\n")
+print(f"OK wrote {out}")
+PYEOF
+    then
+        rm -f "$tmp_out"
+        fail 31 "step_drop_config_json: python merge failed (P-029) — see ${MG_INSTALL_LOG}"
+    fi
+
+    install -m 0640 -o "${MG_INSTALL_OPERATOR_USER}" -g staff \
+        "$tmp_out" "$dest"
+    rm -f "$tmp_out"
+    log "INFO wrote config.json at ${dest} (P-029)"
 }
 
 step_install_launcher_wrappers() {
@@ -1571,11 +1915,28 @@ main() {
     step_layout_install_root
     step_drop_dotenv
     step_provision_postgres
+    # P-029 — reconcile the `mg` Postgres role's password to .env
+    # immediately after provision_postgres, so re-installs over an
+    # existing pgdata volume (every retry round so far) do not leave a
+    # stale role password that breaks TCP auth from the host-side
+    # services. Migrations + catalog seed below use docker-exec peer
+    # auth and so are insensitive to this fix; the LaunchDaemons
+    # bootstrapped further down are the consumers that needed it.
+    step_reconcile_postgres_password
     step_apply_migrations
     step_provision_catalog_db_and_seed
     step_install_ollama_and_pull_model
     step_install_launcher_wrappers
     step_create_venv
+    # P-029 — write ${MG_INSTALL_ROOT}/config.json so every service
+    # that reads it (scanner, approval_api, ams_alert_listener, ...)
+    # finds a valid file on first start. Idempotent: preserves an
+    # operator-edited config.json on re-install. Ordering: must run
+    # AFTER the .env drop (provides MG_DRY_RUN) and AFTER the payload
+    # has been laid down (uses <payload>/config/config_template.json),
+    # and BEFORE the launchd plist bootstrap so the services never
+    # start without the file present.
+    step_drop_config_json
     step_install_plists_and_bootstrap
     step_install_scheduled_plists_and_bootstrap
     step_install_uninstall_script

@@ -234,6 +234,7 @@ step_4_assemble_payload() {
         --include 'deploy/***' \
         --include 'migrations/***' \
         --include 'scripts/***' \
+        --include 'config/***' \
         --exclude '*' \
         "${REPO_ROOT}/" "${app_root}/"
 
