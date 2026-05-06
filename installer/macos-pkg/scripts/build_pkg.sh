@@ -48,7 +48,10 @@
 #   42  — git tree dirty
 #   43  — payload assembly failed (includes step 4h D-20 violation:
 #         customer payload contains mg_import* path — importer is
-#         operator-only per D-20 and must never ship to customers)
+#         operator-only per D-20 and must never ship to customers; AND
+#         step 4i P-026 violation: installer-owned Python 3.12 runtime
+#         missing/broken/wrong-version under
+#         ${HOME}/MiningGuardian-vendor/python-runtime/)
 #   44  — productbuild / signing failed; or step 4g catalog-seed
 #         payload assertion failed (D-18 Gap 2)
 #   45  — notarytool submission failed or timed out
@@ -286,6 +289,15 @@ step_4_assemble_payload() {
     # 4c. Vendored runtime: Colima, lima, qemu-img, Ollama.app,
     # postgres-16-bookworm.tar. These come from a vendor/ directory the
     # operator populates ONCE on the build host (out of scope for git).
+    #
+    # P-026 (2026-05-05) — `python-runtime/` is also excluded from this
+    # bulk rsync. Step 4i below stages the installer-owned Python 3.12
+    # interpreter from `${HOME}/MiningGuardian-vendor/python-runtime/`
+    # into `<payload>/runtime/python/` with its own assertions (so a
+    # missing/broken Python runtime is a hard build error, not a silent
+    # WARN-and-proceed). Splitting it out also keeps the runtime/
+    # codesign step (4b) straightforward — it walks runtime/ recursively
+    # and signs every Mach-O regardless of which subdir put it there.
     local vendor_dir="${HOME}/MiningGuardian-vendor"
     if [[ -d "$vendor_dir" ]]; then
         install -d -m 0755 "${PAYLOAD_DIR}/runtime"
@@ -293,12 +305,149 @@ step_4_assemble_payload() {
         # surfaced at <payload>/python-wheels/ (step 4e) so postinstall
         # step_create_venv (D-18 Gap 5) does not need to know about the
         # vendor-dir layout.
-        /usr/bin/rsync -a --exclude 'python-wheels/' \
+        # Exclude python-runtime/ from the runtime/ rsync — the Python
+        # interpreter is staged by step 4i with its own validation
+        # (P-026). The Python runtime still LANDS under runtime/ in the
+        # payload (at <payload>/runtime/python/), it's just placed there
+        # by step 4i instead of this bulk rsync.
+        /usr/bin/rsync -a \
+            --exclude 'python-wheels/' \
+            --exclude 'python-runtime/' \
             "${vendor_dir}/" "${PAYLOAD_DIR}/runtime/"
-        _log "  vendored runtime from ${vendor_dir} (python-wheels/ split out — see step 4e)"
+        _log "  vendored runtime from ${vendor_dir} (python-wheels/ split out — see step 4e; python-runtime/ split out — see step 4i, P-026)"
     else
         _log "  WARN ${vendor_dir} missing — runtime/ left empty (postinstall will fail at install time, but pkg build proceeds for layout testing)"
     fi
+
+    # 4i. Installer-owned Python 3.12 runtime — P-026 (2026-05-05).
+    #
+    # Before P-026 the .pkg's postinstall.sh::step_create_venv reached
+    # for `/opt/homebrew/opt/python@3.12/bin/python3.12` on the customer
+    # Mac mini. That made Homebrew + python@3.12 a hidden customer
+    # prerequisite, which violated the "no nontechnical-user prereqs"
+    # bar (CLAUDE.md "Working Principles", D-23 customer-onboarding
+    # gaps). Round 9 of the Mac mini install (2026-05-05) hit it live:
+    # FATAL (38) python3.12 not found on this Mac.
+    #
+    # Operator decision (Rob, 2026-05-05): "yes include it in the
+    # installer and whatever else might pop up as the install keeps
+    # going". The .pkg now vendors its own Python 3.12 interpreter.
+    #
+    # Vendor layout (operator-side, ${HOME}/MiningGuardian-vendor/):
+    #   python-runtime/
+    #     bin/python3.12               (executable, --version → "Python 3.12.x")
+    #     bin/python3   -> python3.12  (symlink, optional)
+    #     bin/python    -> python3.12  (symlink, optional)
+    #     lib/python3.12/...           (full stdlib + ensurepip)
+    #     include/python3.12/...       (headers — needed by some C-extension
+    #                                   wheels at install time, even though
+    #                                   we use --only-binary=:all: pip should
+    #                                   never compile, but psycopg2-binary
+    #                                   etc. occasionally inspect headers)
+    # OR (alternate framework-shaped layout, also accepted):
+    #   python-runtime/
+    #     Python.framework/Versions/3.12/bin/python3.12
+    #     Python.framework/Versions/3.12/lib/python3.12/...
+    #
+    # Recommended source: python-build-standalone (astral-sh) — these
+    # are the same tarballs Astral / uv / Rye / hatch / mise use. They
+    # are fully relocatable, self-contained, signable, and ship a working
+    # ensurepip + venv module. Choose the install_only_stripped variant
+    # for `aarch64-apple-darwin` Python 3.12.x. Extract under
+    # `${HOME}/MiningGuardian-vendor/python-runtime/` so the relative
+    # path of the python3.12 binary lands at one of the two layouts above.
+    #
+    # The exact `pip download` command for the wheelhouse (step 4e) MUST
+    # be re-run with this packaged interpreter once it's in place, so
+    # the vendored wheel ABI matches the runtime's CPython version.
+    # docs/RUNBOOK_PKG_REBUILD.md "Block Pre-B — populate the Python
+    # runtime" has the full operator commands.
+    #
+    # Build-time hard fail rules:
+    #   1. Vendor dir must exist.
+    #   2. python3.12 binary must be present at one of the two layouts.
+    #   3. Binary must be Mach-O (codesign at step 4b will reject
+    #      anything else anyway — fail fast here with a clearer error).
+    #   4. Binary must run and report Python 3.12.x. We test this BEFORE
+    #      payload-staging because a wrong-version interpreter would
+    #      brick the venv create at install time, after the operator has
+    #      already burned a 5-minute notarization round-trip.
+    #
+    # Output: <payload>/runtime/python/ — flat or framework, preserved.
+    # Step 4b will codesign every Mach-O under runtime/ (the .so / .dylib
+    # files inside the Python tree included), so notarization-readiness
+    # is automatic — no new codesign branch needed in step 4b.
+    local pyrt_src="${HOME}/MiningGuardian-vendor/python-runtime"
+    if [[ ! -d "$pyrt_src" ]]; then
+        _die 43 "step 4i: installer-owned Python runtime missing: ${pyrt_src} — postinstall step_create_venv (P-026) would fail at install time. Populate it with python-build-standalone per docs/RUNBOOK_PKG_REBUILD.md 'Block Pre-B' before re-running build_pkg.sh."
+    fi
+
+    # Resolve the python3.12 inside the vendor dir. Two accepted layouts.
+    local pyrt_bin=""
+    local pyrt_layout=""
+    if [[ -x "${pyrt_src}/bin/python3.12" ]]; then
+        pyrt_bin="${pyrt_src}/bin/python3.12"
+        pyrt_layout="flat"
+    elif [[ -x "${pyrt_src}/Python.framework/Versions/3.12/bin/python3.12" ]]; then
+        pyrt_bin="${pyrt_src}/Python.framework/Versions/3.12/bin/python3.12"
+        pyrt_layout="framework"
+    else
+        _die 43 "step 4i: no python3.12 binary found in ${pyrt_src} (looked for bin/python3.12 and Python.framework/Versions/3.12/bin/python3.12); see docs/RUNBOOK_PKG_REBUILD.md 'Block Pre-B' (P-026)"
+    fi
+
+    # The interpreter must be a Mach-O. (`file -b` reports
+    # "Mach-O 64-bit executable arm64" or universal. Anything else —
+    # ELF from an accidentally-Linux tarball, a wrapper script — is
+    # rejected here.)
+    local pyrt_filetype
+    pyrt_filetype="$(/usr/bin/file -b "$pyrt_bin" 2>/dev/null || true)"
+    if [[ "$pyrt_filetype" != *"Mach-O"* ]]; then
+        _die 43 "step 4i: ${pyrt_bin} is not a Mach-O binary (got '${pyrt_filetype}') — wrong tarball flavor? Use python-build-standalone for aarch64-apple-darwin (P-026)"
+    fi
+
+    # The interpreter must run and report 3.12.x. We accept any patch
+    # level so future python-build-standalone refreshes do not require
+    # a build_pkg.sh edit.
+    local pyrt_ver
+    if ! pyrt_ver="$("$pyrt_bin" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)"; then
+        _die 43 "step 4i: ${pyrt_bin} could not report a Python version — interpreter is broken (P-026)"
+    fi
+    if [[ "$pyrt_ver" != "3.12" ]]; then
+        _die 43 "step 4i: ${pyrt_bin} reported Python ${pyrt_ver}, expected 3.12 (vendored wheels are cp312 only — P-026)"
+    fi
+
+    # The interpreter MUST also have the `venv` module — postinstall
+    # uses `python -m venv`. python-build-standalone install_only/
+    # install_only_stripped variants ship venv; the build-only variant
+    # does not. Catch that here, not at install time.
+    if ! "$pyrt_bin" -c 'import venv' >/dev/null 2>&1; then
+        _die 43 "step 4i: ${pyrt_bin} cannot import the 'venv' module — wrong python-build-standalone variant? (use install_only or install_only_stripped, not build) (P-026)"
+    fi
+
+    # Stage into the payload at <payload>/runtime/python/. Preserve the
+    # vendor dir layout exactly so symlinks (e.g. python3 → python3.12)
+    # and the framework Versions/Current pointer stay intact.
+    install -d -m 0755 "${PAYLOAD_DIR}/runtime/python"
+    /usr/bin/rsync -a "${pyrt_src}/" "${PAYLOAD_DIR}/runtime/python/"
+
+    # Verify the staged interpreter runs (catches the rsync silently
+    # turning a symlink into a broken file or dropping the executable
+    # bit; refuses to ship a .pkg whose runtime/python/ would crash on
+    # the customer Mac).
+    local staged_bin
+    if [[ "$pyrt_layout" == "flat" ]]; then
+        staged_bin="${PAYLOAD_DIR}/runtime/python/bin/python3.12"
+    else
+        staged_bin="${PAYLOAD_DIR}/runtime/python/Python.framework/Versions/3.12/bin/python3.12"
+    fi
+    if [[ ! -x "$staged_bin" ]]; then
+        _die 43 "step 4i: staged Python interpreter not executable at ${staged_bin} (rsync issue?) (P-026)"
+    fi
+    if ! "$staged_bin" -c 'import sys, venv; sys.exit(0 if sys.version_info[:2]==(3,12) else 1)' >/dev/null 2>&1; then
+        _die 43 "step 4i: staged Python interpreter at ${staged_bin} failed post-rsync sanity check (P-026)"
+    fi
+
+    _log "step 4i OK: installer-owned Python runtime staged from ${pyrt_src} (${pyrt_layout} layout, version 3.12, venv module present) — P-026"
 
     # 4e. Vendored Python wheels — D-18 Gap 5. Postinstall's
     # step_create_venv pip-installs offline from <payload>/python-wheels/
@@ -651,6 +800,17 @@ step_4b_codesign_inner_binaries() {
     # Silicon (PR #47), so the guest agent is dead weight AND notarization
     # rejects it because the .gz wrapper contains an unsigned Linux binary
     # that codesign cannot fix.
+    #
+    # P-026 (2026-05-05). The `find ... -type f -print0` Pass-2 walk
+    # below picks up every Mach-O under the installer-owned Python
+    # interpreter staged at `<payload>/runtime/python/` by step 4i. The
+    # python3.12 binary, every `.so` extension under `lib/python3.12/`,
+    # and any `.dylib` shipped with the framework all get re-signed with
+    # Developer ID Application + hardened runtime + secure timestamp
+    # without any new code path here — they live under runtime/, the
+    # walk catches them, the same per-Mach-O codesign call applies. The
+    # `Python.framework` (alternate layout) is caught by Pass 1 instead,
+    # which already handles every `.framework` bundle as a unit.
     local runtime_dir="${PAYLOAD_DIR}/runtime"
     if [[ ! -d "$runtime_dir" ]]; then
         _log "step 4b SKIP: no runtime/ in payload (vendor dir was missing)"

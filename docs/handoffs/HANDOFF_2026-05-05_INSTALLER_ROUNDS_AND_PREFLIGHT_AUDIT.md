@@ -325,3 +325,133 @@ This PR does NOT touch:
 
 The preflight audit subagent owns the audit doc. This PR owns the docs
 checkpoint and the D-26 lock.
+
+---
+
+# Addendum 2026-05-05 — Round 9 outcome + P-026 (installer-owned Python 3.12 runtime)
+
+> Branch: `mg/p026-installer-owned-python-runtime` (this PR).
+> Status: source fix complete and tested in repo; Round 10 install GATED on PR merge AND on operator running RUNBOOK "Block Pre-B" once on build host.
+
+## Round 9 outcome
+
+P-025 (the preflight audit P0 fixes) merged as `00720ab` (PR #144) and the post-P-025 build was installed on the customer Mac mini:
+
+- Package: `MiningGuardian-1.0.3-00720ab71cc4.pkg`
+- Built from main: `00720ab71cc45a1cf9e32a382f40f382f6c8955d`
+- Gatekeeper / notarization: accepted
+- Mac mini location: `/Users/miningguardian/Downloads/MiningGuardian-1.0.3-00720ab71cc4.pkg`
+
+Postinstall progressed past every prior gate (env keys exported, Colima VZ
+started, postgres image loaded, all 8 operational migrations applied,
+`mining_guardian_catalog` created, `deploy_schema.sql` applied —
+`Schema deployment complete | sources_count 23 | manufacturers_count 17`,
+**catalog seed verified at 320 rows**, all 9 launcher wrappers installed),
+then exited 38 in `step_create_venv` with:
+
+```text
+2026-05-05T22:13:39Z [postinstall] FATAL (38) python3.12 not found on this Mac;
+install Homebrew + python@3.12 before running the .pkg (operator setup manual covers this)
+```
+
+## P-026 — root cause + decision
+
+Pre-P-026 `step_create_venv` resolved Python 3.12 from
+`/opt/homebrew/opt/python@3.12/bin/python3.12` (Apple Silicon Homebrew),
+falling back to `/usr/local/opt/python@3.12/bin/python3.12` (Intel) and
+`command -v python3.12`. That made Homebrew + `python@3.12` a hidden
+customer prerequisite. The customer Mac mini did not have Homebrew, and
+was not expected to — the Mini ships as a single-purpose appliance.
+
+**Operator decision (Rob, 2026-05-05):** "yes include it in the installer
+and whatever else might pop up as the install keeps going". The .pkg
+MUST own its own Python 3.12 runtime; customers MUST NOT be required to
+install Homebrew or any other Python prerequisite. **Locked as D-27 in
+`docs/DECISIONS.md`.**
+
+## P-026 — three coordinated changes
+
+1. **Build-time vendor (`build_pkg.sh::step_4i_stage_python_runtime`).**
+   Operator populates `${HOME}/MiningGuardian-vendor/python-runtime/` once
+   per build host with python-build-standalone (Astral's relocatable CPython
+   tarballs, `install_only_stripped` for `aarch64-apple-darwin`, Python
+   3.12.x). Step 4i validates: vendor dir exists; `python3.12` binary
+   present (accepts both flat `bin/python3.12` and framework
+   `Python.framework/Versions/3.12/bin/python3.12` layouts); binary is
+   Mach-O; reports Python 3.12.x; `import venv` succeeds; rsync into
+   `<payload>/runtime/python/` preserves layout exactly; post-rsync sanity
+   probe. Any failure exits 43 with self-pointing log line. The bulk
+   runtime rsync at step 4c excludes `python-runtime/` so step 4i is the
+   single owner of the python tree.
+
+2. **Codesign (`build_pkg.sh::step_4b_codesign_inner_binaries`).** No new
+   code path — the existing recursive `find $runtime_dir` Mach-O walk
+   picks up every binary under `<payload>/runtime/python/` automatically
+   (the `python3.12` binary itself, every `.so` extension, any `.dylib`
+   shipped with the framework). Each gets re-signed with Developer ID
+   Application + hardened runtime + secure timestamp. The
+   `Python.framework` alternate layout is caught by Pass 1 (.framework
+   as a unit, `--deep` re-seal).
+
+3. **Install-time consume (`postinstall.sh::step_create_venv`).** Resolves
+   the packaged interpreter FIRST: Tier 1 = `${MG_PKG_PAYLOAD}/runtime/python/bin/python3.12`
+   (flat) OR `${MG_PKG_PAYLOAD}/runtime/python/Python.framework/Versions/3.12/bin/python3.12`
+   (framework); Tier 2 (dev / smoke-test fallback only) = Homebrew + PATH,
+   logged as `WARN`. Sanity-checks Python 3.12.x (refuses 3.11/3.13 — the
+   cp312 wheelhouse would not match). New error string on miss points at
+   `build_pkg.sh::step_4i_stage_python_runtime` and
+   `docs/RUNBOOK_PKG_REBUILD.md` "Block Pre-B".
+
+## Tradeoff
+
+P-026 is a complete source fix + build guardrail. It does NOT ship a
+usable .pkg until the operator runs Block Pre-B once on the build host
+to populate `${HOME}/MiningGuardian-vendor/python-runtime/`. Until then,
+`make pkg` exits 43 at step 4i. Deliberately favors a hard build failure
+over a notarization round-trip on a half-broken .pkg.
+
+## Tests
+
+All 22 installer suites green. New `tests/installer/test_postinstall_python_runtime.sh`
+(29 assertions). `tests/installer/test_postinstall_venv.sh` extended with
+§9 + §10 (P-026 coverage); shellcheck baseline bumped 3→5 (postinstall) +
+5→6 (build_pkg.sh).
+
+## Operator next steps
+
+1. Mac mini cleanup (Round 9 left state on disk):
+
+   ```bash
+   sudo /bin/launchctl bootout system /Library/LaunchDaemons/com.miningguardian.*.plist 2>/dev/null || true
+   sudo rm -rf "/Library/Application Support/MiningGuardian"
+   sudo rm -rf /var/log/mining-guardian
+   sudo -u miningguardian /usr/local/bin/colima stop --force 2>/dev/null || true
+   sudo -u miningguardian /usr/local/bin/colima delete --force 2>/dev/null || true
+   ```
+
+2. Merge this PR.
+
+3. On the build host, run `docs/RUNBOOK_PKG_REBUILD.md` "Block Pre-B"
+   once to populate `${HOME}/MiningGuardian-vendor/python-runtime/`.
+
+4. Re-run Block Pre-A's `pip download` against the newly-vendored
+   interpreter (so wheel ABI tags match exactly):
+
+   ```zsh
+   "${HOME}/MiningGuardian-vendor/python-runtime/bin/python3.12" -m pip download \
+       --only-binary=:all: --platform macosx_11_0_arm64 \
+       --python-version 3.12 --implementation cp --abi cp312 \
+       -d "${HOME}/MiningGuardian-vendor/python-wheels" \
+       -r installer/macos-pkg/payload-requirements.txt
+   ```
+
+5. `make pkg` from merged main.
+
+6. Reinstall on Mac mini. Expected new log lines:
+
+   ```text
+   [postinstall] INFO using installer-owned Python interpreter (packaged-flat): /Library/Application Support/MiningGuardian/runtime/python/bin/python3.12 (Python 3.12.x)
+   [postinstall] INFO created venv at /Library/Application Support/MiningGuardian/venv
+   [postinstall] INFO venv ready at /Library/Application Support/MiningGuardian/venv (NN requirement lines installed)
+   ```
+

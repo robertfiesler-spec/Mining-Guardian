@@ -18,7 +18,7 @@ Bitcoin SHA-256 miners only. Local-only by design.
 
 ---
 
-## PR train (P-001 → P-009)
+## PR train (P-001 → P-026)
 
 | P-NN | What it closes | Branch | PR | Merge SHA |
 |---|---|---|---|---|
@@ -45,7 +45,9 @@ Bitcoin SHA-256 miners only. Local-only by design.
 | P-021 | `build_pkg.sh::step_4b_codesign_inner_binaries` re-passes `com.apple.security.virtualization` entitlement when re-signing Lima/Colima VZ binaries. | `mg/p020-p021-vz-entitlement-codesign` | _stamped on merge_ | `e514c12` |
 | P-022 | `step_drop_dotenv` exports `MG_DB_PASSWORD` (and friends) into the calling shell scope, not just into a `local` frame. | `mg/p022-postinstall-env-handoff` | _stamped on merge_ | `b66b864` |
 | P-023 | New `migrations/006a_layer2_prereqs.sql` bootstraps `uuid-ossp` extension, `set_updated_at()` trigger function, and stub `hardware.miner_models` / `pool.mining_pools` FK targets in the operational DB so migration `007_layer2_resolver.sql` (relocated from the importer's catalog DB in P-004) succeeds on a fresh `mining_guardian` DB. `MiningGuardian-1.0.3-b66b86440400.pkg` (the P-022 build, main `b66b864`) installed cleanly past every prior gate and applied migrations 001 → 006, then 007 hard-failed with `ERROR: function uuid_generate_v4() does not exist`. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure new SQL file picked up by `step_apply_migrations`'s `*.sql` glob. 006 and 007 stay byte-identical to their importer-side originals (D-20 contract preserved). | `mg/p023-migration-007-layer2-prereqs` | _stamped on merge_ | `dd482af` |
-| P-024 | Remove broken duplicate `INSERT INTO hardware.manufacturers` block from `intelligence-catalog/seed-data/seed_miner_models.sql`. The block referenced columns (`full_name`, `country`, `website`, `notes`) that do not exist in the catalog schema — the schema has `legal_name` / `common_name` / `country_of_origin` / `website_url`. `MiningGuardian-1.0.3-dd482af746ad.pkg` (the P-023 build, main `dd482af`) progressed through every prior gate, schema deploy completed (`Schema deployment complete \| sources_count 23 \| manufacturers_count 17`), then `seed_miner_models.sql` line 39 hard-failed with `ERROR: column "full_name" of relation "manufacturers" does not exist / [postinstall] FATAL (39) seed_miner_models.sql apply failed against mining_guardian_catalog`. Manufacturers are already seeded by `deploy_schema.sql` (which postinstall runs first and which uses the correct column names) for all 17 brands — the seed_miner_models.sql block was dead duplicate code. Removed the block; `seed_miner_models.sql` now contains miner_models INSERTs only (320 rows preserved). Source generator `intelligence-catalog/seed-data/compile_all_miners.py` updated in the same change so future regenerations don't re-emit the broken block. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure SQL/Python source fix; postinstall flow unchanged. | `mg/p024-catalog-seed-manufacturers-schema` | _this PR_ | _stamped on merge_ |
+| P-024 | Remove broken duplicate `INSERT INTO hardware.manufacturers` block from `intelligence-catalog/seed-data/seed_miner_models.sql`. The block referenced columns (`full_name`, `country`, `website`, `notes`) that do not exist in the catalog schema — the schema has `legal_name` / `common_name` / `country_of_origin` / `website_url`. `MiningGuardian-1.0.3-dd482af746ad.pkg` (the P-023 build, main `dd482af`) progressed through every prior gate, schema deploy completed (`Schema deployment complete \| sources_count 23 \| manufacturers_count 17`), then `seed_miner_models.sql` line 39 hard-failed with `ERROR: column "full_name" of relation "manufacturers" does not exist / [postinstall] FATAL (39) seed_miner_models.sql apply failed against mining_guardian_catalog`. Manufacturers are already seeded by `deploy_schema.sql` (which postinstall runs first and which uses the correct column names) for all 17 brands — the seed_miner_models.sql block was dead duplicate code. Removed the block; `seed_miner_models.sql` now contains miner_models INSERTs only (320 rows preserved). Source generator `intelligence-catalog/seed-data/compile_all_miners.py` updated in the same change so future regenerations don't re-emit the broken block. **No `build_pkg.sh`, payload, or notarization-relevant change** — pure SQL/Python source fix; postinstall flow unchanged. | `mg/p024-catalog-seed-manufacturers-schema` | `6a48a82` | `6a48a82` |
+| P-025 | Pre-build full preflight audit P0 fixes: A-2 (catalog seed `primary_source_id` schema NOT NULL with no seed value — schema column carries `DEFAULT '<canonical UUID>'::uuid` of the `catalog_research_2026` row already seeded by `deploy_schema.sql`), A-3 (`${SCRIPT_DIR}/../resources/...` paths read by postinstall.sh do not resolve at install time — `build_pkg.sh` step 4k stages installer-owned launchd/uninstall.sh resources into `<payload>/installer-resources/`, postinstall adds `INSTALLER_RESOURCES_SRC` resolver), A-4 (`scripts/***` missing from payload rsync — added with step-4b assertion). | `mg/p025-preflight-p0-fixes` | `00720ab` | `00720ab` |
+| P-026 | Installer-owned Python 3.12 runtime. Round 9 of the Mac mini install (2026-05-05, `MiningGuardian-1.0.3-00720ab71cc4.pkg`) hard-failed in `step_create_venv` with `FATAL (38) python3.12 not found on this Mac; install Homebrew + python@3.12 before running the .pkg`. Operator decision (Rob, 2026-05-05): "yes include it in the installer and whatever else might pop up as the install keeps going". The `.pkg` now vendors a relocatable Python 3.12 interpreter under `<payload>/runtime/python/`. New `build_pkg.sh::step_4i_stage_python_runtime` stages from `${HOME}/MiningGuardian-vendor/python-runtime/` with full validation (Mach-O check, version 3.12.x, `import venv` works, post-rsync sanity), `_die 43` on any failure. Existing `step_4b_codesign_inner_binaries` walk picks up every Mach-O under the runtime tree (no new codesign branch needed). `postinstall.sh::step_create_venv` resolves the packaged interpreter (flat `bin/python3.12` OR `Python.framework` layout) BEFORE any Homebrew/PATH fallback; rejects non-3.12 with a clearer error. Customers no longer need Homebrew on the Mac mini. New runbook section (`docs/RUNBOOK_PKG_REBUILD.md` "Block Pre-B — populate the Python runtime") documents the python-build-standalone download. **Build hard-fails until the operator populates the new vendor directory** — this PR is a complete source fix + build guardrail; the operator must run Block Pre-B once on the build host before `make pkg` will produce a usable .pkg. | `mg/p026-installer-owned-python-runtime` | _this PR_ | _stamped on merge_ |
 
 ---
 
@@ -890,6 +892,63 @@ Fix: add `--include 'scripts/***'` to the 4a rsync. Add a step-4b assertion that
 All 21 installer tests still green: `test_uninstall_script.sh`, `test_postinstall_payload_path.sh`, `test_postinstall_scheduled_jobs.sh`, `test_pkg_scripts_naming.sh`, `test_d20_importer_payload_reconciliation.sh`, etc., all pass against the post-P-025 tree.
 
 **No new install attempt before this PR merges.** Per operator instruction 2026-05-05: do not rebuild / sign / notarize the .pkg until P-025 is in main. The next round on the Mini gets the P-025 build directly.
+
+---
+
+### P-026 — installer-owned Python 3.12 runtime (this PR)
+
+**Symptom (Round 9, 2026-05-05).** `MiningGuardian-1.0.3-00720ab71cc4.pkg` (built from main `00720ab` after P-024 + P-025 merged) installed cleanly past every prior gate — env keys exported, Colima VZ started, postgres image loaded, all 8 operational migrations applied, catalog DB created and schema-deployed, **catalog seed verified at 320 rows**, then `step_install_launcher_wrappers` installed all 9 launcher wrappers, then `step_create_venv` exited 38 with:
+
+```
+2026-05-05T22:13:39Z [postinstall] FATAL (38) python3.12 not found on this Mac;
+install Homebrew + python@3.12 before running the .pkg (operator setup manual covers this)
+```
+
+**Root cause.** Pre-P-026 `step_create_venv` resolved a Python 3.12 interpreter from this candidate list:
+
+1. `/opt/homebrew/opt/python@3.12/bin/python3.12`
+2. `/usr/local/opt/python@3.12/bin/python3.12`
+3. `command -v python3.12`
+
+That made Homebrew + `python@3.12` a **hidden customer prerequisite**. The customer Mac mini did not have Homebrew installed (and was not expected to — Tailscale aside, the Mini ships as a single-purpose appliance). The `.pkg` had no way to provide Python 3.12 itself.
+
+**Operator decision (Rob, 2026-05-05).** "Yes include it in the installer and whatever else might pop up as the install keeps going". The `.pkg` now owns its own Python 3.12 runtime — customers do not install Homebrew, do not type a `brew install` command, do not satisfy any prerequisite beyond running the `.pkg`.
+
+**Fix shape.** Three coordinated changes:
+
+1. **Build-time vendor (build_pkg.sh)** — new `step_4i_stage_python_runtime` (inside `step_4_assemble_payload`, between the bulk runtime rsync and the wheelhouse rsync). Operator populates `${HOME}/MiningGuardian-vendor/python-runtime/` once on the build host with python-build-standalone (`install_only_stripped` variant for `aarch64-apple-darwin`, Python 3.12.x). Step 4i validates and stages:
+   - vendor dir exists
+   - `python3.12` binary present (accepts both flat `bin/python3.12` and framework `Python.framework/Versions/3.12/bin/python3.12` layouts)
+   - binary is Mach-O (rejects accidentally-Linux tarball)
+   - binary reports Python 3.12.x (rejects 3.11/3.13 — the cp312 wheelhouse would not match)
+   - `import venv` succeeds (rejects the python-build-standalone `build` variant)
+   - rsync into `<payload>/runtime/python/` preserves layout exactly
+   - post-rsync sanity probe (catches broken symlinks, lost +x bits)
+   Any failure exits 43 with a self-pointing log line — same exit-code/file-pointer pattern as the existing P-010 wheelhouse hard-fail.
+2. **Codesign automatic (build_pkg.sh step 4b)** — no new code path. Step 4b's existing recursive `find $runtime_dir` walk picks up every Mach-O under `<payload>/runtime/python/` (the `python3.12` binary itself, every `.so` extension under `lib/python3.12/`, any `.dylib` shipped with the framework). Each gets re-signed with Developer ID Application + hardened runtime + secure timestamp. The Python.framework alternate layout is caught by Pass 1 (.framework as a unit).
+3. **Install-time consume (postinstall.sh)** — `step_create_venv` resolves the packaged interpreter FIRST:
+   - Tier 1: `${MG_PKG_PAYLOAD}/runtime/python/bin/python3.12` (flat) OR `${MG_PKG_PAYLOAD}/runtime/python/Python.framework/Versions/3.12/bin/python3.12` (framework)
+   - Tier 2 (dev / smoke-test fallback only): `/opt/homebrew/opt/python@3.12/bin/python3.12`, `/usr/local/opt/python@3.12/bin/python3.12`, `command -v python3.12`. Logged as WARN if reached. The test surface in `tests/installer/` exercises this path; production .pkg installs always take Tier 1.
+   - Sanity-checks the resolved interpreter reports Python 3.12.x. A 3.11/3.13 fallback would silently build a venv that pip can't populate from the cp312 wheelhouse; we refuse-to-proceed with a clearer error than pip's downstream complaint.
+   New error string on miss points at `build_pkg.sh::step_4i_stage_python_runtime` and `docs/RUNBOOK_PKG_REBUILD.md` "Block Pre-B" — no more telling the customer to install Homebrew.
+
+**Operator runbook (RUNBOOK_PKG_REBUILD.md).** New "Block Pre-B — populate the Python runtime" section walks the operator through the python-build-standalone download, extraction, and verification, and notes that Block Pre-A's `pip download` should be re-run with the just-vendored interpreter so the wheel ABI tags match the runtime exactly.
+
+**Tradeoff disclosure.** This PR is a complete source fix + build guardrail. It does **not** ship a usable `.pkg` until the operator runs Block Pre-B once on the build host to populate `${HOME}/MiningGuardian-vendor/python-runtime/`. Until that is done, `make pkg` will exit 43 at step 4i with a clear pointer to Block Pre-B. This deliberately favors a hard build failure over a notarization round-trip on a half-broken .pkg.
+
+**Tests.** New `tests/installer/test_postinstall_python_runtime.sh` (29 assertions, all green) — `bash -n` parses both scripts, postinstall resolves both packaged layouts, packaged resolver precedes Homebrew fallback (code-level, not docstring), legacy "install Homebrew + python@3.12" error string is gone, error string points at step 4i + Block Pre-B, version probe + 3.12 sanity check present, build_pkg step 4i hard-fails on missing/broken/wrong-version/wrong-flavor python, runtime rsync excludes `python-runtime/`, RUNBOOK has Block Pre-B with python-build-standalone reference, postinstall step_create_venv "Hard rules" docstring updated, legacy "docs the python@3.12 prerequisite" comment removed. Existing `tests/installer/test_postinstall_venv.sh` extended with §9 (P-026 postinstall) + §10 (P-026 build_pkg). Shellcheck baseline bumped 3→5 (postinstall) and 5→6 (build_pkg.sh) as a one-time cushion for the new resolver and step. All 22 installer suites green.
+
+**Operator cleanup before next reinstall** (the `00720ab` install on the Mac mini got far enough to bring up Postgres, apply all 8 operational migrations, create `mining_guardian_catalog`, deploy the catalog schema, **seed all 320 miner_models rows**, and install all 9 launcher wrappers; the venv was never created and no LaunchDaemons were loaded; `bin/uninstall.sh` is NOT installed yet — `step_install_uninstall_script` runs after the venv step). Manually:
+
+```bash
+sudo /bin/launchctl bootout system /Library/LaunchDaemons/com.miningguardian.*.plist 2>/dev/null || true
+sudo rm -rf "/Library/Application Support/MiningGuardian"
+sudo rm -rf /var/log/mining-guardian
+sudo -u miningguardian /usr/local/bin/colima stop --force 2>/dev/null || true
+sudo -u miningguardian /usr/local/bin/colima delete --force 2>/dev/null || true
+```
+
+Then operator runs Block Pre-B (one-time, on the build host) to populate `${HOME}/MiningGuardian-vendor/python-runtime/`, re-runs Block Pre-A's `pip download` against the new vendored interpreter so the wheel ABI tags match exactly, then rebuilds + signs + notarizes a new .pkg from the merged main and reinstalls. The new postinstall log should reach `INFO using installer-owned Python interpreter (packaged-flat): /Library/Application Support/MiningGuardian/runtime/python/bin/python3.12 (Python 3.12.x)`, then `INFO created venv at ...`, then `INFO venv ready at ...`, then `step_install_plists_and_bootstrap`. Round-10 install remains GATED on this PR merging to main.
 
 ---
 
