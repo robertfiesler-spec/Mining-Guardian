@@ -21,7 +21,11 @@ from psycopg2.extras import DictCursor
 load_dotenv()
 logger = logging.getLogger("llm_analyzer")
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate")
+# P-018E: default targets the Mac Mini's local Ollama (D-9 / S-13). The
+# previous default `http://100.110.87.1:11434/api/generate` pointed at the
+# retired ROBS-PC tailscale endpoint and would silently route every scan
+# analysis off-Mini if .env's OLLAMA_URL was unset.
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
 MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
 _ROOT = Path(__file__).resolve().parent.parent
 

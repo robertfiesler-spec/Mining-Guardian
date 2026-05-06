@@ -135,12 +135,16 @@ except ImportError:
         return ""
 
 # ── Qwen/Ollama settings — NO CAPS ───────────────────────────────────────
-# Read llm_url from config.json, fall back to ROBS-PC tailscale
+# Read llm_url from config.json, fall back to local Mini Ollama (P-018E).
 try:
     _cfg = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else {}
 except Exception:
     _cfg = {}
-LLM_URL = _cfg.get("local_llm_url") or _cfg.get("ollama_url") or os.getenv("OLLAMA_URL", "http://100.110.87.1:11434")
+# P-018E: default to local Mini Ollama (was retired ROBS-PC). Config-side
+# `local_llm_url` and `ollama_url` are still honored when set, and either
+# may carry a `/api/generate` suffix that we strip below to obtain the
+# base host this module needs.
+LLM_URL = _cfg.get("local_llm_url") or _cfg.get("ollama_url") or os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 # ollama_url in config points at /api/generate; strip it
 if LLM_URL.endswith("/api/generate"):
     LLM_URL = LLM_URL[: -len("/api/generate")]

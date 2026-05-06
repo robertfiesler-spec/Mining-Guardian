@@ -81,9 +81,12 @@ KNOWLEDGE_PATH = _ROOT / "knowledge.json"
 
 logger = logging.getLogger("mining_guardian")
 
-# LLM endpoint — Ollama on Windows PC (Tailscale) or local Mac Mini
-# Configurable via config.json "local_llm_url"
-DEFAULT_LLM_URL = os.getenv("OLLAMA_URL", "http://100.110.87.1:11434")
+# LLM endpoint — local Ollama on the Mac Mini (D-9 / S-13).
+# P-018E (2026-05-06): default switched from the retired ROBS-PC tailscale
+# IP to localhost. Operators with a remote Ollama can still set
+# OLLAMA_URL (or config.json "local_llm_url") explicitly; the default is
+# Mini-local so a fresh customer install never reaches off-Mini.
+DEFAULT_LLM_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 DEFAULT_MODEL = "qwen2.5:32b-instruct-q4_K_M"
 
 

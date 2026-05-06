@@ -2353,7 +2353,8 @@ class MiningGuardian:
                     "options": {"temperature": 0.3, "num_ctx": 16384},
                 }
                 req = _urlreq.Request(
-                    getattr(self.config, "ollama_url", os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate")),
+                    # P-018E: local Mini Ollama default; was retired ROBS-PC.
+                    getattr(self.config, "ollama_url", os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")),
                     data=_json.dumps(payload).encode(),
                     headers={"Content-Type": "application/json"},
                 )

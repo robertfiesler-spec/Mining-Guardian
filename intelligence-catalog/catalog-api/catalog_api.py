@@ -42,14 +42,55 @@ logger = logging.getLogger("catalog-api")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DB_HOST = os.getenv("DB_HOST", "mining-guardian-db")
-DB_PORT = int(os.getenv("DB_PORT", "5432"))
-DB_NAME = os.getenv("DB_NAME", "mining_guardian")
-DB_USER = os.getenv("DB_USER", "guardian_admin")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+# P-018E (2026-05-06): canonical DSN resolution comes from
+# `core.db_targets.catalog_target()` which reads
+# GUARDIAN_PG_HOST/_PORT/_USER/_PASSWORD/_CATALOG_DBNAME (the env-var
+# family the customer Mac mini's .env actually writes — see
+# `installer/macos-pkg/scripts/postinstall.sh:919-929`). The previous
+# defaults (`DB_HOST=mining-guardian-db`, `DB_NAME=mining_guardian`) were
+# disjoint from that family and silently pointed the catalog API at the
+# operational DB on every customer install.
+#
+# Backward-compat: legacy `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` /
+# `DB_NAME` env vars still take precedence when set, so a third-party
+# .env that already wires them keeps working. New deployments should
+# rely solely on the GUARDIAN_PG_* family.
+def _resolve_catalog_target():
+    """Resolve the catalog DB target via core.db_targets, sys.path-resilient.
+
+    The catalog-api lives at `intelligence-catalog/catalog-api/`, three
+    levels deep from the repo root that hosts `core/db_targets.py`. We
+    add the repo root to sys.path on first import so the helper
+    resolves whether the FastAPI process was launched from the repo or
+    from the catalog-api dir directly.
+    """
+    try:
+        from core.db_targets import catalog_target
+    except ImportError:
+        import sys
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from core.db_targets import catalog_target  # type: ignore[no-redef]
+    return catalog_target()
+
+
+_target = _resolve_catalog_target()
+DB_HOST = os.getenv("DB_HOST", _target.host)
+DB_PORT = int(os.getenv("DB_PORT", str(_target.port)))
+DB_NAME = os.getenv("DB_NAME", _target.dbname)
+DB_USER = os.getenv("DB_USER", _target.user)
+# Password resolution: legacy DB_PASSWORD wins when set; else fall back
+# to the canonical password core.db_targets resolved
+# (GUARDIAN_PG_PASSWORD with MG_DB_PASSWORD fallback). Explicit empty
+# string is preserved as "no password" rather than silently picking up
+# `~/.pgpass`.
+DB_PASSWORD = os.getenv("DB_PASSWORD") or _target.password
 if not DB_PASSWORD:
     raise EnvironmentError(
-        "DB_PASSWORD must be set in the environment. Populate the catalog-api .env file."
+        "No DB password set. Populate one of GUARDIAN_PG_PASSWORD, "
+        "MG_DB_PASSWORD, or legacy DB_PASSWORD in the environment."
     )
 
 # CRIT-6: API key must be set explicitly. The old default
