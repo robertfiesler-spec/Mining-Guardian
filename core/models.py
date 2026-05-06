@@ -16,10 +16,17 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+@dataclass
 class ParameterRule:
-    key: str
-    operator: str
-    expected: Any
+    # P-029 (2026-05-06): @dataclass decorator restored. Without it, the bare
+    # class lacked an __init__ accepting these annotations as kwargs, so
+    # GuardianConfig.from_file's `ParameterRule(**item)` raised
+    # TypeError: ParameterRule() takes no arguments — crashing scanner and
+    # ams_alert_listener on first config load. Defaults stay None/empty so
+    # legacy tests that mutate fields after `ParameterRule()` still pass.
+    key: Optional[str] = None
+    operator: Optional[str] = None
+    expected: Any = None
     severity: str = "warning"
     recommended_fix: Optional[Any] = None
     note: str = ""
