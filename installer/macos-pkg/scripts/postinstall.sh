@@ -102,6 +102,8 @@
 #   39     — catalog DB / schema / seed apply failed (D-18 Gap 2)
 #   40     — scheduled-job plist install or bootstrap failed (D-18 Gap 4)
 #   41     — customer-info Desktop conf missing or invalid (D-18 Gap 1)
+#   42     — alias-seed apply failed (P-018D — Tier-1 hardware.model_aliases
+#            on catalog DB or Tier-2 mg.model_family_aliases on operational)
 #
 # Vision Anchor 7 honored: only one network call (model pull); every
 # other byte is vendored inside the .pkg.
@@ -1328,6 +1330,136 @@ step_provision_catalog_db_and_seed() {
         rm -rf "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1 || true
 }
 
+step_apply_alias_seeds() {
+    # P-018D (2026-05-06) — apply the two reference-data alias seeds the
+    # importer's two-tier resolver (`mg_import_tool/resolver.py`) reads:
+    #
+    #   * intelligence-catalog/seed-data/aliases/001_hardware_model_aliases_tier1.sql
+    #     → CATALOG DB `mining_guardian_catalog`, `hardware.model_aliases`
+    #       (12,840 rows; unique aliases for ~317 known miner models;
+    #        FK references `hardware.miner_models(id)` which only the
+    #        catalog DB has populated).
+    #
+    #   * intelligence-catalog/seed-data/aliases/002_mg_family_aliases_tier2.sql
+    #     → OPERATIONAL DB `mining_guardian`, `mg.model_family_aliases`
+    #       (1,494 rows; ambiguous aliases with candidate-id arrays;
+    #        resolver narrows by hashrate at lookup time).
+    #
+    # Both seeds are idempotent (`ON CONFLICT … DO NOTHING`); a re-install
+    # against an already-seeded DB is a no-op. Failures here exit 42
+    # (a fresh code reserved for alias-seed apply — disjoint from 39
+    # which guards the catalog DB seed in the previous step, and from
+    # 41 which is already used for the customer-info Desktop conf gate).
+    #
+    # Ordering: must run AFTER `step_apply_migrations` (creates
+    # `mg.model_family_aliases` per migration 007) AND AFTER
+    # `step_provision_catalog_db_and_seed` (creates the catalog DB and
+    # `hardware.miner_models` rows the Tier-1 FKs target). It is fine to
+    # run BEFORE `step_install_ollama_and_pull_model` and the LaunchDaemon
+    # bootstrap below.
+    #
+    # D-20 note: these files live under `intelligence-catalog/seed-data/
+    # aliases/` (NOT `mg_import_tool/sql/seed/`) because the `mg_import*`
+    # path is forbidden in the customer payload by `build_pkg.sh::step 4h`.
+
+    local seed_dir="${MG_PKG_PAYLOAD}/intelligence-catalog/seed-data/aliases"
+    local tier1_file="${seed_dir}/001_hardware_model_aliases_tier1.sql"
+    local tier2_file="${seed_dir}/002_mg_family_aliases_tier2.sql"
+    local catalog_db="mining_guardian_catalog"
+    local op_db="mining_guardian"
+    local container="mining-guardian-db"
+
+    if [[ ! -d "$seed_dir" ]]; then
+        fail 42 "alias seed directory missing in payload: ${seed_dir} (build_pkg.sh step 4a should have rsync'd intelligence-catalog/***)"
+    fi
+    if [[ ! -r "$tier1_file" ]]; then
+        fail 42 "Tier-1 alias seed missing: ${tier1_file}"
+    fi
+    if [[ ! -r "$tier2_file" ]]; then
+        fail 42 "Tier-2 alias seed missing: ${tier2_file}"
+    fi
+
+    # Stage the seeds inside the container so psql -f can find them on a
+    # path the docker-exec'd psql can read. Mirror step_provision_catalog_*
+    # exactly so the operator sees the same staging pattern in the log.
+    local container_seed_dir="/tmp/mg-alias-seeds-$$"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec "$container" \
+            mkdir -p "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "could not create staging dir inside container: ${container_seed_dir}"
+    fi
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker cp \
+            "${seed_dir}/." "${container}:${container_seed_dir}/" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "docker cp of alias seed-data into container failed"
+    fi
+
+    # 1. Tier-1 → catalog DB. ON_ERROR_STOP=1 — the seed wraps the 12,840
+    # INSERTs in BEGIN/COMMIT and uses ON CONFLICT DO NOTHING, so a second
+    # apply is a clean transaction that touches zero rows.
+    log "INFO applying Tier-1 alias seed (hardware.model_aliases) to ${catalog_db}"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+            psql -U mg -d "$catalog_db" -v ON_ERROR_STOP=1 \
+            -f "${container_seed_dir}/001_hardware_model_aliases_tier1.sql" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "Tier-1 alias seed apply failed against ${catalog_db}"
+    fi
+
+    # 2. Tier-2 → operational DB.
+    log "INFO applying Tier-2 alias seed (mg.model_family_aliases) to ${op_db}"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+            psql -U mg -d "$op_db" -v ON_ERROR_STOP=1 \
+            -f "${container_seed_dir}/002_mg_family_aliases_tier2.sql" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "Tier-2 alias seed apply failed against ${op_db}"
+    fi
+
+    # 3. Verify. Floors are deliberately conservative (5,000 / 1,000) so
+    # a future re-generation of the seed with a slightly different row
+    # count does not falsely fail the gate; the actual seeds carry 12,840
+    # and 1,494 respectively.
+    local tier1_count tier2_count
+    tier1_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+        psql -U mg -d "$catalog_db" -tAc \
+        "SELECT count(*) FROM hardware.model_aliases;" \
+        2>>"$MG_INSTALL_LOG" || echo 0)"
+    tier1_count="$(echo "${tier1_count:-0}" | tr -d '[:space:]')"
+    if [[ "${tier1_count:-0}" -lt 5000 ]]; then
+        fail 42 "Tier-1 alias seed verification failed: hardware.model_aliases has ${tier1_count} rows (expected >= 5000)"
+    fi
+    tier2_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+        psql -U mg -d "$op_db" -tAc \
+        "SELECT count(*) FROM mg.model_family_aliases;" \
+        2>>"$MG_INSTALL_LOG" || echo 0)"
+    tier2_count="$(echo "${tier2_count:-0}" | tr -d '[:space:]')"
+    if [[ "${tier2_count:-0}" -lt 1000 ]]; then
+        fail 42 "Tier-2 alias seed verification failed: mg.model_family_aliases has ${tier2_count} rows (expected >= 1000)"
+    fi
+    log "INFO alias seeds verified: hardware.model_aliases=${tier1_count}, mg.model_family_aliases=${tier2_count}"
+
+    # Best-effort cleanup of in-container staging dir; not fatal.
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec "$container" \
+        rm -rf "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1 || true
+}
+
 step_install_ollama_and_pull_model() {
     install_ollama_runtime || fail 33 "ollama runtime install failed"
     pull_llm_model         || fail 33 "ollama pull of ${MG_INSTALL_LLM_MODEL:-?} failed"
@@ -1925,6 +2057,13 @@ main() {
     step_reconcile_postgres_password
     step_apply_migrations
     step_provision_catalog_db_and_seed
+    # P-018D — apply the importer's two-tier alias reference data
+    # (Tier-1 in catalog DB, Tier-2 in operational DB) so
+    # `mg_import_tool/resolver.py` finds non-empty alias tables on the
+    # very first import. Idempotent. Must run after migrations (creates
+    # `mg.model_family_aliases`) and after the catalog seed (populates
+    # `hardware.miner_models` for Tier-1 FK targets).
+    step_apply_alias_seeds
     step_install_ollama_and_pull_model
     step_install_launcher_wrappers
     step_create_venv
