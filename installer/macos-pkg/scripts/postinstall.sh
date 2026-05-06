@@ -1980,6 +1980,88 @@ step_create_venv() {
     log "INFO venv ready at ${venv_dir} ($(wc -l <"$req_file" | tr -d ' ') requirement lines installed)"
 }
 
+# P-019C (2026-05-06) — bootstrap one plist with the full safe sequence
+# and rich post-failure diagnostics. Returns 0 on success and 1 on any
+# failure (caller continues to the next plist; the main loop summarizes
+# at the end and exits FATAL only after every failed label has had its
+# diagnostic dump recorded). Used by both step_install_plists_and_bootstrap
+# and step_install_scheduled_plists_and_bootstrap.
+#
+# Sequence per label:
+#   1. bootout (always, ignore errors) — clears stale load even if
+#      `launchctl print` claims unloaded. macOS occasionally has stale
+#      state where `print` returns "could not find service" but
+#      `bootstrap` returns errno 5 because internal domain bookkeeping
+#      still holds the label (B-25 root cause #1).
+#   2. enable — clears any persisted disable from a prior failed
+#      install. `launchctl disable` state survives reboots in
+#      /var/db/com.apple.xpc.launchd/disabled.plist; without an
+#      explicit `enable` a re-install can hit `bootstrap` failures
+#      that look like errno 5 but are really "service is disabled"
+#      with no further detail (B-25 root cause #2).
+#   3. bootstrap — the actual load. Output captured to install log.
+#   4. On failure: dump diagnostics. Pre-P-019C the install aborted
+#      with no further output and the operator had to start over.
+#   5. On success: the service is loaded. We do NOT additionally
+#      `kickstart -p` — RunAtLoad=true on every plist already triggers
+#      a start; a service that bootstraps but immediately exits is
+#      still successfully bootstrapped (its crash is a runtime issue
+#      diagnosable from logs, not a bootstrap failure).
+_bootstrap_one_plist() {
+    local label="$1"
+    local plist_path="$2"
+
+    /bin/launchctl bootout "system/${label}" >>"$MG_INSTALL_LOG" 2>&1 || true
+    /bin/launchctl enable  "system/${label}" >>"$MG_INSTALL_LOG" 2>&1 || true
+
+    local bootstrap_out
+    if bootstrap_out="$(/bin/launchctl bootstrap system "$plist_path" 2>&1)"; then
+        log "INFO bootstrapped ${label}"
+        if [[ -n "$bootstrap_out" ]]; then
+            log "      bootstrap output: ${bootstrap_out}"
+        fi
+        return 0
+    fi
+
+    log "ERROR launchctl bootstrap failed for ${label}: ${bootstrap_out}"
+    _dump_launchctl_diagnostics "$label" "$plist_path"
+    return 1
+}
+
+# Forensic dump after a bootstrap failure. Goes to MG_INSTALL_LOG so
+# the operator gets one self-contained record of what was wrong.
+# Every command is wrapped in `|| true` — diagnostics never raise.
+_dump_launchctl_diagnostics() {
+    local label="$1"
+    local plist_path="$2"
+    {
+        echo "===== launchctl diagnostics for ${label} ====="
+        echo "--- plist on-disk:"
+        /bin/ls -laO "$plist_path" 2>/dev/null || true
+        echo "--- plutil -lint:"
+        /usr/bin/plutil -lint "$plist_path" 2>&1 || true
+        echo "--- launchctl print system/${label}:"
+        /bin/launchctl print "system/${label}" 2>&1 || true
+        echo "--- launchctl print-disabled system | grep ${label}:"
+        /bin/launchctl print-disabled system 2>&1 | /usr/bin/grep -F "$label" || true
+        echo "--- launcher script (ProgramArguments[1]):"
+        local launcher
+        launcher="$(/usr/bin/plutil -extract ProgramArguments.1 raw "$plist_path" 2>/dev/null || true)"
+        if [[ -n "$launcher" && -e "$launcher" ]]; then
+            /bin/ls -laO "$launcher" 2>/dev/null || true
+        else
+            echo "(could not resolve ProgramArguments.1 from plist)"
+        fi
+        echo "--- log dir (StandardOutPath parent):"
+        /bin/ls -laO "${MG_INSTALL_ROOT}/logs" 2>/dev/null || true
+        echo "--- recent unified log entries for the label:"
+        /usr/bin/log show --predicate "subsystem == 'com.apple.xpc.launchd' AND eventMessage CONTAINS '${label}'" \
+            --last 5m --info 2>/dev/null \
+            | /usr/bin/tail -n 50 || true
+        echo "===== end diagnostics for ${label} ====="
+    } >>"$MG_INSTALL_LOG" 2>&1 || true
+}
+
 step_install_plists_and_bootstrap() {
     install -d -m 0755 "$PLISTS_DEST"
 
@@ -2001,19 +2083,37 @@ step_install_plists_and_bootstrap() {
     done
     log "INFO installed ${#PLIST_LABELS[@]} launchd plists into $PLISTS_DEST"
 
-    # bootout any previous load (idempotent re-install support), then
-    # bootstrap each one fresh. Order here mirrors PLIST_LABELS so the
-    # log timeline reads the same as the install matrix in the runbook.
+    # P-019C: bootstrap each plist via _bootstrap_one_plist with rich
+    # diagnostics on failure. CONTINUE PAST per-service failures.
+    # Aggregate the failure list and report at the end.
+    #
+    # Pre-P-019C the loop aborted on the first per-service bootstrap
+    # failure with no diagnostics, leaving the operator with installed-
+    # but-not-loaded plists, no record of WHY, and the rest of the
+    # install (uninstall script, install receipt, baseline scan)
+    # skipped. Hit on 2026-05-06 against MiningGuardian-1.0.3-b44862c…
+    # on the dashboard-api bootstrap — `Bootstrap failed: 5: Input/
+    # output error` with no further detail (B-25).
+    local failed_services=()
     for label in "${PLIST_LABELS[@]}"; do
-        if /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
-            /bin/launchctl bootout  "system/${label}" 2>/dev/null || true
+        if ! _bootstrap_one_plist "$label" "${PLISTS_DEST}/${label}.plist"; then
+            failed_services+=("$label")
         fi
-        if ! /bin/launchctl bootstrap system "${PLISTS_DEST}/${label}.plist" \
-                2>&1 | tee -a "$MG_INSTALL_LOG"; then
-            fail 34 "launchctl bootstrap failed for ${label}"
-        fi
-        log "INFO bootstrapped ${label}"
     done
+
+    local total="${#PLIST_LABELS[@]}"
+    local failed="${#failed_services[@]}"
+    local ok_count=$(( total - failed ))
+    log "INFO LaunchDaemon bootstrap summary: ${ok_count}/${total} loaded; ${failed} failed"
+
+    if [[ "$failed" -gt 0 ]]; then
+        log "ERROR LaunchDaemons that failed to bootstrap (${failed}):"
+        local svc
+        for svc in "${failed_services[@]}"; do
+            log "      - ${svc}"
+        done
+        fail 34 "${failed} of ${total} LaunchDaemons failed to bootstrap (${failed_services[*]}). See diagnostics above for each. Recover with: sudo launchctl bootstrap system /Library/LaunchDaemons/<label>.plist (after addressing the diagnostic root cause)."
+    fi
 }
 
 step_install_scheduled_plists_and_bootstrap() {
