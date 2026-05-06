@@ -781,6 +781,19 @@ mechanical fix. P-007 is delivered as scoped.
 
 ---
 
+## B-21 — Customer Mac mini install required Homebrew + python@3.12 — ✅ FIXED (P-026, 2026-05-05)
+
+- **Severity:** P0 — blocked Round 9 of the v1.0.3 customer Mac mini install.
+- **Status:** ✅ FIXED in PR `mg/p026-installer-owned-python-runtime` (P-026).
+- **Discovered:** 2026-05-05 (Round 9, package `MiningGuardian-1.0.3-00720ab71cc4.pkg`, built off main `00720ab` after P-025 merged).
+- **Symptom:** `step_create_venv` exited 38 with `python3.12 not found on this Mac; install Homebrew + python@3.12 before running the .pkg`. Postinstall had already brought up Postgres, run all 8 operational migrations, created `mining_guardian_catalog`, deployed the catalog schema, **seeded all 320 miner_models rows**, and installed all 9 launcher wrappers — then died at venv create because the customer Mac mini had no Homebrew install (and was not expected to).
+- **Root cause:** pre-P-026 `installer/macos-pkg/scripts/postinstall.sh::step_create_venv` resolved Python 3.12 from `/opt/homebrew/opt/python@3.12/bin/python3.12` (Apple Silicon Homebrew default), with `/usr/local/opt/python@3.12/bin/python3.12` and `command -v python3.12` as fallbacks. That made Homebrew + `python@3.12` a hidden customer prerequisite, which violated the customer-readiness bar already documented under D-23.
+- **Fix:** P-026 (this PR) makes Python 3.12 installer-owned. New `build_pkg.sh::step_4i_stage_python_runtime` vendors a relocatable Python 3.12 interpreter from `${HOME}/MiningGuardian-vendor/python-runtime/` (recommended source: python-build-standalone `install_only_stripped` for `aarch64-apple-darwin`, Python 3.12.x) into `<payload>/runtime/python/`, with full validation (Mach-O check, version 3.12.x, `import venv` works, post-rsync sanity probe). `postinstall.sh::step_create_venv` resolves the packaged interpreter (flat `bin/python3.12` OR `Python.framework` layout) BEFORE any Homebrew/PATH fallback. Customers no longer need Homebrew. Locked as **D-27** in `docs/DECISIONS.md`.
+- **Tests:** new `tests/installer/test_postinstall_python_runtime.sh` (29 assertions). `tests/installer/test_postinstall_venv.sh` extended with §9 + §10 (P-026 coverage).
+- **Detection-going-forward:** any future PR that resolves Python 3.12 from Homebrew or system PATH AS THE PRIMARY (Tier 1) PATH is a regression. Both test suites enforce ordering by line-number comparison.
+
+---
+
 # Process Notes
 
 - New bugs go in here **before** any cleanup or refactor that would erase the

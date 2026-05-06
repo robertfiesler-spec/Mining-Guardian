@@ -60,11 +60,17 @@
 #   5. Copy the 8 pre-written launcher wrappers from the .pkg payload
 #      into ${MG_INSTALL_ROOT}/bin/, then generate the 9th wrapper
 #      (feedback_loop_daemon_launcher.sh) inline.
-#   6. Create ${MG_INSTALL_ROOT}/venv from a Homebrew python3.12 and
-#      pip-install the full dependency set from vendored wheels at
+#   6. Create ${MG_INSTALL_ROOT}/venv from the installer-owned Python
+#      3.12 runtime at <payload>/runtime/python/bin/python3.12 (P-026)
+#      and pip-install the full dependency set from vendored wheels at
 #      <payload>/python-wheels/ (D-18 Gap 5 — closes the v1.0.2 audit
 #      finding that every launchd launcher wrapper was crash-looping
-#      because the venv it sources never existed).
+#      because the venv it sources never existed). Pre-P-026 this step
+#      reached for `/opt/homebrew/opt/python@3.12/bin/python3.12` from
+#      the customer's Homebrew install — a hidden customer prerequisite
+#      that surfaced as a postinstall exit-38 failure on Round 9 of the
+#      Mac mini install (2026-05-05). Customers are not expected to have
+#      Homebrew or python@3.12; the .pkg now carries its own.
 #   7. Install the 10 launchd service plists and load them with launchctl
 #      bootstrap.
 #   7b. Install the 11 launchd scheduled-job plists (D-18 Gap 4 / P-007 —
@@ -1157,12 +1163,15 @@ step_create_venv() {
     #     are budgeted to ONE (the Ollama model pull); pip is not on
     #     that budget. If the wheels payload is missing or the resolver
     #     would need to reach PyPI, this step exits non-zero.
-    #   * Python 3.12 is required. The .pkg does not vendor a Python
-    #     interpreter (Apple-supplied python3 is 3.9; the operator-side
-    #     setup.sh assumes Homebrew python@3.12 from `phase_03_brew_deps`).
-    #     v1.0.3 docs the python@3.12 prerequisite in the customer setup
-    #     manual; if it is absent at install time, exit with a clear
-    #     pointer rather than silently picking a 3.9 interpreter.
+    #   * Python 3.12 is required. P-026 (2026-05-05) made Python 3.12
+    #     installer-owned — the .pkg now vendors a relocatable Python
+    #     3.12 interpreter under <payload>/runtime/python/, staged at
+    #     build time by `build_pkg.sh::step_4i_stage_python_runtime`
+    #     from `${HOME}/MiningGuardian-vendor/python-runtime/`. The
+    #     resolver below prefers the packaged interpreter and only
+    #     falls back to a system python@3.12 on dev / smoke-test runs.
+    #     Customers are no longer required to have Homebrew or
+    #     python@3.12 on the Mac mini.
     #   * Idempotent. Re-running over an existing venv is a no-op for the
     #     `python -m venv` call (skip-if-present); pip install is run
     #     either way so a partial install heals on re-run.
@@ -1195,30 +1204,92 @@ step_create_venv() {
         fail 38 "requirements.txt missing in payload: ${req_file}"
     fi
 
+    # P-026 (2026-05-05) — Python 3.12 is now installer-owned.
+    #
+    # Operator decision (Rob, 2026-05-05): "yes include it in the
+    # installer and whatever else might pop up as the install keeps
+    # going". Customers must NOT be required to install Homebrew or
+    # python@3.12 ahead of running the .pkg; the .pkg owns its own
+    # Python 3.12 runtime under <payload>/runtime/python/.
+    #
     # Resolve a Python 3.12 interpreter. Order:
-    #   1. /opt/homebrew/opt/python@3.12/bin/python3.12 (Apple Silicon Homebrew default)
-    #   2. /usr/local/opt/python@3.12/bin/python3.12 (Intel Homebrew fallback; v1.0.3 is Apple-Silicon-only per preinstall gate_apple_silicon, but kept for VM smoke-test paths)
-    #   3. `command -v python3.12`
-    # We do NOT accept `python3` because Apple-supplied python3 is 3.9 on
-    # current macOS and many of the pinned wheels require ≥ 3.12 ABI.
+    #   1. ${MG_PKG_PAYLOAD}/runtime/python/bin/python3.12
+    #      — the installer-owned, vendored runtime staged by
+    #        build_pkg.sh::step_4i_stage_python_runtime from
+    #        ${HOME}/MiningGuardian-vendor/python-runtime/. This is the
+    #        ONLY path that runs on a customer Mac mini. The build-time
+    #        guardrail in step 4i refuses to produce a .pkg whose payload
+    #        does not carry this interpreter.
+    #   2. ${MG_PKG_PAYLOAD}/runtime/python/Python.framework/Versions/3.12/bin/python3.12
+    #      — alternate framework-shaped layout (relocatable
+    #        Python.framework rather than a flat tree). Same vendor
+    #        directory, different upstream tarball shape. We accept either.
+    #   3. /opt/homebrew/opt/python@3.12/bin/python3.12 (Apple Silicon Homebrew default)
+    #   4. /usr/local/opt/python@3.12/bin/python3.12 (Intel Homebrew fallback)
+    #   5. `command -v python3.12`
+    # Candidates 3-5 exist ONLY for source-tree dev / smoke-test runs of
+    # postinstall.sh outside a real .pkg install (the test suites in
+    # tests/installer/ exercise this path). On a real customer install
+    # the packaged interpreter at #1 or #2 MUST be present, and a WARN
+    # is logged when we fall through to a system Python. A future tighter
+    # gate could refuse-to-fall-through entirely on production installs;
+    # we keep the fallback for now to avoid breaking the dev test surface.
+    #
+    # We do NOT accept `python3` (the Apple-supplied one is 3.9 on
+    # current macOS and many of the pinned wheels require ≥ 3.12 ABI).
     local py312=""
+    local py312_source=""
     local candidate
-    for candidate in \
-        "/opt/homebrew/opt/python@3.12/bin/python3.12" \
-        "/usr/local/opt/python@3.12/bin/python3.12"; do
-        if [[ -x "$candidate" ]]; then
-            py312="$candidate"
-            break
-        fi
-    done
-    if [[ -z "$py312" ]]; then
-        py312="$(command -v python3.12 2>/dev/null || true)"
-    fi
-    if [[ -z "$py312" || ! -x "$py312" ]]; then
-        fail 38 "python3.12 not found on this Mac; install Homebrew + python@3.12 before running the .pkg (operator setup manual covers this)"
+
+    # Tier 1 — installer-owned runtime, the ONLY production path.
+    local packaged_py_flat="${MG_PKG_PAYLOAD}/runtime/python/bin/python3.12"
+    local packaged_py_framework="${MG_PKG_PAYLOAD}/runtime/python/Python.framework/Versions/3.12/bin/python3.12"
+    if [[ -x "$packaged_py_flat" ]]; then
+        py312="$packaged_py_flat"
+        py312_source="packaged-flat"
+    elif [[ -x "$packaged_py_framework" ]]; then
+        py312="$packaged_py_framework"
+        py312_source="packaged-framework"
     fi
 
-    log "INFO using Python interpreter: ${py312} ($(${py312} --version 2>&1))"
+    # Tier 2 — Homebrew / PATH fallback for dev / smoke-test runs only.
+    if [[ -z "$py312" ]]; then
+        for candidate in \
+            "/opt/homebrew/opt/python@3.12/bin/python3.12" \
+            "/usr/local/opt/python@3.12/bin/python3.12"; do
+            if [[ -x "$candidate" ]]; then
+                py312="$candidate"
+                py312_source="homebrew-fallback"
+                break
+            fi
+        done
+    fi
+    if [[ -z "$py312" ]]; then
+        py312="$(command -v python3.12 2>/dev/null || true)"
+        if [[ -n "$py312" ]]; then
+            py312_source="path-fallback"
+        fi
+    fi
+
+    if [[ -z "$py312" || ! -x "$py312" ]]; then
+        fail 38 "python3.12 not found in payload (${packaged_py_flat} or ${packaged_py_framework}) and not on this Mac; build_pkg.sh step_4i_stage_python_runtime should have staged the installer-owned runtime — see docs/RUNBOOK_PKG_REBUILD.md 'Block Pre-B — populate the Python runtime' (P-026)"
+    fi
+
+    if [[ "$py312_source" == "packaged-flat" || "$py312_source" == "packaged-framework" ]]; then
+        log "INFO using installer-owned Python interpreter (${py312_source}): ${py312} ($(${py312} --version 2>&1))"
+    else
+        log "WARN using FALLBACK Python interpreter (${py312_source}): ${py312} ($(${py312} --version 2>&1)) — this branch is only reachable on dev / smoke-test runs; a real customer .pkg install must carry the runtime in <payload>/runtime/python/ (P-026)"
+    fi
+
+    # Sanity-check the interpreter actually reports 3.12.x. We refuse to
+    # build a venv from anything else — the vendored wheels are pinned to
+    # the cp312 ABI and `pip install` would fail later in this same
+    # function with a less-helpful error.
+    local py_ver
+    py_ver="$(${py312} -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+    if [[ "$py_ver" != "3.12" ]]; then
+        fail 38 "resolved Python interpreter ${py312} reports version '${py_ver}', expected '3.12'; vendored wheels are cp312 only (P-026)"
+    fi
 
     # Create the venv (skip if already present and the python symlink is
     # executable — supports retries / re-installs).

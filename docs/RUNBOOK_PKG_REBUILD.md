@@ -29,12 +29,14 @@ If `git pull --ff-only` rejects, you have local commits or uncommitted work. Sto
 
 Why this exists: `postinstall.sh::step_create_venv` runs `pip install --no-index --find-links <payload>/python-wheels --only-binary=:all: -r <payload>/requirements.txt` on the customer Mac. No network for pip. The wheels must be vendored offline at build time, on the operator's Mac, against the macOS Apple Silicon target ABI.
 
+> **Build host vs customer Mac (P-026, 2026-05-05).** The build host still uses Homebrew `python@3.12` to *download* the wheelhouse (so wheel ABI tags match). The customer Mac mini no longer needs Homebrew at all — the `.pkg` now vendors its own Python 3.12 interpreter (Block Pre-B). Do not skip Pre-B.
+
 ```zsh
 # 1. Confirm Homebrew python@3.12 is installed on the build host.
-#    The .pkg DOES NOT vendor a Python interpreter — postinstall expects
-#    /opt/homebrew/opt/python@3.12/bin/python3.12 on the customer Mac.
-#    The same interpreter is used at build time to download the wheels so
-#    the ABI tags match.
+#    This is BUILD-HOST ONLY — used for `pip download` to populate the
+#    wheelhouse with the right cp312 ABI tags. The CUSTOMER Mac does NOT
+#    need Homebrew or python@3.12; Block Pre-B vendors a relocatable
+#    Python 3.12 runtime into the .pkg payload (P-026).
 /opt/homebrew/opt/python@3.12/bin/python3.12 --version
 # Expect: Python 3.12.x
 # If missing: brew install python@3.12
@@ -71,6 +73,82 @@ ls "${HOME}/MiningGuardian-vendor/python-wheels"/*.whl | wc -l
 | Empty wheelhouse with no error | Network blocked / VPN | Disconnect VPN, retry |
 
 After this block succeeds you do NOT need to re-run it for subsequent builds unless `installer/macos-pkg/payload-requirements.txt` changes. The wheelhouse is intentionally outside the repo (`${HOME}/MiningGuardian-vendor/`) so it never gets committed.
+
+## Block Pre-B — Populate the Python runtime (P-026, 2026-05-05)
+
+> **One-time per build host. Re-run only when bumping Python 3.12 patch level.**
+> Skipping this block is now a hard build error — `build_pkg.sh` step 4i exits 43 if `${HOME}/MiningGuardian-vendor/python-runtime/` is missing, broken, the wrong version, or wrong tarball flavor (P-026, 2026-05-05). Catching it at build time saves an Apple notarization round-trip on a dead .pkg.
+
+Why this exists: pre-P-026 the customer Mac mini had to have Homebrew `python@3.12` already installed — the .pkg's postinstall reached for `/opt/homebrew/opt/python@3.12/bin/python3.12`. Round 9 of the Mac mini install (2026-05-05, package `MiningGuardian-1.0.3-00720ab71cc4.pkg`) hit it live: `FATAL (38) python3.12 not found on this Mac`. Operator decision (Rob, 2026-05-05): "yes include it in the installer and whatever else might pop up as the install keeps going". The .pkg now owns its own Python 3.12 runtime; customers no longer need Homebrew on the Mini.
+
+The recommended source is **python-build-standalone** (Astral's relocatable CPython tarballs, also used by `uv`, Rye, `hatch`, `mise`). Pick the `install_only_stripped` variant for `aarch64-apple-darwin`, Python 3.12.x. Anything else (a Homebrew Cellar tree, a hand-built `./configure --prefix=...` install) is rejected by step 4i because the install names will be hard-coded to the build-host paths and the relocatable invariants we depend on do not hold.
+
+```zsh
+# 1. Pick the latest Python 3.12.x install_only_stripped tarball for
+#    aarch64-apple-darwin from Astral's python-build-standalone Releases:
+#    https://github.com/astral-sh/python-build-standalone/releases
+#    Tarball name pattern (example, replace with the latest):
+#      cpython-3.12.7+20241016-aarch64-apple-darwin-install_only_stripped.tar.gz
+#
+#    Set the URL once and the rest of the block reuses it. Pinning a
+#    specific date+release tag (the `+YYYYMMDD` suffix) is REQUIRED for
+#    reproducible builds.
+PYTHON_BUILD_STANDALONE_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241016/cpython-3.12.7+20241016-aarch64-apple-darwin-install_only_stripped.tar.gz"
+
+# 2. Wipe any older runtime — refuse to mix patch levels.
+rm -rf "${HOME}/MiningGuardian-vendor/python-runtime"
+mkdir -p "${HOME}/MiningGuardian-vendor/python-runtime"
+
+# 3. Download and extract. The install_only_stripped variant unpacks
+#    into a top-level `python/` directory; we strip that one component
+#    so the binary lands at ${HOME}/MiningGuardian-vendor/python-runtime/bin/python3.12
+#    (the "flat" layout build_pkg.sh::step_4i accepts).
+curl -fL "$PYTHON_BUILD_STANDALONE_URL" \
+    | tar -xz -C "${HOME}/MiningGuardian-vendor/python-runtime" --strip-components 1
+
+# 4. Sanity-check what landed.
+"${HOME}/MiningGuardian-vendor/python-runtime/bin/python3.12" --version
+# Expect: Python 3.12.x
+
+# 5. Confirm the venv module is importable (rejects the build/ variant).
+"${HOME}/MiningGuardian-vendor/python-runtime/bin/python3.12" -c 'import venv; print("venv OK")'
+# Expect: venv OK
+
+# 6. Confirm the binary is Mach-O (rejects accidentally-Linux tarball).
+file -b "${HOME}/MiningGuardian-vendor/python-runtime/bin/python3.12"
+# Expect: Mach-O 64-bit executable arm64
+```
+
+**Alternate accepted layout — Python.framework.** Some redistributions ship `Python.framework/Versions/3.12/...` instead of a flat `bin/lib/include` tree. `build_pkg.sh::step_4i` accepts either layout. If you use the framework variant, extract so the binary lands at `${HOME}/MiningGuardian-vendor/python-runtime/Python.framework/Versions/3.12/bin/python3.12`.
+
+**After Pre-B succeeds, re-run Block Pre-A using the packaged interpreter** so the wheel ABI tags match the runtime exactly:
+
+```zsh
+# Replace the build-host Homebrew python in Block Pre-A's `pip download`
+# with the just-vendored runtime. This guarantees the wheelhouse and
+# runtime are CPython-version-compatible.
+"${HOME}/MiningGuardian-vendor/python-runtime/bin/python3.12" -m pip download \
+    --only-binary=:all: \
+    --platform macosx_11_0_arm64 \
+    --python-version 3.12 \
+    --implementation cp \
+    --abi cp312 \
+    -d "${HOME}/MiningGuardian-vendor/python-wheels" \
+    -r installer/macos-pkg/payload-requirements.txt
+```
+
+**Build-time guardrails (build_pkg.sh::step_4i, P-026):**
+
+| Failure | Build outcome | Fix |
+|---|---|---|
+| `${HOME}/MiningGuardian-vendor/python-runtime/` missing | exit 43 | Run Block Pre-B above |
+| `bin/python3.12` not present and framework variant not present | exit 43 | Wrong tarball flavor — pick `install_only` or `install_only_stripped` |
+| Binary is not Mach-O (e.g. accidentally pulled the Linux tarball) | exit 43 | Pick the `aarch64-apple-darwin` build |
+| Binary reports a non-3.12 version | exit 43 | Wrong tarball — pick a `cpython-3.12.x+YYYYMMDD` release |
+| `import venv` fails | exit 43 | Wrong tarball variant — pick `install_only` (the `build` variant ships only the C compile artifacts) |
+| Post-rsync sanity check fails | exit 43 | Filesystem issue (broken symlinks, lost executable bits) — re-extract from scratch |
+
+After this block succeeds you do NOT need to re-run it for subsequent builds unless you bump the Python 3.12 patch level. Just like the wheelhouse, the runtime is intentionally outside the repo (`${HOME}/MiningGuardian-vendor/`) so it never gets committed.
 
 ## Block A — Build, sign, notarize, staple (one command)
 
