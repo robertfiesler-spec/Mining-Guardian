@@ -278,6 +278,163 @@ else
 fi
 
 # ---------------------------------------------------------------------
+section "10. P-027 — every command-exec use of \$py312 is quoted (path-with-spaces safe)"
+# ---------------------------------------------------------------------
+# Background: Round 9 of the Mac mini install (2026-05-05, package
+# `MiningGuardian-1.0.3-d0ba6c40a323.pkg` built off main `d0ba6c4`)
+# progressed past P-026's installer-owned-Python guard but exited 38
+# in step_create_venv with `reports version '', expected '3.12'`. The
+# log line preceding the error showed
+#   `INFO using installer-owned Python interpreter (packaged-flat):
+#    /Library/Application Support/MiningGuardian/runtime/python/bin/python3.12
+#    (/tmp/.../postinstall: line 1279: /Library/Application: No such
+#    file or directory)`
+# i.e. the `$(${py312} --version)` substitution split on the embedded
+# space in MG_PKG_PAYLOAD and ran `/Library/Application` as the command.
+# The same unquoted use applied to the version probe `${py312} -c '...'`,
+# which exited 127 with empty stdout — silently passing the empty string
+# to the `[[ "$py_ver" != "3.12" ]]` test which fired exit 38.
+#
+# Fix: every command-execution use of $py312 / ${py312} must be quoted.
+# `[[ -z $x ]]` / `[[ -n $x ]]` / `[[ -x $x ]]` test contexts and
+# string-interpolation in error messages are safe; only command-position
+# uses inside $(...) substitutions or as the leading word of a command
+# need quoting.
+
+# Lines containing the form `$(${py312} ...)` (unquoted command sub) or
+# leading `${py312} ...` / `$py312 ...` (unquoted command). Quoted forms
+# look like `$("$py312" ...)` or `"$py312" ...`. We use a deliberately
+# simple grep pattern — anything that matches needs human review.
+unquoted_cmdsub_count="$(/usr/bin/grep -nE '\$\(\$\{?py312\}? ' "$POSTINSTALL" | wc -l | tr -d ' ' || true)"
+if [[ "${unquoted_cmdsub_count:-0}" -eq 0 ]]; then
+    ok "no unquoted \$(\${py312} ...) command-substitutions remain"
+else
+    fail "${unquoted_cmdsub_count} unquoted \$(\${py312} ...) command-substitution(s) remain — path-with-spaces regression"
+    /usr/bin/grep -nE '\$\(\$\{?py312\}? ' "$POSTINSTALL" >&2 || true
+fi
+
+# Leading-word command form: a line whose first non-space token is
+# `${py312}` or `$py312` followed by a space + arg (i.e. used as the
+# command itself). This must be quoted. We exclude lines where the
+# pattern appears inside double quotes by using a heuristic: skip lines
+# beginning with `log "` / `fail ` / `echo ` (those are text payloads).
+unquoted_leading_count="$(/usr/bin/awk '
+    # Trim leading whitespace
+    {
+        line = $0
+        sub(/^[[:space:]]+/, "", line)
+        # Skip lines that are obviously text payloads (the variable is
+        # a string interpolation inside double-quoted text).
+        if (line ~ /^(log|fail|echo|#)/) next
+        # Match leading-word command use of $py312 or ${py312}.
+        if (line ~ /^\$\{?py312\}?[[:space:]]/) print NR": "$0
+    }
+' "$POSTINSTALL" | wc -l | tr -d ' ' || true)"
+if [[ "${unquoted_leading_count:-0}" -eq 0 ]]; then
+    ok "no unquoted leading-word \${py312} command invocations remain"
+else
+    fail "${unquoted_leading_count} unquoted leading-word \${py312} invocation(s) remain — path-with-spaces regression"
+fi
+
+# The current-correct quoted forms must be present.
+if /usr/bin/grep -qE '\$\("\$py312" --version' "$POSTINSTALL"; then
+    ok "version probe uses quoted \"\$py312\" --version (P-027)"
+else
+    fail "version probe is not using quoted \"\$py312\" --version — P-027 regression"
+fi
+if /usr/bin/grep -qE '\$\("\$py312" -c ' "$POSTINSTALL"; then
+    ok "sys.version_info probe uses quoted \"\$py312\" -c '...' (P-027)"
+else
+    fail "sys.version_info probe is not using quoted \"\$py312\" -c '...' — P-027 regression"
+fi
+
+# venv invocation has been quoted since the original commit; assert it
+# stays that way.
+if /usr/bin/grep -qE '"\$py312" -m venv' "$POSTINSTALL"; then
+    ok "venv create uses quoted \"\$py312\" -m venv"
+else
+    fail "venv create is not using quoted \"\$py312\" -m venv — P-027 regression"
+fi
+
+# A reference to P-027 (or the spaces-in-path explanation) MUST live in
+# the script so future maintainers see why these specific lines are
+# quoted.
+if /usr/bin/grep -qE 'P-027' "$POSTINSTALL"; then
+    ok "P-027 reference present in postinstall.sh"
+else
+    fail "P-027 reference missing from postinstall.sh — undocumented quoting"
+fi
+
+# ---------------------------------------------------------------------
+section "11. P-027 — functional smoke: resolver/version-probe survives a path with spaces"
+# ---------------------------------------------------------------------
+# Build a tiny scratch tree that mirrors the customer install path
+# shape: a directory whose name contains a space, with an executable
+# `python3.12` shim that prints version info matching the cp312 ABI
+# the postinstall guard expects. We then run the same `$("$py312"
+# --version)` and `$("$py312" -c '...')` patterns inline (mirroring
+# the postinstall code) and assert they succeed.
+SCRATCH="$(mktemp -d 2>/dev/null || mktemp -d -t mg-p027)"
+trap 'rm -rf "$SCRATCH"' EXIT
+
+PY_DIR="${SCRATCH}/Application Support/MiningGuardian/runtime/python/bin"
+mkdir -p "$PY_DIR"
+PY_SHIM="${PY_DIR}/python3.12"
+cat >"$PY_SHIM" <<'SHIM'
+#!/usr/bin/env bash
+# Minimal python3.12 shim: handles the two flag forms the postinstall
+# resolver invokes. Anything else is rejected so a future test catching
+# a new probe can update the shim.
+case "${1:-}" in
+    --version)
+        echo "Python 3.12.7"
+        ;;
+    -c)
+        # The postinstall probe is exactly:
+        #   import sys; print("%d.%d" % sys.version_info[:2])
+        # We don't try to interpret python; we just hard-code the right
+        # answer for this version.
+        echo "3.12"
+        ;;
+    *)
+        echo "shim: unsupported args: $*" >&2
+        exit 2
+        ;;
+esac
+SHIM
+chmod 0755 "$PY_SHIM"
+
+py312="$PY_SHIM"
+ver_line="$("$py312" --version 2>&1)"
+if [[ "$ver_line" == "Python 3.12.7" ]]; then
+    ok "quoted \$(\"\$py312\" --version) works on path with spaces"
+else
+    fail "quoted version probe failed on path with spaces (got: '${ver_line}')"
+fi
+py_ver="$("$py312" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+if [[ "$py_ver" == "3.12" ]]; then
+    ok "quoted \$(\"\$py312\" -c '...') sys.version_info probe works on path with spaces"
+else
+    fail "quoted sys.version_info probe failed on path with spaces (got: '${py_ver}')"
+fi
+
+# Counter-test: confirm the OLD (unquoted) form would have failed on
+# this same path. If the unquoted form ever passes here, the test is
+# buggy or the host shell is doing something weird; either way we want
+# to know.
+unquoted_out="$( ${py312} --version 2>&1 || true )"  # deliberately unquoted
+if [[ "$unquoted_out" == *"No such file or directory"* \
+        || "$unquoted_out" == *"command not found"* \
+        || "$unquoted_out" != "Python 3.12.7" ]]; then
+    ok "counter-test: unquoted \${py312} on path-with-spaces fails (as expected)"
+else
+    fail "counter-test failed: unquoted \${py312} surprisingly succeeded — test is not actually catching the regression"
+fi
+
+rm -rf "$SCRATCH"
+trap - EXIT
+
+# ---------------------------------------------------------------------
 section "Summary"
 # ---------------------------------------------------------------------
 echo
