@@ -63,6 +63,64 @@ def _db_password() -> str:
         )
     return pw
 
+
+# ---------------------------------------------------------------------------
+# DB connection target — operational by design.
+#
+# P-018B: every psycopg2.connect() in this file used to default `dbname` to
+# the literal string "mining_guardian". That is the operational DB on the
+# Mini, which is correct for the importer's own bookkeeping tables
+# (`knowledge.field_log_*`, `mg.import_runs`, `mg.unresolved_models`) — but
+# it was a literal, not a resolution, so the next operator who renamed the
+# operational DB or stood up a second deployment would silently route the
+# importer at the wrong DB.
+#
+# We now source the dbname from `core.db_targets.operational_target()`
+# (P-018A) so the literal lives in exactly one place. Behavior is
+# unchanged on the Mini today (`GUARDIAN_PG_DBNAME=mining_guardian` per
+# `installer/macos-pkg/scripts/postinstall.sh:923`); the importer's
+# Tier-1 alias lookup against `mg.model_aliases` will be addressed
+# separately in P-018C alongside the seed-apply step in postinstall and
+# the `hardware.*` vs `mg.*` schema reconciliation flagged in the
+# diagnostic.
+# ---------------------------------------------------------------------------
+def _resolve_operational_target():
+    """Return `core.db_targets.operational_target()`, resilient to sys.path.
+
+    The repo root is normally on sys.path when mg_import runs; if it isn't
+    (e.g., the importer is invoked from inside `mg_import_tool/` directly),
+    we add it once so the import resolves.
+    """
+    try:
+        from core.db_targets import operational_target
+    except ImportError:
+        import sys
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[1]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from core.db_targets import operational_target  # type: ignore[no-redef]
+    return operational_target()
+
+
+def _connect_kwargs(conn_params: dict) -> dict:
+    """Build psycopg2.connect() kwargs from a request-dict + operational target.
+
+    `conn_params` is the per-request dict carried through the importer
+    (host/port/database/user/password). Each field falls back to the
+    centrally-resolved operational target — host/port/user/dbname from
+    `GUARDIAN_PG_*`, password from `MG_DB_PASSWORD` (via `_db_password()`
+    which keeps the existing fail-loud behavior).
+    """
+    target = _resolve_operational_target()
+    return {
+        "host":     conn_params.get("host",     target.host),
+        "port":     int(conn_params.get("port", target.port)),
+        "dbname":   conn_params.get("database", target.dbname),
+        "user":     conn_params.get("user",     target.user),
+        "password": conn_params.get("password") or _db_password(),
+    }
+
 try:
     import psycopg2
     import psycopg2.extras
@@ -557,14 +615,7 @@ def execute_sql_block(conn_params: dict, sql: str) -> dict:
     rows_affected = 0
 
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=10
-        )
+        conn = psycopg2.connect(connect_timeout=10, **_connect_kwargs(conn_params))
         conn.autocommit = False
         cur = conn.cursor()
 
@@ -745,14 +796,7 @@ def lookup_alias(conn_params: dict, raw_string: str, source_field: str):
     if not PSYCOPG2_AVAILABLE or not conn_params:
         return None
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         cur = conn.cursor()
         cur.execute(
             """
@@ -827,14 +871,7 @@ def record_unresolved_model(conn_params: dict, raw_string: str, source_field: st
     if not PSYCOPG2_AVAILABLE or not conn_params:
         return
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute(
@@ -869,14 +906,7 @@ def stamp_import_with_catalog(conn_params: dict, archive_id: int, catalog_slug: 
     if not PSYCOPG2_AVAILABLE or not conn_params or not archive_id:
         return
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute(
@@ -901,14 +931,7 @@ def get_archive_id_by_label(conn_params: dict, entity_label: str):
     if not PSYCOPG2_AVAILABLE or not conn_params:
         return None
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         cur = conn.cursor()
         cur.execute(
             'SELECT id FROM knowledge.field_log_imports WHERE entity_label = %s LIMIT 1',
@@ -965,14 +988,7 @@ def insert_raw_json(conn_params: dict, archive_filename: str,
         return
     log = get_run_logger('mg_raw_json')
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute(
@@ -1023,14 +1039,7 @@ def insert_miner_identity(conn_params: dict, identity_rows: list,
         return
     log = get_run_logger('mg_identity')
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         for idx, r in enumerate(identity_rows):
@@ -1120,14 +1129,7 @@ def record_unknown_fields(conn_params: dict, archive_id: int, source_file: str,
         return
     log = get_run_logger('mg_unknown_fields')
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         for field_key, field_val in unknown.items():
@@ -3009,14 +3011,7 @@ def _update_import_run_resolver_stats(conn_params: dict, archive_filename: str,
         'unresolved':       unresolved,
     }
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute(
@@ -3074,14 +3069,7 @@ def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
     if RESOLVER_AVAILABLE and _resolver is not None and PSYCOPG2_AVAILABLE and conn_params:
         try:
             # Open a single connection for all resolver calls
-            _conn = psycopg2.connect(
-                host=conn_params.get('host', 'localhost'),
-                port=int(conn_params.get('port', 5432)),
-                dbname=conn_params.get('database', 'mining_guardian'),
-                user=conn_params.get('user', 'guardian_admin'),
-                password=conn_params.get('password') or _db_password(),
-                connect_timeout=5
-            )
+            _conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
             _conn.autocommit = True
             try:
                 res = _resolver.resolve_identity_fields(
@@ -3121,14 +3109,7 @@ def _do_layer2_postprocessing(conn_params: dict, archive_meta: dict,
     identity_rows = archive_meta.get('identity_rows', [])
     if identity_rows and RESOLVER_AVAILABLE and _resolver is not None and PSYCOPG2_AVAILABLE:
         try:
-            _conn2 = psycopg2.connect(
-                host=conn_params.get('host', 'localhost'),
-                port=int(conn_params.get('port', 5432)),
-                dbname=conn_params.get('database', 'mining_guardian'),
-                user=conn_params.get('user', 'guardian_admin'),
-                password=conn_params.get('password') or _db_password(),
-                connect_timeout=5
-            )
+            _conn2 = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
             _conn2.autocommit = True
             try:
                 resolver_results = []
@@ -3282,14 +3263,7 @@ def stamp_import_with_model_id(conn_params: dict, archive_id: int, model_id: str
     if not PSYCOPG2_AVAILABLE or not conn_params or not archive_id:
         return
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         # Try the v3.1 column names first; fall back to legacy names
@@ -3372,14 +3346,7 @@ def test_connection():
         return jsonify({'success': False, 'error': 'psycopg2 not installed. Run: pip install psycopg2-binary'})
     data = request.get_json(force=True)
     try:
-        conn = psycopg2.connect(
-            host=data.get('host', 'localhost'),
-            port=int(data.get('port', 5432)),
-            dbname=data.get('database', 'mining_guardian'),
-            user=data.get('user', 'guardian_admin'),
-            password=data.get('password') or _db_password(),
-            connect_timeout=8
-        )
+        conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs(data))
         cur = conn.cursor()
         cur.execute('SELECT version();')
         version = cur.fetchone()[0]
@@ -3717,14 +3684,7 @@ def write_import_run(conn_params: dict, started_at, finished_at, archive_count: 
         return
     log = get_run_logger('mg_import_runs')
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute(
@@ -3765,14 +3725,7 @@ def detect_dormant_miners(conn_params: dict) -> int:
         return 0
     log = get_run_logger('mg_dormant')
     try:
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=8
-        )
+        conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         # Find candidates: MACs in mg.miners with >= 3 archives, last seen > 30d ago,
@@ -3996,12 +3949,16 @@ def _get_conn_params_from_args():
     history entry, and proxy cache the request touched, and (b) the
     Postgres-as-truth invariant means the only legitimate password is the
     one the process started with.
+
+    P-018B: defaults derive from `core.db_targets.operational_target()` so
+    `GUARDIAN_PG_*` env overrides land here too.
     """
+    op = _resolve_operational_target()
     return {
-        'host':     request.args.get('host', 'localhost'),
-        'port':     request.args.get('port', '5432'),
-        'database': request.args.get('database', 'mining_guardian'),
-        'user':     request.args.get('user', 'guardian_admin'),
+        'host':     request.args.get('host', op.host),
+        'port':     request.args.get('port', str(op.port)),
+        'database': request.args.get('database', op.dbname),
+        'user':     request.args.get('user', op.user),
         'password': _db_password(),
     }
 
@@ -4033,11 +3990,7 @@ def rma_form():
         else:
             if PSYCOPG2_AVAILABLE:
                 try:
-                    conn = psycopg2.connect(
-                        host='localhost', port=5432, dbname='mining_guardian',
-                        user='guardian_admin', password=_db_password(),
-                        connect_timeout=8
-                    )
+                    conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs({}))
                     conn.autocommit = True
                     cur = conn.cursor()
                     # Try to look up catalog_slug via mg.miners
@@ -4107,11 +4060,7 @@ def rma_csv():
                     inserted = 0
                     errors = []
                     if PSYCOPG2_AVAILABLE:
-                        conn = psycopg2.connect(
-                            host='localhost', port=5432, dbname='mining_guardian',
-                            user='guardian_admin', password=_db_password(),
-                            connect_timeout=8
-                        )
+                        conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs({}))
                         conn.autocommit = True
                         cur = conn.cursor()
                         for row in rows:
@@ -4160,11 +4109,7 @@ def dormant_miners():
     miners = []
     if PSYCOPG2_AVAILABLE:
         try:
-            conn = psycopg2.connect(
-                host='localhost', port=5432, dbname='mining_guardian',
-                user='guardian_admin', password=_db_password(),
-                connect_timeout=8
-            )
+            conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs({}))
             cur = conn.cursor()
             cur.execute(
                 """SELECT id, miner_mac, last_seen_at, days_dormant, surfaced_at
@@ -4198,11 +4143,7 @@ def dormant_resolve():
 
     if PSYCOPG2_AVAILABLE and dormant_id:
         try:
-            conn = psycopg2.connect(
-                host='localhost', port=5432, dbname='mining_guardian',
-                user='guardian_admin', password=_db_password(),
-                connect_timeout=8
-            )
+            conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs({}))
             conn.autocommit = True
             cur = conn.cursor()
 
@@ -4311,22 +4252,16 @@ def unresolved_sample():
     except (ValueError, TypeError):
         limit = 50
     # S-4: password is env-only; never accepted from request.args.
+    _op = _resolve_operational_target()
     conn_params = {
-        'host':     request.args.get('host', 'localhost'),
-        'port':     request.args.get('port', '5432'),
-        'database': request.args.get('database', 'mining_guardian'),
-        'user':     request.args.get('user', 'guardian_admin'),
+        'host':     request.args.get('host', _op.host),
+        'port':     request.args.get('port', str(_op.port)),
+        'database': request.args.get('database', _op.dbname),
+        'user':     request.args.get('user', _op.user),
         'password': _db_password(),
     }
     try:
-        conn = psycopg2.connect(
-            host=conn_params['host'],
-            port=int(conn_params['port']),
-            dbname=conn_params['database'],
-            user=conn_params['user'],
-            password=conn_params['password'],
-            connect_timeout=8,
-        )
+        conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs(conn_params))
         cur = conn.cursor()
         cur.execute("""
             SELECT
@@ -4362,14 +4297,7 @@ def _check_archive_sha256_duplicate(conn_params: dict, sha256_hex: str) -> bool:
         return False
     try:
         import hashlib  # noqa: F811 — already inline-imported elsewhere
-        conn = psycopg2.connect(
-            host=conn_params.get('host', 'localhost'),
-            port=int(conn_params.get('port', 5432)),
-            dbname=conn_params.get('database', 'mining_guardian'),
-            user=conn_params.get('user', 'guardian_admin'),
-            password=conn_params.get('password') or _db_password(),
-            connect_timeout=5,
-        )
+        conn = psycopg2.connect(connect_timeout=5, **_connect_kwargs(conn_params))
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute(
@@ -4677,22 +4605,16 @@ def browse_tables():
     if not PSYCOPG2_AVAILABLE:
         return jsonify({'success': False, 'error': 'psycopg2 not installed', 'tables': []})
     # S-4: password is env-only; never accepted from request.args.
+    _op = _resolve_operational_target()
     conn_params = {
-        'host': request.args.get('host', 'localhost'),
-        'port': request.args.get('port', '5432'),
-        'database': request.args.get('database', 'mining_guardian'),
-        'user': request.args.get('user', 'guardian_admin'),
+        'host': request.args.get('host', _op.host),
+        'port': request.args.get('port', str(_op.port)),
+        'database': request.args.get('database', _op.dbname),
+        'user': request.args.get('user', _op.user),
         'password': _db_password()
     }
     try:
-        conn = psycopg2.connect(
-            host=conn_params['host'],
-            port=int(conn_params['port']),
-            dbname=conn_params['database'],
-            user=conn_params['user'],
-            password=conn_params['password'],
-            connect_timeout=8
-        )
+        conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs(conn_params))
         cur = conn.cursor()
         cur.execute(
             "SELECT relname, n_live_tup "
@@ -4722,22 +4644,16 @@ def browse_rows():
         return jsonify({'success': False, 'error': 'Invalid table name', 'rows': [], 'columns': []})
 
     # S-4: password is env-only; never accepted from request.args.
+    _op = _resolve_operational_target()
     conn_params = {
-        'host': request.args.get('host', 'localhost'),
-        'port': request.args.get('port', '5432'),
-        'database': request.args.get('database', 'mining_guardian'),
-        'user': request.args.get('user', 'guardian_admin'),
+        'host': request.args.get('host', _op.host),
+        'port': request.args.get('port', str(_op.port)),
+        'database': request.args.get('database', _op.dbname),
+        'user': request.args.get('user', _op.user),
         'password': _db_password()
     }
     try:
-        conn = psycopg2.connect(
-            host=conn_params['host'],
-            port=int(conn_params['port']),
-            dbname=conn_params['database'],
-            user=conn_params['user'],
-            password=conn_params['password'],
-            connect_timeout=8
-        )
+        conn = psycopg2.connect(connect_timeout=8, **_connect_kwargs(conn_params))
         cur = conn.cursor()
         # Safe: table_name is validated to alphanumeric+underscore only
         cur.execute(f'SELECT * FROM knowledge.{table_name} LIMIT 25')

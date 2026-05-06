@@ -80,6 +80,26 @@ SOURCE_ID_BOBBY_OPERATIONAL = "a0000000-0000-0000-0000-00000000000f"
 
 # ──────────────────────────────────────────────────────────────────────────
 # Connection helpers (mirrors dual_writer.py)
+#
+# P-018B note (deferred to P-018C):
+#   This module is single-connection by design — every sync function reads
+#   from `public.action_audit_log` / `public.miner_restarts` / `public.
+#   llm_analysis` (all in the OPERATIONAL DB `mining_guardian`) AND writes
+#   to `ops.failure_patterns` / `market.war_stories` /
+#   `hardware.model_known_issues` (all in the CATALOG DB
+#   `mining_guardian_catalog`) inside the same transaction. With the two
+#   DBs split, no single connection can satisfy both halves. The correct
+#   shape is two connections (operational read → catalog write, with row
+#   batches passed in Python), which is a P-018C-class refactor that
+#   coordinates with redirecting `ai/catalog_context.py` and wiring the
+#   alias seed apply step into postinstall.
+#
+#   For now `_get_connection()` continues to read `PGDATABASE` (operational
+#   on the Mini) so the module stays importable and the read half of every
+#   query keeps resolving against tables that exist. The catalog-write
+#   half has been a silent no-op since the two DBs split — P-018B does
+#   NOT change that. Do not redirect this single connection to the catalog
+#   target until P-018C lands the two-connection refactor.
 # ──────────────────────────────────────────────────────────────────────────
 
 _UUID_ADAPTER_REGISTERED = False

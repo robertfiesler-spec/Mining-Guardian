@@ -30,10 +30,20 @@ Design choices
    the same payload is a no-op (the unique index swallows it via
    ON CONFLICT DO NOTHING). Re-writing a CHANGED payload supersedes any
    prior pending row for the same slug.
-4. Connection management: this module uses MG_DB_PASSWORD (D-1) and the
-   standard PGHOST/PGPORT/PGUSER/PGDATABASE env vars. It does NOT inherit
-   the application's connection pool because watchers may run in cron jobs
-   independent of the API process.
+4. Connection management: this module talks to the CATALOG database
+   (`mining_guardian_catalog`) — `staging.miner_model_proposals`,
+   `staging.manufacturer_proposals`, `staging.alias_proposals`, and
+   `hardware.miner_models` (read by the promote step) all live there.
+   Connection parameters resolve through `core.db_targets.catalog_target()`
+   (P-018A), which reads `GUARDIAN_PG_HOST/_PORT/_USER/_PASSWORD/
+   _CATALOG_DBNAME` and falls back to `MG_DB_PASSWORD`. The previous
+   single-DB defaults (`PGHOST/PGPORT/PGUSER/PGDATABASE` → operational
+   `mining_guardian`) silently routed every proposal to the operational
+   stub of `staging.miner_model_proposals`, where they were invisible
+   to anyone reading the seeded catalog. P-018B closed that gap.
+
+   Watchers may still run in cron jobs independent of the API process —
+   `core.db_targets` is dependency-free and safe to import there.
 
 Public API
 ----------
@@ -90,9 +100,34 @@ def _ensure_uuid_adapter() -> None:
         LOG.warning("could not register UUID adapter: %s", exc)
 
 
+def _resolve_catalog_target():
+    """Resolve the catalog DB connection target via core.db_targets.
+
+    The intelligence-catalog dir lives next to (not inside) the `core`
+    package, so we tolerate the case where `intelligence-catalog/` is on
+    sys.path but the repo root is not — add the repo root once if needed
+    so `from core.db_targets import catalog_target` resolves. This keeps
+    the module importable from cron watchers that set their own cwd.
+    """
+    try:
+        from core.db_targets import catalog_target
+    except ImportError:
+        import sys
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from core.db_targets import catalog_target  # type: ignore[no-redef]
+    return catalog_target()
+
+
 def _get_connection():
-    """Open a Postgres connection using D-1 env vars. Returns None on any
-    failure — the caller is expected to log and degrade gracefully.
+    """Open a Postgres connection to the CATALOG DB. Returns None on any
+    failure — the caller logs and degrades gracefully.
+
+    P-018B: dbname is sourced from `GUARDIAN_PG_CATALOG_DBNAME` (default
+    `mining_guardian_catalog`) via `core.db_targets.catalog_target()`,
+    not `PGDATABASE` (which on the Mini points at the operational DB).
     """
     try:
         import psycopg2  # type: ignore
@@ -103,20 +138,18 @@ def _get_connection():
 
     _ensure_uuid_adapter()
 
-    pw = os.environ.get("MG_DB_PASSWORD")
-    if not pw:
-        LOG.warning("MG_DB_PASSWORD not set; dual-write disabled.")
+    target = _resolve_catalog_target()
+    if not target.password:
+        # Match the previous explicit-pw guard so a missing env yields the
+        # same fail-soft "dual-write disabled" path callers already handle.
+        LOG.warning(
+            "no DB password set (GUARDIAN_PG_PASSWORD / MG_DB_PASSWORD); "
+            "dual-write disabled."
+        )
         return None
 
     try:
-        return psycopg2.connect(
-            host=os.environ.get("PGHOST", "/var/run/postgresql"),
-            port=int(os.environ.get("PGPORT", "5432")),
-            user=os.environ.get("PGUSER", "guardian_admin"),
-            dbname=os.environ.get("PGDATABASE", "mining_guardian"),
-            password=pw,
-            connect_timeout=5,
-        )
+        return psycopg2.connect(connect_timeout=5, **target.connect_kwargs())
     except Exception as exc:
         LOG.warning("Postgres unreachable: %s; dual-write disabled.", exc)
         return None
