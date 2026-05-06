@@ -274,32 +274,34 @@ class TestMgImportTargetsOperational:
 
 
 # ---------------------------------------------------------------------------
-# feedback_loop.py — explicitly DEFERRED in P-018B (regression guard)
+# feedback_loop.py — P-018B set the deferral marker; P-018C completed the
+# two-connection refactor. The regression guards below were written for
+# the deferral state (P-018B); they're updated here to assert the
+# completed state (P-018C) so the suite continues to fence the file.
 # ---------------------------------------------------------------------------
 
 
-class TestFeedbackLoopDeferral:
-    def test_module_carries_p018b_deferral_marker(self):
-        """The module's connection-helper section MUST carry the
-        deferral comment so the next reader knows the single-connection
-        design is intentional pending P-018C's two-connection refactor.
-
-        If someone removes the comment without also redirecting the
-        helper, this test fails — flagging that the deferral context
-        was lost.
-        """
+class TestFeedbackLoopRefactored:
+    def test_module_uses_p018c_two_connection_split(self):
+        """Module must reference both operational AND catalog targets
+        (via core.db_targets) and must NOT keep the single-connection
+        helper as the active path. If a future patch collapses back to
+        one connection, this test fails."""
         path = REPO_ROOT / "intelligence-catalog" / "db" / "feedback_loop.py"
         text = path.read_text(encoding="utf-8")
-        assert "P-018B note (deferred to P-018C)" in text
-        assert "two connections" in text
+        assert "operational_target" in text
+        assert "catalog_target" in text
+        assert "_open_op_connection" in text
+        assert "_open_cat_connection" in text
+        # The legacy single-connection comment block from P-018B must be
+        # gone — leaving it would falsely advertise a deferral state.
+        assert "P-018B note (deferred to P-018C)" not in text
 
-    def test_get_connection_still_uses_pgdatabase(self):
-        """Until P-018C, the feedback loop's single connection must
-        keep reading PGDATABASE so its operational-table reads keep
-        resolving. If a future patch flips this to GUARDIAN_PG_CATALOG_*
-        it has to do so as part of the two-connection refactor."""
+    def test_module_no_longer_hardcodes_pgdatabase_default(self):
+        """The pre-P-018C single-connection helper hard-coded
+        `os.environ.get("PGDATABASE", "mining_guardian")` as the only
+        DSN source. With the two-connection split, all DSN resolution
+        goes through `core.db_targets`; the literal must be gone."""
         path = REPO_ROOT / "intelligence-catalog" / "db" / "feedback_loop.py"
         text = path.read_text(encoding="utf-8")
-        assert 'os.environ.get("PGDATABASE", "mining_guardian")' in text
-        # And the dual_writer-style catalog helper must NOT be present.
-        assert "catalog_target()" not in text
+        assert 'os.environ.get("PGDATABASE", "mining_guardian")' not in text

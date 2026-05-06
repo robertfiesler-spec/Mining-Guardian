@@ -10,12 +10,19 @@ catalog is read-only fact data and the AI's outcomes never inform future
 decisions.
 
 This module is the *aggregation* side of that contract. It reads from the
-operational tables (which live in `public.*` after migration 001) and
-*upserts* into the catalog tables:
+operational tables (live in `public.*` in DB `mining_guardian` after
+migration 001) and *upserts* into the catalog tables (live in DB
+`mining_guardian_catalog`):
 
     public.action_audit_log     →  ops.failure_patterns
     public.llm_analysis         →  market.war_stories
     public.miner_restarts       →  hardware.model_known_issues
+
+P-018C two-connection split: each sync function opens an operational
+connection (read-only) AND a catalog connection (model_id lookup +
+UPSERT). The catalog write commits independently of the operational
+read. Public signatures take `*, op_conn=None, cat_conn=None,
+dry_run=False`; both connections are opened internally if not supplied.
 
 Writes are idempotent — running this hourly (or daily) is safe. Each target
 row is keyed on a deterministic `pattern_code` / metadata key so subsequent
@@ -79,27 +86,31 @@ SOURCE_ID_BOBBY_OPERATIONAL = "a0000000-0000-0000-0000-00000000000f"
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Connection helpers (mirrors dual_writer.py)
+# Connection helpers — two-connection split (P-018C)
 #
-# P-018B note (deferred to P-018C):
-#   This module is single-connection by design — every sync function reads
-#   from `public.action_audit_log` / `public.miner_restarts` / `public.
-#   llm_analysis` (all in the OPERATIONAL DB `mining_guardian`) AND writes
-#   to `ops.failure_patterns` / `market.war_stories` /
-#   `hardware.model_known_issues` (all in the CATALOG DB
-#   `mining_guardian_catalog`) inside the same transaction. With the two
-#   DBs split, no single connection can satisfy both halves. The correct
-#   shape is two connections (operational read → catalog write, with row
-#   batches passed in Python), which is a P-018C-class refactor that
-#   coordinates with redirecting `ai/catalog_context.py` and wiring the
-#   alias seed apply step into postinstall.
+# Every sync function reads from `public.<op-table>` (operational DB) and
+# writes to `<catalog-schema>.<table>` plus resolves model_id against
+# `hardware.miner_models` (both catalog DB). With the two DBs split, this
+# module opens TWO connections per run:
 #
-#   For now `_get_connection()` continues to read `PGDATABASE` (operational
-#   on the Mini) so the module stays importable and the read half of every
-#   query keeps resolving against tables that exist. The catalog-write
-#   half has been a silent no-op since the two DBs split — P-018B does
-#   NOT change that. Do not redirect this single connection to the catalog
-#   target until P-018C lands the two-connection refactor.
+#   • op_conn   → operational DB via core.db_targets.operational_target()
+#                 (read-only here; aggregates audit/llm/restart rows)
+#   • cat_conn  → catalog DB     via core.db_targets.catalog_target()
+#                 (model_id lookup + UPSERT into ops/market/hardware)
+#
+# The two halves never share a transaction. Catalog writes commit
+# independently of the operational read; that is fine because every
+# write is idempotent (`ON CONFLICT DO UPDATE` for failure_patterns,
+# UPDATE-then-INSERT for war_stories and model_known_issues — keyed on
+# a deterministic metadata idempotency key). A partial write that the
+# next run repeats is a no-op. A failure mid-loop leaves the catalog in
+# a consistent partial state and the next run resumes naturally.
+#
+# Public signatures unchanged (`*, dry_run=False`). The legacy `conn=`
+# kwarg has been removed because under split DBs it cannot be both
+# operational AND catalog; tests and `run_full_feedback_loop` pass
+# explicit `op_conn=`/`cat_conn=` instead. CLI/external callers
+# (`python -m feedback_loop --run …`) are unaffected.
 # ──────────────────────────────────────────────────────────────────────────
 
 _UUID_ADAPTER_REGISTERED = False
@@ -117,8 +128,27 @@ def _ensure_uuid_adapter() -> None:
         LOG.warning("could not register UUID adapter: %s", exc)
 
 
-def _get_connection():
-    """Open a Postgres connection using D-1 env vars."""
+def _resolve_db_targets():
+    """Resolve the two DB targets via core.db_targets, sys.path-resilient.
+
+    Mirrors dual_writer.py's _resolve_catalog_target so cron/CLI runs
+    invoked from `intelligence-catalog/` cwd still resolve `core.*`.
+    """
+    try:
+        from core.db_targets import operational_target, catalog_target
+    except ImportError:
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+        from core.db_targets import operational_target, catalog_target  # type: ignore[no-redef]
+    return operational_target(), catalog_target()
+
+
+def _open_connection(target):
+    """Open one psycopg2 connection for `target` (operational or catalog).
+
+    Returns None on any failure — caller logs + degrades gracefully.
+    """
     try:
         import psycopg2  # type: ignore
     except ImportError:
@@ -127,23 +157,63 @@ def _get_connection():
 
     _ensure_uuid_adapter()
 
-    pw = os.environ.get("MG_DB_PASSWORD")
-    if not pw:
-        LOG.warning("MG_DB_PASSWORD not set; feedback loop disabled.")
+    if not target.password:
+        LOG.warning(
+            "no DB password set (GUARDIAN_PG_PASSWORD / MG_DB_PASSWORD); "
+            "feedback loop disabled."
+        )
         return None
 
     try:
-        return psycopg2.connect(
-            host=os.environ.get("PGHOST", "/var/run/postgresql"),
-            port=int(os.environ.get("PGPORT", "5432")),
-            user=os.environ.get("PGUSER", "guardian_admin"),
-            dbname=os.environ.get("PGDATABASE", "mining_guardian"),
-            password=pw,
-            connect_timeout=5,
-        )
+        return psycopg2.connect(connect_timeout=5, **target.connect_kwargs())
     except Exception as exc:
-        LOG.warning("Postgres unreachable: %s; feedback loop disabled.", exc)
+        LOG.warning("Postgres unreachable (%s): %s; feedback loop disabled.",
+                    target.dbname, exc)
         return None
+
+
+def _open_op_connection():
+    """Open the operational DB connection (read-only by convention here)."""
+    op_target, _ = _resolve_db_targets()
+    return _open_connection(op_target)
+
+
+def _open_cat_connection():
+    """Open the catalog DB connection (model_id lookup + UPSERTs)."""
+    _, cat_target = _resolve_db_targets()
+    return _open_connection(cat_target)
+
+
+# Legacy single-connection helper. Kept ONLY because the integration test
+# `intelligence-catalog/db/tests/test_feedback_loop.py` imports it via
+# `fb._get_connection()` to probe DB availability; removing it would
+# AttributeError at test-module import even when the test ultimately
+# skips. New callers should use `_open_op_connection` /
+# `_open_cat_connection` explicitly. Resolves to the operational target
+# to match the pre-P-018C behavior the test relied on.
+def _get_connection():
+    return _open_op_connection()
+
+
+def _resolve_model_id(cat_cur, model_text: str):
+    """Look up `hardware.miner_models.id` by free-text model name.
+
+    Catalog-DB-side lookup. ILIKE-contains match against `canonical_name`
+    OR `model_number`. Returns the UUID or None if not found / table
+    missing.
+    """
+    if not model_text:
+        return None
+    if not _table_exists(cat_cur, "hardware", "miner_models"):
+        return None
+    cat_cur.execute(
+        "SELECT id FROM hardware.miner_models "
+        "WHERE canonical_name ILIKE %s OR model_number ILIKE %s "
+        "LIMIT 1",
+        (f"%{model_text}%", f"%{model_text}%"),
+    )
+    row = cat_cur.fetchone()
+    return row[0] if row else None
 
 
 def _table_exists(cur, schema: str, table: str) -> bool:
@@ -169,33 +239,47 @@ def _empty_stats() -> dict:
 # 1) action_audit_log → ops.failure_patterns
 # ──────────────────────────────────────────────────────────────────────────
 
-def sync_action_audit_to_failure_patterns(*, conn=None, dry_run: bool = False) -> dict:
-    """Aggregate action_audit_log rows into ops.failure_patterns.
+def sync_action_audit_to_failure_patterns(
+    *, op_conn=None, cat_conn=None, dry_run: bool = False
+) -> dict:
+    """Aggregate `public.action_audit_log` (operational) into
+    `ops.failure_patterns` (catalog).
 
-    Each distinct (model, problem) pair becomes one failure_pattern with
-    `pattern_code = 'OP_' + sha8(model||problem)`. Re-runs UPDATE the
-    occurrence_rate / metadata.
+    Two-connection split (P-018C). The reads happen against `op_conn`,
+    the model_id lookup + UPSERTs happen against `cat_conn`. Both
+    connections are opened internally if not supplied; caller-supplied
+    connections (used by `run_full_feedback_loop` and tests) are NOT
+    closed by this function.
+
+    Idempotency: catalog writes use `ON CONFLICT (pattern_code) DO
+    UPDATE`. Re-runs UPDATE rather than INSERT.
     """
     stats = _empty_stats()
-    own = conn is None
-    if conn is None:
-        conn = _get_connection()
-    if conn is None:
-        stats["error"] = "no postgres connection"
+    own_op = op_conn is None
+    own_cat = cat_conn is None
+    if op_conn is None:
+        op_conn = _open_op_connection()
+    if cat_conn is None:
+        cat_conn = _open_cat_connection()
+    if op_conn is None or cat_conn is None:
+        stats["error"] = "no postgres connection (operational or catalog)"
+        if own_op and op_conn is not None:
+            op_conn.close()
+        if own_cat and cat_conn is not None:
+            cat_conn.close()
         return stats
 
     try:
-        with conn.cursor() as cur:
-            if not _table_exists(cur, "public", "action_audit_log"):
-                stats["error"] = "public.action_audit_log not found — migration 001 not yet applied"
+        with op_conn.cursor() as op_cur, cat_conn.cursor() as cat_cur:
+            if not _table_exists(op_cur, "public", "action_audit_log"):
+                stats["error"] = (
+                    "public.action_audit_log not found — migration 001 not yet applied"
+                )
                 LOG.warning(stats["error"])
                 return stats
 
-            # Aggregate: count occurrences per (model, problem). Resolve
-            # model to hardware.miner_models.id by canonical_name (case-
-            # insensitive contains match — falls back to NULL = model-
-            # agnostic).
-            cur.execute("""
+            # Aggregate (operational read): one query, no per-row I/O.
+            op_cur.execute("""
                 SELECT
                     aal.model,
                     aal.problem,
@@ -209,22 +293,12 @@ def sync_action_audit_to_failure_patterns(*, conn=None, dry_run: bool = False) -
                 GROUP BY aal.model, aal.problem
                 HAVING COUNT(*) >= 2
             """)
-            agg_rows = cur.fetchall()
+            agg_rows = op_cur.fetchall()
             stats["rows_read"] = len(agg_rows)
 
             for model, problem, occ, approved, denied, first_seen, last_seen in agg_rows:
-                # Resolve model id (best-effort)
-                model_id = None
-                if model:
-                    cur.execute(
-                        "SELECT id FROM hardware.miner_models "
-                        "WHERE canonical_name ILIKE %s OR model_number ILIKE %s "
-                        "LIMIT 1",
-                        (f"%{model}%", f"%{model}%"),
-                    )
-                    row = cur.fetchone()
-                    if row:
-                        model_id = row[0]
+                # Catalog-side: resolve model_id (best-effort).
+                model_id = _resolve_model_id(cat_cur, model) if model else None
 
                 pattern_code = _pattern_code("OP", model or "any", problem)
                 pattern_name = (problem[:120]).strip()
@@ -253,7 +327,7 @@ def sync_action_audit_to_failure_patterns(*, conn=None, dry_run: bool = False) -
                     stats["rows_skipped"] += 1
                     continue
 
-                cur.execute("""
+                cat_cur.execute("""
                     INSERT INTO ops.failure_patterns (
                         pattern_name, pattern_code, description,
                         failure_category, severity,
@@ -286,67 +360,87 @@ def sync_action_audit_to_failure_patterns(*, conn=None, dry_run: bool = False) -
                     SOURCE_ID_BOBBY_OPERATIONAL,
                     json.dumps(metadata),
                 ))
-                inserted = cur.fetchone()[0]
+                inserted = cat_cur.fetchone()[0]
                 if inserted:
                     stats["rows_written"] += 1
                 else:
                     stats["rows_updated"] += 1
 
             if not dry_run:
-                conn.commit()
+                cat_conn.commit()
         return stats
     except Exception as exc:
         LOG.exception("sync_action_audit_to_failure_patterns failed: %s", exc)
         stats["error"] = str(exc)
         if not dry_run:
             try:
-                conn.rollback()
+                cat_conn.rollback()
             except Exception:
                 pass
         return stats
     finally:
-        if own and conn is not None:
-            conn.close()
+        if own_op and op_conn is not None:
+            op_conn.close()
+        if own_cat and cat_conn is not None:
+            cat_conn.close()
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # 2) llm_analysis → market.war_stories
 # ──────────────────────────────────────────────────────────────────────────
 
-def sync_llm_analysis_to_war_stories(*, conn=None, dry_run: bool = False) -> dict:
-    """Promote substantive llm_analysis rows into market.war_stories.
+def sync_llm_analysis_to_war_stories(
+    *, op_conn=None, cat_conn=None, dry_run: bool = False
+) -> dict:
+    """Promote substantive `public.llm_analysis` rows (operational) into
+    `market.war_stories` (catalog).
 
-    Only rows with response length ≥ 200 chars become war stories. Each
-    row's deterministic key is stored in metadata['llm_analysis_id']
-    so re-runs UPDATE rather than insert duplicates.
+    Two-connection split (P-018C). Reads on `op_conn`, UPSERT on
+    `cat_conn`. No model_id resolution needed — `tagged_model_ids` is
+    explicitly `'{}'::uuid[]`.
+
+    Idempotency: `metadata @> {llm_analysis_id: …}` UPDATE-first, then
+    INSERT if no row matched.
     """
     stats = _empty_stats()
-    own = conn is None
-    if conn is None:
-        conn = _get_connection()
-    if conn is None:
-        stats["error"] = "no postgres connection"
+    own_op = op_conn is None
+    own_cat = cat_conn is None
+    if op_conn is None:
+        op_conn = _open_op_connection()
+    if cat_conn is None:
+        cat_conn = _open_cat_connection()
+    if op_conn is None or cat_conn is None:
+        stats["error"] = "no postgres connection (operational or catalog)"
+        if own_op and op_conn is not None:
+            op_conn.close()
+        if own_cat and cat_conn is not None:
+            cat_conn.close()
         return stats
 
     try:
-        with conn.cursor() as cur:
-            if not _table_exists(cur, "public", "llm_analysis"):
-                stats["error"] = "public.llm_analysis not found — migration 001 not yet applied"
+        with op_conn.cursor() as op_cur, cat_conn.cursor() as cat_cur:
+            if not _table_exists(op_cur, "public", "llm_analysis"):
+                stats["error"] = (
+                    "public.llm_analysis not found — migration 001 not yet applied"
+                )
                 LOG.warning(stats["error"])
                 return stats
 
-            cur.execute("""
+            op_cur.execute("""
                 SELECT id, scan_id, analyzed_at, miner_id, prompt, response, model_used
                 FROM public.llm_analysis
                 WHERE response IS NOT NULL AND length(response) >= 200
                 ORDER BY analyzed_at DESC
                 LIMIT 500
             """)
-            rows = cur.fetchall()
+            rows = op_cur.fetchall()
             stats["rows_read"] = len(rows)
 
             for la_id, scan_id, analyzed_at, miner_id, prompt, response, model_used in rows:
-                title = f"AI analysis of miner {miner_id or 'unknown'} on {analyzed_at.date() if analyzed_at else 'unknown'}"
+                title = (
+                    f"AI analysis of miner {miner_id or 'unknown'} on "
+                    f"{analyzed_at.date() if analyzed_at else 'unknown'}"
+                )
                 narrative = response[:4000]
                 lesson = _extract_lesson(response)
                 topic_tags = _extract_topic_tags(response)
@@ -365,9 +459,7 @@ def sync_llm_analysis_to_war_stories(*, conn=None, dry_run: bool = False) -> dic
                     stats["rows_skipped"] += 1
                     continue
 
-                # Idempotency key lives in metadata. Two-phase pattern:
-                # try UPDATE first, INSERT if no row affected.
-                cur.execute("""
+                cat_cur.execute("""
                     UPDATE market.war_stories
                     SET narrative = %s,
                         lesson_learned = %s,
@@ -381,11 +473,11 @@ def sync_llm_analysis_to_war_stories(*, conn=None, dry_run: bool = False) -> dic
                     json.dumps(metadata),
                     json.dumps({"llm_analysis_id": la_id}),
                 ))
-                if cur.fetchone():
+                if cat_cur.fetchone():
                     stats["rows_updated"] += 1
                     continue
 
-                cur.execute("""
+                cat_cur.execute("""
                     INSERT INTO market.war_stories (
                         title, narrative, event_date,
                         tagged_model_ids, tagged_failure_patterns, topic_tags,
@@ -410,46 +502,66 @@ def sync_llm_analysis_to_war_stories(*, conn=None, dry_run: bool = False) -> dic
                 stats["rows_written"] += 1
 
             if not dry_run:
-                conn.commit()
+                cat_conn.commit()
         return stats
     except Exception as exc:
         LOG.exception("sync_llm_analysis_to_war_stories failed: %s", exc)
         stats["error"] = str(exc)
         if not dry_run:
             try:
-                conn.rollback()
+                cat_conn.rollback()
             except Exception:
                 pass
         return stats
     finally:
-        if own and conn is not None:
-            conn.close()
+        if own_op and op_conn is not None:
+            op_conn.close()
+        if own_cat and cat_conn is not None:
+            cat_conn.close()
 
 
 # ──────────────────────────────────────────────────────────────────────────
 # 3) miner_restarts → hardware.model_known_issues
 # ──────────────────────────────────────────────────────────────────────────
 
-def sync_miner_restarts_to_known_issues(*, conn=None, dry_run: bool = False) -> dict:
-    """Aggregate miner_restarts by (model, restart_type) and upsert into
-    hardware.model_known_issues. Restart_type maps to issue_type; failure
-    rate (failures / total) drives commonality."""
+def sync_miner_restarts_to_known_issues(
+    *, op_conn=None, cat_conn=None, dry_run: bool = False
+) -> dict:
+    """Aggregate `public.miner_restarts` (operational) by (model,
+    restart_type) and upsert into `hardware.model_known_issues`
+    (catalog). Restart_type maps to issue_type; failure rate
+    (failures / total) drives commonality.
+
+    Two-connection split (P-018C). Rows whose model can't be resolved
+    against `hardware.miner_models` are skipped (rows_skipped) — this
+    matches the original behavior since `miner_model_id` is NOT NULL
+    on `hardware.model_known_issues`.
+    """
     stats = _empty_stats()
-    own = conn is None
-    if conn is None:
-        conn = _get_connection()
-    if conn is None:
-        stats["error"] = "no postgres connection"
+    own_op = op_conn is None
+    own_cat = cat_conn is None
+    if op_conn is None:
+        op_conn = _open_op_connection()
+    if cat_conn is None:
+        cat_conn = _open_cat_connection()
+    if op_conn is None or cat_conn is None:
+        stats["error"] = "no postgres connection (operational or catalog)"
+        if own_op and op_conn is not None:
+            op_conn.close()
+        if own_cat and cat_conn is not None:
+            cat_conn.close()
         return stats
 
     try:
-        with conn.cursor() as cur:
-            if not _table_exists(cur, "public", "miner_restarts"):
-                stats["error"] = "public.miner_restarts not found — migration 001 not yet applied"
+        with op_conn.cursor() as op_cur, cat_conn.cursor() as cat_cur:
+            if not _table_exists(op_cur, "public", "miner_restarts"):
+                stats["error"] = (
+                    "public.miner_restarts not found — migration 001 not yet applied"
+                )
                 LOG.warning(stats["error"])
                 return stats
 
-            cur.execute("""
+            op_cur.execute("""
                 SELECT
                     model,
                     COALESCE(restart_type, 'unspecified') AS restart_type,
@@ -464,22 +576,15 @@ def sync_miner_restarts_to_known_issues(*, conn=None, dry_run: bool = False) -> 
                 GROUP BY model, COALESCE(restart_type, 'unspecified')
                 HAVING COUNT(*) >= 3
             """)
-            rows = cur.fetchall()
+            rows = op_cur.fetchall()
             stats["rows_read"] = len(rows)
 
             for (model, restart_type, total, succeeded, failed,
                  avg_recovery, first_seen, last_seen) in rows:
-                cur.execute(
-                    "SELECT id FROM hardware.miner_models "
-                    "WHERE canonical_name ILIKE %s OR model_number ILIKE %s "
-                    "LIMIT 1",
-                    (f"%{model}%", f"%{model}%"),
-                )
-                row = cur.fetchone()
-                if not row:
+                model_id = _resolve_model_id(cat_cur, model)
+                if not model_id:
                     stats["rows_skipped"] += 1
                     continue
-                model_id = row[0]
 
                 fail_rate = (failed / total) if total else 0.0
                 commonality = _classify_commonality(fail_rate, total)
@@ -514,7 +619,7 @@ def sync_miner_restarts_to_known_issues(*, conn=None, dry_run: bool = False) -> 
                     stats["rows_skipped"] += 1
                     continue
 
-                cur.execute("""
+                cat_cur.execute("""
                     UPDATE hardware.model_known_issues
                     SET description = %s,
                         commonality = %s,
@@ -532,11 +637,11 @@ def sync_miner_restarts_to_known_issues(*, conn=None, dry_run: bool = False) -> 
                     model_id,
                     json.dumps(idempotency_key),
                 ))
-                if cur.fetchone():
+                if cat_cur.fetchone():
                     stats["rows_updated"] += 1
                     continue
 
-                cur.execute("""
+                cat_cur.execute("""
                     INSERT INTO hardware.model_known_issues (
                         miner_model_id, issue_type, commonality, category,
                         title, description,
@@ -561,20 +666,22 @@ def sync_miner_restarts_to_known_issues(*, conn=None, dry_run: bool = False) -> 
                 stats["rows_written"] += 1
 
             if not dry_run:
-                conn.commit()
+                cat_conn.commit()
         return stats
     except Exception as exc:
         LOG.exception("sync_miner_restarts_to_known_issues failed: %s", exc)
         stats["error"] = str(exc)
         if not dry_run:
             try:
-                conn.rollback()
+                cat_conn.rollback()
             except Exception:
                 pass
         return stats
     finally:
-        if own and conn is not None:
-            conn.close()
+        if own_op and op_conn is not None:
+            op_conn.close()
+        if own_cat and cat_conn is not None:
+            cat_conn.close()
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -582,23 +689,40 @@ def sync_miner_restarts_to_known_issues(*, conn=None, dry_run: bool = False) -> 
 # ──────────────────────────────────────────────────────────────────────────
 
 def run_full_feedback_loop(*, dry_run: bool = False) -> dict:
-    """Run all three sync passes against a single connection."""
+    """Run all three sync passes, sharing one operational + one catalog
+    connection across the three passes.
+
+    P-018C: previously this opened ONE connection and passed it down via
+    `conn=`. With split DBs we open TWO connections — operational and
+    catalog — and reuse both across the three sync calls. Each sync
+    writes commit independently of the others (idempotent UPSERTs make
+    a partial run safe to repeat).
+    """
     out = {"audit_log": _empty_stats(), "llm_analysis": _empty_stats(),
            "miner_restarts": _empty_stats()}
-    conn = _get_connection()
-    if conn is None:
+    op_conn = _open_op_connection()
+    cat_conn = _open_cat_connection()
+    if op_conn is None or cat_conn is None:
         for v in out.values():
-            v["error"] = "no postgres connection"
+            v["error"] = "no postgres connection (operational or catalog)"
+        if op_conn is not None:
+            op_conn.close()
+        if cat_conn is not None:
+            cat_conn.close()
         return out
     try:
-        out["audit_log"]      = sync_action_audit_to_failure_patterns(conn=conn, dry_run=dry_run)
-        out["llm_analysis"]   = sync_llm_analysis_to_war_stories(conn=conn, dry_run=dry_run)
-        out["miner_restarts"] = sync_miner_restarts_to_known_issues(conn=conn, dry_run=dry_run)
+        out["audit_log"]      = sync_action_audit_to_failure_patterns(
+            op_conn=op_conn, cat_conn=cat_conn, dry_run=dry_run)
+        out["llm_analysis"]   = sync_llm_analysis_to_war_stories(
+            op_conn=op_conn, cat_conn=cat_conn, dry_run=dry_run)
+        out["miner_restarts"] = sync_miner_restarts_to_known_issues(
+            op_conn=op_conn, cat_conn=cat_conn, dry_run=dry_run)
     finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
+        for c in (op_conn, cat_conn):
+            try:
+                c.close()
+            except Exception:
+                pass
     return out
 
 
@@ -708,16 +832,29 @@ def _main(argv: Optional[list[str]] = None) -> int:
     )
 
     if args.status:
-        conn = _get_connection()
-        ok = conn is not None
-        result = {"postgres_available": ok}
-        if conn is not None:
+        op_conn = _open_op_connection()
+        cat_conn = _open_cat_connection()
+        result = {
+            "operational_available": op_conn is not None,
+            "catalog_available":     cat_conn is not None,
+        }
+        if op_conn is not None:
             try:
-                with conn.cursor() as cur:
+                with op_conn.cursor() as cur:
                     for src in ("action_audit_log", "llm_analysis", "miner_restarts"):
-                        result[src] = _table_exists(cur, "public", src)
+                        result[f"public.{src}"] = _table_exists(cur, "public", src)
             finally:
-                conn.close()
+                op_conn.close()
+        if cat_conn is not None:
+            try:
+                with cat_conn.cursor() as cur:
+                    for tbl in (("ops", "failure_patterns"),
+                                ("market", "war_stories"),
+                                ("hardware", "model_known_issues"),
+                                ("hardware", "miner_models")):
+                        result[f"{tbl[0]}.{tbl[1]}"] = _table_exists(cur, *tbl)
+            finally:
+                cat_conn.close()
         print(json.dumps(result, indent=2))
         return 0
 
