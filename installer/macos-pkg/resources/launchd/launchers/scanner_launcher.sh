@@ -49,5 +49,11 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+# P-028 (2026-05-06) — export MG_INSTALL_ROOT so the scanner's
+# _resolve_log_dir() lands on ${INSTALL_ROOT}/logs/ regardless of what
+# CWD launchd hands us. The cd below is the belt; this env var is the
+# suspenders for any future caller that does not cd first.
+export MG_INSTALL_ROOT="${INSTALL_ROOT}"
+
 cd "${INSTALL_ROOT}"
 exec "${VENV_PYTHON}" -u "${ENTRY_POINT}"

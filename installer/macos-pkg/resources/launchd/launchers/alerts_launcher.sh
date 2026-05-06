@@ -36,5 +36,10 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+# P-028 (2026-05-06) — export MG_INSTALL_ROOT so any module that uses
+# core.mining_guardian._resolve_log_dir() picks the correct absolute
+# logs path. See scanner_launcher.sh for the canonical comment.
+export MG_INSTALL_ROOT="${INSTALL_ROOT}"
+
 cd "${INSTALL_ROOT}"
 exec "${VENV_PYTHON}" -u "${ENTRY_POINT}"
