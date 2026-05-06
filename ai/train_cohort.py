@@ -963,6 +963,7 @@ def run_cohort_training():
                     WHERE ip IN ({placeholders})
                       AND analyzed_at::timestamp >= (NOW() - INTERVAL '7 days')
                       AND response IS NOT NULL AND response != ''
+                      AND response NOT LIKE '%[SCRUBBED-DATA-INTEGRITY]%'
                     ORDER BY analyzed_at DESC LIMIT 10
                 """, cohort_ips).fetchall()]
         except Exception as e:
