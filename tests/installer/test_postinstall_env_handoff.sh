@@ -282,6 +282,13 @@ DRIVER="${TMP}/drive.sh"
     echo "log() { echo \"\$*\" >> '${FAKE_LOG}'; }"
     # Stub fail() so a real failure surfaces as a clear test error.
     echo "fail() { echo \"FAIL_STUB_HIT(\$1): \${*:2}\" >&2; exit 99; }"
+    # P-029 (2026-05-06) — step_drop_dotenv now calls `_shq` to
+    # shell-quote every customer-supplied value before writing the
+    # heredoc. Pull that helper into the driver too, otherwise the
+    # function silently writes empty values for everything that goes
+    # through _shq and the leak-protection assertions below extract
+    # an empty MG_DB_PASSWORD and false-fail.
+    /usr/bin/awk '/^_shq\(\)/,/^}$/' "$POSTINSTALL"
     # Extract step_drop_dotenv verbatim from postinstall.sh.
     /usr/bin/awk '/^step_drop_dotenv\(\)/,/^}$/' "$POSTINSTALL"
     # Invoke and report the post-call state.
@@ -368,8 +375,11 @@ fi
 
 # Extract the generated MG_DB_PASSWORD value from .env and grep for it
 # in the install log. A non-zero match count means the secret leaked.
+# P-029 (2026-05-06) — _shq now wraps every value in single quotes;
+# strip surrounding single quotes if present so we grep the LOG for the
+# raw secret value, not the (irrelevant) quoted form.
 gen_pwd="$(/usr/bin/grep '^MG_DB_PASSWORD=' "${ENV_FILE}" 2>/dev/null \
-            | /usr/bin/sed -E 's/^MG_DB_PASSWORD=//')"
+            | /usr/bin/sed -E "s/^MG_DB_PASSWORD=//; s/^'(.*)'\$/\1/")"
 if [[ -n "${gen_pwd}" ]]; then
     if /usr/bin/grep -q -- "${gen_pwd}" "${FAKE_LOG}"; then
         fail "install log CONTAINS the generated MG_DB_PASSWORD value (LEAK)"
@@ -381,7 +391,7 @@ else
 fi
 
 gen_cat="$(/usr/bin/grep '^CATALOG_API_KEY=' "${ENV_FILE}" 2>/dev/null \
-            | /usr/bin/sed -E 's/^CATALOG_API_KEY=//')"
+            | /usr/bin/sed -E "s/^CATALOG_API_KEY=//; s/^'(.*)'\$/\1/")"
 if [[ -n "${gen_cat}" ]]; then
     if /usr/bin/grep -q -- "${gen_cat}" "${FAKE_LOG}"; then
         fail "install log CONTAINS the generated CATALOG_API_KEY value (LEAK)"
@@ -391,7 +401,7 @@ if [[ -n "${gen_cat}" ]]; then
 fi
 
 gen_int="$(/usr/bin/grep '^INTERNAL_API_SECRET=' "${ENV_FILE}" 2>/dev/null \
-            | /usr/bin/sed -E 's/^INTERNAL_API_SECRET=//')"
+            | /usr/bin/sed -E "s/^INTERNAL_API_SECRET=//; s/^'(.*)'\$/\1/")"
 if [[ -n "${gen_int}" ]]; then
     if /usr/bin/grep -q -- "${gen_int}" "${FAKE_LOG}"; then
         fail "install log CONTAINS the generated INTERNAL_API_SECRET value (LEAK)"
