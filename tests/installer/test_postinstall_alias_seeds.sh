@@ -240,6 +240,152 @@ fi
 
 
 # ---------------------------------------------------------------------
+section "8. P-019B FK-safe staging apply"
+# ---------------------------------------------------------------------
+# 2026-05-06 install-day failure: Tier-1 alias seed apply hit FATAL (42)
+# because the seed's frozen miner_model_id UUIDs do not match the live
+# DB's randomly-generated UUIDs from seed_miner_models.sql. The fix
+# (P-019B) stages the seed in a TEMP scratch table without the FK,
+# then promotes only rows whose miner_model_id exists in the live
+# hardware.miner_models. This section asserts the staging shim is
+# present and shaped correctly.
+
+# 8.1: function defines the scratch staging table.
+if echo "$fn_body" | grep -qE 'CREATE TEMP TABLE _tier1_alias_seed_scratch'; then
+    ok "Tier-1 staging table created (CREATE TEMP TABLE _tier1_alias_seed_scratch)"
+else
+    fail "step_apply_alias_seeds is missing the P-019B staging table CREATE TEMP TABLE"
+fi
+
+# 8.2: scratch table copies the real table's shape MINUS constraints.
+if echo "$fn_body" | grep -qE 'LIKE hardware\.model_aliases.*EXCLUDING CONSTRAINTS'; then
+    ok "scratch table inherits shape but excludes FK / UNIQUE constraints"
+else
+    fail "P-019B scratch table must use LIKE hardware.model_aliases ... EXCLUDING CONSTRAINTS"
+fi
+
+# 8.3: promote step has the FK-existence gate. The SQL spans multiple
+# lines so we verify the relevant keywords appear in the function body
+# (`WHERE EXISTS (` on one line, `SELECT 1 FROM hardware.miner_models`
+# on the next).
+if echo "$fn_body" | grep -qE 'WHERE EXISTS \(' \
+        && echo "$fn_body" | grep -qE 'SELECT 1 FROM hardware\.miner_models'; then
+    ok "Tier-1 promote step has the FK-existence gate (WHERE EXISTS …hardware.miner_models)"
+else
+    fail "P-019B promote step must filter by EXISTS (SELECT 1 FROM hardware.miner_models WHERE m.id = s.miner_model_id)"
+fi
+
+# 8.4: sed rewrite redirects the seed at the scratch table. The actual
+# sed expression in postinstall.sh is
+#   's/INSERT INTO hardware\.model_aliases/INSERT INTO _tier1_alias_seed_scratch/g'
+# We use fixed-string grep (`-F`) to dodge regex-escaping confusion.
+if echo "$fn_body" | grep -F -q 'INSERT INTO _tier1_alias_seed_scratch'; then
+    ok "sed rewrite redirects the seed's INSERTs at the scratch table"
+else
+    fail "P-019B sed rewrite of seed INSERTs is missing"
+fi
+
+# 8.5: sed strips the seed's own BEGIN/COMMIT (the wrapper owns the
+# transaction; nested BEGIN inside an open transaction is a NOTICE
+# and second COMMIT closes the wrapper too early).
+if echo "$fn_body" | grep -qE "/\\^BEGIN;\\\$/d" && \
+   echo "$fn_body" | grep -qE "/\\^COMMIT;\\\$/d"; then
+    ok "sed strips the seed's own BEGIN; / COMMIT; envelope"
+else
+    fail "P-019B must strip the seed's own BEGIN/COMMIT to avoid nested transactions"
+fi
+
+# 8.6: ON CONFLICT (miner_model_id, alias) DO NOTHING is preserved on
+# the FINAL insert (real table) but stripped on the SCRATCH insert
+# (no UNIQUE on the scratch).
+if echo "$fn_body" | grep -qE "ON CONFLICT \\(miner_model_id, alias\\) DO NOTHING//g"; then
+    ok "sed strips the seed's ON CONFLICT clause for the scratch insert"
+else
+    fail "P-019B must strip ON CONFLICT from scratch INSERTs (scratch has no UNIQUE)"
+fi
+# And the post-wrapper's INSERT into the real table re-adds ON CONFLICT.
+if echo "$fn_body" | grep -qE 'INSERT INTO hardware\.model_aliases.*\n.*\n.*\n.*FROM _tier1_alias_seed_scratch'; then
+    ok "post-wrapper INSERTs into hardware.model_aliases from scratch"
+else
+    # awk scan instead — multi-line grep is finicky.
+    if awk '/INSERT INTO hardware\.model_aliases \(/,/ON CONFLICT \(miner_model_id, alias\) DO NOTHING/' "$POSTINSTALL" \
+            | grep -q '_tier1_alias_seed_scratch'; then
+        ok "post-wrapper INSERTs into hardware.model_aliases from _tier1_alias_seed_scratch"
+    else
+        fail "P-019B post-wrapper missing INSERT INTO hardware.model_aliases SELECT … FROM _tier1_alias_seed_scratch"
+    fi
+fi
+
+# 8.7: ON COMMIT DROP — scratch table cleaned up at COMMIT.
+if echo "$fn_body" | grep -q 'ON COMMIT DROP'; then
+    ok "scratch table is ON COMMIT DROP (no manual cleanup needed)"
+else
+    fail "P-019B scratch table must use ON COMMIT DROP"
+fi
+
+# 8.8: Verify section now distinguishes ZERO (FATAL) from LOW (WARN).
+# Three thresholds: 0, 100, 5000. We pull the whole step body and grep
+# the `tier1_count` lines — easier than slicing around the awk range.
+if echo "$fn_body" | grep -qE '"\$\{tier1_count:-0\}" -eq 0' \
+        && echo "$fn_body" | grep -F -q 'fail 42 "Tier-1 alias seed verification failed: hardware.model_aliases has 0 rows'; then
+    ok "verify: 0-row case aborts with FATAL (42)"
+else
+    fail "P-019B verify must FATAL on tier1_count == 0"
+fi
+if echo "$fn_body" | grep -qE '"\$\{tier1_count:-0\}" -lt 100'; then
+    ok "verify: < 100 emits a clear ERROR-level WARN (drift detector)"
+else
+    fail "P-019B verify must WARN at tier1_count < 100"
+fi
+if echo "$fn_body" | grep -qE '"\$\{tier1_count:-0\}" -lt 5000'; then
+    ok "verify: < 5000 emits an INFO partial-coverage note"
+else
+    fail "P-019B verify must distinguish partial coverage at < 5000"
+fi
+
+# 8.9: The seed FILE on disk is UNCHANGED — sed rewrite is at apply
+# time only. This protects the seed file as canonical reference data.
+if grep -q "^BEGIN;$" "$TIER1_SEED" && grep -q "^COMMIT;$" "$TIER1_SEED" \
+       && grep -q "ON CONFLICT (miner_model_id, alias) DO NOTHING" "$TIER1_SEED"; then
+    ok "seed file on disk preserves BEGIN; / COMMIT; / ON CONFLICT (canonical reference data)"
+else
+    fail "seed file on disk has been mutated — P-019B fix must NOT alter the seed source"
+fi
+
+# 8.10: Document the UUID-drift root cause. The seed file's
+# miner_model_id values are 317 frozen UUIDs from a generator snapshot;
+# seed_miner_models.sql uses uuid_generate_v4() and produces fresh
+# random UUIDs at every install. This drift is the entire reason the
+# staging shim exists. The header comment block must explain this so a
+# future operator who regenerates the seed knows the correct fix is
+# making seed_miner_models.sql deterministic — not patching the staging.
+# `grep -oE` exits 1 on zero matches, which under `set -euo pipefail`
+# kills the whole test. `|| true` swallows the no-match exit so the
+# count comes back as `0` cleanly — exactly the value we want to
+# assert against for seed_miner_models.sql (which has zero frozen
+# UUIDs by design — every row uses uuid_generate_v4()).
+seed_uuid_count="$( (grep -oE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" "$TIER1_SEED" || true) | sort -u | wc -l | tr -d ' ')"
+miner_uuid_count="$( (grep -oE "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" "intelligence-catalog/seed-data/seed_miner_models.sql" || true) | sort -u | wc -l | tr -d ' ')"
+# Use [[ -gt / -eq ]] (not (( … ))) — under `set -e`, the (( N == 0 ))
+# arithmetic test exits when the LITERAL VALUE is 0 (the actual case
+# we want to assert here), defeating the test.
+if [[ "${seed_uuid_count}" -gt 200 ]] && [[ "${miner_uuid_count}" -eq 0 ]]; then
+    ok "drift confirmed: Tier-1 seed has ${seed_uuid_count} frozen UUIDs; seed_miner_models.sql has ${miner_uuid_count} (uuid_generate_v4 at runtime)"
+else
+    fail "drift assertion broken: Tier-1=${seed_uuid_count}, miner_models=${miner_uuid_count}; staging shim assumption may not hold"
+fi
+
+# 8.11: Header comment in step_apply_alias_seeds must mention P-019B
+# so the next reader understands why the staging table exists.
+if grep -E "P-019B|FK-safe|miner_model_id UUIDs" "$POSTINSTALL" \
+        | grep -q "step_apply_alias_seeds\|P-019B (2026-05-06)\|frozen miner_model_id\|FK-safe staging"; then
+    ok "step_apply_alias_seeds documents the P-019B staging shim"
+else
+    fail "step_apply_alias_seeds is missing the P-019B explanatory comment"
+fi
+
+
+# ---------------------------------------------------------------------
 section "Summary"
 # ---------------------------------------------------------------------
 echo

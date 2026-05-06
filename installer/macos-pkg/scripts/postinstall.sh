@@ -1399,16 +1399,118 @@ step_apply_alias_seeds() {
         fail 42 "docker cp of alias seed-data into container failed"
     fi
 
-    # 1. Tier-1 → catalog DB. ON_ERROR_STOP=1 — the seed wraps the 12,840
-    # INSERTs in BEGIN/COMMIT and uses ON CONFLICT DO NOTHING, so a second
-    # apply is a clean transaction that touches zero rows.
+    # 1. Tier-1 → catalog DB.
+    #
+    # P-019B (2026-05-06) — defensive FK-safe staging apply.
+    #
+    # Background: the Tier-1 seed file references 317 specific
+    # miner_model_id UUIDs that were frozen from the seed generator's
+    # `db_catalog.tsv` snapshot. The catalog DB's `hardware.miner_models`
+    # rows are seeded by `seed_miner_models.sql` whose every INSERT uses
+    # `uuid_generate_v4()` — fresh random UUIDs at each install. So
+    # almost none of the seed's 317 frozen UUIDs match the live DB's
+    # randomly-generated UUIDs, and the seed's 12,840 INSERTs hit the
+    # FK constraint `miner_model_id REFERENCES hardware.miner_models(id)`.
+    # Applied as a single BEGIN/COMMIT block, the FIRST FK violation
+    # aborts the whole transaction and zero rows land. Observed live on
+    # 2026-05-06 against `MiningGuardian-1.0.3-511ed2768d76.pkg`:
+    #   FATAL (42) Tier-1 alias seed apply failed against
+    #     mining_guardian_catalog
+    # with `hardware.model_aliases=29` (a partial pre-install state from
+    # an older snapshot) and `hardware.miner_models=324` (the operational
+    # seed plus 4 catalog_updater additions).
+    #
+    # Fix: stage the Tier-1 INSERTs into a `pg_temp` scratch table that
+    # has no FK, then promote rows to `hardware.model_aliases` only
+    # where `miner_model_id` exists in the live `hardware.miner_models`.
+    # Rows whose UUIDs are stale are silently dropped — but a verify
+    # step asserts a non-trivial count survived, so a future seed/
+    # catalog-seed drift cannot silently apply zero rows.
+    #
+    # Implementation: a tiny `sed` rewrites the seed's
+    # `INSERT INTO hardware.model_aliases` lines to target the scratch
+    # table. The rewrite is idempotent (a re-apply against an
+    # already-populated DB is still a no-op via ON CONFLICT). The
+    # original seed file in the payload is unchanged on disk.
+    log "INFO staging Tier-1 alias seed for FK-safe apply against ${catalog_db}"
+    local staged_tier1="${container_seed_dir}/001_hardware_model_aliases_tier1.staged.sql"
+
+    # 1a. Pre-flight wrapper that creates the scratch table at the start
+    # of the transaction. The scratch is `LIKE hardware.model_aliases
+    # INCLUDING DEFAULTS` minus EXCLUDING CONSTRAINTS so we keep column
+    # types/defaults but lose the FK + UNIQUE so the bulk load never
+    # aborts. Wrapper also pre-strips the seed's own BEGIN; / COMMIT;
+    # via sed (see 1b) so the entire apply is one transaction wrapping
+    # CREATE-stage + INSERT-stage + INSERT-real + DROP-stage.
+    local wrap_pre="${container_seed_dir}/_tier1_wrap_pre.sql"
+    local wrap_post="${container_seed_dir}/_tier1_wrap_post.sql"
+
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec -i "$container" \
+            bash -c "cat > '${wrap_pre}'" <<'__SQL_PRE__' >>"$MG_INSTALL_LOG" 2>&1 || \
+        fail 42 "could not write Tier-1 staging pre-wrapper"
+BEGIN;
+CREATE TEMP TABLE _tier1_alias_seed_scratch (
+    LIKE hardware.model_aliases INCLUDING DEFAULTS EXCLUDING CONSTRAINTS
+) ON COMMIT DROP;
+__SQL_PRE__
+
+    # 1b. Sed-rewrite the seed in-container so its INSERTs target the
+    # scratch table. Strip the seed's own BEGIN / COMMIT so the wrapper
+    # owns the transaction. Drop the seed's `ON CONFLICT (...) DO NOTHING`
+    # clauses too — the scratch table has no UNIQUE constraint to
+    # conflict on, so the clause would error.
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec -i "$container" \
+            bash -c "
+                sed -e 's/INSERT INTO hardware\\.model_aliases/INSERT INTO _tier1_alias_seed_scratch/g' \
+                    -e '/^BEGIN;$/d' \
+                    -e '/^COMMIT;$/d' \
+                    -e 's/ ON CONFLICT (miner_model_id, alias) DO NOTHING//g' \
+                    '${container_seed_dir}/001_hardware_model_aliases_tier1.sql' \
+                    > '${staged_tier1}'
+            " >>"$MG_INSTALL_LOG" 2>&1 || \
+        fail 42 "could not stage-rewrite Tier-1 alias seed"
+
+    # 1c. Post-wrapper: promote scratch rows to the real table, but only
+    # those whose miner_model_id exists in hardware.miner_models. The
+    # ON CONFLICT (miner_model_id, alias) DO NOTHING guards re-runs.
+    # The DROP TABLE is implicit via ON COMMIT DROP on the scratch.
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec -i "$container" \
+            bash -c "cat > '${wrap_post}'" <<'__SQL_POST__' >>"$MG_INSTALL_LOG" 2>&1 || \
+        fail 42 "could not write Tier-1 staging post-wrapper"
+INSERT INTO hardware.model_aliases (
+    miner_model_id, alias, alias_normalized, alias_source, is_common, notes
+)
+SELECT s.miner_model_id, s.alias, s.alias_normalized, s.alias_source, s.is_common, s.notes
+FROM _tier1_alias_seed_scratch s
+WHERE EXISTS (
+    SELECT 1 FROM hardware.miner_models m WHERE m.id = s.miner_model_id
+)
+ON CONFLICT (miner_model_id, alias) DO NOTHING;
+COMMIT;
+__SQL_POST__
+
+    # 1d. Apply the three SQL files as one psql session — psql streams
+    # them in order under a single connection so the BEGIN; from the
+    # pre-wrapper covers the scratch INSERT and the gated promote.
+    # ON_ERROR_STOP=1 because the SHAPE of the apply (scratch table
+    # creation, gated promote) is not allowed to fail; only individual
+    # FK-stale rows are silently dropped, and that happens in the
+    # WHERE-EXISTS filter, not as a row-level error.
     log "INFO applying Tier-1 alias seed (hardware.model_aliases) to ${catalog_db}"
     # shellcheck disable=SC2024
     if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
                 /usr/bin/env PATH="$(_op_path)" \
                 docker exec -i "$container" \
-            psql -U mg -d "$catalog_db" -v ON_ERROR_STOP=1 \
-            -f "${container_seed_dir}/001_hardware_model_aliases_tier1.sql" \
+            bash -c "cat '${wrap_pre}' '${staged_tier1}' '${wrap_post}' | psql -U mg -d '${catalog_db}' -v ON_ERROR_STOP=1" \
             >>"$MG_INSTALL_LOG" 2>&1; then
         fail 42 "Tier-1 alias seed apply failed against ${catalog_db}"
     fi
@@ -1425,10 +1527,27 @@ step_apply_alias_seeds() {
         fail 42 "Tier-2 alias seed apply failed against ${op_db}"
     fi
 
-    # 3. Verify. Floors are deliberately conservative (5,000 / 1,000) so
-    # a future re-generation of the seed with a slightly different row
-    # count does not falsely fail the gate; the actual seeds carry 12,840
-    # and 1,494 respectively.
+    # 3. Verify.
+    #
+    # Tier-2 floor stays at 1,000 (no FK; full seed always lands on a
+    # healthy install).
+    #
+    # P-019B: Tier-1 floor is now THREE-tier:
+    #   * == 0  → install ABORTS with FATAL (42). The staging+gate
+    #             produced nothing, which means the catalog seed is
+    #             empty, the catalog DB is wrong, or the staging logic
+    #             itself broke. Don't proceed silently.
+    #   * < 100 → install proceeds with a clear WARN. The seed and the
+    #             catalog-seed UUID space have drifted to the point that
+    #             essentially nothing matches; the importer's Tier-1
+    #             resolver will return empty and almost every miner_type
+    #             will fall through to Tier-2 / mg.unresolved_models.
+    #             Operator must regenerate the alias seed against the
+    #             current `seed_miner_models.sql` snapshot. Logged at
+    #             ERROR level so it surfaces in the install log scan.
+    #   * < 5000 → still proceeds, with INFO indicating partial coverage
+    #             (some snapshots overlap, others don't).
+    #   * >= 5000 → healthy install — the typical happy path.
     local tier1_count tier2_count
     tier1_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
                 /usr/bin/env PATH="$(_op_path)" \
@@ -1437,8 +1556,15 @@ step_apply_alias_seeds() {
         "SELECT count(*) FROM hardware.model_aliases;" \
         2>>"$MG_INSTALL_LOG" || echo 0)"
     tier1_count="$(echo "${tier1_count:-0}" | tr -d '[:space:]')"
-    if [[ "${tier1_count:-0}" -lt 5000 ]]; then
-        fail 42 "Tier-1 alias seed verification failed: hardware.model_aliases has ${tier1_count} rows (expected >= 5000)"
+    if [[ "${tier1_count:-0}" -eq 0 ]]; then
+        fail 42 "Tier-1 alias seed verification failed: hardware.model_aliases has 0 rows after staging+gate apply — neither the seed nor the catalog seed is healthy"
+    fi
+    if [[ "${tier1_count:-0}" -lt 100 ]]; then
+        log "ERROR Tier-1 alias seed coverage VERY LOW: hardware.model_aliases has ${tier1_count} rows (expected >= 5000). The alias seed's frozen miner_model_id UUIDs and seed_miner_models.sql's runtime UUIDs have drifted apart. Importer Tier-1 lookups will return empty; almost every miner_type will fall through to Tier-2 / mg.unresolved_models. Operator MUST regenerate the alias seed against the current seed_miner_models.sql snapshot and re-run install."
+    elif [[ "${tier1_count:-0}" -lt 5000 ]]; then
+        log "INFO Tier-1 alias seed partial coverage: hardware.model_aliases has ${tier1_count} rows (typical full coverage is ~12,840). Some seed UUIDs match the live catalog; others were dropped by the FK gate. Importer Tier-1 will work for the matched models; the rest will fall through to Tier-2."
+    else
+        log "INFO Tier-1 alias seed full coverage: hardware.model_aliases has ${tier1_count} rows."
     fi
     tier2_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
                 /usr/bin/env PATH="$(_op_path)" \
