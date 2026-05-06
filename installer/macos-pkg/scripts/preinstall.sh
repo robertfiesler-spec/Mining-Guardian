@@ -24,7 +24,22 @@
 #   2. macOS 13.0 (Ventura) or later
 #   3. Apple Silicon (arm64)         — Mini is M-series; refuse Intel
 #   4. RAM ≥ 16 GB                   — D-13 floor
-#   5. Free disk on / ≥ 20 GB        — payload + Postgres data + LLM model
+#   5. Free disk ≥ 20 GB on the writable install target
+#                                     ("/Library/Application Support" — the
+#                                       parent of MG_INSTALL_ROOT). Modern
+#                                       macOS (Catalina+) splits the boot
+#                                       volume into a SEALED, read-only system
+#                                       volume mounted at "/" and a writable
+#                                       Data volume mounted at
+#                                       "/System/Volumes/Data". `df -k /`
+#                                       reports the sealed system volume,
+#                                       which has only ~5–20 GB of slack and
+#                                       has nothing to do with how much room
+#                                       the install actually has. We must
+#                                       check the volume the payload will
+#                                       land on (Application Support → Data
+#                                       volume on a default APFS layout).
+#                                       — payload + Postgres data + LLM model
 #   6. /Applications writable        — sanity check
 #   7. No conflicting prior install  — refuse if a non-pkg-managed
 #                                       Mining-Guardian instance is detected
@@ -55,9 +70,25 @@ readonly MIN_RAM_GB=16
 readonly MIN_FREE_DISK_GB=20
 readonly EXPECTED_ARCH="arm64"
 
-# Exported so detect_ram.sh + postinstall.sh agree on paths.
-export MG_INSTALL_LOG="/var/log/mining-guardian/install-preinstall.log"
-export MG_INSTALL_ENV="/tmp/mg_install_env"
+# The writable install target. postinstall.sh lays the payload down at
+# "/Library/Application Support/MiningGuardian"; on modern macOS that
+# directory's parent ("/Library/Application Support") lives on the APFS
+# Data volume ("/System/Volumes/Data"), NOT on the sealed read-only system
+# volume reported by `df -k /`. Free-disk gating MUST target this path or
+# the equivalent Data volume to avoid the v1.0.3 install-day false negative
+# where Finder showed ~167 GB free but `df /` reported ~19 GB and tripped
+# the 20 GB floor (LATENT_BUGS B-18; same root cause as B-1 in
+# scripts/setup.sh closed by v1.0.2). DO NOT change this back to "/".
+#
+# Tests may override DISK_TARGET via the environment before sourcing.
+DISK_TARGET="${DISK_TARGET:-/Library/Application Support}"
+readonly DISK_TARGET
+
+# Exported so detect_ram.sh + postinstall.sh agree on paths. Tests may set
+# these in the environment before sourcing this file to redirect logging
+# and the env-handoff file into a tempdir.
+export MG_INSTALL_LOG="${MG_INSTALL_LOG:-/var/log/mining-guardian/install-preinstall.log}"
+export MG_INSTALL_ENV="${MG_INSTALL_ENV:-/tmp/mg_install_env}"
 
 # Resolve the directory this script is in so we can find lib/detect_ram.sh
 # regardless of where Installer.app spawns us from.
@@ -235,20 +266,105 @@ gate_ram() {
     log "OK gate_ram: ${MG_INSTALL_RAM_TIER} GB >= ${MIN_RAM_GB} GB; model=${MG_INSTALL_LLM_MODEL:-?}"
 }
 
+# _df_avail_gb <path>
+#
+# Echo the GB available on the volume that backs <path> using `df -k`. Pure
+# helper for both the gate and the test harness; never exits — caller decides
+# whether 0 / empty means "treat as failure" or "fall through".
+_df_avail_gb() {
+    local path="$1"
+    local kb
+    kb="$("${MG_DF_BIN:-/bin/df}" -k -- "$path" 2>/dev/null | awk 'NR==2 {print $4}')"
+    if ! [[ "$kb" =~ ^[0-9]+$ ]]; then
+        echo ""
+        return 0
+    fi
+    echo $(( kb / 1024 / 1024 ))
+}
+
+# _diskutil_container_free_gb <path>
+#
+# Echo APFS "Container Free Space" GB for the volume backing <path> by parsing
+# the byte count between parentheses in `diskutil info <path>`. This matches
+# the v1.0.2 fix in scripts/setup.sh phase_01_environment (B-1) — see the
+# block comment there for why the byte count between parens is the
+# authoritative number. Echoes empty string if diskutil is unavailable, the
+# path is not on an APFS volume, or the line is missing/malformed; caller
+# falls back to `df`.
+_diskutil_container_free_gb() {
+    local path="$1"
+    local bytes
+    bytes="$("${MG_DISKUTIL_BIN:-/usr/sbin/diskutil}" info -- "$path" 2>/dev/null \
+        | awk -F'[()]' '/Container Free Space/{print $2}' \
+        | awk '{print $1}')"
+    if ! [[ "$bytes" =~ ^[0-9]+$ ]]; then
+        echo ""
+        return 0
+    fi
+    echo $(( bytes / 1073741824 ))
+}
+
 gate_free_disk() {
-    # df -k / returns 1K-blocks; column 4 is "Available". Convert to GB.
-    local avail_kb avail_gb
-    if ! avail_kb=$(/bin/df -k / | awk 'NR==2 {print $4}'); then
-        fail 14 "could not read free disk on /"
+    # The payload lands at "/Library/Application Support/MiningGuardian".
+    # On modern macOS (Catalina+) "/Library/Application Support" is on the
+    # APFS Data volume ("/System/Volumes/Data"), NOT on the sealed read-only
+    # system volume reported by `df -k /`. The earlier `df -k /` check
+    # produced the v1.0.3 install-day false negative where the Mac mini had
+    # ~167 GB free in Finder but `df /` reported ~19 GB and tripped the
+    # 20 GB floor. Same root cause as B-1 in scripts/setup.sh — closed
+    # there by v1.0.2 using `diskutil info`'s "Container Free Space".
+
+    # `df -k <path>` and `diskutil info <path>` on macOS resolve <path> to
+    # its containing volume even if the leaf directory doesn't exist yet,
+    # so we can pass DISK_TARGET as-is. "/Library" is always present on a
+    # macOS install, which is the deepest ancestor the resolver can need.
+    local target="$DISK_TARGET"
+
+    # Diagnostics: log every probe so the install log makes the misleading
+    # numbers obvious if anyone reads it after a future regression. Order
+    # is intentional — the / value comes first because it is what an
+    # operator typing `df -g /` sees and it is the value that fooled v1.0.3.
+    local df_root_gb df_target_gb data_gb container_gb
+    df_root_gb="$(_df_avail_gb /)"
+    df_target_gb="$(_df_avail_gb "$target")"
+    data_gb="$(_df_avail_gb /System/Volumes/Data)"
+    container_gb="$(_diskutil_container_free_gb "$target")"
+
+    # Single multi-line string: log() only forwards $1. Splitting across
+    # multiple log() calls would still work, but a single line keeps the
+    # diagnostic together when an operator greps the install log.
+    log "gate_free_disk probes: df / = ${df_root_gb:-?} GB (sealed system volume — DO NOT use); df ${target} = ${df_target_gb:-?} GB (writable install target); df /System/Volumes/Data = ${data_gb:-?} GB (APFS Data volume); diskutil container free for ${target} = ${container_gb:-?} GB (authoritative APFS container free)"
+
+    # Authoritative source order:
+    #   1. APFS container free space for the install target (matches B-1
+    #      fix in setup.sh — the number APFS uses for allocation decisions).
+    #   2. df -k <writable target> (less accurate on APFS but does NOT
+    #      report the sealed system volume).
+    #   3. df -k /System/Volumes/Data (last-ditch fallback if the target
+    #      directory walk above ended up at "/" on an exotic layout).
+    #
+    # We never use `df -k /` for the gate — that was the bug.
+    local avail_gb source
+    if [[ -n "$container_gb" ]]; then
+        avail_gb="$container_gb"
+        source="diskutil container free space for ${target}"
+    elif [[ -n "$df_target_gb" ]]; then
+        avail_gb="$df_target_gb"
+        source="df -k ${target} (diskutil unavailable)"
+    elif [[ -n "$data_gb" ]]; then
+        avail_gb="$data_gb"
+        source="df -k /System/Volumes/Data (diskutil + target df both unavailable)"
+    else
+        fail 14 "could not read free disk for install target '${target}' or for /System/Volumes/Data"
     fi
-    if ! [[ "$avail_kb" =~ ^[0-9]+$ ]]; then
-        fail 14 "df returned non-numeric available KB: '$avail_kb'"
-    fi
-    avail_gb=$(( avail_kb / 1024 / 1024 ))
+
     if [[ "$avail_gb" -lt "$MIN_FREE_DISK_GB" ]]; then
-        fail 14 "only ${avail_gb} GB free on /; require ${MIN_FREE_DISK_GB} GB+"
+        # Include the misleading `df /` reading in the failure message so a
+        # confused operator can match the diagnostic to what they see in
+        # Terminal and we don't get another v1.0.3-style support thread.
+        fail 14 "only ${avail_gb} GB free for install target '${target}' (source: ${source}); require ${MIN_FREE_DISK_GB} GB+ (note: \`df /\` reports ${df_root_gb:-?} GB but that is the sealed read-only system volume and is NOT what the install uses)"
     fi
-    log "OK gate_free_disk: ${avail_gb} GB free >= ${MIN_FREE_DISK_GB} GB"
+    log "OK gate_free_disk: ${avail_gb} GB free for '${target}' (source: ${source}) >= ${MIN_FREE_DISK_GB} GB"
 }
 
 gate_applications_writable() {
@@ -299,4 +415,9 @@ main() {
     return 0
 }
 
-main "$@"
+# Skip running main when sourced by a test harness. Installer.app always
+# executes this file (BASH_SOURCE[0] == $0); tests `source` it to invoke
+# individual gate_* functions in isolation.
+if [[ "${BASH_SOURCE[0]:-$0}" == "${0}" ]]; then
+    main "$@"
+fi
