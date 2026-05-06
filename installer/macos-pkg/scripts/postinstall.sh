@@ -2155,7 +2155,11 @@ step_install_scheduled_plists_and_bootstrap() {
     fi
 
     install -d -m 0755 "${MG_INSTALL_ROOT}/logs/scheduled"
-    chown "${MG_INSTALL_OPERATOR_USER}:staff" "${MG_INSTALL_ROOT}/logs/scheduled"
+    # P-019C: scheduled plists run as root (no UserName key); the log
+    # parent dir must be root:wheel so launchd can open StdOut/Err
+    # without the "writable by non-root" refusal that surfaces as
+    # `Bootstrap failed: 5: Input/output error`.
+    chown root:wheel "${MG_INSTALL_ROOT}/logs/scheduled"
 
     local label src
     for label in "${SCHEDULED_PLIST_LABELS[@]}"; do
@@ -2168,18 +2172,31 @@ step_install_scheduled_plists_and_bootstrap() {
     done
     log "INFO installed ${#SCHEDULED_PLIST_LABELS[@]} scheduled-job launchd plists into ${PLISTS_DEST}"
 
-    # Bootout any previous load (idempotent re-install support), then
-    # bootstrap each one fresh.
+    # P-019C: bootstrap each scheduled plist via _bootstrap_one_plist
+    # (same robust helper used by the service plists above). bootout-
+    # then-enable-then-bootstrap, rich diagnostics on failure, continue
+    # past per-job failures, summarize at the end. Exit 40 is the
+    # reserved code for any scheduled-job bootstrap failure.
+    local failed_jobs=()
     for label in "${SCHEDULED_PLIST_LABELS[@]}"; do
-        if /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
-            /bin/launchctl bootout  "system/${label}" 2>/dev/null || true
+        if ! _bootstrap_one_plist "$label" "${PLISTS_DEST}/${label}.plist"; then
+            failed_jobs+=("$label")
         fi
-        if ! /bin/launchctl bootstrap system "${PLISTS_DEST}/${label}.plist" \
-                2>&1 | tee -a "$MG_INSTALL_LOG"; then
-            fail 40 "launchctl bootstrap failed for ${label} (D-18 Gap 4)"
-        fi
-        log "INFO bootstrapped scheduled plist: ${label}"
     done
+
+    local total="${#SCHEDULED_PLIST_LABELS[@]}"
+    local failed="${#failed_jobs[@]}"
+    local ok_count=$(( total - failed ))
+    log "INFO scheduled-job bootstrap summary: ${ok_count}/${total} loaded; ${failed} failed"
+
+    if [[ "$failed" -gt 0 ]]; then
+        log "ERROR scheduled jobs that failed to bootstrap (${failed}):"
+        local svc
+        for svc in "${failed_jobs[@]}"; do
+            log "      - ${svc}"
+        done
+        fail 40 "${failed} of ${total} scheduled jobs failed to bootstrap (${failed_jobs[*]}). See diagnostics above for each."
+    fi
 }
 
 step_install_uninstall_script() {
