@@ -144,9 +144,54 @@ section "8. Each failing-class launcher calls the right preflight checks"
 # Port-binding services must call _preflight_port_free.
 # Use a flattened-line view (line continuations collapsed) so multi-line
 # preflight invocations match the same as single-line ones.
+#
+# P-019D-fix² (2026-05-07) — implemented in awk for BSD/GNU portability.
+# The earlier sed implementation
+#     sed -E ':a;N;$!ba; s/\\\n[[:space:]]*/ /g'
+# parsed correctly under GNU sed (Linux dev) but BSD sed (macOS) reads
+# `:a;N;$!ba;` as a single label name `a;N;$!ba;` and emits the famous
+# `unused label 'a;N;$!ba; ...'` error, returning empty output. That
+# silently broke sections 9 and 10 (which also call this helper), making
+# every MG_DB_PASSWORD validation and short-circuit-count assertion fail.
+#
+# awk is the portable choice: it reads the whole file via a tiny accumulator
+# loop and emits a single line where every `\` immediately followed by a
+# newline (with optional indent on the next line) collapses to a single
+# space. No labels, no GNU-only `;`-separated commands.
 flatten_launcher() {
     local p="$1"
-    /usr/bin/sed -E ':a;N;$!ba; s/\\\n[[:space:]]*/ /g' "$p"
+    /usr/bin/awk '
+        # Build up `joined`; flush as one output line whenever we hit a
+        # source line that does NOT end with a backslash continuation.
+        # Collapses ONLY the inserted join whitespace — preserves real
+        # source newlines so callers can still grep line-by-line.
+        BEGIN { joined = ""; have = 0 }
+        {
+            line = $0
+            if (line ~ /\\$/) {
+                sub(/\\$/, "", line)
+                joined = joined line " "
+                have = 1
+                next
+            }
+            if (have) {
+                joined = joined line
+                # Squeeze runs of spaces/tabs inside this single logical
+                # line (newlines are NOT in `joined` by construction).
+                gsub(/[ \t]+/, " ", joined)
+                print joined
+                joined = ""; have = 0
+            } else {
+                print line
+            }
+        }
+        END {
+            if (have) {
+                gsub(/[ \t]+/, " ", joined)
+                print joined
+            }
+        }
+    ' "$p"
 }
 # P-019D-fix (2026-05-07) — bash 3.2-safe parallel arrays. macOS ships
 # bash 3.2, which does NOT support `declare -A` (associative arrays).
@@ -397,6 +442,28 @@ for f in "${portability_targets[@]}"; do
         fail "$(basename "$f"): bash-4-only indirect-array expansion (associative-key idiom): ${bad}"
     else
         ok "$(basename "$f"): no indirect-array expansion"
+    fi
+    # P-019D-fix² (2026-05-07): reject GNU-sed-only label patterns like
+    # `:a;N;$!ba;`. BSD sed (macOS) reads everything after `:` up to the
+    # next newline as the label NAME, so `:a;N;$!ba;` becomes a label
+    # called `a;N;$!ba;` and the script aborts with `unused label`. The
+    # 2026-05-07 macOS smoke run hit this in the section-8 flatten helper
+    # and silently broke sections 9 and 10. Build the regex from a
+    # printf so this comment + message text don't self-match.
+    sed_label_re="$(printf '%s' "sed[^']*[-\"']*[Ee]?[^']*['\"]:[A-Za-z_][A-Za-z0-9_]*;")"
+    bad="$(/usr/bin/grep -nE "$sed_label_re" "$f" || true)"
+    # Strip lines that are inside this very block (comments, message
+    # text describing the construct) — heuristic: skip lines that start
+    # with `#` or are inside a printf single-quoted argument.
+    bad_filtered="$(printf '%s\n' "$bad" \
+        | /usr/bin/awk -F: '$0 == "" { next } { print }' \
+        | /usr/bin/grep -vE "^[0-9]+:[[:space:]]*#" \
+        | /usr/bin/grep -vE "printf|sed_label_re|fail \"|ok \"" \
+        || true)"
+    if [[ -n "$bad_filtered" ]]; then
+        fail "$(basename "$f"): GNU-sed-only label pattern (BSD sed will fail): ${bad_filtered}"
+    else
+        ok "$(basename "$f"): no GNU-sed-only label patterns"
     fi
 done
 
