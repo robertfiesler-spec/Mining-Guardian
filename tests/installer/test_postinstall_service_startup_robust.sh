@@ -148,21 +148,38 @@ flatten_launcher() {
     local p="$1"
     /usr/bin/sed -E ':a;N;$!ba; s/\\\n[[:space:]]*/ /g' "$p"
 }
-declare -A expected_port=(
-    ["${LAUNCHERS_DIR}/dashboard_api_launcher.sh"]="8585"
-    ["${LAUNCHERS_DIR}/approval_api_launcher.sh"]="8686"
-    ["${LAUNCHERS_DIR}/intelligence_report_launcher.sh"]="INTEL_PORT"
-    ["${LAUNCHERS_DIR}/console_launcher.sh"]="MG_CONSOLE_PORT"
+# P-019D-fix (2026-05-07) — bash 3.2-safe parallel arrays. macOS ships
+# bash 3.2, which does NOT support `declare -A` (associative arrays).
+# Under `set -u` the prior `declare -A expected_port=( ["${LAUNCHERS_DIR}/…"]="…" )`
+# tripped with `installer: unbound variable` because bash 3.2 parsed the
+# `[…]` as an arithmetic context and tried to evaluate the literal path
+# segment `installer/...` as an unset name. Two parallel indexed arrays
+# (one for the launcher path, one for the expected port pattern) work on
+# both bash 3.2 and bash 4+ without further fuss.
+PORT_LAUNCHERS=(
+    "${LAUNCHERS_DIR}/dashboard_api_launcher.sh"
+    "${LAUNCHERS_DIR}/approval_api_launcher.sh"
+    "${LAUNCHERS_DIR}/intelligence_report_launcher.sh"
+    "${LAUNCHERS_DIR}/console_launcher.sh"
 )
-for w in "${!expected_port[@]}"; do
+PORT_PATTERNS=(
+    "8585"
+    "8686"
+    "INTEL_PORT"
+    "MG_CONSOLE_PORT"
+)
+i=0
+while [[ $i -lt ${#PORT_LAUNCHERS[@]} ]]; do
+    w="${PORT_LAUNCHERS[$i]}"
+    pat="${PORT_PATTERNS[$i]}"
     name="$(basename "$w")"
-    pat="${expected_port[$w]}"
     flat="$(flatten_launcher "$w")"
     if echo "$flat" | grep -qE "_preflight_port_free [^|&;]*${pat}"; then
         ok "${name}: calls _preflight_port_free for ${pat}"
     else
         fail "${name}: does NOT call _preflight_port_free for ${pat}"
     fi
+    i=$((i + 1))
 done
 
 # DB-touching services (4 of 5; console is db-tolerant) call db_ping.
@@ -335,6 +352,63 @@ if [[ "$rc" -ne 0 ]]; then
     ok "preflight env-key check rejects an absent key (rc=${rc})"
 else
     fail "preflight env-key check accepted an absent key"
+fi
+
+
+section "15. Portability: no bash-4-only idioms in this test or the preflight library"
+# Apple ships /bin/bash 3.2 on macOS. The pre-build smoke run on the
+# operator's Mini failed at section 8 with `installer: unbound variable`
+# because the prior version of this test used `declare -A expected_port=( … )`
+# — bash 3.2 does not support associative arrays and parsed the `[…]`
+# index keys as arithmetic, evaluating the literal path segment
+# `installer/...` as an unset name under `set -u`. This guard fails fast
+# if ANY of the test files or shipped launcher scripts reintroduce
+# bash-4-only constructs that would block the same workflow again.
+declare -a portability_targets=(
+    "tests/installer/test_postinstall_service_startup_robust.sh"
+    "tests/installer/test_postinstall_launchd_robust.sh"
+    "${PREFLIGHT}"
+    "${LAUNCHERS_DIR}/dashboard_api_launcher.sh"
+    "${LAUNCHERS_DIR}/approval_api_launcher.sh"
+    "${LAUNCHERS_DIR}/intelligence_report_launcher.sh"
+    "${LAUNCHERS_DIR}/console_launcher.sh"
+    "${DEPLOY_LAUNCHER}"
+)
+for f in "${portability_targets[@]}"; do
+    if [[ ! -r "$f" ]]; then
+        fail "portability scan: missing target ${f}"
+        continue
+    fi
+    bad="$(/usr/bin/grep -nE '^[[:space:]]*declare[[:space:]]+-A([[:space:]]|$)' "$f" || true)"
+    if [[ -n "$bad" ]]; then
+        fail "$(basename "$f"): bash-4-only \`declare -A\` present (incompatible with macOS /bin/bash 3.2): ${bad}"
+    else
+        ok "$(basename "$f"): no \`declare -A\` (bash 3.2 safe)"
+    fi
+    # Build the search regex from a printf so this test's own message
+    # text (which necessarily NAMES the bad construct) does not match
+    # itself when scanning. Pattern target (described in plain English
+    # to keep the literal out of this file): "dollar-brace-bang NAME
+    # bracket-at bracket close-brace" — the bash-4 indirect-array
+    # expansion / associative-key idiom.
+    indirect_re="$(printf '%s' '[$]\{![A-Za-z_][A-Za-z0-9_]*\[@\]\}')"
+    bad="$(/usr/bin/grep -nE "$indirect_re" "$f" || true)"
+    if [[ -n "$bad" ]]; then
+        fail "$(basename "$f"): bash-4-only indirect-array expansion (associative-key idiom): ${bad}"
+    else
+        ok "$(basename "$f"): no indirect-array expansion"
+    fi
+done
+
+# Functional portability check: the test must run cleanly under a `bash
+# --posix-noassoc` simulation. We can't downgrade bash from inside the
+# script, but we CAN sanity-check that the file parses without bash-4
+# extensions enabled by re-parsing it with `bash -n` after a guard that
+# would explode if `declare -A` ran.
+if bash -n "tests/installer/test_postinstall_service_startup_robust.sh" 2>/dev/null; then
+    ok "this test file parses cleanly under \`bash -n\`"
+else
+    fail "this test file fails \`bash -n\` parse"
 fi
 
 
