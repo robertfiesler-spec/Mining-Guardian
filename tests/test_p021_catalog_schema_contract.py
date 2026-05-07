@@ -332,6 +332,234 @@ class TestShortNameAliasSeedShipped(unittest.TestCase):
         )
 
 
+class TestSupplementColumnsMatchCanonicalSchema(unittest.TestCase):
+    """Validate every INSERT column-list in
+    003_live_short_name_aliases.sql against the canonical schema in
+    intelligence_catalog_schema.sql.
+
+    P-021-fix (2026-05-08): the original supplement INSERTed columns
+    `alias_kind` and `source` against `hardware.model_aliases`, but the
+    canonical schema declares neither — the actual column names are
+    `alias_source` (NOT NULL DEFAULT 'unknown') and there is no
+    `alias_kind` column at all. The mismatch was not caught by the
+    original test because it only checked literal-string presence
+    ('S19JPro' etc.), not the column list against the live schema.
+    The 2026-05-07 install on the Mini failed:
+
+        psql:.../003_live_short_name_aliases.sql:48: ERROR:
+            column "alias_kind" of relation "model_aliases" does not exist
+
+    This test parses the canonical schema for `hardware.model_aliases`
+    and asserts every column the supplement names appears in that
+    schema. Required columns (NOT NULL without DEFAULT) are also
+    enforced as present in the supplement's INSERT list.
+    """
+
+    SCHEMA_PATH = "intelligence-catalog/seed-data/intelligence_catalog_schema.sql"
+    SUPP_PATH = "intelligence-catalog/seed-data/aliases/003_live_short_name_aliases.sql"
+
+    @staticmethod
+    def _parse_table_columns(schema_src: str, qualified: str) -> set[str]:
+        """Extract column names from `CREATE TABLE <qualified> ( … );`.
+
+        `qualified` is e.g. `hardware.model_aliases`. The parser is
+        intentionally simple: it slices from the CREATE TABLE line to
+        the first matching `);`, then on each non-comment, non-CONSTRAINT,
+        non-UNIQUE/PRIMARY-KEY line it picks the first identifier as the
+        column name.
+        """
+        # Find the start.
+        start_re = re.compile(
+            rf"CREATE\s+TABLE\s+{re.escape(qualified)}\s*\(", re.I
+        )
+        m = start_re.search(schema_src)
+        if not m:
+            return set()
+        # Walk character-by-character with paren depth so we stop at the
+        # CREATE TABLE's own closing `)`, not an inner one.
+        i = m.end()
+        depth = 1
+        body_start = i
+        while i < len(schema_src) and depth > 0:
+            ch = schema_src[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = schema_src[body_start:i]
+
+        cols: set[str] = set()
+        for raw in body.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("--"):
+                continue
+            up = line.upper()
+            # Skip table-level constraints — they don't define a column.
+            if up.startswith(("UNIQUE", "PRIMARY KEY", "FOREIGN KEY",
+                              "CONSTRAINT", "CHECK", "EXCLUDE")):
+                continue
+            # First word is the column name (strip trailing comma).
+            first = line.split()[0].rstrip(",")
+            # Defensive: skip blank or non-identifier first tokens.
+            if re.match(r"^[A-Za-z_][A-Za-z_0-9]*$", first):
+                cols.add(first.lower())
+        return cols
+
+    @staticmethod
+    def _parse_required_columns(schema_src: str, qualified: str) -> set[str]:
+        """Columns that are NOT NULL and have no DEFAULT — i.e. an INSERT
+        must name them or it fails. Same parser shape as _parse_table_columns
+        but the per-line predicate is stricter.
+        """
+        start_re = re.compile(
+            rf"CREATE\s+TABLE\s+{re.escape(qualified)}\s*\(", re.I
+        )
+        m = start_re.search(schema_src)
+        if not m:
+            return set()
+        i = m.end()
+        depth = 1
+        body_start = i
+        while i < len(schema_src) and depth > 0:
+            ch = schema_src[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = schema_src[body_start:i]
+
+        required: set[str] = set()
+        for raw in body.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("--"):
+                continue
+            up = line.upper()
+            if up.startswith(("UNIQUE", "PRIMARY KEY", "FOREIGN KEY",
+                              "CONSTRAINT", "CHECK", "EXCLUDE")):
+                continue
+            first = line.split()[0].rstrip(",")
+            if not re.match(r"^[A-Za-z_][A-Za-z_0-9]*$", first):
+                continue
+            # NOT NULL without DEFAULT, and not a PRIMARY KEY (which has
+            # an implicit default via DEFAULT uuid_generate_v4()) — the
+            # schema's id column is `id UUID PRIMARY KEY DEFAULT
+            # uuid_generate_v4()` so DEFAULT-bearing rows are excluded.
+            has_not_null = "NOT NULL" in up
+            has_default = "DEFAULT" in up
+            is_primary = "PRIMARY KEY" in up
+            if has_not_null and not has_default and not is_primary:
+                required.add(first.lower())
+        return required
+
+    @staticmethod
+    def _extract_insert_columns(supp_src: str, target_table: str) -> list[set[str]]:
+        """For each INSERT INTO <target_table> (col1, col2, …) in the
+        supplement, return the set of column names. Returns one set per
+        INSERT statement so the test can verify every INSERT.
+        """
+        # Anchored on the qualified table name. The column list is everything
+        # between the first `(` and the matching `)` on the same statement.
+        pat = re.compile(
+            rf"INSERT\s+INTO\s+{re.escape(target_table)}\s*\(([^)]+)\)",
+            re.I,
+        )
+        out: list[set[str]] = []
+        for m in pat.finditer(supp_src):
+            cols = {c.strip().lower() for c in m.group(1).split(",") if c.strip()}
+            out.append(cols)
+        return out
+
+    def setUp(self) -> None:
+        self.schema = (REPO_ROOT / self.SCHEMA_PATH).read_text()
+        self.supp = (REPO_ROOT / self.SUPP_PATH).read_text()
+        self.model_alias_cols = self._parse_table_columns(
+            self.schema, "hardware.model_aliases"
+        )
+        self.required_cols = self._parse_required_columns(
+            self.schema, "hardware.model_aliases"
+        )
+
+    def test_canonical_table_was_parsed(self) -> None:
+        # If the parser didn't find the table at all, every other test
+        # below would silently pass. Sanity-check the parser found the
+        # table and at least the well-known columns.
+        self.assertGreater(
+            len(self.model_alias_cols),
+            5,
+            f"parser failed to find hardware.model_aliases in "
+            f"{self.SCHEMA_PATH} — got {self.model_alias_cols}",
+        )
+        for col in ("id", "miner_model_id", "alias", "alias_normalized",
+                    "alias_source"):
+            self.assertIn(
+                col,
+                self.model_alias_cols,
+                f"canonical schema missing expected column {col} on "
+                f"hardware.model_aliases (parser bug or schema drift)",
+            )
+
+    def test_supplement_inserts_use_only_real_columns(self) -> None:
+        insert_col_lists = self._extract_insert_columns(
+            self.supp, "hardware.model_aliases"
+        )
+        self.assertGreater(
+            len(insert_col_lists),
+            0,
+            "supplement contains no INSERT INTO hardware.model_aliases — "
+            "this test won't catch column drift; check the supplement",
+        )
+        for i, cols in enumerate(insert_col_lists):
+            unknown = cols - self.model_alias_cols
+            self.assertSetEqual(
+                unknown,
+                set(),
+                f"INSERT #{i+1} in the supplement references columns NOT in "
+                f"hardware.model_aliases canonical schema: {sorted(unknown)} "
+                f"— pre-P-021-fix this caught `alias_kind` and `source`",
+            )
+
+    def test_supplement_provides_all_required_columns(self) -> None:
+        # Required = NOT NULL without DEFAULT and not PRIMARY KEY.
+        # `alias_normalized` is the typical victim — it's NOT NULL,
+        # no default. INSERTs that omit it fail.
+        insert_col_lists = self._extract_insert_columns(
+            self.supp, "hardware.model_aliases"
+        )
+        for i, cols in enumerate(insert_col_lists):
+            missing = self.required_cols - cols
+            self.assertSetEqual(
+                missing,
+                set(),
+                f"INSERT #{i+1} omits required columns "
+                f"{sorted(missing)} of hardware.model_aliases (NOT NULL, "
+                f"no DEFAULT). Add them to the column list.",
+            )
+
+    def test_supplement_diagnostic_uses_alias_source(self) -> None:
+        # The DO $$ … $$ diagnostic at the bottom of the supplement
+        # filters by alias_source, and the Mini validation command in
+        # docs/HANDOFF_2026-05-07_P021.md must do the same. Pre-P-021-fix
+        # both used `source` which doesn't exist on this table.
+        self.assertIn(
+            "alias_source = 'P-021_live_short_name'",
+            self.supp,
+            "supplement diagnostic must filter by `alias_source`, not "
+            "`source` — see schema column list",
+        )
+        self.assertNotIn(
+            "WHERE source =",
+            self.supp,
+            "supplement still contains the broken `WHERE source =` "
+            "filter from pre-P-021-fix",
+        )
+
+
 class TestDailyCatalogImportWiring(unittest.TestCase):
     """The daily catalog-import scheduled-job wrapper + plist + label."""
 

@@ -5,6 +5,29 @@
 -- frozen-UUID Tier-1 seed (`001_hardware_model_aliases_tier1.sql`) survives
 -- the FK gate (which it mostly does not — see B-24 / B-29 / P-019B).
 --
+-- ============================================================================
+-- P-021-fix (2026-05-08) — column-name correction
+-- ============================================================================
+-- The first P-021 install on the Mini surfaced a schema mismatch: this file
+-- was originally written against an imagined schema with `alias_kind` and
+-- `source` columns, but the canonical
+-- `intelligence-catalog/seed-data/intelligence_catalog_schema.sql:871-898`
+-- defines `hardware.model_aliases` with these columns ONLY:
+--
+--     id, miner_model_id, alias, alias_normalized (NOT NULL),
+--     alias_source (NOT NULL DEFAULT 'unknown'), is_common, notes,
+--     primary_source_id, created_at, updated_at
+--
+-- Postinstall logged:
+--   psql:.../003_live_short_name_aliases.sql:48: ERROR: column "alias_kind"
+--       of relation "model_aliases" does not exist
+--   ERROR Tier-1 alias seed supplement failed against
+--       mining_guardian_catalog (P-021)
+--
+-- The whole INSERT failed; zero short-name aliases landed. This rewrite uses
+-- only columns that the canonical schema actually defines.
+-- ============================================================================
+--
 -- Why this exists:
 --   The 2026-05-07 P-019E install on the Mini surfaced four model names
 --   the scanner couldn't resolve via the catalog: `S19JPro`, `S21EXPHyd`,
@@ -17,38 +40,26 @@
 --   time, so it resolves to whatever UUIDs the live `hardware.miner_models`
 --   actually has — no frozen UUIDs, no FK drift.
 --
--- How this differs from the frozen Tier-1 seed:
---   Tier-1 seed (12,840 rows) ships with hard-coded UUIDs in every INSERT
---   and is wrapped in a pg_temp staging shim by postinstall (P-019B).
---   This file is a tiny INSERT … SELECT … FROM hardware.miner_models that
---   resolves IDs at apply time. It's safe to rerun (ON CONFLICT DO
---   NOTHING) and it cannot drift from the live seed because it never
---   bakes in a UUID.
---
--- Scope:
---   Only the BiXBiT USA production fleet's four short names. Other short
---   names a future customer's AMS may emit can be added by appending more
---   rows here, OR by running `catalog_updater.py --add-from-csv` to push
---   the alias into `hardware.model_aliases` directly.
---
 -- Idempotent: ON CONFLICT (miner_model_id, alias) DO NOTHING. Re-running
 -- against the same DB is a no-op.
-
+--
 -- Each block:
 --   - Looks up the live miner_model_id by canonical_name ILIKE pattern
 --   - Adds the short alias the scanner sees from AMS
---   - alias_kind=textual_short — distinguishes from full canonical aliases
+--   - alias_normalized is the lowercased no-spaces form (schema NOT NULL)
+--   - alias_source = 'P-021_live_short_name' so this provenance is
+--     greppable + the row count is the verification query (see below).
 
-INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_kind, source, confidence, notes)
-SELECT id, 'S19JPro', 'textual_short', 'P-021_live_short_name', 'high',
+INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_normalized, alias_source, is_common, notes)
+SELECT id, 'S19JPro', 's19jpro', 'P-021_live_short_name', TRUE,
        'AMS short name for Antminer S19J Pro (BiXBiT USA fleet)'
 FROM hardware.miner_models
 WHERE canonical_name ILIKE 'antminer s19j pro%'
    OR canonical_name ILIKE 'antminer s19jpro%'
 ON CONFLICT (miner_model_id, alias) DO NOTHING;
 
-INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_kind, source, confidence, notes)
-SELECT id, 'S21EXPHyd', 'textual_short', 'P-021_live_short_name', 'high',
+INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_normalized, alias_source, is_common, notes)
+SELECT id, 'S21EXPHyd', 's21exphyd', 'P-021_live_short_name', TRUE,
        'AMS short name for Antminer S21 EXP Hydro (BiXBiT USA fleet)'
 FROM hardware.miner_models
 WHERE canonical_name ILIKE 'antminer s21 exp hydro%'
@@ -56,8 +67,8 @@ WHERE canonical_name ILIKE 'antminer s21 exp hydro%'
    OR canonical_name ILIKE 'antminer s21e-xp-hydro%'
 ON CONFLICT (miner_model_id, alias) DO NOTHING;
 
-INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_kind, source, confidence, notes)
-SELECT id, 'S21Imm', 'textual_short', 'P-021_live_short_name', 'high',
+INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_normalized, alias_source, is_common, notes)
+SELECT id, 'S21Imm', 's21imm', 'P-021_live_short_name', TRUE,
        'AMS short name for Antminer S21 Immersion (BiXBiT USA fleet)'
 FROM hardware.miner_models
 WHERE canonical_name ILIKE 'antminer s21 imm%'
@@ -65,8 +76,8 @@ WHERE canonical_name ILIKE 'antminer s21 imm%'
    OR canonical_name ILIKE 'antminer s21 immersion%'
 ON CONFLICT (miner_model_id, alias) DO NOTHING;
 
-INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_kind, source, confidence, notes)
-SELECT id, 'AH3880', 'textual_short', 'P-021_live_short_name', 'high',
+INSERT INTO hardware.model_aliases (miner_model_id, alias, alias_normalized, alias_source, is_common, notes)
+SELECT id, 'AH3880', 'ah3880', 'P-021_live_short_name', TRUE,
        'AMS short name for Auradine Teraflux AH3880 (BiXBiT USA fleet)'
 FROM hardware.miner_models
 WHERE canonical_name ILIKE 'auradine%ah3880%'
@@ -81,6 +92,6 @@ DECLARE
 BEGIN
     SELECT COUNT(*) INTO short_count
     FROM hardware.model_aliases
-    WHERE source = 'P-021_live_short_name';
+    WHERE alias_source = 'P-021_live_short_name';
     RAISE NOTICE 'P-021 live short-name aliases present: %', short_count;
 END$$;

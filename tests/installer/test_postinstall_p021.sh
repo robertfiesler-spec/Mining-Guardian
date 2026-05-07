@@ -66,6 +66,80 @@ else
     ok "supplement contains no hard-coded UUIDs"
 fi
 
+# P-021-fix (2026-05-08) — supplement must NOT reference columns that
+# don't exist on hardware.model_aliases. The first install failed
+# at runtime with `column "alias_kind" does not exist`. Catch the
+# class statically here so the same regression can't ship again.
+SCHEMA_FILE="intelligence-catalog/seed-data/intelligence_catalog_schema.sql"
+if [[ -r "$SCHEMA_FILE" ]]; then
+    # Pull the column body of hardware.model_aliases out of the schema.
+    schema_body="$(/usr/bin/awk '
+        /^CREATE TABLE hardware\.model_aliases/ { capture=1; next }
+        capture && /^\);/ { capture=0 }
+        capture { print }
+    ' "$SCHEMA_FILE")"
+    # Walk every column name the supplement names in any INSERT column-
+    # list (`INSERT INTO hardware.model_aliases (col1, col2, ...)`).
+    insert_cols="$(/usr/bin/awk '
+        BEGIN { capture=0 }
+        /INSERT INTO hardware\.model_aliases[[:space:]]*\(/ {
+            sub(/.*INSERT INTO hardware\.model_aliases[[:space:]]*\(/, "", $0)
+            capture=1
+        }
+        capture {
+            line=$0
+            if (sub(/\).*/, "", line)) {
+                printf "%s", line
+                capture=0
+                print ""
+                next
+            }
+            printf "%s ", line
+        }
+    ' "$TIER1_SUPP")"
+    # For each comma-separated column the supplement names, verify it
+    # appears in the schema body. Track unknowns.
+    unknown_cols=""
+    while IFS= read -r row; do
+        [[ -z "$row" ]] && continue
+        # Split on commas, strip whitespace.
+        IFS=',' read -ra parts <<< "$row"
+        for col in "${parts[@]}"; do
+            col_trim="$(echo "$col" | /usr/bin/sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [[ -z "$col_trim" ]] && continue
+            # Schema match: line starts with the column name + whitespace
+            # (so we don't false-match on substrings).
+            if echo "$schema_body" \
+                    | /usr/bin/grep -qE "^[[:space:]]*${col_trim}[[:space:]]"; then
+                : # column exists
+            else
+                unknown_cols="${unknown_cols} ${col_trim}"
+            fi
+        done
+    done <<< "$insert_cols"
+    if [[ -z "$unknown_cols" ]]; then
+        ok "every column the supplement names exists on hardware.model_aliases"
+    else
+        fail "supplement references columns NOT in hardware.model_aliases:${unknown_cols}"
+    fi
+
+    # Forbid the two specific names the pre-fix supplement used.
+    for col_name in alias_kind source; do
+        # Need it to appear AS A COLUMN in the INSERT list — strip
+        # comments and string literals first to avoid false-positives.
+        # Easiest: only fail if the column appears inside a paren-list
+        # for hardware.model_aliases.
+        if echo "$insert_cols" \
+                | /usr/bin/grep -qE "(^|,)[[:space:]]*${col_name}[[:space:]]*(,|$)"; then
+            fail "supplement INSERT names \`${col_name}\` — that column does not exist (pre-P-021-fix bug class)"
+        else
+            ok "supplement does NOT name \`${col_name}\` (pre-P-021-fix bug class)"
+        fi
+    done
+else
+    fail "canonical schema file missing: ${SCHEMA_FILE}"
+fi
+
 
 section "2. postinstall wires the supplement"
 postinstall_body="$(/usr/bin/awk '/^step_apply_alias_seeds\(\)/,/^}$/' "$POSTINSTALL")"
