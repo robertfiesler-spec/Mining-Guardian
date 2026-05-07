@@ -32,6 +32,65 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger("mining_guardian")
 
+
+def _coerce_to_datetime(value, *, default=None):
+    """Best-effort coercion of a heterogeneous baseline-state value to a
+    timezone-aware UTC datetime.
+
+    Why this exists (P-021-runtime-fix, 2026-05-08):
+        `BaselineManager` was originally written against a SQLite schema
+        that stored timestamps as ISO strings (see this file's docstring
+        line ~333: "learning_start TEXT — ISO timestamp"). The
+        2026-04-23 Postgres migration (`migrations/001_initial_schema.sql:151`)
+        declared `learning_start TIMESTAMP WITH TIME ZONE NOT NULL`, and
+        psycopg2 returns native `datetime` objects for TIMESTAMPTZ
+        columns. `_ensure_table` here still says `TEXT NOT NULL` but it
+        is `CREATE TABLE IF NOT EXISTS` — on a real install the migration
+        runs first, so the live column is `timestamptz` and `get_state`
+        returns `state["learning_start"]` as a `datetime`. The legacy
+        `datetime.fromisoformat(state["learning_start"])` then crashes:
+            TypeError: fromisoformat: argument must be str
+        Observed live on the 2026-05-08 P-021-fix install: scanner exit
+        1 in `_analyze_miner` after AMS discovery, every miner blocked.
+
+    Acceptable input types and behaviour:
+        - `datetime` (naive) → assumed UTC; tzinfo attached.
+        - `datetime` (aware) → returned as-is.
+        - ISO 8601 string (with or without trailing 'Z') → parsed; UTC if no tz.
+        - empty string / None / junk type → `default` is returned (caller
+          decides whether `None` means "reset learning" or just "skip
+          this sample").
+
+    Returns the coerced datetime, or `default` if the input is unusable.
+    Never raises — the scanner can't afford to crash on a single
+    legacy-shaped row.
+    """
+    from datetime import date as _date_cls
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    if isinstance(value, _date_cls):
+        # Plain date (no time) — promote to midnight UTC.
+        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return default
+        # `datetime.fromisoformat` on Python 3.11+ accepts trailing 'Z',
+        # but be defensive for 3.10. Replace the literal 'Z' with '+00:00'.
+        if s.endswith("Z") and "+" not in s:
+            s = s[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(s)
+        except ValueError:
+            return default
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return default
+
+
 # ---------------------------------------------------------------------------
 # MinerSpecsLoader — Tier 2 lookup table
 # ---------------------------------------------------------------------------
@@ -436,9 +495,25 @@ class BaselineManager:
             return False
 
         now      = datetime.now(timezone.utc)
-        start    = datetime.fromisoformat(state["learning_start"])
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
+        # P-021-runtime-fix (2026-05-08): coerce learning_start through
+        # `_coerce_to_datetime`. The schema disagrees with itself —
+        # `_ensure_table` declares TEXT but the migration creates
+        # TIMESTAMPTZ, so psycopg2 returns datetime, which crashes the
+        # legacy `datetime.fromisoformat()` path. The helper accepts
+        # datetime, ISO string, date, or None and returns a UTC-aware
+        # datetime (or `default=None` for junk).
+        start = _coerce_to_datetime(state.get("learning_start"))
+        if start is None:
+            # Legacy/corrupted state row — surface in the log and skip
+            # this sample. The next call to `start_learning` will re-
+            # initialize the row; refusing here is safer than silently
+            # mis-reading the learning window or crashing the scanner.
+            logger.warning(
+                "BaselineManager: miner %s has invalid/missing learning_start "
+                "(%r) — skipping sample. Will retry next scan.",
+                miner_id, state.get("learning_start"),
+            )
+            return False
         elapsed_hrs  = (now - start).total_seconds() / 3600
         new_samples  = state["samples_collected"] + 1
 
@@ -470,7 +545,21 @@ class BaselineManager:
         if not state:
             return
 
-        start = state["learning_start"]
+        # P-021-runtime-fix (2026-05-08): coerce learning_start the
+        # same way record_sample does. psycopg2 may return a datetime
+        # (TIMESTAMPTZ column) or a string (legacy SQLite-shaped TEXT
+        # column on a freshly _ensure_table-only install). Both work
+        # as a SQL bound, but normalising here keeps the value type
+        # predictable for any future caller and matches record_sample's
+        # invariant.
+        start = _coerce_to_datetime(state.get("learning_start"))
+        if start is None:
+            logger.warning(
+                "BaselineManager: miner %s has invalid/missing learning_start "
+                "(%r) — cannot lock baseline. Aborting lock.",
+                miner_id, state.get("learning_start"),
+            )
+            return
 
         with self._connect() as conn:
             # Pull all readings during the learning window

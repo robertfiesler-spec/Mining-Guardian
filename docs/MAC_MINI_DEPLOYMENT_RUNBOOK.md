@@ -179,7 +179,13 @@ Create a fresh .env on the Mac Mini (use the repo's `.env.example` as template; 
 - GUARDIAN_PG_HOST: localhost
 - GUARDIAN_PG_DBNAME: mining_guardian
 - GUARDIAN_PG_USER: guardian_app
-- OLLAMA_URL: http://100.110.87.1:11434/api/generate (ROBS-PC on Tailscale — or http://localhost:11434 if running Ollama on Mac Mini)
+- OLLAMA_HOST: http://127.0.0.1:11434 (local Mac Mini Ollama — D-9 / S-13). The
+  legacy `OLLAMA_URL=http://127.0.0.1:11434/api/generate` is also written by
+  postinstall for code paths that still read it. **Advanced override only:** an
+  operator running Ollama on a different host can set `OLLAMA_URL` explicitly,
+  but the runtime refuses any value pointing at the retired ROBS-PC tailscale
+  range (100.110.87.x / Tailscale CGNAT) — see `ai/catalog_context.py::
+  _http_fallback_url` for the refusal guard.
 - ECLYPSE_USER / ECLYPSE_PASS: same (HVAC BAS creds)
 - AMS credentials: same
 
@@ -228,8 +234,8 @@ With Mac Mini on local LAN, ALL of these should be reachable directly (no Tailsc
     # Amshub Pi
     ssh bixbit@192.168.188.30 'tmux ls'
 
-    # Local LLM
-    curl -s http://100.110.87.1:11434/api/tags | head
+    # Local LLM (Ollama on the Mac Mini — D-9 / S-13)
+    curl -s http://127.0.0.1:11434/api/tags | head
 
 Trigger a manual scan and confirm it completes:
 
@@ -257,9 +263,22 @@ Once Mac Mini has logged >=1 clean scan + HVAC write + Slack message:
 
 **Cloudflare tunnels (historical VPS context only):** The Mac Mini install does NOT use Cloudflare. If any VPS-era tunnels remain active and must be torn down, do so from the Cloudflare dashboard — stopping them before stopping VPS services avoids 502 errors to any remaining Slack/Retool users of the historical VPS setup.
 
-**ROBS-PC must stay on and awake.** It advertises 192.168.188.0/24 and 192.168.189.0/24 as Tailscale routes AND hosts the local LLM at 100.110.87.1:11434. If it sleeps, HVAC polling fails from any non-LAN location, and all LLM calls fail. Mac Mini on local LAN removes the Tailscale dependency for HVAC/miners but NOT for the LLM. If ROBS-PC becomes unreliable, the fallback is to run Ollama on the Mac Mini itself (slower — M-series GPU is weaker than an RTX 4090).
+**Local Ollama on the Mac Mini.** Post-cutover (D-7 / D-9 / S-13), Ollama runs
+on the Mac Mini at `127.0.0.1:11434`; the install-time RAM detection picks
+`llama3.2:3b` for 16 GB Minis and `qwen2.5:14b-instruct-q4_K_M` for 24 GB+
+Minis (D-13). LLM calls do NOT require Tailscale and do NOT depend on any
+external host. The retired ROBS-PC tailscale endpoint
+`http://100.110.87.1:11434` (RTX 4090 host pre-cutover) is no longer used —
+the runtime refuses any `OLLAMA_URL` pointing at the 100.110.87.x range.
 
-**Note on ROBS-PC vs historical VPS:** ROBS-PC (192.168.188.47 on LAN, Tailscale 100.110.87.1) is Bobby's personal workstation — separate from the historical Hostinger VPS (srv1549463 / 187.124.247.182 / Tailscale 100.106.123.83). ROBS-PC is not decommissioned; the VPS is decommissioned for MG.
+**Historical context (pre-cutover):** ROBS-PC (192.168.188.47 on LAN,
+Tailscale 100.110.87.1) was Bobby's personal workstation that hosted Qwen on
+the RTX 4090 and advertised 192.168.188.0/24 + 192.168.189.0/24 as Tailscale
+routes. After the 2026-05-05 cutover scope γ, ROBS-PC is decommissioned for
+MG: the Mac Mini sits on the miner LAN directly so the Tailscale-route
+dependency is gone, and Ollama runs locally so the LLM dependency is gone
+too. The historical Hostinger VPS (srv1549463 / 187.124.247.182 / Tailscale
+100.106.123.83) is also decommissioned for MG.
 
 **Amshub Pi is NOT a systemd service.** The AMS hub runs in a tmux session named 'hub' on 192.168.188.30 (bixbit/bixbit). Do NOT install a systemd unit without coordination with the Pi's programmer. If the Pi needs restart, ssh bixbit@192.168.188.30, tmux attach -t hub, restart the binary, Ctrl+B d to detach.
 

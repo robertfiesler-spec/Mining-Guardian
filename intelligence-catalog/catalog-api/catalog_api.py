@@ -42,14 +42,55 @@ logger = logging.getLogger("catalog-api")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-DB_HOST = os.getenv("DB_HOST", "mining-guardian-db")
-DB_PORT = int(os.getenv("DB_PORT", "5432"))
-DB_NAME = os.getenv("DB_NAME", "mining_guardian")
-DB_USER = os.getenv("DB_USER", "guardian_admin")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+# P-018E (2026-05-06): canonical DSN resolution comes from
+# `core.db_targets.catalog_target()` which reads
+# GUARDIAN_PG_HOST/_PORT/_USER/_PASSWORD/_CATALOG_DBNAME (the env-var
+# family the customer Mac mini's .env actually writes — see
+# `installer/macos-pkg/scripts/postinstall.sh:919-929`). The previous
+# defaults (`DB_HOST=mining-guardian-db`, `DB_NAME=mining_guardian`) were
+# disjoint from that family and silently pointed the catalog API at the
+# operational DB on every customer install.
+#
+# Backward-compat: legacy `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` /
+# `DB_NAME` env vars still take precedence when set, so a third-party
+# .env that already wires them keeps working. New deployments should
+# rely solely on the GUARDIAN_PG_* family.
+def _resolve_catalog_target():
+    """Resolve the catalog DB target via core.db_targets, sys.path-resilient.
+
+    The catalog-api lives at `intelligence-catalog/catalog-api/`, three
+    levels deep from the repo root that hosts `core/db_targets.py`. We
+    add the repo root to sys.path on first import so the helper
+    resolves whether the FastAPI process was launched from the repo or
+    from the catalog-api dir directly.
+    """
+    try:
+        from core.db_targets import catalog_target
+    except ImportError:
+        import sys
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from core.db_targets import catalog_target  # type: ignore[no-redef]
+    return catalog_target()
+
+
+_target = _resolve_catalog_target()
+DB_HOST = os.getenv("DB_HOST", _target.host)
+DB_PORT = int(os.getenv("DB_PORT", str(_target.port)))
+DB_NAME = os.getenv("DB_NAME", _target.dbname)
+DB_USER = os.getenv("DB_USER", _target.user)
+# Password resolution: legacy DB_PASSWORD wins when set; else fall back
+# to the canonical password core.db_targets resolved
+# (GUARDIAN_PG_PASSWORD with MG_DB_PASSWORD fallback). Explicit empty
+# string is preserved as "no password" rather than silently picking up
+# `~/.pgpass`.
+DB_PASSWORD = os.getenv("DB_PASSWORD") or _target.password
 if not DB_PASSWORD:
     raise EnvironmentError(
-        "DB_PASSWORD must be set in the environment. Populate the catalog-api .env file."
+        "No DB password set. Populate one of GUARDIAN_PG_PASSWORD, "
+        "MG_DB_PASSWORD, or legacy DB_PASSWORD in the environment."
     )
 
 # CRIT-6: API key must be set explicitly. The old default
@@ -364,7 +405,15 @@ def _fuzzy_match_models(model_names: list[str]) -> list[dict]:
 # Bundle assembly
 # ---------------------------------------------------------------------------
 def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> list[dict]:
-    """Fetch failure patterns relevant to matched models and active issues."""
+    """Fetch failure patterns relevant to matched models and active issues.
+
+    P-021 (2026-05-07) — schema-correct FK columns:
+      - `ops.failure_patterns.primary_model_id`     (NOT model_id)
+      - `hardware.model_known_issues` is not in the canonical schema yet
+        (ships in a future N7 enrichment); keep the guarded read so it
+        light up automatically once seeded, but use the right column name
+        (`miner_model_id`) consistent with sibling tables.
+    """
     results = []
 
     # Failure mode catalog
@@ -372,7 +421,8 @@ def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> l
     if model_ids and _check_table_exists("ops.failure_patterns"):
         placeholders = ",".join(["%s"] * len(model_ids))
         rows = _query(
-            f"SELECT * FROM ops.failure_patterns WHERE model_id IN ({placeholders}) LIMIT 50",
+            f"SELECT * FROM ops.failure_patterns "
+            f"WHERE primary_model_id IN ({placeholders}) LIMIT 50",
             tuple(model_ids),
         )
         results.extend(rows)
@@ -395,11 +445,14 @@ def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> l
             )
             results.extend(rows)
 
-    # hardware.model_known_issues — known hardware issues
+    # hardware.model_known_issues — known hardware issues. Future-seeded
+    # table; if present, query by `miner_model_id` consistent with sibling
+    # FKs in `hardware.*`.
     if model_ids and _check_table_exists("hardware.model_known_issues"):
         placeholders = ",".join(["%s"] * len(model_ids))
         rows = _query(
-            f"SELECT * FROM hardware.model_known_issues WHERE model_id IN ({placeholders}) LIMIT 20",
+            f"SELECT * FROM hardware.model_known_issues "
+            f"WHERE miner_model_id IN ({placeholders}) LIMIT 20",
             tuple(model_ids),
         )
         results.extend(rows)
@@ -408,34 +461,66 @@ def _fetch_failure_patterns(model_ids: list[int], active_issues: list[str]) -> l
 
 
 def _fetch_firmware_data(model_ids: list[int], firmware_versions: list[str]) -> dict:
-    """Fetch firmware versions, compatibility, and known bugs."""
+    """Fetch firmware versions, compatibility, and known bugs.
+
+    P-021 (2026-05-07) — schema-correct FK columns:
+      - `firmware.firmware_releases` has NO model_id column. The model
+        link is the join table `firmware.firmware_compatibility(firmware_id,
+        miner_model_id)` — JOIN through it.
+      - `firmware.firmware_compatibility.miner_model_id` (NOT model_id).
+      - `firmware.firmware_bugs.affected_model_id` (NOT model_id) and
+        `firmware.firmware_bugs.firmware_id` (UUID FK to firmware_releases,
+        NOT firmware_version text).
+    """
     data: dict[str, list] = {"versions": [], "compatibility": [], "bugs": []}
 
-    if model_ids and _check_table_exists("firmware.firmware_releases"):
+    if (
+        model_ids
+        and _check_table_exists("firmware.firmware_releases")
+        and _check_table_exists("firmware.firmware_compatibility")
+    ):
         placeholders = ",".join(["%s"] * len(model_ids))
         data["versions"] = _query(
-            f"SELECT * FROM firmware.firmware_releases WHERE model_id IN ({placeholders}) ORDER BY release_date DESC LIMIT 20",
+            f"""
+            SELECT DISTINCT fr.*
+            FROM firmware.firmware_releases fr
+            JOIN firmware.firmware_compatibility fc ON fc.firmware_id = fr.id
+            WHERE fc.miner_model_id IN ({placeholders})
+            ORDER BY fr.release_date DESC NULLS LAST
+            LIMIT 20
+            """,
             tuple(model_ids),
         )
 
     if model_ids and _check_table_exists("firmware.firmware_compatibility"):
         placeholders = ",".join(["%s"] * len(model_ids))
         data["compatibility"] = _query(
-            f"SELECT * FROM firmware.firmware_compatibility WHERE model_id IN ({placeholders}) LIMIT 20",
+            f"SELECT * FROM firmware.firmware_compatibility "
+            f"WHERE miner_model_id IN ({placeholders}) LIMIT 20",
             tuple(model_ids),
         )
 
     if _check_table_exists("firmware.firmware_bugs"):
-        if firmware_versions:
+        # Lookup-by-version uses fr.id resolved from version_string; the
+        # legacy `WHERE firmware_version IN (...)` referenced a column that
+        # doesn't exist on firmware_bugs.
+        if firmware_versions and _check_table_exists("firmware.firmware_releases"):
             placeholders = ",".join(["%s"] * len(firmware_versions))
             data["bugs"] = _query(
-                f"SELECT * FROM firmware.firmware_bugs WHERE firmware_version IN ({placeholders}) LIMIT 20",
+                f"""
+                SELECT fb.*
+                FROM firmware.firmware_bugs fb
+                JOIN firmware.firmware_releases fr ON fr.id = fb.firmware_id
+                WHERE fr.version_string IN ({placeholders})
+                LIMIT 20
+                """,
                 tuple(firmware_versions),
             )
         elif model_ids:
             placeholders = ",".join(["%s"] * len(model_ids))
             data["bugs"] = _query(
-                f"SELECT * FROM firmware.firmware_bugs WHERE model_id IN ({placeholders}) LIMIT 20",
+                f"SELECT * FROM firmware.firmware_bugs "
+                f"WHERE affected_model_id IN ({placeholders}) LIMIT 20",
                 tuple(model_ids),
             )
 
@@ -443,27 +528,39 @@ def _fetch_firmware_data(model_ids: list[int], firmware_versions: list[str]) -> 
 
 
 def _fetch_thresholds(model_ids: list[int]) -> dict:
-    """Fetch operational thresholds and baselines."""
+    """Fetch operational thresholds and baselines.
+
+    P-021 (2026-05-07) — schema-correct FK columns:
+      - `ops.operational_thresholds.miner_model_id` (NOT model_id; nullable
+        means 'applies to all models')
+      - `ops.operational_profiles.miner_model_id` (NOT model_id; NOT NULL)
+      - `ops.miner_baseline_reference` is not in the canonical schema yet
+        (future-seeded); use `miner_model_id` consistent with siblings.
+    """
     data: dict[str, list] = {"thresholds": [], "baselines": [], "profiles": [], "env_matrix": []}
 
     if model_ids and _check_table_exists("ops.operational_thresholds"):
         placeholders = ",".join(["%s"] * len(model_ids))
         data["thresholds"] = _query(
-            f"SELECT * FROM ops.operational_thresholds WHERE model_id IN ({placeholders}) LIMIT 20",
+            f"SELECT * FROM ops.operational_thresholds "
+            f"WHERE miner_model_id IN ({placeholders}) "
+            f"OR miner_model_id IS NULL LIMIT 20",
             tuple(model_ids),
         )
 
     if model_ids and _check_table_exists("ops.miner_baseline_reference"):
         placeholders = ",".join(["%s"] * len(model_ids))
         data["baselines"] = _query(
-            f"SELECT * FROM ops.miner_baseline_reference WHERE model_id IN ({placeholders}) LIMIT 20",
+            f"SELECT * FROM ops.miner_baseline_reference "
+            f"WHERE miner_model_id IN ({placeholders}) LIMIT 20",
             tuple(model_ids),
         )
 
     if model_ids and _check_table_exists("ops.operational_profiles"):
         placeholders = ",".join(["%s"] * len(model_ids))
         data["profiles"] = _query(
-            f"SELECT * FROM ops.operational_profiles WHERE model_id IN ({placeholders}) LIMIT 10",
+            f"SELECT * FROM ops.operational_profiles "
+            f"WHERE miner_model_id IN ({placeholders}) LIMIT 10",
             tuple(model_ids),
         )
 
@@ -476,13 +573,19 @@ def _fetch_thresholds(model_ids: list[int]) -> dict:
 
 
 def _fetch_repair_data(model_ids: list[int]) -> dict:
-    """Fetch repair procedures and parts references."""
+    """Fetch repair procedures and parts references.
+
+    P-021 (2026-05-07) — `repair.repair_procedures.miner_model_id`
+    (NOT model_id; NULL means 'universal procedure').
+    """
     data: dict[str, list] = {"procedures": [], "parts_diagnostic": [], "parts_cross_ref": []}
 
     if model_ids and _check_table_exists("repair.repair_procedures"):
         placeholders = ",".join(["%s"] * len(model_ids))
         data["procedures"] = _query(
-            f"SELECT * FROM repair.repair_procedures WHERE model_id IN ({placeholders}) LIMIT 20",
+            f"SELECT * FROM repair.repair_procedures "
+            f"WHERE miner_model_id IN ({placeholders}) "
+            f"OR miner_model_id IS NULL LIMIT 20",
             tuple(model_ids),
         )
 
@@ -889,9 +992,21 @@ async def get_miner_knowledge(
                     "SELECT * FROM hardware.chips WHERE chip_name ILIKE %s LIMIT 5",
                     (f"%{chip_name}%",),
                 )
-        if _check_table_exists("hardware.psu_models") and model_ids:
+        # P-021 (2026-05-07): hardware.psu_models has NO model_id column.
+        # PSU↔miner is many-to-many via hardware.psu_compatibility
+        # (miner_model_id, psu_model_id). JOIN through the compat table.
+        if (
+            _check_table_exists("hardware.psu_models")
+            and _check_table_exists("hardware.psu_compatibility")
+            and model_ids
+        ):
             result["psu_specs"] = _query(
-                "SELECT * FROM hardware.psu_models WHERE model_id = %s LIMIT 5",
+                """
+                SELECT psu.*, pc.is_oem_included, pc.compatibility_status
+                FROM hardware.psu_models psu
+                JOIN hardware.psu_compatibility pc ON pc.psu_model_id = psu.id
+                WHERE pc.miner_model_id = %s LIMIT 5
+                """,
                 (model_ids[0],),
             )
 

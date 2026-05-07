@@ -41,5 +41,17 @@ set +a
 # logs path. See scanner_launcher.sh for the canonical comment.
 export MG_INSTALL_ROOT="${INSTALL_ROOT}"
 
+# P-019D (2026-05-07) — preflight before exec. Intelligence report API
+# binds INTEL_REPORT_API_BIND:INTEL_REPORT_API_PORT (default
+# 127.0.0.1:8590) and reads the catalog DB. Same shape as
+# dashboard_api_launcher.
+INTEL_PORT="${INTEL_REPORT_API_PORT:-8590}"
+# shellcheck source=_preflight.sh
+source "${INSTALL_ROOT}/bin/_preflight.sh"
+_preflight_env_keys "intelligence_report" "${ENV_FILE}" \
+    MG_DB_PASSWORD || exit $?
+_preflight_port_free "intelligence_report" "${INTEL_PORT}" || exit $?
+_preflight_db_ping "intelligence_report" "${VENV_PYTHON}" || exit $?
+
 cd "${INSTALL_ROOT}"
 exec "${VENV_PYTHON}" -u "${ENTRY_POINT}"

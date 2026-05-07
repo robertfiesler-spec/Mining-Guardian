@@ -52,4 +52,20 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+# P-019D (2026-05-07) — preflight before exec. The C5 daemon opens
+# psycopg2 in autocommit and runs `LISTEN catalog_feedback` at module
+# scope; if MG_DB_PASSWORD does not match the actual mg role (P-029
+# reconcile race or .env drift) the daemon raises OperationalError and
+# exits in <0.5s — under launchd ThrottleInterval=10 + RunAtLoad=true
+# this surfaces as `Bootstrap failed: 5: Input/output error` with no
+# further detail (the same B-25 class as the FastAPI services). Bound
+# the auth class behind a loud preflight that writes to stderr (which
+# launchd's StandardErrorPath captures, dumped by postinstall in P-019D
+# step 3). This daemon does not bind a TCP port, so no port check.
+# shellcheck source=_preflight.sh
+source "${INSTALL_ROOT}/bin/_preflight.sh"
+_preflight_env_keys "feedback_loop_daemon" "${ENV_FILE}" \
+    MG_DB_PASSWORD || exit $?
+_preflight_db_ping "feedback_loop_daemon" "${VENV_PYTHON}" || exit $?
+
 exec "${VENV_PYTHON}" -u "${DAEMON_PATH}"

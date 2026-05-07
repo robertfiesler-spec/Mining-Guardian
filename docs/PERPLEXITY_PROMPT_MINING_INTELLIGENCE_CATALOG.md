@@ -152,7 +152,10 @@ WHERE pcb_version = '0110' AND bom_version = '0020';
 
 ## Technical Requirements
 
-1. **PostgreSQL 16** on Windows (ROBS-PC), accessible via Tailscale at `100.110.87.1`
+1. **PostgreSQL 16** on the Mac Mini (`mining_guardian_catalog` DB inside the
+   `mining-guardian-db` Docker container, bound to `127.0.0.1:5432` per D-9 /
+   S-13). Pre-cutover the catalog Postgres ran on Windows ROBS-PC over
+   Tailscale at `100.110.87.1` — that host is decommissioned for MG.
 2. **Read-only for Mining Guardian** — it only queries, never writes
 3. **Separate admin connection** for me to load/update data
 4. **JSONB columns** where flexible schema is useful (like firmware API details)

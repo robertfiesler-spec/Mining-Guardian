@@ -4,7 +4,7 @@
 >
 > **Host changed from VPS to Mac Mini.** This doc was written on April 9, 2026, when the script was initially deployed to the historical Hostinger VPS (decommissioned for MG). As of the 2026-04-30 Mac Mini install:
 > - The script runs on the **Mac Mini** (not the VPS).
-> - The `LLM_URL` will be `http://localhost:11434` if Ollama runs on the Mac Mini, or `http://100.110.87.1:11434` (ROBS-PC Tailscale) if ROBS-PC is still the Qwen host.
+> - `LLM_URL` is `http://127.0.0.1:11434` — Ollama runs locally on the Mac Mini per D-7 / D-9 / S-13. The pre-cutover ROBS-PC RTX 4090 host is decommissioned for MG and the runtime refuses any `OLLAMA_URL` pointing at the retired Tailscale range.
 > - The script path is `/Users/BigBobby/Documents/GitHub/Mining-Guardian/ai/daily_deep_dive.py` (not `/root/Mining-Guardian/`).
 > - VPS references in the Invocation, May Migration, and Troubleshooting sections below are historical context.
 
@@ -260,7 +260,7 @@ The daily deep dive is **PERMANENT**. Unlike the `TEMP_MAY_REMOVE` restart compa
 
 On Mac Mini install (2026-04-30), two things happen to the deep dive:
 1. The script runs on the Mac Mini at `/Users/BigBobby/Documents/GitHub/Mining-Guardian/ai/daily_deep_dive.py` (was on historical VPS at `/root/Mining-Guardian/`, decommissioned for MG).
-2. The `LLM_URL` config value: if Ollama runs on the Mac Mini use `http://localhost:11434`; if ROBS-PC remains the Qwen host use `http://100.110.87.1:11434` (ROBS-PC Tailscale). This is a config change, not a code change.
+2. The `LLM_URL` config value is `http://127.0.0.1:11434` — Ollama runs locally on the Mac Mini per D-7 / D-9 / S-13. The pre-cutover ROBS-PC RTX 4090 host is decommissioned for MG; the runtime refuses any value pointing at the retired Tailscale range.
 
 Nothing else changes. The logic stays identical.
 
@@ -275,7 +275,7 @@ The pre/post restart comparison merge in `train_cohort.py` (the `TEMP_MAY_REMOVE
 
 ## Troubleshooting
 
-**"Qwen HTTP error 500" or "Qwen connection error":** ROBS-PC is not reachable via Tailscale, or Ollama is down, or Qwen model is not loaded. From the Mac Mini (operational host as of 2026-04-30), run `curl http://100.110.87.1:11434/api/tags` to check if Ollama on ROBS-PC is up, or `curl http://localhost:11434/api/tags` if Ollama runs locally on the Mac Mini. `curl http://100.110.87.1:11434/api/show -d '{"name":"qwen2.5:32b-instruct-q4_K_M"}'` to check if the model is available. (Historical note: this troubleshooting step previously said "SSH to the VPS" — the VPS is decommissioned for MG; run these from the Mac Mini instead.)
+**"Qwen HTTP error 500" or "Qwen connection error":** Local Ollama on the Mac Mini is down or the configured model is not loaded. From the Mac Mini, run `curl http://127.0.0.1:11434/api/tags` to check if Ollama is up; `curl http://127.0.0.1:11434/api/show -d '{"name":"qwen2.5:32b-instruct-q4_K_M"}'` to check if the configured model is available. If the Mini was installed via the .pkg, RAM-tier auto-detect picks `llama3.2:3b` (16 GB Mini) or `qwen2.5:14b-instruct-q4_K_M` (24 GB+ Mini) per D-13 — substitute the actual model name in the `api/show` payload. (Historical note: pre-cutover this step said "ssh to the VPS" then "curl ROBS-PC tailscale at 100.110.87.1:11434" — both decommissioned for MG.)
 
 **"Miner X returned no files":** The miner's daily baseline collection failed or timed out. Check the guardian log for `Fresh log:` entries around the time the deep dive ran. If the 10-minute cap is firing for specific miners repeatedly, those miners need AMS-side investigation (see miner 53482 as the canonical example from April 9).
 

@@ -104,7 +104,12 @@
 ## Infrastructure
 
 ### LLM Routing
-- **Qwen 2.5 32B Q4:** Runs on ROBS-PC (Tailscale 100.110.87.1:11434) RTX 4090
+- **Local Ollama on the Mac Mini:** runs at `http://127.0.0.1:11434` post-cutover
+  (D-7 / D-9 / S-13). RAM-tier model pick at install time per D-13:
+  `llama3.2:3b` on 16 GB Minis, `qwen2.5:14b-instruct-q4_K_M` on 24 GB+. The
+  pre-cutover ROBS-PC RTX 4090 host (Tailscale 100.110.87.1:11434, Qwen
+  2.5 32B Q4) is decommissioned for MG; the runtime refuses any
+  `OLLAMA_URL` pointing at that range.
 - **Claude Sonnet API:** Cloud API for Pass 2 and Pass 4 (API key in Mac Mini `.env`; historical VPS era kept it in VPS `.env`)
 
 ### Log Locations

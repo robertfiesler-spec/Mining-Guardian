@@ -66,9 +66,15 @@ SQLITE_PATH = _ROOT / "guardian.db"
 BATCH_SIZE = 10000
 LARGE_TABLE_THRESHOLD = 100000  # Tables with more rows get special handling
 
-# PostgreSQL connection from .env
+# PostgreSQL connection from .env.
+# P-018E (2026-05-06): default host switched from the retired ROBS-PC
+# tailscale IP (`100.110.87.1`) to localhost. This is a one-shot
+# 2026-04-23 cutover script gated by MG_ALLOW_MIGRATION=1 (D-6); the
+# only host that ever needs to run it again is the Mini, where Postgres
+# is local. Operators who genuinely need a remote target can still set
+# CATALOG_DB_HOST explicitly.
 PG_CONFIG = {
-    "host": os.getenv("CATALOG_DB_HOST", "100.110.87.1"),
+    "host": os.getenv("CATALOG_DB_HOST", "127.0.0.1"),
     "port": int(os.getenv("CATALOG_DB_PORT", "5432")),
     "database": os.getenv("CATALOG_DB_NAME", "mining_guardian"),
     "user": os.getenv("CATALOG_DB_USER", "guardian_admin"),

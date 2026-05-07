@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.scheduled.catalog-import.plist — P-021 (2026-05-07)
+
+  Daily catalog import wrapper. Promotes the latest Deep Enrichment
+  Sweep CSV from `${INSTALL_ROOT}/cron_tracking/enrichment_sweep/` into
+  the catalog DB via `catalog_updater.py --add-from-csv`.
+
+  Architecture (two-DB cooperative model):
+    Operational DB and Catalog DB stay distinct. The 5 Perplexity-driven
+    scheduled tasks write JSON/CSV to `cron_tracking/<watcher>/` — they
+    do NOT write directly to either DB. This wrapper is the daily glue
+    that promotes one of those file outputs (the enrichment-sweep CSV)
+    into the catalog DB. The other four watchers' DB writers are tracked
+    as separate future PRs (see docs/INTEL_CATALOG_FULL_BRIEF_2026-05-02.md
+    §351-354).
+
+  Schedule: 04:30 CDT daily — after the operator-review (04:00) plist so
+  the morning briefing reads steady-state data, and before the morning
+  briefing dispatch loop. Mac Mini local timezone (CDT) per
+  docs/CRON_SCHEDULE.md.
+
+  Idempotent under re-run: catalog_updater.py is slug-keyed, deep-merging
+  on existing slugs. Running the same CSV twice is a no-op.
+
+  Time semantics: StartCalendarInterval fires in the Mac's local
+  timezone. No KeepAlive — scheduled jobs run, exit, and wait for the
+  next fire.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.scheduled.catalog-import</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scheduled_job_launcher.sh</string>
+        <string>intelligence-catalog/tools/run_daily_catalog_import.sh</string>
+        <string>catalog_import</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/catalog_import.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/catalog_import.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

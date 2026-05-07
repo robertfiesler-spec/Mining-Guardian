@@ -1,12 +1,27 @@
 # Mining Intelligence Catalog Status
 
-> ## ⚠️ Status as of 2026-04-29 PM
+> ## ⚠️ Status as of 2026-05-07 (P-021)
 >
-> **Architecture superseded.** This document describes the April 13–16, 2026 status when the catalog was hosted on ROBS-PC (192.168.188.47) and the Intelligence Report API ran on the historical Hostinger VPS (srv1549463 / 187.124.247.182). Both are now superseded:
-> - The catalog Postgres lives on the **Mac Mini** (port 5432, user `guardian_app`, db `mining_guardian`, install date 2026-04-30).
-> - Grafana lives on the **Mac Mini** (localhost:3000, loopback-only).
-> - The VPS is **decommissioned for Mining Guardian** (Bobby still uses it for his own facility).
-> - The canonical schema is in `intelligence-catalog/seed-data/` (not `intelligence/` — that directory is deprecated). The legacy `intelligence/` directory is deprecated; see `intelligence/DEPRECATED.md` and `intelligence-catalog/seed-data/README.md`.
+> **Two-DB cooperative architecture (locked).** The Mac Mini runs ONE Postgres 16 container (`mining-guardian-db`, port 5432, role `mg`) hosting TWO distinct logical databases that cooperate as one system. They are NOT collapsed into a single schema:
+>
+> | DB | Role | Used by |
+> |---|---|---|
+> | `mining_guardian` (operational) | Scan/audit/AI tables, fleet state, Slack-approval state, `mg.*` schemas | Scanner (`core/mining_guardian.py`), approval API, dashboard API, console |
+> | `mining_guardian_catalog` (intelligence catalog) | `hardware.*`, `firmware.*`, `ops.*`, `repair.*`, `staging.*` reference tables | Catalog API, `ai/catalog_context.py` reader on every scan, `catalog_updater.py --add-from-csv` writer (daily) |
+>
+> **Daily update flow (P-021 NEW):**
+> 1. The 5 Perplexity-driven scheduled tasks (Aggregator Watcher, Manufacturer Model Watcher, Firmware Tracker, Community Intel Scanner, Deep Enrichment Sweep) write JSON/CSV to `${INSTALL_ROOT}/cron_tracking/<watcher>/`. They do NOT write directly to either DB.
+> 2. `com.miningguardian.scheduled.catalog-import` plist runs daily at 04:30 CDT. It dispatches `intelligence-catalog/tools/run_daily_catalog_import.sh` via `scheduled_job_launcher.sh`. The wrapper picks the most recent `.csv` in `cron_tracking/enrichment_sweep/` and calls `catalog_updater.py --add-from-csv <csv>`. The other four watchers' DB writers remain future-PR scope (see `docs/INTEL_CATALOG_FULL_BRIEF_2026-05-02.md` §351-354).
+> 3. Operator-controlled escalation: rows in `staging.miner_model_proposals` are promoted to `hardware.miner_models` by an operator review (manual `catalog_updater.py --add-model` or future console action), keeping the operator in the loop per Vision Anchor 1.
+>
+> **Identifiers / aliases (P-021):**
+> - `hardware.model_aliases` (catalog DB) — Tier-1, exact slug ↔ canonical name.
+> - **P-021 supplement:** `003_live_short_name_aliases.sql` adds AMS short names (`S19JPro`, `S21EXPHyd`, `S21Imm`, `AH3880`) at apply time, resolving `miner_model_id` against the live catalog seed (no frozen UUIDs, no FK drift).
+> - `mg.model_family_aliases` (operational DB) — Tier-2, family ↔ hashrate. Production resolver path for the BiXBiT fleet's 9 model families.
+>
+> **API surface (P-021 schema fix):** `/api/v1/knowledge/miner/{slug}` and `ai/catalog_context.py` now use schema-correct FKs everywhere. Pre-P-021 these queried `WHERE model_id = …` against tables whose actual FK is `miner_model_id` / `primary_model_id` / `affected_model_id` — the scanner crashed on every catalog read with `column "model_id" does not exist` (B-30). PSU lookup JOINs `hardware.psu_compatibility` (M2M); firmware-versions JOIN `firmware.firmware_compatibility(firmware_id, miner_model_id)`.
+>
+> **Earlier banner (now superseded):** the prior 2026-04-29 banner stated catalog `db=mining_guardian, user=guardian_app` — that was always wrong; catalog DB has been `mining_guardian_catalog` since the postinstall config froze, and runtime user has been `mg` since P-020 fixed the `guardian_app` defaults.
 >
 > The body below is preserved as a historical status snapshot from April 16, 2026.
 

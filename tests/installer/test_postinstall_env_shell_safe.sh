@@ -193,6 +193,10 @@ inputs=(
     'back`tick'
     'double"quote'
     "single'quote"
+    "two''ticks"
+    "leading'tick"
+    "trailing'tick"
+    "'fully'wrapped'"
     'back\slash'
     "semi;colon"
     "pipe|char"

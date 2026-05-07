@@ -41,5 +41,21 @@ set +a
 # logs path. See scanner_launcher.sh for the canonical comment.
 export MG_INSTALL_ROOT="${INSTALL_ROOT}"
 
+# P-019D (2026-05-07) — preflight before exec.
+# This service binds 127.0.0.1:8585 and opens psycopg2 in /health and
+# /query/* handlers. Both are common silent-exit failure modes under
+# launchd: a stale uvicorn from a prior install holds 8585 (uvicorn
+# exits ~immediately on OSError, launchd refuses respawn with errno 5),
+# or MG_DB_PASSWORD drifts from the actual mg role and psycopg2 raises
+# OperationalError on first request. We check both before exec and emit
+# loud, codeable diagnostics to stderr (captured by launchd's
+# StandardErrorPath, dumped by postinstall in P-019D step 3).
+# shellcheck source=_preflight.sh
+source "${INSTALL_ROOT}/bin/_preflight.sh"
+_preflight_env_keys "dashboard_api" "${ENV_FILE}" \
+    MG_DB_PASSWORD || exit $?
+_preflight_port_free "dashboard_api" 8585 || exit $?
+_preflight_db_ping "dashboard_api" "${VENV_PYTHON}" || exit $?
+
 cd "${INSTALL_ROOT}"
 exec "${VENV_PYTHON}" -u "${ENTRY_POINT}"

@@ -102,6 +102,8 @@
 #   39     — catalog DB / schema / seed apply failed (D-18 Gap 2)
 #   40     — scheduled-job plist install or bootstrap failed (D-18 Gap 4)
 #   41     — customer-info Desktop conf missing or invalid (D-18 Gap 1)
+#   42     — alias-seed apply failed (P-018D — Tier-1 hardware.model_aliases
+#            on catalog DB or Tier-2 mg.model_family_aliases on operational)
 #
 # Vision Anchor 7 honored: only one network call (model pull); every
 # other byte is vendored inside the .pkg.
@@ -397,6 +399,7 @@ readonly SCHEDULED_PLIST_LABELS=(
     "com.miningguardian.scheduled.daily-deep-dive"
     "com.miningguardian.scheduled.log-failure-report"
     "com.miningguardian.scheduled.benchmark"
+    "com.miningguardian.scheduled.catalog-import"
 )
 
 # ---------------------------------------------------------------------------
@@ -540,9 +543,25 @@ _shq() {
         printf "''"
         return 0
     fi
-    # Standard `'\''` escape. The quoted form is single-quoted, so a
-    # literal `'` becomes `'\''` (close, escaped tick, reopen).
-    printf "'%s'" "${v//\'/\'\\\'\'}"
+    # P-020-fix (2026-05-07) — escape single quotes via sed instead of
+    # bash parameter substitution. The legacy form
+    #     printf "'%s'" "${v//\'/\'\\\'\'}"
+    # works on bash 4+ but bash 3.2 (Apple's stock /bin/bash) parses the
+    # replacement string differently, double-escaping the backslashes
+    # and producing a `.env` line whose embedded `'\''` becomes
+    # `'\\\\''` — every value containing a single quote breaks
+    # `set -a; source .env` with `unexpected EOF while looking for
+    # matching '`. The sed pipeline is identical on bash 3.2/4+ and
+    # GNU/BSD sed, and is the same idiom Apple uses internally for
+    # shell-safe value escaping.
+    #
+    # Replacement is `'\''` (close-tick, escaped-tick, reopen-tick) —
+    # the canonical bash idiom. The sed script substitutes `'` →
+    # `'\''` globally; we then wrap the whole thing in outer single
+    # quotes.
+    local escaped
+    escaped="$(printf '%s' "$v" | /usr/bin/sed "s/'/'\\\\''/g")"
+    printf "'%s'" "$escaped"
 }
 
 # ---------------------------------------------------------------------------
@@ -578,7 +597,15 @@ step_layout_install_root() {
     install -d -m 0755 "${MG_INSTALL_ROOT}/logs"
     install -d -m 0700 "${MG_INSTALL_ROOT}/postgres-data"
     chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$MG_INSTALL_ROOT"
-    log "INFO laid out install root at ${MG_INSTALL_ROOT}"
+    # P-019C (2026-05-06) — bin/ and logs/ carry LaunchDaemon artifacts
+    # that launchd reads as root; macOS refuses to bootstrap a root
+    # LaunchDaemon if either the script directory OR the StandardOut/Err
+    # parent directory is writable by non-root, surfacing as
+    # `Bootstrap failed: 5: Input/output error`.
+    chown root:wheel "${MG_INSTALL_ROOT}/bin"
+    chown root:wheel "${MG_INSTALL_ROOT}/logs"
+    chmod 0755 "${MG_INSTALL_ROOT}/bin" "${MG_INSTALL_ROOT}/logs"
+    log "INFO laid out install root at ${MG_INSTALL_ROOT} (bin/+logs/ root:wheel, rest miningguardian:staff)"
 }
 
 _cocoa_alert() {
@@ -1328,6 +1355,293 @@ step_provision_catalog_db_and_seed() {
         rm -rf "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1 || true
 }
 
+step_apply_alias_seeds() {
+    # P-018D (2026-05-06) — apply the two reference-data alias seeds the
+    # importer's two-tier resolver (`mg_import_tool/resolver.py`) reads:
+    #
+    #   * intelligence-catalog/seed-data/aliases/001_hardware_model_aliases_tier1.sql
+    #     → CATALOG DB `mining_guardian_catalog`, `hardware.model_aliases`
+    #       (12,840 rows; unique aliases for ~317 known miner models;
+    #        FK references `hardware.miner_models(id)` which only the
+    #        catalog DB has populated).
+    #
+    #   * intelligence-catalog/seed-data/aliases/002_mg_family_aliases_tier2.sql
+    #     → OPERATIONAL DB `mining_guardian`, `mg.model_family_aliases`
+    #       (1,494 rows; ambiguous aliases with candidate-id arrays;
+    #        resolver narrows by hashrate at lookup time).
+    #
+    # Both seeds are idempotent (`ON CONFLICT … DO NOTHING`); a re-install
+    # against an already-seeded DB is a no-op. Failures here exit 42
+    # (a fresh code reserved for alias-seed apply — disjoint from 39
+    # which guards the catalog DB seed in the previous step, and from
+    # 41 which is already used for the customer-info Desktop conf gate).
+    #
+    # Ordering: must run AFTER `step_apply_migrations` (creates
+    # `mg.model_family_aliases` per migration 007) AND AFTER
+    # `step_provision_catalog_db_and_seed` (creates the catalog DB and
+    # `hardware.miner_models` rows the Tier-1 FKs target). It is fine to
+    # run BEFORE `step_install_ollama_and_pull_model` and the LaunchDaemon
+    # bootstrap below.
+    #
+    # D-20 note: these files live under `intelligence-catalog/seed-data/
+    # aliases/` (NOT `mg_import_tool/sql/seed/`) because the `mg_import*`
+    # path is forbidden in the customer payload by `build_pkg.sh::step 4h`.
+
+    local seed_dir="${MG_PKG_PAYLOAD}/intelligence-catalog/seed-data/aliases"
+    local tier1_file="${seed_dir}/001_hardware_model_aliases_tier1.sql"
+    local tier2_file="${seed_dir}/002_mg_family_aliases_tier2.sql"
+    # P-021 (2026-05-07) — Tier-1 supplement: short AMS names live-resolved
+    # against `hardware.miner_models` at apply time. See file header for why.
+    local tier1_supp_file="${seed_dir}/003_live_short_name_aliases.sql"
+    local catalog_db="mining_guardian_catalog"
+    local op_db="mining_guardian"
+    local container="mining-guardian-db"
+
+    if [[ ! -d "$seed_dir" ]]; then
+        fail 42 "alias seed directory missing in payload: ${seed_dir} (build_pkg.sh step 4a should have rsync'd intelligence-catalog/***)"
+    fi
+    if [[ ! -r "$tier1_file" ]]; then
+        fail 42 "Tier-1 alias seed missing: ${tier1_file}"
+    fi
+    if [[ ! -r "$tier2_file" ]]; then
+        fail 42 "Tier-2 alias seed missing: ${tier2_file}"
+    fi
+    # P-021: the Tier-1 supplement is shipped alongside Tier-1/Tier-2.
+    # Treat as required so a missing file is loud, not silently ignored.
+    if [[ ! -r "$tier1_supp_file" ]]; then
+        fail 42 "Tier-1 alias seed supplement missing: ${tier1_supp_file} (P-021)"
+    fi
+
+    # Stage the seeds inside the container so psql -f can find them on a
+    # path the docker-exec'd psql can read. Mirror step_provision_catalog_*
+    # exactly so the operator sees the same staging pattern in the log.
+    local container_seed_dir="/tmp/mg-alias-seeds-$$"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec "$container" \
+            mkdir -p "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "could not create staging dir inside container: ${container_seed_dir}"
+    fi
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker cp \
+            "${seed_dir}/." "${container}:${container_seed_dir}/" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "docker cp of alias seed-data into container failed"
+    fi
+
+    # 1. Tier-1 → catalog DB.
+    #
+    # P-019B (2026-05-06) — defensive FK-safe staging apply.
+    #
+    # Background: the Tier-1 seed file references 317 specific
+    # miner_model_id UUIDs that were frozen from the seed generator's
+    # `db_catalog.tsv` snapshot. The catalog DB's `hardware.miner_models`
+    # rows are seeded by `seed_miner_models.sql` whose every INSERT uses
+    # `uuid_generate_v4()` — fresh random UUIDs at each install. So
+    # almost none of the seed's 317 frozen UUIDs match the live DB's
+    # randomly-generated UUIDs, and the seed's 12,840 INSERTs hit the
+    # FK constraint `miner_model_id REFERENCES hardware.miner_models(id)`.
+    # Applied as a single BEGIN/COMMIT block, the FIRST FK violation
+    # aborts the whole transaction and zero rows land. Observed live on
+    # 2026-05-06 against `MiningGuardian-1.0.3-511ed2768d76.pkg`:
+    #   FATAL (42) Tier-1 alias seed apply failed against
+    #     mining_guardian_catalog
+    # with `hardware.model_aliases=29` (a partial pre-install state from
+    # an older snapshot) and `hardware.miner_models=324` (the operational
+    # seed plus 4 catalog_updater additions).
+    #
+    # Fix: stage the Tier-1 INSERTs into a `pg_temp` scratch table that
+    # has no FK, then promote rows to `hardware.model_aliases` only
+    # where `miner_model_id` exists in the live `hardware.miner_models`.
+    # Rows whose UUIDs are stale are silently dropped — but a verify
+    # step asserts a non-trivial count survived, so a future seed/
+    # catalog-seed drift cannot silently apply zero rows.
+    #
+    # Implementation: a tiny `sed` rewrites the seed's
+    # `INSERT INTO hardware.model_aliases` lines to target the scratch
+    # table. The rewrite is idempotent (a re-apply against an
+    # already-populated DB is still a no-op via ON CONFLICT). The
+    # original seed file in the payload is unchanged on disk.
+    log "INFO staging Tier-1 alias seed for FK-safe apply against ${catalog_db}"
+    local staged_tier1="${container_seed_dir}/001_hardware_model_aliases_tier1.staged.sql"
+
+    # 1a. Pre-flight wrapper that creates the scratch table at the start
+    # of the transaction. The scratch is `LIKE hardware.model_aliases
+    # INCLUDING DEFAULTS` minus EXCLUDING CONSTRAINTS so we keep column
+    # types/defaults but lose the FK + UNIQUE so the bulk load never
+    # aborts. Wrapper also pre-strips the seed's own BEGIN; / COMMIT;
+    # via sed (see 1b) so the entire apply is one transaction wrapping
+    # CREATE-stage + INSERT-stage + INSERT-real + DROP-stage.
+    local wrap_pre="${container_seed_dir}/_tier1_wrap_pre.sql"
+    local wrap_post="${container_seed_dir}/_tier1_wrap_post.sql"
+
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec -i "$container" \
+            bash -c "cat > '${wrap_pre}'" <<'__SQL_PRE__' >>"$MG_INSTALL_LOG" 2>&1 || \
+        fail 42 "could not write Tier-1 staging pre-wrapper"
+BEGIN;
+CREATE TEMP TABLE _tier1_alias_seed_scratch (
+    LIKE hardware.model_aliases INCLUDING DEFAULTS EXCLUDING CONSTRAINTS
+) ON COMMIT DROP;
+__SQL_PRE__
+
+    # 1b. Sed-rewrite the seed in-container so its INSERTs target the
+    # scratch table. Strip the seed's own BEGIN / COMMIT so the wrapper
+    # owns the transaction. Drop the seed's `ON CONFLICT (...) DO NOTHING`
+    # clauses too — the scratch table has no UNIQUE constraint to
+    # conflict on, so the clause would error.
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec -i "$container" \
+            bash -c "
+                sed -e 's/INSERT INTO hardware\\.model_aliases/INSERT INTO _tier1_alias_seed_scratch/g' \
+                    -e '/^BEGIN;$/d' \
+                    -e '/^COMMIT;$/d' \
+                    -e 's/ ON CONFLICT (miner_model_id, alias) DO NOTHING//g' \
+                    '${container_seed_dir}/001_hardware_model_aliases_tier1.sql' \
+                    > '${staged_tier1}'
+            " >>"$MG_INSTALL_LOG" 2>&1 || \
+        fail 42 "could not stage-rewrite Tier-1 alias seed"
+
+    # 1c. Post-wrapper: promote scratch rows to the real table, but only
+    # those whose miner_model_id exists in hardware.miner_models. The
+    # ON CONFLICT (miner_model_id, alias) DO NOTHING guards re-runs.
+    # The DROP TABLE is implicit via ON COMMIT DROP on the scratch.
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec -i "$container" \
+            bash -c "cat > '${wrap_post}'" <<'__SQL_POST__' >>"$MG_INSTALL_LOG" 2>&1 || \
+        fail 42 "could not write Tier-1 staging post-wrapper"
+INSERT INTO hardware.model_aliases (
+    miner_model_id, alias, alias_normalized, alias_source, is_common, notes
+)
+SELECT s.miner_model_id, s.alias, s.alias_normalized, s.alias_source, s.is_common, s.notes
+FROM _tier1_alias_seed_scratch s
+WHERE EXISTS (
+    SELECT 1 FROM hardware.miner_models m WHERE m.id = s.miner_model_id
+)
+ON CONFLICT (miner_model_id, alias) DO NOTHING;
+COMMIT;
+__SQL_POST__
+
+    # 1d. Apply the three SQL files as one psql session — psql streams
+    # them in order under a single connection so the BEGIN; from the
+    # pre-wrapper covers the scratch INSERT and the gated promote.
+    # ON_ERROR_STOP=1 because the SHAPE of the apply (scratch table
+    # creation, gated promote) is not allowed to fail; only individual
+    # FK-stale rows are silently dropped, and that happens in the
+    # WHERE-EXISTS filter, not as a row-level error.
+    log "INFO applying Tier-1 alias seed (hardware.model_aliases) to ${catalog_db}"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+            bash -c "cat '${wrap_pre}' '${staged_tier1}' '${wrap_post}' | psql -U mg -d '${catalog_db}' -v ON_ERROR_STOP=1" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "Tier-1 alias seed apply failed against ${catalog_db}"
+    fi
+
+    # 2. Tier-2 → operational DB.
+    log "INFO applying Tier-2 alias seed (mg.model_family_aliases) to ${op_db}"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+            psql -U mg -d "$op_db" -v ON_ERROR_STOP=1 \
+            -f "${container_seed_dir}/002_mg_family_aliases_tier2.sql" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        fail 42 "Tier-2 alias seed apply failed against ${op_db}"
+    fi
+
+    # 2b. Tier-1 supplement → catalog DB.
+    #
+    # P-021 (2026-05-07) — fills the live AMS short-name gap regardless of
+    # whether the frozen-UUID Tier-1 seed survived the FK gate. Resolves
+    # IDs at apply time against the live `hardware.miner_models`, so it
+    # cannot drift like 001_hardware_model_aliases_tier1.sql does. See
+    # 003_live_short_name_aliases.sql header for the rationale.
+    log "INFO applying Tier-1 alias seed supplement (P-021 short-name aliases) to ${catalog_db}"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+            psql -U mg -d "$catalog_db" -v ON_ERROR_STOP=1 \
+            -f "${container_seed_dir}/003_live_short_name_aliases.sql" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        # Non-fatal: short-name supplement failure does not block install
+        # (the four BiXBiT-USA names will fall through to Tier-2 + the
+        # existing slug-derived contains-match in `_resolve_model_row`,
+        # which is what's been happening pre-P-021). Log loudly so the
+        # operator notices in install.log.
+        log "ERROR Tier-1 alias seed supplement failed against ${catalog_db} (P-021) — install continues; AMS short names (S19JPro/S21EXPHyd/S21Imm/AH3880) will rely on slug-derived contains-match"
+    fi
+
+    # 3. Verify.
+    #
+    # Tier-2 floor stays at 1,000 (no FK; full seed always lands on a
+    # healthy install).
+    #
+    # P-019B: Tier-1 floor is now THREE-tier:
+    #   * == 0  → install ABORTS with FATAL (42). The staging+gate
+    #             produced nothing, which means the catalog seed is
+    #             empty, the catalog DB is wrong, or the staging logic
+    #             itself broke. Don't proceed silently.
+    #   * < 100 → install proceeds with a clear WARN. The seed and the
+    #             catalog-seed UUID space have drifted to the point that
+    #             essentially nothing matches; the importer's Tier-1
+    #             resolver will return empty and almost every miner_type
+    #             will fall through to Tier-2 / mg.unresolved_models.
+    #             Operator must regenerate the alias seed against the
+    #             current `seed_miner_models.sql` snapshot. Logged at
+    #             ERROR level so it surfaces in the install log scan.
+    #   * < 5000 → still proceeds, with INFO indicating partial coverage
+    #             (some snapshots overlap, others don't).
+    #   * >= 5000 → healthy install — the typical happy path.
+    local tier1_count tier2_count
+    tier1_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+        psql -U mg -d "$catalog_db" -tAc \
+        "SELECT count(*) FROM hardware.model_aliases;" \
+        2>>"$MG_INSTALL_LOG" || echo 0)"
+    tier1_count="$(echo "${tier1_count:-0}" | tr -d '[:space:]')"
+    if [[ "${tier1_count:-0}" -eq 0 ]]; then
+        fail 42 "Tier-1 alias seed verification failed: hardware.model_aliases has 0 rows after staging+gate apply — neither the seed nor the catalog seed is healthy"
+    fi
+    if [[ "${tier1_count:-0}" -lt 100 ]]; then
+        log "ERROR Tier-1 alias seed coverage VERY LOW: hardware.model_aliases has ${tier1_count} rows (expected >= 5000). The alias seed's frozen miner_model_id UUIDs and seed_miner_models.sql's runtime UUIDs have drifted apart. Importer Tier-1 lookups will return empty; almost every miner_type will fall through to Tier-2 / mg.unresolved_models. Operator MUST regenerate the alias seed against the current seed_miner_models.sql snapshot and re-run install."
+    elif [[ "${tier1_count:-0}" -lt 5000 ]]; then
+        log "INFO Tier-1 alias seed partial coverage: hardware.model_aliases has ${tier1_count} rows (typical full coverage is ~12,840). Some seed UUIDs match the live catalog; others were dropped by the FK gate. Importer Tier-1 will work for the matched models; the rest will fall through to Tier-2."
+    else
+        log "INFO Tier-1 alias seed full coverage: hardware.model_aliases has ${tier1_count} rows."
+    fi
+    tier2_count="$(sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+        psql -U mg -d "$op_db" -tAc \
+        "SELECT count(*) FROM mg.model_family_aliases;" \
+        2>>"$MG_INSTALL_LOG" || echo 0)"
+    tier2_count="$(echo "${tier2_count:-0}" | tr -d '[:space:]')"
+    if [[ "${tier2_count:-0}" -lt 1000 ]]; then
+        fail 42 "Tier-2 alias seed verification failed: mg.model_family_aliases has ${tier2_count} rows (expected >= 1000)"
+    fi
+    log "INFO alias seeds verified: hardware.model_aliases=${tier1_count}, mg.model_family_aliases=${tier2_count}"
+
+    # Best-effort cleanup of in-container staging dir; not fatal.
+    # shellcheck disable=SC2024
+    sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+            /usr/bin/env PATH="$(_op_path)" \
+            docker exec "$container" \
+        rm -rf "$container_seed_dir" >>"$MG_INSTALL_LOG" 2>&1 || true
+}
+
 step_install_ollama_and_pull_model() {
     install_ollama_runtime || fail 33 "ollama runtime install failed"
     pull_llm_model         || fail 33 "ollama pull of ${MG_INSTALL_LLM_MODEL:-?} failed"
@@ -1460,8 +1774,16 @@ step_install_launcher_wrappers() {
     # `python -m intelligence.feedback_loop_daemon` — that module path
     # never existed (the file lives at intelligence-catalog/db/, not
     # intelligence/). Bucket 7.5 corrects that by pulling from deploy/.
+    # P-019C (2026-05-06): launcher wrappers are now owned root:wheel,
+    # mode 0755 — matching the canonical comment at the top of every
+    # wrapper file. macOS launchd can refuse to bootstrap a LaunchDaemon
+    # (no UserName key, runs as root) whose ProgramArguments[0] points
+    # at a script writable by a non-root account — failure surfaces as
+    # the famously-underspecified `Bootstrap failed: 5: Input/output
+    # error` (B-25). All 10 LaunchDaemons run as root, so all 10
+    # wrappers must be root-owned.
     local bin="${MG_INSTALL_ROOT}/bin"
-    install -d -m 0755 "$bin"
+    install -d -m 0755 -o root -g wheel "$bin"
 
     if [[ ! -d "$LAUNCHERS_SRC" ]]; then
         fail 37 "launcher wrappers directory missing in payload: ${LAUNCHERS_SRC}"
@@ -1474,11 +1796,11 @@ step_install_launcher_wrappers() {
         if [[ ! -r "$src" ]]; then
             fail 37 "launcher wrapper missing in payload: ${src}"
         fi
-        install -m 0755 -o "${MG_INSTALL_OPERATOR_USER}" -g staff "$src" "$dst"
+        install -m 0755 -o root -g wheel "$src" "$dst"
         log "INFO installed launcher: ${f}"
     done
 
-    # 9th wrapper — feedback_loop_daemon, copied from the deploy/ tree
+    # 10th wrapper — feedback_loop_daemon, copied from the deploy/ tree
     # (canonical D-14 PR 4b launcher; uses file path to dodge the
     # hyphenated-package import issue).
     local fbd_src="${MG_PKG_PAYLOAD}/deploy/feedback_loop_daemon_launcher.sh"
@@ -1486,11 +1808,32 @@ step_install_launcher_wrappers() {
     if [[ ! -r "$fbd_src" ]]; then
         fail 37 "feedback_loop_daemon launcher missing in payload: ${fbd_src}"
     fi
-    install -m 0755 -o "${MG_INSTALL_OPERATOR_USER}" -g staff "$fbd_src" "$fbd_dst"
+    install -m 0755 -o root -g wheel "$fbd_src" "$fbd_dst"
     log "INFO installed launcher: feedback_loop_daemon_launcher.sh (from deploy/)"
 
-    chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$bin"
-    log "INFO installed 9 launcher wrappers in ${bin}"
+    # P-019D (2026-05-07) — install the shared preflight library next
+    # to the launchers. The 5 service launchers (dashboard_api,
+    # approval_api, intelligence_report, console, feedback_loop_daemon)
+    # source this file at \${INSTALL_ROOT}/bin/_preflight.sh before
+    # exec'ing Python. Without this file the launchers exit 1 on the
+    # `source` line — which is exactly the silent rapid-exit pattern
+    # that triggers errno 5. Mode 0644 is sufficient (sourced, not
+    # exec'd); root:wheel matches the rest of bin/.
+    local pf_src="${LAUNCHERS_SRC}/_preflight.sh"
+    local pf_dst="${bin}/_preflight.sh"
+    if [[ ! -r "$pf_src" ]]; then
+        fail 37 "_preflight.sh missing in payload: ${pf_src} (P-019D)"
+    fi
+    install -m 0644 -o root -g wheel "$pf_src" "$pf_dst"
+    log "INFO installed launcher preflight library: _preflight.sh (P-019D)"
+
+    # P-019C: explicit re-chown to root:wheel covers any prior install
+    # that left the bin/ tree miningguardian-owned. Without this a
+    # re-install would inherit a non-root-owned bin and the new
+    # `install` flags above would not flatten the existing dir's owner.
+    chown -R root:wheel "$bin"
+    chmod -R u=rwX,go=rX "$bin"
+    log "INFO installed ${#LAUNCHER_FILES[@]} launcher wrappers in ${bin} (root:wheel, 0755)"
 }
 
 step_create_venv() {
@@ -1701,6 +2044,184 @@ step_create_venv() {
     log "INFO venv ready at ${venv_dir} ($(wc -l <"$req_file" | tr -d ' ') requirement lines installed)"
 }
 
+# P-019C (2026-05-06) — bootstrap one plist with the full safe sequence
+# and rich post-failure diagnostics. Returns 0 on success and 1 on any
+# failure (caller continues to the next plist; the main loop summarizes
+# at the end and exits FATAL only after every failed label has had its
+# diagnostic dump recorded). Used by both step_install_plists_and_bootstrap
+# and step_install_scheduled_plists_and_bootstrap.
+#
+# Sequence per label:
+#   1. bootout (always, ignore errors) — clears stale load even if
+#      `launchctl print` claims unloaded. macOS occasionally has stale
+#      state where `print` returns "could not find service" but
+#      `bootstrap` returns errno 5 because internal domain bookkeeping
+#      still holds the label (B-25 root cause #1).
+#   2. enable — clears any persisted disable from a prior failed
+#      install. `launchctl disable` state survives reboots in
+#      /var/db/com.apple.xpc.launchd/disabled.plist; without an
+#      explicit `enable` a re-install can hit `bootstrap` failures
+#      that look like errno 5 but are really "service is disabled"
+#      with no further detail (B-25 root cause #2).
+#   3. bootstrap — the actual load. Output captured to install log.
+#   4. On failure: dump diagnostics. Pre-P-019C the install aborted
+#      with no further output and the operator had to start over.
+#   5. On success: the service is loaded. We do NOT additionally
+#      `kickstart -p` — RunAtLoad=true on every plist already triggers
+#      a start; a service that bootstraps but immediately exits is
+#      still successfully bootstrapped (its crash is a runtime issue
+#      diagnosable from logs, not a bootstrap failure).
+# P-019E (2026-05-07) — wait for `launchctl print system/<label>` to
+# stop returning the label after a bootout, with a bounded timeout.
+#
+# Why: P-019D added preflight checks inside the launcher scripts, but the
+# 2026-05-06 install on the Mini still failed with `Bootstrap failed: 5:
+# Input/output error` for the 5 services that already had a running
+# instance from a prior manual recovery (dashboard-api, approval-api,
+# intelligence-report, console, feedback-loop-daemon).
+#
+# Forensic finding: `launchctl bootout` is asynchronous on macOS. It
+# tells launchd to tear down the existing instance and returns
+# immediately — the label remains in the system domain (`launchctl print
+# system/<label>` still returns it) for several hundred milliseconds
+# while launchd reaps the running PID + cleans up its bookkeeping.
+# `launchctl bootstrap` issued during that window observes the label is
+# still registered and refuses with errno 5 (`Bootstrap failed: 5: Input/
+# output error`) — exactly the symptom seen on the Mini.
+#
+# Operator's manual recovery worked because they ran:
+#     bootout → wait until `launchctl print system/<label>` exits non-zero → bootstrap
+# which is the canonical sequence Apple's launchd team recommends. This
+# helper bakes that wait into the postinstall path so every install
+# performs it without operator intervention.
+#
+# Returns 0 the moment the label is absent, returns non-zero only after
+# the timeout. The caller (`_bootstrap_one_plist`) treats both outcomes
+# as "proceed to enable+bootstrap" — the timeout case still attempts
+# bootstrap (it might succeed; if not, the diagnostic dump captures the
+# state) but logs an explicit ERROR-level warning so the operator knows
+# the wait did not converge.
+#
+# Tunables: 30s timeout, 0.5s probe interval — both round numbers chosen
+# from the operator's manual recovery (which observed convergence within
+# ~1s under normal load and ~5s when the service had open Postgres
+# connections to flush). 30s budgets a 6× safety margin without
+# meaningfully extending the install time on the happy path.
+_wait_for_label_absent() {
+    local label="$1"
+    local timeout_s="${2:-30}"
+    local interval_s="${3:-0.5}"
+
+    local elapsed=0
+    # Probe in tenths of a second using a busy loop tracker; macOS sleep
+    # accepts fractional seconds but the integer timestamp arithmetic
+    # below stays bash-3.2 + BSD safe.
+    local start_ts
+    start_ts="$(/bin/date +%s)"
+    while :; do
+        if ! /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
+            local end_ts
+            end_ts="$(/bin/date +%s)"
+            elapsed=$((end_ts - start_ts))
+            log "INFO label absent after bootout: ${label} (waited ~${elapsed}s)"
+            return 0
+        fi
+        local now_ts
+        now_ts="$(/bin/date +%s)"
+        elapsed=$((now_ts - start_ts))
+        if [[ "$elapsed" -ge "$timeout_s" ]]; then
+            log "ERROR label still present after bootout + ${timeout_s}s wait: ${label} (proceeding to bootstrap anyway; diagnostic dump will follow on failure)"
+            return 1
+        fi
+        /bin/sleep "$interval_s"
+    done
+}
+
+_bootstrap_one_plist() {
+    local label="$1"
+    local plist_path="$2"
+
+    /bin/launchctl bootout "system/${label}" >>"$MG_INSTALL_LOG" 2>&1 || true
+    # P-019E (2026-05-07) — wait for the label to actually disappear from
+    # the system domain BEFORE issuing enable+bootstrap. `bootout` is
+    # async; without this wait, `bootstrap` issued in the next ~100-500ms
+    # observes the label still registered and refuses with errno 5
+    # (Bootstrap failed: 5: Input/output error). Observed on the
+    # 2026-05-06 install where 5 of 10 LaunchDaemons had a prior running
+    # instance from manual recovery and every single one failed with
+    # errno 5 in this exact pattern.
+    _wait_for_label_absent "$label" || true
+    /bin/launchctl enable  "system/${label}" >>"$MG_INSTALL_LOG" 2>&1 || true
+
+    local bootstrap_out
+    if bootstrap_out="$(/bin/launchctl bootstrap system "$plist_path" 2>&1)"; then
+        log "INFO bootstrapped ${label}"
+        if [[ -n "$bootstrap_out" ]]; then
+            log "      bootstrap output: ${bootstrap_out}"
+        fi
+        return 0
+    fi
+
+    log "ERROR launchctl bootstrap failed for ${label}: ${bootstrap_out}"
+    _dump_launchctl_diagnostics "$label" "$plist_path"
+    return 1
+}
+
+# Forensic dump after a bootstrap failure. Goes to MG_INSTALL_LOG so
+# the operator gets one self-contained record of what was wrong.
+# Every command is wrapped in `|| true` — diagnostics never raise.
+_dump_launchctl_diagnostics() {
+    local label="$1"
+    local plist_path="$2"
+    {
+        echo "===== launchctl diagnostics for ${label} ====="
+        echo "--- plist on-disk:"
+        /bin/ls -laO "$plist_path" 2>/dev/null || true
+        echo "--- plutil -lint:"
+        /usr/bin/plutil -lint "$plist_path" 2>&1 || true
+        echo "--- launchctl print system/${label}:"
+        /bin/launchctl print "system/${label}" 2>&1 || true
+        echo "--- launchctl print-disabled system | grep ${label}:"
+        /bin/launchctl print-disabled system 2>&1 | /usr/bin/grep -F "$label" || true
+        echo "--- launcher script (ProgramArguments[1]):"
+        local launcher
+        launcher="$(/usr/bin/plutil -extract ProgramArguments.1 raw "$plist_path" 2>/dev/null || true)"
+        if [[ -n "$launcher" && -e "$launcher" ]]; then
+            /bin/ls -laO "$launcher" 2>/dev/null || true
+        else
+            echo "(could not resolve ProgramArguments.1 from plist)"
+        fi
+        echo "--- log dir (StandardOutPath parent):"
+        /bin/ls -laO "${MG_INSTALL_ROOT}/logs" 2>/dev/null || true
+        # P-019D (2026-05-07) — surface the launcher's StandardErrorPath
+        # log content. Pre-P-019D this file existed but was never read
+        # during postinstall; the operator had to know to look in
+        # /Library/Application Support/MiningGuardian/logs/ after the
+        # install aborted. With the P-019D preflight library writing
+        # specific error codes + diagnostic messages to stderr, the
+        # tail of these logs is the single most direct signal of WHY a
+        # service refused to bootstrap.
+        local err_path out_path
+        err_path="$(/usr/bin/plutil -extract StandardErrorPath raw "$plist_path" 2>/dev/null || true)"
+        out_path="$(/usr/bin/plutil -extract StandardOutPath  raw "$plist_path" 2>/dev/null || true)"
+        if [[ -n "$err_path" && -f "$err_path" ]]; then
+            echo "--- StandardErrorPath tail (${err_path}):"
+            /usr/bin/tail -n 80 "$err_path" 2>/dev/null || true
+        else
+            echo "--- StandardErrorPath: (not present at ${err_path:-unknown})"
+        fi
+        if [[ -n "$out_path" && -f "$out_path" ]]; then
+            echo "--- StandardOutPath tail (${out_path}):"
+            /usr/bin/tail -n 40 "$out_path" 2>/dev/null || true
+        fi
+        echo "--- recent unified log entries for the label:"
+        /usr/bin/log show --predicate "subsystem == 'com.apple.xpc.launchd' AND eventMessage CONTAINS '${label}'" \
+            --last 5m --info 2>/dev/null \
+            | /usr/bin/tail -n 50 || true
+        echo "===== end diagnostics for ${label} ====="
+    } >>"$MG_INSTALL_LOG" 2>&1 || true
+}
+
 step_install_plists_and_bootstrap() {
     install -d -m 0755 "$PLISTS_DEST"
 
@@ -1722,19 +2243,37 @@ step_install_plists_and_bootstrap() {
     done
     log "INFO installed ${#PLIST_LABELS[@]} launchd plists into $PLISTS_DEST"
 
-    # bootout any previous load (idempotent re-install support), then
-    # bootstrap each one fresh. Order here mirrors PLIST_LABELS so the
-    # log timeline reads the same as the install matrix in the runbook.
+    # P-019C: bootstrap each plist via _bootstrap_one_plist with rich
+    # diagnostics on failure. CONTINUE PAST per-service failures.
+    # Aggregate the failure list and report at the end.
+    #
+    # Pre-P-019C the loop aborted on the first per-service bootstrap
+    # failure with no diagnostics, leaving the operator with installed-
+    # but-not-loaded plists, no record of WHY, and the rest of the
+    # install (uninstall script, install receipt, baseline scan)
+    # skipped. Hit on 2026-05-06 against MiningGuardian-1.0.3-b44862c…
+    # on the dashboard-api bootstrap — `Bootstrap failed: 5: Input/
+    # output error` with no further detail (B-25).
+    local failed_services=()
     for label in "${PLIST_LABELS[@]}"; do
-        if /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
-            /bin/launchctl bootout  "system/${label}" 2>/dev/null || true
+        if ! _bootstrap_one_plist "$label" "${PLISTS_DEST}/${label}.plist"; then
+            failed_services+=("$label")
         fi
-        if ! /bin/launchctl bootstrap system "${PLISTS_DEST}/${label}.plist" \
-                2>&1 | tee -a "$MG_INSTALL_LOG"; then
-            fail 34 "launchctl bootstrap failed for ${label}"
-        fi
-        log "INFO bootstrapped ${label}"
     done
+
+    local total="${#PLIST_LABELS[@]}"
+    local failed="${#failed_services[@]}"
+    local ok_count=$(( total - failed ))
+    log "INFO LaunchDaemon bootstrap summary: ${ok_count}/${total} loaded; ${failed} failed"
+
+    if [[ "$failed" -gt 0 ]]; then
+        log "ERROR LaunchDaemons that failed to bootstrap (${failed}):"
+        local svc
+        for svc in "${failed_services[@]}"; do
+            log "      - ${svc}"
+        done
+        fail 34 "${failed} of ${total} LaunchDaemons failed to bootstrap (${failed_services[*]}). See diagnostics above for each. Recover with: sudo launchctl bootstrap system /Library/LaunchDaemons/<label>.plist (after addressing the diagnostic root cause)."
+    fi
 }
 
 step_install_scheduled_plists_and_bootstrap() {
@@ -1776,7 +2315,11 @@ step_install_scheduled_plists_and_bootstrap() {
     fi
 
     install -d -m 0755 "${MG_INSTALL_ROOT}/logs/scheduled"
-    chown "${MG_INSTALL_OPERATOR_USER}:staff" "${MG_INSTALL_ROOT}/logs/scheduled"
+    # P-019C: scheduled plists run as root (no UserName key); the log
+    # parent dir must be root:wheel so launchd can open StdOut/Err
+    # without the "writable by non-root" refusal that surfaces as
+    # `Bootstrap failed: 5: Input/output error`.
+    chown root:wheel "${MG_INSTALL_ROOT}/logs/scheduled"
 
     local label src
     for label in "${SCHEDULED_PLIST_LABELS[@]}"; do
@@ -1789,18 +2332,31 @@ step_install_scheduled_plists_and_bootstrap() {
     done
     log "INFO installed ${#SCHEDULED_PLIST_LABELS[@]} scheduled-job launchd plists into ${PLISTS_DEST}"
 
-    # Bootout any previous load (idempotent re-install support), then
-    # bootstrap each one fresh.
+    # P-019C: bootstrap each scheduled plist via _bootstrap_one_plist
+    # (same robust helper used by the service plists above). bootout-
+    # then-enable-then-bootstrap, rich diagnostics on failure, continue
+    # past per-job failures, summarize at the end. Exit 40 is the
+    # reserved code for any scheduled-job bootstrap failure.
+    local failed_jobs=()
     for label in "${SCHEDULED_PLIST_LABELS[@]}"; do
-        if /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
-            /bin/launchctl bootout  "system/${label}" 2>/dev/null || true
+        if ! _bootstrap_one_plist "$label" "${PLISTS_DEST}/${label}.plist"; then
+            failed_jobs+=("$label")
         fi
-        if ! /bin/launchctl bootstrap system "${PLISTS_DEST}/${label}.plist" \
-                2>&1 | tee -a "$MG_INSTALL_LOG"; then
-            fail 40 "launchctl bootstrap failed for ${label} (D-18 Gap 4)"
-        fi
-        log "INFO bootstrapped scheduled plist: ${label}"
     done
+
+    local total="${#SCHEDULED_PLIST_LABELS[@]}"
+    local failed="${#failed_jobs[@]}"
+    local ok_count=$(( total - failed ))
+    log "INFO scheduled-job bootstrap summary: ${ok_count}/${total} loaded; ${failed} failed"
+
+    if [[ "$failed" -gt 0 ]]; then
+        log "ERROR scheduled jobs that failed to bootstrap (${failed}):"
+        local svc
+        for svc in "${failed_jobs[@]}"; do
+            log "      - ${svc}"
+        done
+        fail 40 "${failed} of ${total} scheduled jobs failed to bootstrap (${failed_jobs[*]}). See diagnostics above for each."
+    fi
 }
 
 step_install_uninstall_script() {
@@ -1925,6 +2481,13 @@ main() {
     step_reconcile_postgres_password
     step_apply_migrations
     step_provision_catalog_db_and_seed
+    # P-018D — apply the importer's two-tier alias reference data
+    # (Tier-1 in catalog DB, Tier-2 in operational DB) so
+    # `mg_import_tool/resolver.py` finds non-empty alias tables on the
+    # very first import. Idempotent. Must run after migrations (creates
+    # `mg.model_family_aliases`) and after the catalog seed (populates
+    # `hardware.miner_models` for Tier-1 FK targets).
+    step_apply_alias_seeds
     step_install_ollama_and_pull_model
     step_install_launcher_wrappers
     step_create_venv

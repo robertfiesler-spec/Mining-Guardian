@@ -149,7 +149,7 @@ def preflight_checks(config, resume_from, smoke_test):
 
     # Check 5: Qwen endpoint reachable (skip if resuming past Pass 3)
     if resume_from < 4:
-        url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate"))
+        url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate"))
         tags_url = url.replace("/api/generate", "/api/tags")
         try:
             with urllib.request.urlopen(tags_url, timeout=10) as r:
@@ -157,7 +157,7 @@ def preflight_checks(config, resume_from, smoke_test):
             models = [m["name"] for m in data.get("models", [])]
             target = config.get("ollama_model", "qwen2.5:32b-instruct-q4_K_M")
             if target not in models:
-                errors.append(f"Qwen model '{target}' not loaded on ROBS-PC. Available: {models}")
+                errors.append(f"Qwen model '{target}' not loaded on local Ollama. Available: {models}")
             else:
                 logger.info("[OK] Qwen endpoint reachable, model '%s' loaded", target)
         except Exception as e:
@@ -260,7 +260,7 @@ def fire_pass_3_qwen_reflection(pass_1, pass_2, config, smoke_test=False):
         "stream": False,
         "options": {"temperature": 0.4, "num_ctx": 32768, "num_predict": -1},
     }
-    url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://100.110.87.1:11434/api/generate"))
+    url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate"))
     logger.info("Pass 3: firing Qwen (prompt %d chars, unconstrained output)", len(prompt))
     t0 = time.time()
     req = urllib.request.Request(
