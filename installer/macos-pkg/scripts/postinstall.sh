@@ -2023,11 +2023,86 @@ step_create_venv() {
 #      a start; a service that bootstraps but immediately exits is
 #      still successfully bootstrapped (its crash is a runtime issue
 #      diagnosable from logs, not a bootstrap failure).
+# P-019E (2026-05-07) — wait for `launchctl print system/<label>` to
+# stop returning the label after a bootout, with a bounded timeout.
+#
+# Why: P-019D added preflight checks inside the launcher scripts, but the
+# 2026-05-06 install on the Mini still failed with `Bootstrap failed: 5:
+# Input/output error` for the 5 services that already had a running
+# instance from a prior manual recovery (dashboard-api, approval-api,
+# intelligence-report, console, feedback-loop-daemon).
+#
+# Forensic finding: `launchctl bootout` is asynchronous on macOS. It
+# tells launchd to tear down the existing instance and returns
+# immediately — the label remains in the system domain (`launchctl print
+# system/<label>` still returns it) for several hundred milliseconds
+# while launchd reaps the running PID + cleans up its bookkeeping.
+# `launchctl bootstrap` issued during that window observes the label is
+# still registered and refuses with errno 5 (`Bootstrap failed: 5: Input/
+# output error`) — exactly the symptom seen on the Mini.
+#
+# Operator's manual recovery worked because they ran:
+#     bootout → wait until `launchctl print system/<label>` exits non-zero → bootstrap
+# which is the canonical sequence Apple's launchd team recommends. This
+# helper bakes that wait into the postinstall path so every install
+# performs it without operator intervention.
+#
+# Returns 0 the moment the label is absent, returns non-zero only after
+# the timeout. The caller (`_bootstrap_one_plist`) treats both outcomes
+# as "proceed to enable+bootstrap" — the timeout case still attempts
+# bootstrap (it might succeed; if not, the diagnostic dump captures the
+# state) but logs an explicit ERROR-level warning so the operator knows
+# the wait did not converge.
+#
+# Tunables: 30s timeout, 0.5s probe interval — both round numbers chosen
+# from the operator's manual recovery (which observed convergence within
+# ~1s under normal load and ~5s when the service had open Postgres
+# connections to flush). 30s budgets a 6× safety margin without
+# meaningfully extending the install time on the happy path.
+_wait_for_label_absent() {
+    local label="$1"
+    local timeout_s="${2:-30}"
+    local interval_s="${3:-0.5}"
+
+    local elapsed=0
+    # Probe in tenths of a second using a busy loop tracker; macOS sleep
+    # accepts fractional seconds but the integer timestamp arithmetic
+    # below stays bash-3.2 + BSD safe.
+    local start_ts
+    start_ts="$(/bin/date +%s)"
+    while :; do
+        if ! /bin/launchctl print "system/${label}" >/dev/null 2>&1; then
+            local end_ts
+            end_ts="$(/bin/date +%s)"
+            elapsed=$((end_ts - start_ts))
+            log "INFO label absent after bootout: ${label} (waited ~${elapsed}s)"
+            return 0
+        fi
+        local now_ts
+        now_ts="$(/bin/date +%s)"
+        elapsed=$((now_ts - start_ts))
+        if [[ "$elapsed" -ge "$timeout_s" ]]; then
+            log "ERROR label still present after bootout + ${timeout_s}s wait: ${label} (proceeding to bootstrap anyway; diagnostic dump will follow on failure)"
+            return 1
+        fi
+        /bin/sleep "$interval_s"
+    done
+}
+
 _bootstrap_one_plist() {
     local label="$1"
     local plist_path="$2"
 
     /bin/launchctl bootout "system/${label}" >>"$MG_INSTALL_LOG" 2>&1 || true
+    # P-019E (2026-05-07) — wait for the label to actually disappear from
+    # the system domain BEFORE issuing enable+bootstrap. `bootout` is
+    # async; without this wait, `bootstrap` issued in the next ~100-500ms
+    # observes the label still registered and refuses with errno 5
+    # (Bootstrap failed: 5: Input/output error). Observed on the
+    # 2026-05-06 install where 5 of 10 LaunchDaemons had a prior running
+    # instance from manual recovery and every single one failed with
+    # errno 5 in this exact pattern.
+    _wait_for_label_absent "$label" || true
     /bin/launchctl enable  "system/${label}" >>"$MG_INSTALL_LOG" 2>&1 || true
 
     local bootstrap_out

@@ -236,6 +236,78 @@ else
 fi
 
 
+section "13. P-019E bootout-wait helper"
+# After P-019D shipped, the 2026-05-07 Mini install still failed for the
+# 5 services that already had a running instance from manual recovery.
+# Forensics: launchctl bootout is async — the label remains in the
+# system domain for a few hundred ms while launchd reaps the PID, and
+# bootstrap issued in that window refuses with errno 5. P-019E adds a
+# bounded wait between bootout and enable+bootstrap so the install
+# performs the same wait the operator's manual recovery used.
+if grep -qE '^_wait_for_label_absent\(\)' "$POSTINSTALL"; then
+    ok "_wait_for_label_absent() helper defined"
+else
+    fail "_wait_for_label_absent() helper MISSING (P-019E)"
+fi
+wait_body="$(awk '/^_wait_for_label_absent\(\)/,/^\}/' "$POSTINSTALL")"
+if echo "$wait_body" | grep -qE 'launchctl print "system/'; then
+    ok "wait helper probes \`launchctl print system/<label>\`"
+else
+    fail "wait helper does NOT probe launchctl print system/<label>"
+fi
+if echo "$wait_body" | grep -qE 'timeout_s|timeout'; then
+    ok "wait helper has a bounded timeout"
+else
+    fail "wait helper missing bounded timeout"
+fi
+if echo "$wait_body" | grep -qE 'log "INFO label absent'; then
+    ok "wait helper logs INFO on success"
+else
+    fail "wait helper missing INFO success log"
+fi
+if echo "$wait_body" | grep -qE 'log "ERROR label still present'; then
+    ok "wait helper logs ERROR on timeout"
+else
+    fail "wait helper missing ERROR timeout log"
+fi
+
+
+section "14. P-019E ordering: bootout -> wait -> enable -> bootstrap"
+# Re-extract the helper body (P-019E rewrites the header comment block
+# but the function structure is unchanged; helper_body from §3 is
+# already the right scope).
+e_helper_body="$(awk '/^_bootstrap_one_plist\(\)/,/^\}/' "$POSTINSTALL")"
+e_helper_lines="$(echo "$e_helper_body" | grep -nE 'launchctl bootout|_wait_for_label_absent|launchctl enable|launchctl bootstrap system' || true)"
+e_bootout_line="$(echo "$e_helper_lines" | grep -m1 'launchctl bootout' | cut -d: -f1)"
+e_wait_line="$(echo "$e_helper_lines" | grep -m1 '_wait_for_label_absent' | cut -d: -f1)"
+e_enable_line="$(echo "$e_helper_lines" | grep -m1 'launchctl enable' | cut -d: -f1)"
+e_bootstrap_line="$(echo "$e_helper_lines" | grep -m1 'launchctl bootstrap system' | cut -d: -f1)"
+if [[ -z "$e_wait_line" ]]; then
+    fail "_bootstrap_one_plist does NOT call _wait_for_label_absent (P-019E)"
+elif [[ -n "$e_bootout_line" ]] && [[ -n "$e_wait_line" ]] \
+        && [[ -n "$e_enable_line" ]] && [[ -n "$e_bootstrap_line" ]] \
+        && [[ "$e_bootout_line"   -lt "$e_wait_line" ]] \
+        && [[ "$e_wait_line"      -lt "$e_enable_line" ]] \
+        && [[ "$e_enable_line"    -lt "$e_bootstrap_line" ]]; then
+    ok "ordering: bootout ($e_bootout_line) < wait ($e_wait_line) < enable ($e_enable_line) < bootstrap ($e_bootstrap_line)"
+else
+    fail "P-019E ordering wrong: bootout=$e_bootout_line wait=$e_wait_line enable=$e_enable_line bootstrap=$e_bootstrap_line"
+fi
+
+
+section "15. P-019E explanatory comments + retry-on-errno-5 prohibition"
+if grep -qE 'P-019E' "$POSTINSTALL"; then
+    ok "postinstall.sh references P-019E"
+else
+    fail "postinstall.sh missing P-019E marker"
+fi
+if grep -qE 'asynchronous|async' "$POSTINSTALL"; then
+    ok "postinstall.sh documents bootout-is-async"
+else
+    fail "postinstall.sh missing bootout-async explanation"
+fi
+
+
 section "Summary"
 echo
 echo "Passed: ${pass_count}"
