@@ -44,9 +44,12 @@ the box is 16 GB, so the default install path will land on `llama3.2:3b`.
 
 ### Cutover scope — Option γ
 
-The Mini replaces **both** the Hostinger VPS (187.124.247.182 / Tailscale 100.106.123.83,
-decommissioned for MG as of 2026-04-30 install; Bobby still uses it for his own facility)
-**and** the ROBS-PC catalog. After successful cutover:
+The Mini replaces **both** the Hostinger VPS and the ROBS-PC catalog.
+**Neither is in the customer Mining Guardian runtime path** as of the
+2026-04-30 cutover; the Mini handles the entire local data plane.
+The VPS at `187.124.247.182` is fully retired for MG (the operator may
+still run it for unrelated personal work — that is out of MG scope).
+After successful cutover:
 
 - No Cloudflare tunnels — Mac Mini is local-first, loopback-only; the Cloudflare path
   was not taken (see `docs/CLOUDFLARE_MIGRATION.md` — SUPERSEDED)
@@ -93,7 +96,9 @@ Public-facing identifiers (safe to commit, used by `notarytool`):
 - **Notarization Key ID:** `FPZJ87B3QF`
 
 Private values (Issuer UUID, the `.p8` private key file path, the
-notarization password) live **only** at:
+notarization password) live **only** in a local-only credentials notes
+file outside the repo. On the current build Mac that path is, by
+example:
 
 ```
 /Users/BigBobby/Documents/Apple Cert/CREDENTIALS_NOTES.txt

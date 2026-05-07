@@ -215,6 +215,20 @@ step_4_assemble_payload() {
     # known pre-existing latent bug (see plist comment + docs/LATENT_BUGS.md);
     # `tests/` is not added here because the only scheduled .py inside
     # it is the missing one. P-025 scope stops at the audit's P0 list.
+    #
+    # P-024 (2026-05-07) — narrowed `scripts/***` to a per-file allowlist.
+    # The previous broad include was shipping operator-only / dead-code
+    # scripts (backup_db.sh, backup_mining_guardian.sh, start_guardian.sh,
+    # setup.sh, etc.) inside the customer payload. Those reference Bobby's
+    # Mac (BigBobby username, /Volumes/Big-Bobby-T9, 100.103.185.53
+    # tailscale IP) and the retired Hostinger VPS (187.124.247.182), and
+    # never run on the customer Mac Mini — the Mini has no plist or
+    # launcher pointing at them. The allowlist below is exactly the set
+    # of `scripts/*` paths reachable from a launchd plist
+    # `ProgramArguments` entry or a launcher script under
+    # `installer/macos-pkg/resources/launchd/launchers/`.
+    # `scripts/__init__.py` ships so `scripts/` remains a valid Python
+    # package dir if a future entrypoint imports siblings.
     /usr/bin/rsync -a --delete \
         --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' \
         --exclude 'build' --exclude 'venv' --exclude '.venv' \
@@ -230,10 +244,18 @@ step_4_assemble_payload() {
         --include 'console/***' \
         --include 'intelligence-catalog/***' \
         --include 'docs/***' \
-        --include 'branding/***' \
+        --include '/branding/***' \
         --include 'deploy/***' \
         --include 'migrations/***' \
-        --include 'scripts/***' \
+        --include 'scripts/' \
+        --include 'scripts/__init__.py' \
+        --include 'scripts/cleanup_ams_logs.py' \
+        --include 'scripts/db_maintenance.sh' \
+        --include 'scripts/direct_collect_logs.py' \
+        --include 'scripts/daily_log_failure_report.py' \
+        --include 'scripts/morning_briefing.py' \
+        --include 'scripts/daily_operator_review.py' \
+        --exclude 'scripts/*' \
         --include 'config/***' \
         --exclude '*' \
         "${REPO_ROOT}/" "${app_root}/"
@@ -269,8 +291,11 @@ step_4_assemble_payload() {
     # leave the plists installed but every scheduled run failing with
     # exit 1 the first time it fires. Belt-and-suspenders here so a
     # future include-list edit cannot silently drop scripts/.
+    # P-024 (2026-05-07) — the include list is now a per-file allowlist
+    # (see comment block above the rsync). The directory must still exist
+    # and the 6 scheduled scripts must still be present.
     if [[ ! -d "${PAYLOAD_DIR}/scripts" ]]; then
-        _die 43 "step 4b: <payload>/scripts/ missing after 4a rsync — `--include 'scripts/***'` must be present in the include list above (D-18 P-025)"
+        _die 43 "step 4b: <payload>/scripts/ missing after 4a rsync — the per-file allowlist must keep 'scripts/' as a directory include (D-18 P-025 / P-024)"
     fi
     local mg_scheduled_scripts=(
         "scripts/cleanup_ams_logs.py"

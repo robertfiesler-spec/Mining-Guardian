@@ -279,3 +279,99 @@ def test_send_deep_dive_report_is_deleted():
         "Do not re-add it — daily deep-dive output stays local on "
         "the Mac Mini per VA-6 / D-9."
     )
+
+
+# ---------------------------------------------------------------------------
+# P-024 — Bobby-Mac contamination guards
+# ---------------------------------------------------------------------------
+#
+# P-024 narrowed `installer/macos-pkg/scripts/build_pkg.sh` step 4a's
+# `scripts/***` rsync include into a per-file allowlist so that operator
+# scripts (`scripts/backup_db.sh`, `scripts/backup_mining_guardian.sh`,
+# `scripts/start_guardian.sh`, `scripts/setup.sh`) no longer ship to the
+# customer Mac Mini. Those files remain in the repo because Bobby still
+# runs them on his own workstation. The guards below scan the **repo
+# tree** under SHIPPED_DIRS (the same surface as the existing P-023
+# tests), so kept-in-repo-but-not-shipped operator files need a
+# P-024-specific carve-out documenting why the strings are tolerated.
+#
+# `tests/installer/test_p024_payload_scripts_allowlist.sh` is the actual
+# rsync-replay guard — it confirms those operator scripts are NOT in the
+# assembled payload. The pytest guard below catches NEW Bobby-Mac
+# contamination introduced into shipped runtime files (api/, core/, ai/,
+# etc.) without depending on rsync availability inside CI.
+
+BIG_BOBBY = "BigBobby"
+BOBBY_HOME_PATH = "/Users/BigBobby"
+BOBBY_TAILSCALE_IP = "100.103.185.53"
+
+# Repo-resident operator files that may legitimately mention Bobby's Mac
+# (username, home path, or Tailscale IP). After P-024 these no longer
+# ship to customers; the rsync filter excludes them. Adding a new file
+# here documents the allowance — please link the rationale.
+ALLOWED_BOBBY_MAC_FILES = {
+    # Operator backup tooling — pulls from Bobby's facility VPS to
+    # Bobby's Mac. Never invoked on the customer Mac Mini. Excluded
+    # from payload by the P-024 build_pkg.sh rsync allowlist.
+    "scripts/backup_db.sh",
+    "scripts/backup_mining_guardian.sh",
+    # Operator dev-laptop launcher with hardcoded /Users/BigBobby path
+    # and the typo'd pre-rename repo name. Dead in Mini path. Excluded
+    # from payload by P-024.
+    "scripts/start_guardian.sh",
+    # Operator setup helper — same story.
+    "scripts/setup.sh",
+}
+
+
+def test_shipped_payload_has_no_big_bobby_username():
+    """No shipped runtime file (outside the kept-in-repo operator
+    carve-out) may contain `BigBobby`. P-024 narrowed the payload so
+    these files no longer ship to the customer Mac Mini, but they
+    remain in the repo for operator use; this guard catches NEW
+    contamination in shipped runtime code."""
+    offenders = _scan_for(BIG_BOBBY, ALLOWED_BOBBY_MAC_FILES)
+    if offenders:
+        msg = "\n".join(f"  {rel}:{lines}" for rel, lines in offenders)
+        pytest.fail(
+            f"\nShipped runtime contains the operator username "
+            f"{BIG_BOBBY!r}:\n{msg}\n"
+            "Customer Mac Mini code must not reference the operator's "
+            "macOS username. If the file is genuinely operator-only "
+            "and must remain in the repo, ensure it is excluded from "
+            "the payload via build_pkg.sh and add it to "
+            "ALLOWED_BOBBY_MAC_FILES with rationale."
+        )
+
+
+def test_shipped_payload_has_no_big_bobby_home_path():
+    """No shipped runtime file (outside the operator carve-out) may
+    contain `/Users/BigBobby`. Customer Mac Mini paths are rooted at
+    `/Library/Application Support/MiningGuardian/` (set by the .pkg);
+    a `/Users/BigBobby` reference is build-Mac contamination."""
+    offenders = _scan_for(BOBBY_HOME_PATH, ALLOWED_BOBBY_MAC_FILES)
+    if offenders:
+        msg = "\n".join(f"  {rel}:{lines}" for rel, lines in offenders)
+        pytest.fail(
+            f"\nShipped runtime contains the operator home path "
+            f"{BOBBY_HOME_PATH!r}:\n{msg}\n"
+            "Customer Mac Mini paths must be rooted at the install "
+            "location, never at the build Mac's home directory."
+        )
+
+
+def test_shipped_payload_has_no_bobby_tailscale_ip():
+    """No shipped runtime file (outside the operator carve-out) may
+    contain Bobby's Mac Tailscale IP `100.103.185.53`. Surfaced by
+    the P-024 audit; this is a CGNAT-range Tailscale endpoint, not a
+    customer-runtime address."""
+    offenders = _scan_for(BOBBY_TAILSCALE_IP, ALLOWED_BOBBY_MAC_FILES)
+    if offenders:
+        msg = "\n".join(f"  {rel}:{lines}" for rel, lines in offenders)
+        pytest.fail(
+            f"\nShipped runtime references Bobby's Mac Tailscale IP "
+            f"{BOBBY_TAILSCALE_IP!r}:\n{msg}\n"
+            "The customer Mac Mini data plane is local-only (VA-6, "
+            "D-9). Tailscale endpoints belong to the operator-access "
+            "plane only."
+        )
