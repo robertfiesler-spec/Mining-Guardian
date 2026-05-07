@@ -310,11 +310,37 @@ def _fetch_chip_specs(cur, model: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _fetch_firmware(cur, model_id) -> List[Dict[str, Any]]:
+    """Return firmware releases compatible with `model_id`.
+
+    P-021 (2026-05-07): the canonical schema does NOT have a `model_id`
+    column on `firmware.firmware_releases`. The model→firmware link is the
+    join table `firmware.firmware_compatibility(firmware_id, miner_model_id)`.
+    The pre-P-021 query
+        SELECT * FROM firmware.firmware_releases WHERE model_id = %s
+    threw `column "model_id" does not exist` on the live Mini scanner for
+    every miner that reached the catalog read path (B-30). We now JOIN
+    through the compatibility table.
+    """
     if not model_id or not _table_exists(cur, "firmware.firmware_releases"):
         return []
+    if not _table_exists(cur, "firmware.firmware_compatibility"):
+        # No compatibility table yet — return all current-stable firmware
+        # so the LLM still has *some* firmware context. Cheap fallback.
+        cur.execute(
+            "SELECT * FROM firmware.firmware_releases "
+            "WHERE is_current_stable = TRUE "
+            "ORDER BY release_date DESC NULLS LAST LIMIT 20"
+        )
+        return _rows_to_dicts(cur, cur.fetchall())
     cur.execute(
-        "SELECT * FROM firmware.firmware_releases "
-        "WHERE model_id = %s ORDER BY release_date DESC LIMIT 20",
+        """
+        SELECT fr.*
+        FROM firmware.firmware_releases fr
+        JOIN firmware.firmware_compatibility fc ON fc.firmware_id = fr.id
+        WHERE fc.miner_model_id = %s
+        ORDER BY fr.release_date DESC NULLS LAST
+        LIMIT 20
+        """,
         (model_id,),
     )
     return _rows_to_dicts(cur, cur.fetchall())
@@ -338,22 +364,38 @@ def _fetch_failures(cur, model_id) -> List[Dict[str, Any]]:
 
 
 def _fetch_repair(cur, model_id) -> List[Dict[str, Any]]:
+    """Return repair procedures for `model_id`.
+
+    P-021 (2026-05-07): the canonical schema FK column on
+    `repair.repair_procedures` is `miner_model_id`, NOT `model_id` — the
+    pre-P-021 query was a sibling of the firmware bug (B-30). The
+    column is nullable per schema comment ("NULL = universal"), so we
+    OR in NULL to surface universal procedures alongside model-specific
+    ones.
+    """
     if not model_id or not _table_exists(cur, "repair.repair_procedures"):
         return []
     cur.execute(
         "SELECT id, procedure_name AS note "
-        "FROM repair.repair_procedures WHERE model_id = %s LIMIT 10",
+        "FROM repair.repair_procedures "
+        "WHERE miner_model_id = %s OR miner_model_id IS NULL LIMIT 10",
         (model_id,),
     )
     return _rows_to_dicts(cur, cur.fetchall())
 
 
 def _fetch_thresholds(cur, model_id) -> List[Dict[str, Any]]:
+    """Return operational thresholds for `model_id`.
+
+    P-021 (2026-05-07): canonical FK is `miner_model_id` (nullable —
+    NULL means "applies to all models"). Same fix as `_fetch_repair`.
+    """
     if not model_id or not _table_exists(cur, "ops.operational_thresholds"):
         return []
     cur.execute(
         "SELECT metric_name AS metric, warn_value, critical_value "
-        "FROM ops.operational_thresholds WHERE model_id = %s LIMIT 20",
+        "FROM ops.operational_thresholds "
+        "WHERE miner_model_id = %s OR miner_model_id IS NULL LIMIT 20",
         (model_id,),
     )
     return _rows_to_dicts(cur, cur.fetchall())

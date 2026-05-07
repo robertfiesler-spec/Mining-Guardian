@@ -399,6 +399,7 @@ readonly SCHEDULED_PLIST_LABELS=(
     "com.miningguardian.scheduled.daily-deep-dive"
     "com.miningguardian.scheduled.log-failure-report"
     "com.miningguardian.scheduled.benchmark"
+    "com.miningguardian.scheduled.catalog-import"
 )
 
 # ---------------------------------------------------------------------------
@@ -1389,6 +1390,9 @@ step_apply_alias_seeds() {
     local seed_dir="${MG_PKG_PAYLOAD}/intelligence-catalog/seed-data/aliases"
     local tier1_file="${seed_dir}/001_hardware_model_aliases_tier1.sql"
     local tier2_file="${seed_dir}/002_mg_family_aliases_tier2.sql"
+    # P-021 (2026-05-07) — Tier-1 supplement: short AMS names live-resolved
+    # against `hardware.miner_models` at apply time. See file header for why.
+    local tier1_supp_file="${seed_dir}/003_live_short_name_aliases.sql"
     local catalog_db="mining_guardian_catalog"
     local op_db="mining_guardian"
     local container="mining-guardian-db"
@@ -1401,6 +1405,11 @@ step_apply_alias_seeds() {
     fi
     if [[ ! -r "$tier2_file" ]]; then
         fail 42 "Tier-2 alias seed missing: ${tier2_file}"
+    fi
+    # P-021: the Tier-1 supplement is shipped alongside Tier-1/Tier-2.
+    # Treat as required so a missing file is loud, not silently ignored.
+    if [[ ! -r "$tier1_supp_file" ]]; then
+        fail 42 "Tier-1 alias seed supplement missing: ${tier1_supp_file} (P-021)"
     fi
 
     # Stage the seeds inside the container so psql -f can find them on a
@@ -1549,6 +1558,29 @@ __SQL_POST__
             -f "${container_seed_dir}/002_mg_family_aliases_tier2.sql" \
             >>"$MG_INSTALL_LOG" 2>&1; then
         fail 42 "Tier-2 alias seed apply failed against ${op_db}"
+    fi
+
+    # 2b. Tier-1 supplement → catalog DB.
+    #
+    # P-021 (2026-05-07) — fills the live AMS short-name gap regardless of
+    # whether the frozen-UUID Tier-1 seed survived the FK gate. Resolves
+    # IDs at apply time against the live `hardware.miner_models`, so it
+    # cannot drift like 001_hardware_model_aliases_tier1.sql does. See
+    # 003_live_short_name_aliases.sql header for the rationale.
+    log "INFO applying Tier-1 alias seed supplement (P-021 short-name aliases) to ${catalog_db}"
+    # shellcheck disable=SC2024
+    if ! sudo -u "${MG_INSTALL_OPERATOR_USER}" \
+                /usr/bin/env PATH="$(_op_path)" \
+                docker exec -i "$container" \
+            psql -U mg -d "$catalog_db" -v ON_ERROR_STOP=1 \
+            -f "${container_seed_dir}/003_live_short_name_aliases.sql" \
+            >>"$MG_INSTALL_LOG" 2>&1; then
+        # Non-fatal: short-name supplement failure does not block install
+        # (the four BiXBiT-USA names will fall through to Tier-2 + the
+        # existing slug-derived contains-match in `_resolve_model_row`,
+        # which is what's been happening pre-P-021). Log loudly so the
+        # operator notices in install.log.
+        log "ERROR Tier-1 alias seed supplement failed against ${catalog_db} (P-021) — install continues; AMS short names (S19JPro/S21EXPHyd/S21Imm/AH3880) will rely on slug-derived contains-match"
     fi
 
     # 3. Verify.
