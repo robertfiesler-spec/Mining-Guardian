@@ -1,8 +1,29 @@
 # Daily Deep Dive — Design Doc
 
-> ## ⚠️ Status as of 2026-04-29 PM
+> ## ⚠️ Status as of 2026-05-07 (P-023)
 >
-> **Host changed from VPS to Mac Mini.** This doc was written on April 9, 2026, when the script was initially deployed to the historical Hostinger VPS (decommissioned for MG). As of the 2026-04-30 Mac Mini install:
+> **The customer Mac Mini data plane is local-only.** The daily deep dive
+> runs on the Mac Mini, reads from local Postgres, calls local Ollama at
+> `http://127.0.0.1:11434`, optionally calls the Anthropic API directly,
+> and writes results to local `knowledge.json`. There is no VPS, no
+> reverse proxy, no SSH/SCP/rsync to a remote host, and no Tailscale hop
+> in the daily-deep-dive runtime path. P-023 confirmed this by audit and
+> codified it with a CI guard
+> (`tests/test_p023_no_retired_hosts_in_shipped_payload.py`) plus the
+> deletion of the dead `scripts/send_deep_dive_report.py` (a pre-cutover
+> VPS uploader that was never wired into the scheduled job chain).
+>
+> Tailscale and the `*.fieslerfamily.com` Cloudflare tunnel exist for
+> **operator access only** (D-9 / D-19) — operator login, the D-19
+> operator console at port 8787, the Slack actions tunnel, and CORS
+> allowlists for the dashboard/Grafana iframes. None of those are on the
+> daily-deep-dive code path.
+>
+> ### Pre-cutover history (kept for reference)
+>
+> This doc was written on April 9, 2026, when the script was initially
+> deployed to a historical Hostinger VPS (decommissioned for MG). As of
+> the 2026-04-30 Mac Mini install:
 > - The script runs on the **Mac Mini** (not the VPS).
 > - `LLM_URL` is `http://127.0.0.1:11434` — Ollama runs locally on the Mac Mini per D-7 / D-9 / S-13. The pre-cutover ROBS-PC RTX 4090 host is decommissioned for MG and the runtime refuses any `OLLAMA_URL` pointing at the retired Tailscale range.
 > - The script path is `/Users/BigBobby/Documents/GitHub/Mining-Guardian/ai/daily_deep_dive.py` (not `/root/Mining-Guardian/`).
