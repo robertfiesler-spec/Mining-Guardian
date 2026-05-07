@@ -44,6 +44,13 @@ OPERATOR_FACING_DOCS = (
     "docs/CRON_SCHEDULE.md",
     "docs/DAILY_DEEP_DIVE_DESIGN.md",
     "docs/PERPLEXITY_PROMPT_MINING_INTELLIGENCE_CATALOG.md",
+    # P-024 (2026-05-07): added the two operator-runtime docs the
+    # customer / operator follows during normal Mini operation. Both
+    # legitimately mention the retired ROBS-PC host in past-tense
+    # context, but neither may carry a recommendation shape (KEY=VALUE
+    # or `curl http://100.110.87.1...`).
+    "docs/CONSOLE_OPERATIONS_GUIDE.md",
+    "docs/OPERATOR_GUIDE.md",
 )
 
 RETIRED_IP = "100.110.87.1"

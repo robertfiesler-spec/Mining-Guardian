@@ -50,7 +50,10 @@
 #      uninstall.sh into <payload>/installer-resources/.
 #   6. build_pkg.sh step 4b asserts <payload>/scripts/ is present after
 #      the 4a rsync (A-4 fix).
-#   7. The 4a rsync include list contains `--include 'scripts/***'`.
+#   7. The 4a rsync include list ships the 6 scheduled-job entrypoints
+#      under `scripts/` via a per-file allowlist. P-024 (2026-05-07)
+#      replaced the broad `--include 'scripts/***'` with explicit
+#      includes so operator/dead scripts no longer ride into the payload.
 #   8. Every scheduled-job plist's ProgramArguments entrypoint either
 #      lives in the source tree (so the 4a rsync would carry it into
 #      the payload) or is a documented latent bug.
@@ -176,12 +179,34 @@ else
 fi
 
 # ---------------------------------------------------------------------
-section "7. 4a rsync includes scripts/***"
+section "7. 4a rsync allowlists the 6 scheduled-job scripts (P-024)"
 # ---------------------------------------------------------------------
-if /usr/bin/grep -qF -- "--include 'scripts/***'" "$BUILD_PKG"; then
-    ok "build_pkg.sh 4a rsync includes scripts/***"
+# P-024 (2026-05-07) replaced the broad `--include 'scripts/***'` with
+# a per-file allowlist matching the entrypoints actually invoked by
+# scheduled-job plists/launchers. The deeper assertion lives in
+# tests/installer/test_p024_payload_scripts_allowlist.sh; this section
+# locks the names in this test file too so a regression that removes a
+# scheduled script from the rsync list is caught here AND there.
+P024_ALLOWED=(
+    "scripts/__init__.py"
+    "scripts/cleanup_ams_logs.py"
+    "scripts/db_maintenance.sh"
+    "scripts/direct_collect_logs.py"
+    "scripts/daily_log_failure_report.py"
+    "scripts/morning_briefing.py"
+    "scripts/daily_operator_review.py"
+)
+for s in "${P024_ALLOWED[@]}"; do
+    if /usr/bin/grep -qF -- "--include '${s}'" "$BUILD_PKG"; then
+        ok "build_pkg.sh 4a rsync includes '${s}'"
+    else
+        fail "build_pkg.sh 4a rsync missing --include for '${s}'"
+    fi
+done
+if /usr/bin/grep -qF -- "--exclude 'scripts/*'" "$BUILD_PKG"; then
+    ok "build_pkg.sh 4a rsync has catch-all --exclude 'scripts/*'"
 else
-    fail "build_pkg.sh 4a rsync missing --include 'scripts/***'"
+    fail "build_pkg.sh 4a rsync missing catch-all --exclude 'scripts/*'"
 fi
 
 # ---------------------------------------------------------------------

@@ -12,12 +12,20 @@ machine and **never** stored in git history.
 
 ## Source of truth
 
-All Apple Developer / notarization secrets for the macOS `.pkg` build live
-at exactly one path on the operator's Mac:
+All Apple Developer / notarization secrets for the macOS `.pkg` build
+live at exactly one path on the build Mac, outside the repo. The
+canonical location is **operator-chosen** — the build script reads the
+path from the operator's environment, not from a hardcoded location.
+On the current build Mac that path is, by example:
 
 ```
 /Users/BigBobby/Documents/Apple Cert/CREDENTIALS_NOTES.txt
 ```
+
+A second developer signing the .pkg from a different home directory
+should replace `/Users/BigBobby/...` with `${HOME}/Documents/Apple Cert/...`
+or the equivalent on their Mac and update the build environment
+accordingly.
 
 That file contains:
 
