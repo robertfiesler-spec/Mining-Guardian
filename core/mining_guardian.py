@@ -205,6 +205,21 @@ class MiningGuardian:
                 normalized = GuardianDB._normalize_model_name(device_name)
                 if normalized and normalized not in self._known_models:
                     self.db.save_discovery("new_model", m, normalized, device_name)
+                    # P-022 (2026-05-08) — also drop the discovery into
+                    # the file-based catalog-import intake surface so the
+                    # daily catalog-import job (and future enrichment
+                    # readers) sees the same intel without needing a
+                    # Postgres reader. Best-effort; never raises.
+                    try:
+                        from core.discovery_sink import record_discovery
+                        record_discovery("unknown_model", {
+                            "model_name": device_name,
+                            "ip": m.get("ip", ""),
+                            "miner_id": m.get("id") or m.get("minerId"),
+                            "source": "scanner_discovery",
+                        })
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("discovery_sink unavailable: %s", exc)
                     logger.warning(
                         "DISCOVERY: Unknown model detected: %s at %s",
                         device_name, m.get("ip", "?")
@@ -217,6 +232,19 @@ class MiningGuardian:
             if firmware and firmware not in self._known_firmware:
                 normalized = GuardianDB._normalize_model_name(device_name) if device_name else ""
                 self.db.save_discovery("new_firmware", m, normalized, device_name)
+                # P-022 (2026-05-08) — same file-sink companion to the DB
+                # write. See unknown_model branch above for rationale.
+                try:
+                    from core.discovery_sink import record_discovery
+                    record_discovery("new_firmware", {
+                        "model_name": device_name,
+                        "firmware_version": firmware,
+                        "ip": m.get("ip", ""),
+                        "miner_id": m.get("id") or m.get("minerId"),
+                        "source": "scanner_discovery",
+                    })
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("discovery_sink unavailable: %s", exc)
                 logger.info(
                     "DISCOVERY: New firmware version detected: %s on %s",
                     firmware, device_name or "unknown"

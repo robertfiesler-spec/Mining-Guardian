@@ -47,7 +47,44 @@ LABEL="catalog_import"
 ts() { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 if [[ ! -d "$SWEEP_DIR" ]]; then
-    echo "[$(ts)] [${LABEL}] INFO sweep dir not present: ${SWEEP_DIR} — nothing to import"
+    echo "[$(ts)] [${LABEL}] INFO sweep dir not present: ${SWEEP_DIR} — nothing to import from enrichment_sweep"
+fi
+
+# P-022 (2026-05-08) — surface scanner_discovery findings so the file-
+# based intake produced by core/discovery_sink.py is never silent. The
+# scanner writes ${INSTALL_ROOT}/cron_tracking/scanner_discovery/
+# latest_findings.json on every scan that observes an unknown model or
+# new firmware. We don't import them into staging.miner_model_proposals
+# yet (that's a follow-up PR); for now this job reports presence + the
+# count of unique events so the operator sees the data is captured.
+SCANNER_DISCOVERY_DIR="${INSTALL_ROOT}/cron_tracking/scanner_discovery"
+SCANNER_DISCOVERY_LATEST="${SCANNER_DISCOVERY_DIR}/latest_findings.json"
+if [[ -f "$SCANNER_DISCOVERY_LATEST" ]]; then
+    # Count event keys without requiring `jq` (mac default install
+    # doesn't ship it). Python is in the venv we already verify below.
+    if [[ -x "$VENV_PYTHON" ]]; then
+        count="$("$VENV_PYTHON" - <<'PYEOF'
+import json, sys
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        data = json.load(f)
+    events = data.get("events", {}) if isinstance(data, dict) else {}
+    print(len(events))
+except Exception:
+    print(0)
+PYEOF
+"$SCANNER_DISCOVERY_LATEST")"
+        echo "[$(ts)] [${LABEL}] INFO scanner_discovery findings present at ${SCANNER_DISCOVERY_LATEST}: ${count} unique events (NOT yet imported to staging.miner_model_proposals — see P-022 follow-up)"
+    else
+        echo "[$(ts)] [${LABEL}] INFO scanner_discovery findings present at ${SCANNER_DISCOVERY_LATEST}; venv python missing so count not reported"
+    fi
+else
+    echo "[$(ts)] [${LABEL}] INFO no scanner_discovery findings yet at ${SCANNER_DISCOVERY_LATEST}"
+fi
+
+# Continue to enrichment_sweep CSV import. Both presence-or-not is fine
+# — neither dir's emptiness is a job failure.
+if [[ ! -d "$SWEEP_DIR" ]]; then
     exit 0
 fi
 
