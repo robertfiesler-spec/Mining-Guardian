@@ -65,17 +65,28 @@ class TestSinkResolveDir(unittest.TestCase):
                 os.environ[k] = v
 
     def test_explicit_override_wins(self) -> None:
+        # NOTE (P-022 portability fix, 2026-05-08): both sides go through
+        # `os.path.realpath` because macOS canonicalises ``/tmp`` →
+        # ``/private/tmp`` (it's a symlink), and the helper itself uses
+        # ``Path(...).expanduser().resolve()`` which follows that
+        # symlink. Compare canonicalised paths so the test passes on
+        # both Darwin and Linux — sandbox dirs from ``tempfile`` may
+        # also live under ``/var/folders/...`` on macOS, which the same
+        # ``realpath`` normalisation handles.
         os.environ["MG_DISCOVERY_SINK_DIR"] = "/tmp/explicit-sink"
         os.environ["MG_INSTALL_ROOT"] = "/tmp/install-root"
         self.assertEqual(
-            str(self.sink.resolve_sink_dir()), "/tmp/explicit-sink"
+            os.path.realpath(str(self.sink.resolve_sink_dir())),
+            os.path.realpath("/tmp/explicit-sink"),
         )
 
     def test_install_root_used_when_no_override(self) -> None:
         os.environ["MG_INSTALL_ROOT"] = "/tmp/install-root"
         self.assertEqual(
-            str(self.sink.resolve_sink_dir()),
-            "/tmp/install-root/cron_tracking/scanner_discovery",
+            os.path.realpath(str(self.sink.resolve_sink_dir())),
+            os.path.realpath(
+                "/tmp/install-root/cron_tracking/scanner_discovery"
+            ),
         )
 
     def test_falls_back_to_repo_root(self) -> None:
