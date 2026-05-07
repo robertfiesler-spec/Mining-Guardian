@@ -542,9 +542,25 @@ _shq() {
         printf "''"
         return 0
     fi
-    # Standard `'\''` escape. The quoted form is single-quoted, so a
-    # literal `'` becomes `'\''` (close, escaped tick, reopen).
-    printf "'%s'" "${v//\'/\'\\\'\'}"
+    # P-020-fix (2026-05-07) — escape single quotes via sed instead of
+    # bash parameter substitution. The legacy form
+    #     printf "'%s'" "${v//\'/\'\\\'\'}"
+    # works on bash 4+ but bash 3.2 (Apple's stock /bin/bash) parses the
+    # replacement string differently, double-escaping the backslashes
+    # and producing a `.env` line whose embedded `'\''` becomes
+    # `'\\\\''` — every value containing a single quote breaks
+    # `set -a; source .env` with `unexpected EOF while looking for
+    # matching '`. The sed pipeline is identical on bash 3.2/4+ and
+    # GNU/BSD sed, and is the same idiom Apple uses internally for
+    # shell-safe value escaping.
+    #
+    # Replacement is `'\''` (close-tick, escaped-tick, reopen-tick) —
+    # the canonical bash idiom. The sed script substitutes `'` →
+    # `'\''` globally; we then wrap the whole thing in outer single
+    # quotes.
+    local escaped
+    escaped="$(printf '%s' "$v" | /usr/bin/sed "s/'/'\\\\''/g")"
+    printf "'%s'" "$escaped"
 }
 
 # ---------------------------------------------------------------------------
