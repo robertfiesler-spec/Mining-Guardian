@@ -423,6 +423,19 @@ class TestHttpFallbackSafety:
         cc = _load_catalog_context_fresh()
         assert cc._http_fallback_url() == "http://127.0.0.1:9999"
 
+    def test_http_fallback_refuses_robs_pc_with_path_and_port(self, monkeypatch):
+        """P-023 reinforcement: the retired ROBS-PC host must remain
+        rejected regardless of port, scheme, or path. P-023 codifies
+        the customer Mac Mini deployment as VPS-/ROBS-PC-free; this
+        guard is the runtime backstop if a future `.env` value
+        re-introduces the IP under a different port or path suffix."""
+        monkeypatch.setenv(
+            "MG_CATALOG_HTTP_FALLBACK_URL",
+            "https://100.110.87.1:11434/api/tags",
+        )
+        cc = _load_catalog_context_fresh()
+        assert cc._http_fallback_url() is None
+
 
 # ---------------------------------------------------------------------------
 # feedback_loop two-connection split (P-018C)
