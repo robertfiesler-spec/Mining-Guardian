@@ -41,5 +41,16 @@ set +a
 # logs path. See scanner_launcher.sh for the canonical comment.
 export MG_INSTALL_ROOT="${INSTALL_ROOT}"
 
+# P-019D (2026-05-07) — preflight before exec. Approval API binds
+# 127.0.0.1:8686 and instantiates the Guardian singleton (which opens
+# the operational DB connection) on first request. See dashboard_api
+# launcher for the rationale of port + DB ping checks together.
+# shellcheck source=_preflight.sh
+source "${INSTALL_ROOT}/bin/_preflight.sh"
+_preflight_env_keys "approval_api" "${ENV_FILE}" \
+    MG_DB_PASSWORD || exit $?
+_preflight_port_free "approval_api" 8686 || exit $?
+_preflight_db_ping "approval_api" "${VENV_PYTHON}" || exit $?
+
 cd "${INSTALL_ROOT}"
 exec "${VENV_PYTHON}" -u "${ENTRY_POINT}"

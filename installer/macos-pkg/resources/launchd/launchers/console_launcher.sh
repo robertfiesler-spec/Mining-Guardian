@@ -45,5 +45,14 @@ export PYTHONPATH="${INSTALL_ROOT}:${PYTHONPATH:-}"
 # P-028 (2026-05-06) — see scanner_launcher.sh for rationale.
 export MG_INSTALL_ROOT="${INSTALL_ROOT}"
 
+# P-019D (2026-05-07) — preflight before exec. Console binds
+# 127.0.0.1:${MG_CONSOLE_PORT} (8787 by default) and reads the
+# operational DB for /tasks. Skip the DB ping here because the console
+# tolerates a degraded DB (it renders an empty task panel instead of
+# crashing); a held port is the higher-impact failure for this service.
+# shellcheck source=_preflight.sh
+source "${INSTALL_ROOT}/bin/_preflight.sh"
+_preflight_port_free "console" "${MG_CONSOLE_PORT}" || exit $?
+
 cd "${INSTALL_ROOT}"
 exec "${VENV_PYTHON}" -u -m console.main
