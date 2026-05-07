@@ -112,23 +112,78 @@ class GuardianPGDB:
         self,
         dsn: Optional[str] = None,
         *,
-        host: str = "localhost",
-        port: int = 5432,
-        dbname: str = "mining_guardian",
-        user: str = "guardian_app",
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        dbname: Optional[str] = None,
+        user: Optional[str] = None,
         password: Optional[str] = None,
         schema_sql_path: Optional[Path] = None,
     ) -> None:
         """Connect to Postgres and ensure the schema is loaded.
 
         Either pass a full DSN or individual host/port/dbname/user/password.
-        If password is None, reads from env var GUARDIAN_PG_PASSWORD.
+        For each kwarg left at the default `None`, the value is resolved from
+        the environment in this order, with installer-provisioned values
+        winning when present:
+
+            host:     GUARDIAN_PG_HOST → MG_DB_HOST → PGHOST → "127.0.0.1"
+            port:     GUARDIAN_PG_PORT → MG_DB_PORT → PGPORT → 5432
+            dbname:   GUARDIAN_PG_DBNAME → MG_DB_NAME → PGDATABASE → "mining_guardian"
+            user:     GUARDIAN_PG_USER → MG_DB_USER → PGUSER → "mg"
+            password: GUARDIAN_PG_PASSWORD → MG_DB_PASSWORD → PGPASSWORD → ""
+
+        P-020 (2026-05-07): the prior defaults baked in `host="localhost"`
+        and `user="guardian_app"`. On the Mac mini the installer's
+        `step_drop_dotenv` writes `GUARDIAN_PG_HOST=127.0.0.1` and
+        `GUARDIAN_PG_USER=mg`, but `core/mining_guardian.py:156` calls
+        `GuardianDB()` with NO kwargs — so the no-arg defaults won, and
+        the scanner crash-looped with
+            FATAL: password authentication failed for user "guardian_app"
+        before ever consulting the .env values. The fix is to read those
+        env vars when the kwarg is left as `None`, so the no-arg path
+        picks up the installer's provisioned config. Explicit-kwarg
+        callers (`GuardianPGDB(host=..., user=...)`) are unchanged.
+
+        The host fallback is `127.0.0.1` (NOT `localhost`) because the
+        Postgres container in colima only listens on IPv4; `localhost`
+        resolves to `::1` first on macOS, fails immediately with
+        `Connection refused`, then falls back to IPv4 — half a second of
+        wasted retry per connect on every hour-tick scan.
         """
         if dsn is not None:
             self._dsn = dsn
         else:
-            pw = password if password is not None else os.environ.get("GUARDIAN_PG_PASSWORD", "")
-            self._dsn = f"host={host} port={port} dbname={dbname} user={user} password={pw}"
+            host_v = host if host is not None else (
+                os.environ.get("GUARDIAN_PG_HOST")
+                or os.environ.get("MG_DB_HOST")
+                or os.environ.get("PGHOST")
+                or "127.0.0.1"
+            )
+            port_v = port if port is not None else int(
+                os.environ.get("GUARDIAN_PG_PORT")
+                or os.environ.get("MG_DB_PORT")
+                or os.environ.get("PGPORT")
+                or 5432
+            )
+            dbname_v = dbname if dbname is not None else (
+                os.environ.get("GUARDIAN_PG_DBNAME")
+                or os.environ.get("MG_DB_NAME")
+                or os.environ.get("PGDATABASE")
+                or "mining_guardian"
+            )
+            user_v = user if user is not None else (
+                os.environ.get("GUARDIAN_PG_USER")
+                or os.environ.get("MG_DB_USER")
+                or os.environ.get("PGUSER")
+                or "mg"
+            )
+            pw = password if password is not None else (
+                os.environ.get("GUARDIAN_PG_PASSWORD")
+                or os.environ.get("MG_DB_PASSWORD")
+                or os.environ.get("PGPASSWORD")
+                or ""
+            )
+            self._dsn = f"host={host_v} port={port_v} dbname={dbname_v} user={user_v} password={pw}"
         self._schema_sql_path = Path(schema_sql_path) if schema_sql_path else DEFAULT_SCHEMA_SQL
         # Ping the DB to fail fast if credentials are wrong.
         with self._connect() as conn:

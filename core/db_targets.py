@@ -46,11 +46,21 @@ from typing import Any, Dict
 
 # Defaults match `installer/macos-pkg/scripts/postinstall.sh:919-927` and the
 # existing pattern in ai/{ai_score,fingerprint_builder,...}.py:38-42.
-_DEFAULT_HOST = "localhost"
+_DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 5432
-_DEFAULT_USER = "guardian_app"
+_DEFAULT_USER = "mg"
 _DEFAULT_OPERATIONAL_DBNAME = "mining_guardian"
 _DEFAULT_CATALOG_DBNAME = "mining_guardian_catalog"
+# P-020 (2026-05-07) — host changed from "localhost" to "127.0.0.1"
+# because the colima Postgres container only listens on IPv4; localhost
+# resolves to ::1 first on macOS, fails Connection refused, then falls
+# back to IPv4 (half a second of wasted retry per scan). User changed
+# from "guardian_app" to "mg" — the actual role the installer's
+# step_reconcile_postgres_password provisions via ALTER USER mg WITH
+# PASSWORD. The legacy "guardian_app" never existed on a customer Mac
+# mini and the no-arg `GuardianPGDB()` call in core/mining_guardian.py
+# was crash-looping the scanner with `password authentication failed
+# for user "guardian_app"`.
 
 # Sentinel that `__repr__` / `__str__` substitute for the real password so
 # the value never leaks via accidental logging or traceback rendering.
@@ -154,18 +164,42 @@ def _resolve_port() -> int:
         return _DEFAULT_PORT
 
 
+def _resolve_host() -> str:
+    # P-020 (2026-05-07) — accept MG_DB_HOST as a fallback so callers
+    # whose env was only seeded by the `MG_DB_*` family (e.g. the bash
+    # launcher wrappers) still resolve correctly.
+    return (
+        os.environ.get("GUARDIAN_PG_HOST")
+        or os.environ.get("MG_DB_HOST")
+        or _DEFAULT_HOST
+    )
+
+
+def _resolve_user() -> str:
+    return (
+        os.environ.get("GUARDIAN_PG_USER")
+        or os.environ.get("MG_DB_USER")
+        or _DEFAULT_USER
+    )
+
+
 def operational_target() -> DBTarget:
     """Return the resolved Postgres target for the OPERATIONAL DB.
 
-    dbname comes from `GUARDIAN_PG_DBNAME` (default `mining_guardian`).
-    All other fields are shared with `catalog_target()`.
+    dbname comes from `GUARDIAN_PG_DBNAME` (or `MG_DB_NAME`, default
+    `mining_guardian`). All other fields are shared with
+    `catalog_target()`.
     """
     return DBTarget(
-        host=os.environ.get("GUARDIAN_PG_HOST", _DEFAULT_HOST),
+        host=_resolve_host(),
         port=_resolve_port(),
-        user=os.environ.get("GUARDIAN_PG_USER", _DEFAULT_USER),
+        user=_resolve_user(),
         password=_resolve_password(),
-        dbname=os.environ.get("GUARDIAN_PG_DBNAME", _DEFAULT_OPERATIONAL_DBNAME),
+        dbname=(
+            os.environ.get("GUARDIAN_PG_DBNAME")
+            or os.environ.get("MG_DB_NAME")
+            or _DEFAULT_OPERATIONAL_DBNAME
+        ),
     )
 
 
@@ -177,9 +211,9 @@ def catalog_target() -> DBTarget:
     `operational_target()` — both DBs live on the same Postgres container.
     """
     return DBTarget(
-        host=os.environ.get("GUARDIAN_PG_HOST", _DEFAULT_HOST),
+        host=_resolve_host(),
         port=_resolve_port(),
-        user=os.environ.get("GUARDIAN_PG_USER", _DEFAULT_USER),
+        user=_resolve_user(),
         password=_resolve_password(),
         dbname=os.environ.get("GUARDIAN_PG_CATALOG_DBNAME", _DEFAULT_CATALOG_DBNAME),
     )
