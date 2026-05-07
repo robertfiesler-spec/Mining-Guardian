@@ -1763,6 +1763,22 @@ step_install_launcher_wrappers() {
     install -m 0755 -o root -g wheel "$fbd_src" "$fbd_dst"
     log "INFO installed launcher: feedback_loop_daemon_launcher.sh (from deploy/)"
 
+    # P-019D (2026-05-07) — install the shared preflight library next
+    # to the launchers. The 5 service launchers (dashboard_api,
+    # approval_api, intelligence_report, console, feedback_loop_daemon)
+    # source this file at \${INSTALL_ROOT}/bin/_preflight.sh before
+    # exec'ing Python. Without this file the launchers exit 1 on the
+    # `source` line — which is exactly the silent rapid-exit pattern
+    # that triggers errno 5. Mode 0644 is sufficient (sourced, not
+    # exec'd); root:wheel matches the rest of bin/.
+    local pf_src="${LAUNCHERS_SRC}/_preflight.sh"
+    local pf_dst="${bin}/_preflight.sh"
+    if [[ ! -r "$pf_src" ]]; then
+        fail 37 "_preflight.sh missing in payload: ${pf_src} (P-019D)"
+    fi
+    install -m 0644 -o root -g wheel "$pf_src" "$pf_dst"
+    log "INFO installed launcher preflight library: _preflight.sh (P-019D)"
+
     # P-019C: explicit re-chown to root:wheel covers any prior install
     # that left the bin/ tree miningguardian-owned. Without this a
     # re-install would inherit a non-root-owned bin and the new
@@ -2054,6 +2070,27 @@ _dump_launchctl_diagnostics() {
         fi
         echo "--- log dir (StandardOutPath parent):"
         /bin/ls -laO "${MG_INSTALL_ROOT}/logs" 2>/dev/null || true
+        # P-019D (2026-05-07) — surface the launcher's StandardErrorPath
+        # log content. Pre-P-019D this file existed but was never read
+        # during postinstall; the operator had to know to look in
+        # /Library/Application Support/MiningGuardian/logs/ after the
+        # install aborted. With the P-019D preflight library writing
+        # specific error codes + diagnostic messages to stderr, the
+        # tail of these logs is the single most direct signal of WHY a
+        # service refused to bootstrap.
+        local err_path out_path
+        err_path="$(/usr/bin/plutil -extract StandardErrorPath raw "$plist_path" 2>/dev/null || true)"
+        out_path="$(/usr/bin/plutil -extract StandardOutPath  raw "$plist_path" 2>/dev/null || true)"
+        if [[ -n "$err_path" && -f "$err_path" ]]; then
+            echo "--- StandardErrorPath tail (${err_path}):"
+            /usr/bin/tail -n 80 "$err_path" 2>/dev/null || true
+        else
+            echo "--- StandardErrorPath: (not present at ${err_path:-unknown})"
+        fi
+        if [[ -n "$out_path" && -f "$out_path" ]]; then
+            echo "--- StandardOutPath tail (${out_path}):"
+            /usr/bin/tail -n 40 "$out_path" 2>/dev/null || true
+        fi
         echo "--- recent unified log entries for the label:"
         /usr/bin/log show --predicate "subsystem == 'com.apple.xpc.launchd' AND eventMessage CONTAINS '${label}'" \
             --last 5m --info 2>/dev/null \
