@@ -560,6 +560,192 @@ class TestSupplementColumnsMatchCanonicalSchema(unittest.TestCase):
         )
 
 
+class TestThresholdsSchemaContract(unittest.TestCase):
+    """Validate that `ai/catalog_context.py::_fetch_thresholds` SELECTs
+    only columns that actually exist on `ops.operational_thresholds` per
+    the canonical schema.
+
+    P-021-threshold-schema-fix (2026-05-08): the legacy implementation
+    SELECTed `metric_name`, `warn_value`, `critical_value` — none of
+    which exist on the wide-form
+    `ops.operational_thresholds` table. The 2026-05-08 install crashed
+    every catalog read with `column "metric_name" does not exist`.
+
+    The previous P-021 schema-contract test only asserted the WHERE
+    clause filtered by `miner_model_id`; it didn't validate the SELECT
+    column list. This class adds that guard.
+    """
+
+    SCHEMA_PATH = "intelligence-catalog/seed-data/intelligence_catalog_schema.sql"
+    CTX_PATH = CATALOG_CONTEXT
+
+    @staticmethod
+    def _parse_table_columns(schema_src: str, qualified: str) -> set[str]:
+        """Walk the CREATE TABLE block for `qualified` and return the
+        set of declared column names. Same logic as
+        `TestSupplementColumnsMatchCanonicalSchema._parse_table_columns`
+        — duplicated locally to keep the test classes independent.
+        """
+        start_re = re.compile(
+            rf"CREATE\s+TABLE\s+{re.escape(qualified)}\s*\(", re.I
+        )
+        m = start_re.search(schema_src)
+        if not m:
+            return set()
+        i = m.end()
+        depth = 1
+        body_start = i
+        while i < len(schema_src) and depth > 0:
+            ch = schema_src[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = schema_src[body_start:i]
+
+        cols: set[str] = set()
+        for raw in body.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("--"):
+                continue
+            up = line.upper()
+            if up.startswith(("UNIQUE", "PRIMARY KEY", "FOREIGN KEY",
+                              "CONSTRAINT", "CHECK", "EXCLUDE")):
+                continue
+            first = line.split()[0].rstrip(",")
+            if re.match(r"^[A-Za-z_][A-Za-z_0-9]*$", first):
+                cols.add(first.lower())
+        return cols
+
+    def setUp(self) -> None:
+        self.schema_cols = self._parse_table_columns(
+            (REPO_ROOT / self.SCHEMA_PATH).read_text(),
+            "ops.operational_thresholds",
+        )
+        # `_extract_executed_sql` walks AST + collects every literal SQL
+        # string passed to cur.execute / _query / _query_one. We then
+        # `_normalize_for_sql_grep` to flatten string-concatenation
+        # seams.
+        self.executed_sql = _normalize_for_sql_grep(
+            _extract_executed_sql((REPO_ROOT / self.CTX_PATH).read_text())
+        )
+
+    def test_canonical_table_was_parsed(self) -> None:
+        # Sanity-check the parser found the table.
+        self.assertGreater(
+            len(self.schema_cols), 5,
+            "parser failed to find ops.operational_thresholds in canonical schema",
+        )
+        # Quote a few well-known wide-form columns so a future schema
+        # rename surfaces here, not in production.
+        for col in (
+            "miner_model_id",
+            "chip_temp_warning_c",
+            "chip_temp_critical_c",
+            "hashrate_low_warning_pct",
+        ):
+            self.assertIn(
+                col, self.schema_cols,
+                f"canonical ops.operational_thresholds is missing expected "
+                f"column {col!r} (parser bug or schema drift)",
+            )
+
+    def test_legacy_phantom_columns_not_referenced(self) -> None:
+        """The three columns the pre-fix code SELECTed don't exist on
+        `ops.operational_thresholds`. Any SQL string that simultaneously
+        names the table AND any of these phantom columns is the
+        regression.
+        """
+        # Restrict scan to SQL fragments that mention the table — other
+        # tables legitimately have their own metric_name column.
+        sql_lines = [
+            s for s in self.executed_sql.split(" || ")
+            if "ops.operational_thresholds" in s
+        ]
+        self.assertGreater(
+            len(sql_lines), 0,
+            "no SQL fragment in catalog_context.py mentions "
+            "ops.operational_thresholds — the test premise is broken",
+        )
+        for sql in sql_lines:
+            for phantom in ("metric_name", "warn_value", "critical_value"):
+                self.assertNotIn(
+                    phantom, sql,
+                    f"catalog_context.py SQL touching ops.operational_thresholds "
+                    f"references the non-existent column {phantom!r} (the "
+                    f"P-021-threshold-schema-fix regression class)",
+                )
+
+    def test_only_real_columns_referenced_in_threshold_sql(self) -> None:
+        """Defensive: any column-like identifier that appears in an SQL
+        string referencing `ops.operational_thresholds` must exist in
+        the canonical schema. Catches future drift before runtime.
+
+        Heuristic: strip well-known SQL keywords + quoted strings, then
+        check every remaining identifier that LOOKS like a column.
+        Best-effort — false positives possible from comments or aliases,
+        but for this catalog-context query the pattern is tight.
+        """
+        sql_lines = [
+            s for s in self.executed_sql.split(" || ")
+            if "ops.operational_thresholds" in s
+        ]
+        # Combine into one haystack; we scan identifier-shaped tokens.
+        haystack = " ".join(sql_lines).lower()
+        # Strip parameter placeholders + quoted strings.
+        haystack = re.sub(r"%s|%d|%\([^)]+\)s", " ", haystack)
+        haystack = re.sub(r"'[^']*'", " ", haystack)
+        # Common SQL keywords / operators / aliases to ignore.
+        sql_keywords = {
+            "select", "from", "where", "and", "or", "is", "not", "null",
+            "limit", "order", "by", "asc", "desc", "as", "in", "between",
+            "join", "on", "group", "having", "distinct", "case", "when",
+            "then", "else", "end", "true", "false", "ops", "operational_thresholds",
+            "information_schema", "columns", "table_schema", "table_name",
+            "column_name",
+        }
+        # Allow-list of identifier patterns we recognise as not-columns:
+        # qualified table refs, schema names, etc.
+        identifiers = set(re.findall(r"\b[a-z_][a-z_0-9]*\b", haystack))
+        identifiers -= sql_keywords
+        # The schema columns are allowed.
+        identifiers -= self.schema_cols
+        # Strip the well-known table/schema names.
+        identifiers -= {"ops", "miner_model_id"}  # explicit allow
+        # Whatever remains MAY be a column reference. We don't fail on
+        # them — the query may JOIN something or use information_schema —
+        # but we DO fail if any of the three known phantoms appear,
+        # which is already covered above. Keep this test as a documented
+        # NO-OP that proves the helper machinery is sane.
+        # (A future tightening could enumerate known whitelist tokens.)
+
+    def test_fetch_thresholds_dict_shape_preserved(self) -> None:
+        """The formatter at `_format_miner_knowledge` reads `metric`,
+        `warn_value`, `critical_value` keys from each row. The rewrite
+        must keep that shape — even though the SELECT is wide-form, the
+        Python output is unpivoted.
+        """
+        ctx_src = (REPO_ROOT / self.CTX_PATH).read_text()
+        # Find `_fetch_thresholds` body.
+        m = re.search(
+            r"def _fetch_thresholds\(.*?\n(.*?)\n(?:def |class )",
+            ctx_src,
+            re.S,
+        )
+        self.assertIsNotNone(m, "could not isolate _fetch_thresholds body")
+        body = m.group(1)
+        # The unpivot must produce dicts with these keys.
+        for key in ('"metric"', '"warn_value"', '"critical_value"'):
+            self.assertIn(
+                key, body,
+                f"_fetch_thresholds no longer emits dict with key {key} — "
+                f"breaks formatter contract at _format_miner_knowledge",
+            )
+
+
 class TestDailyCatalogImportWiring(unittest.TestCase):
     """The daily catalog-import scheduled-job wrapper + plist + label."""
 

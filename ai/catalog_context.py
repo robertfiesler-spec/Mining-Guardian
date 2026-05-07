@@ -385,20 +385,115 @@ def _fetch_repair(cur, model_id) -> List[Dict[str, Any]]:
 
 
 def _fetch_thresholds(cur, model_id) -> List[Dict[str, Any]]:
-    """Return operational thresholds for `model_id`.
+    """Return operational thresholds for `model_id` in the formatter's
+    expected per-metric shape: ``[{'metric': str, 'warn_value': float,
+    'critical_value': float}, …]``.
 
-    P-021 (2026-05-07): canonical FK is `miner_model_id` (nullable —
-    NULL means "applies to all models"). Same fix as `_fetch_repair`.
+    P-021-threshold-schema-fix (2026-05-08): the canonical schema for
+    ``ops.operational_thresholds`` (intelligence_catalog_schema.sql ~L1590)
+    is **wide-form** — one row per (model, profile) carrying ~14 named
+    threshold columns (``chip_temp_warning_c``, ``chip_temp_critical_c``,
+    ``coolant_temp_warning_c``, ``hashrate_low_warning_pct``, etc.). It
+    has no ``metric_name`` / ``warn_value`` / ``critical_value`` columns
+    — the legacy P-021 query selected three columns that never existed.
+    First scanner run after P-021-runtime-fix install logged
+    ``ERROR catalog DB query failed for model 'AH3880': column "metric_name"
+    does not exist`` and refused to evaluate miners 54504 + 63940.
+
+    This rewrite:
+
+    1. Discovers which threshold columns are actually present (defensive
+       against future schema diffs / additions / removals); a missing
+       column is just skipped, not fatal.
+    2. Pulls one wide row (``LIMIT 1`` — the model-specific row, with
+       NULL fallback for "applies to all models" universal defaults) and
+       unpivots it into the formatter's per-metric shape using a
+       hard-coded warn/critical column-pair map.
+    3. Returns ``[]`` if the table is absent or no row matches — the
+       formatter already guards against an empty list.
+
+    The metric column-pair map is the contract; `_format_miner_knowledge`
+    (line 503-511) reads ``metric`` / ``warn_value`` / ``critical_value``
+    keys, so the dict shape must be preserved.
     """
     if not model_id or not _table_exists(cur, "ops.operational_thresholds"):
         return []
+
+    # Wide → tall column-pair contract. Each entry is
+    # (metric_label, warn_column, critical_column). If a future schema
+    # adds more columns (e.g., ``chip_temp_shutdown_c`` is a third tier
+    # — currently shutdown-only, no warn/critical pair), append here.
+    metric_pairs = [
+        ("chip_temp_c",        "chip_temp_warning_c",     "chip_temp_critical_c"),
+        ("board_temp_c",       "board_temp_warning_c",    "board_temp_critical_c"),
+        ("coolant_temp_c",     "coolant_temp_warning_c",  "coolant_temp_critical_c"),
+        ("hashrate_low_pct",   "hashrate_low_warning_pct", "hashrate_low_critical_pct"),
+        ("power_high_w",       "power_high_warning_w",    "power_high_critical_w"),
+        ("voltage_low_v",      "voltage_low_warning_v",   "voltage_low_critical_v"),
+        ("voltage_high_v",     "voltage_high_warning_v",  "voltage_high_critical_v"),
+    ]
+
+    # Discover which of those columns exist on the live table — a future
+    # rename or partial seed must not crash the scanner.
     cur.execute(
-        "SELECT metric_name AS metric, warn_value, critical_value "
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = 'ops' AND table_name = 'operational_thresholds'"
+    )
+    present = {r[0] for r in cur.fetchall()}
+    if not present:
+        return []
+
+    # Build the SELECT list from columns that actually exist. Always
+    # include ``threshold_name`` if the schema has it — useful for the
+    # formatter's third-line context (currently unused but cheap).
+    selectable: List[str] = []
+    if "threshold_name" in present:
+        selectable.append("threshold_name")
+    used_pairs: List[tuple] = []
+    for metric, warn_col, crit_col in metric_pairs:
+        if warn_col in present and crit_col in present:
+            selectable.extend([warn_col, crit_col])
+            used_pairs.append((metric, warn_col, crit_col))
+
+    if not used_pairs:
+        # No recognisable metric columns at all — table is too unfamiliar
+        # to read. Don't crash; the formatter will skip the section.
+        return []
+
+    # Order: model-specific row first (miner_model_id = %s), then
+    # universal default (miner_model_id IS NULL). LIMIT 1 — we present
+    # ONE model's thresholds, not a stack.
+    select_sql = ", ".join(selectable)
+    cur.execute(
+        f"SELECT {select_sql} "
         "FROM ops.operational_thresholds "
-        "WHERE miner_model_id = %s OR miner_model_id IS NULL LIMIT 20",
+        "WHERE miner_model_id = %s OR miner_model_id IS NULL "
+        "ORDER BY (miner_model_id IS NULL) ASC LIMIT 1",
         (model_id,),
     )
-    return _rows_to_dicts(cur, cur.fetchall())
+    row = cur.fetchone()
+    if not row:
+        return []
+
+    # Map column → value via cur.description so we don't depend on
+    # selectable's order matching the row's positional layout.
+    by_name = {desc[0]: row[i] for i, desc in enumerate(cur.description)}
+
+    out: List[Dict[str, Any]] = []
+    for metric, warn_col, crit_col in used_pairs:
+        warn = by_name.get(warn_col)
+        crit = by_name.get(crit_col)
+        # Skip the row entirely if both warn/critical are NULL — the
+        # threshold isn't populated for this model. A populated single
+        # value (just warn, just critical) still surfaces.
+        if warn is None and crit is None:
+            continue
+        out.append({
+            "metric": metric,
+            "warn_value": warn,
+            "critical_value": crit,
+        })
+    return out
 
 
 def _fetch_miner_knowledge_pg(model_name: str) -> Optional[Dict[str, Any]]:
