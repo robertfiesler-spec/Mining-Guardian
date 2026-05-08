@@ -114,6 +114,18 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
 
     Same dir as the target so the rename is atomic (POSIX guarantees
     same-fs rename atomicity).
+
+    P-032 (2026-05-08) — explicitly chmod the temp file to 0664 before
+    the atomic replace. ``tempfile.mkstemp`` creates the temp file with
+    mode 0600 by design, and ``os.replace`` preserves the source file's
+    mode bits when it overwrites the destination. The net effect was
+    that every scan rewrote ``latest_findings.json`` (and any future
+    JSON the sink writes) as 0600, even after the P-027 postinstall step
+    healed the on-disk file to 0664. The cron-driven import job runs
+    under a different account on customer Macs, so a 0600 snapshot is
+    unreadable to it. Setting mode 0664 here keeps the sink aligned with
+    P-027's expectation (group-readable+writable, world-readable) and
+    survives subsequent rewrites without operator intervention.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
@@ -125,6 +137,10 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())
+        # P-032: align with P-027 postinstall (0664) so cron-driven
+        # readers running under a different account can still consume the
+        # rolling snapshot after each scan.
+        os.chmod(tmp_name, 0o664)
         os.replace(tmp_name, path)
     except Exception:
         # Best-effort cleanup of the temp file; never raise.

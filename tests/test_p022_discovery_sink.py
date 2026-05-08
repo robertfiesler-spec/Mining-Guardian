@@ -292,6 +292,111 @@ class TestRecordDiscovery(unittest.TestCase):
         self.assertEqual(len(latest["events"]), 1)
 
 
+class TestAtomicWritePermissions(unittest.TestCase):
+    """P-032 (2026-05-08) — ``_atomic_write_json`` must land
+    ``latest_findings.json`` at mode 0664, not 0600.
+
+    Background
+    ----------
+    P-027 normalised on-disk mode to 0664 in the installer's postinstall
+    so the cron-driven catalog-import job (which can run as a different
+    user than the daemon writer on customer Macs) can read the rolling
+    snapshot. But the sink's atomic-write helper used ``tempfile.mkstemp``
+    (0600 by design) and ``os.replace`` (preserves source mode bits), so
+    every scan silently rewrote the file back to 0600. P-032 explicitly
+    chmods the temp file to 0664 before the rename so the on-disk mode
+    stays aligned with P-027's expectation across rewrites.
+
+    The behaviour must hold regardless of the process umask: explicit
+    ``os.chmod(0o664)`` is umask-independent, so we exercise both 022
+    (server default) and 002 (developer-typical) here.
+    """
+
+    def setUp(self) -> None:
+        self.sink = _import_sink()
+        self.tmp = tempfile.mkdtemp(prefix="p032-sink-mode-test-")
+        os.environ["MG_DISCOVERY_SINK_DIR"] = self.tmp
+        self._saved_umask = os.umask(0o022)
+
+    def tearDown(self) -> None:
+        os.umask(self._saved_umask)
+        os.environ.pop("MG_DISCOVERY_SINK_DIR", None)
+        for child in Path(self.tmp).rglob("*"):
+            try:
+                child.unlink()
+            except (OSError, IsADirectoryError):
+                pass
+        try:
+            Path(self.tmp).rmdir()
+        except OSError:
+            pass
+
+    def _latest_path(self) -> Path:
+        return Path(self.tmp) / "latest_findings.json"
+
+    def _file_mode(self, path: Path) -> int:
+        return path.stat().st_mode & 0o777
+
+    def test_first_write_lands_at_0664_under_umask_022(self) -> None:
+        os.umask(0o022)
+        ok = self.sink.record_discovery(
+            "unknown_model", {"model_name": "S19JPro", "ip": "1.2.3.4"},
+        )
+        self.assertTrue(ok)
+        self.assertEqual(
+            self._file_mode(self._latest_path()), 0o664,
+            "latest_findings.json must be 0664 after first write under umask 022 "
+            "(P-032: tempfile.mkstemp creates 0600 + os.replace preserves source "
+            "mode → file would otherwise be 0600)",
+        )
+
+    def test_first_write_lands_at_0664_under_umask_002(self) -> None:
+        os.umask(0o002)
+        ok = self.sink.record_discovery(
+            "unknown_model", {"model_name": "S19JPro", "ip": "1.2.3.4"},
+        )
+        self.assertTrue(ok)
+        self.assertEqual(
+            self._file_mode(self._latest_path()), 0o664,
+            "latest_findings.json must be 0664 under umask 002 too — the "
+            "sink uses an explicit chmod, not umask-dependent open()",
+        )
+
+    def test_subsequent_writes_keep_0664(self) -> None:
+        # The original bug was specifically about EVERY scan rewriting
+        # the file as 0600 — a once-on-first-write fix is not enough.
+        os.umask(0o022)
+        for i in range(5):
+            self.sink.record_discovery(
+                "unknown_model",
+                {"model_name": "S19JPro", "ip": f"1.2.3.{i}"},
+            )
+            self.assertEqual(
+                self._file_mode(self._latest_path()), 0o664,
+                f"latest_findings.json mode drifted on rewrite #{i + 1}",
+            )
+
+    def test_pre_existing_file_mode_is_overwritten_to_0664(self) -> None:
+        # Simulate a file already on disk at 0600 (the broken pre-P-032
+        # state). The next scan must heal it back to 0664 — this is the
+        # behaviour customer Macs depend on once they pick up the fix.
+        latest = self._latest_path()
+        latest.parent.mkdir(parents=True, exist_ok=True)
+        latest.write_text("{}", encoding="utf-8")
+        os.chmod(latest, 0o600)
+        self.assertEqual(self._file_mode(latest), 0o600)
+
+        os.umask(0o022)
+        ok = self.sink.record_discovery(
+            "unknown_model", {"model_name": "S19JPro", "ip": "1.2.3.4"},
+        )
+        self.assertTrue(ok)
+        self.assertEqual(
+            self._file_mode(latest), 0o664,
+            "next scan after pre-P-032 0600 file must heal to 0664",
+        )
+
+
 class TestScannerWiring(unittest.TestCase):
     """The scanner's ``_track_discoveries`` calls ``record_discovery``
     in BOTH branches (unknown_model AND new_firmware)."""
