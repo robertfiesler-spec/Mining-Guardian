@@ -3,7 +3,7 @@
 Mining Guardian — Daily Deep Dive LLM Analysis
 
 Purpose:
-    Once per day, the local Qwen 32B LLM on ROBS-PC (RTX 4090) does a long,
+    Once per day, the local Qwen LLM on the customer Mac Mini does a long,
     uninterrupted study session of the entire fleet state. Every online
     miner gets individual attention with its full daily baseline log, its
     24-hour metric trends, its restart history, its hardware identity, and
@@ -15,23 +15,23 @@ Purpose:
     under the key 'daily_deep_analyses'. Each entry is a dict with
     per-miner analyses and a fleet synthesis. The Sunday Claude weekly
     training reads this array alongside llm_scan_analyses via the
-    TEMP_MAY_REMOVE merge block in train_cohort.py.
+    permanent merge block in train_cohort.py.
 
 Design philosophy (per operator Bobby, April 9 2026):
-    - No caps on anything. This is ROBS-PC sitting mostly idle, the
+    - No caps on anything. The local Ollama box sits mostly idle, the
       compute is free, let Qwen chew on it as long as it needs.
     - num_predict = -1 (Ollama unlimited output)
     - num_ctx = 32768 (Qwen's full quantized context window)
     - requests timeout = 14400 seconds (4 hours) per LLM call
-    - Sequential per-miner (48 miners @ ~2-4 min each = 90-180 min)
-      then one fleet synthesis pass (~5-10 min)
-    - Total expected runtime: 2-4 hours, fine because scheduled 4pm
-      after daily collection finishes at 1pm
+    - Sequential per-miner (~2-4 min each) then one fleet synthesis pass
+      (~5-10 min). Total expected runtime: 2-4 hours, fine because
+      scheduled after daily collection completes (see docs/CRON_SCHEDULE.md).
 
 Scheduling:
-    - TODAY (April 9 2026): MANUAL only — run via `python3 ai/daily_deep_dive.py --manual`
-    - Starting April 10 2026: cron at 16:00 local (America/Chicago)
-      cron entry: `0 16 * * * cd /root/Mining-Guardian && venv/bin/python3 ai/daily_deep_dive.py >> /tmp/daily_deep_dive.log 2>&1`
+    - Mini deployment: managed by a launchd plist installed by the .pkg
+      postinstall (see docs/CRON_SCHEDULE.md for the canonical schedule).
+      Ad-hoc runs use `python3 ai/daily_deep_dive.py --manual` from the
+      install root.
 
 What this does NOT do:
     - It does NOT call Claude. Claude weekly training stays on its own
@@ -49,7 +49,8 @@ What this does NOT do:
 Safety/resume:
     - Each per-miner analysis is written to working dir as it completes
       so a mid-run crash doesn't lose hours of work.
-    - Working dir: /root/Mining-Guardian/daily_deep_dive_wip/{YYYY-MM-DD}/
+    - Working dir: ${MG_INSTALL_ROOT}/daily_deep_dive_wip/{YYYY-MM-DD}/
+      (under the dev clone the same relative path applies via _ROOT).
     - On restart, completed miners are skipped automatically.
 """
 
@@ -1198,22 +1199,16 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_ove
 def _save_to_knowledge(date: str, per_miner: Dict[str, str], fleet_synth: str,
                         failures: List[str], miners_online: int,
                         start_time: float):
-    """Append today's deep dive to knowledge.json under daily_deep_analyses."""
-    knowledge = {}
-    if KNOWLEDGE_PATH.exists():
-        try:
-            knowledge = json.loads(KNOWLEDGE_PATH.read_text())
-        except Exception:
-            pass
+    """Append today's deep dive to knowledge.json under daily_deep_analyses.
 
-    if not isinstance(knowledge.get("daily_deep_analyses"), list):
-        knowledge["daily_deep_analyses"] = []
-
-    # Dedup: remove any existing entry for the same date (in case of re-run)
-    knowledge["daily_deep_analyses"] = [
-        e for e in knowledge["daily_deep_analyses"]
-        if e.get("date") != date
-    ]
+    P-035: routes the read-modify-write through `core.file_lock.
+    locked_knowledge_update` so concurrent writers (Qwen scan analyzer,
+    KnowledgeManager.save, refinement_chain, outcome_checker, weekly
+    Claude trainer) cannot clobber each other. Pre-P-035 this used a
+    bare `KNOWLEDGE_PATH.write_text(...)` — non-atomic, no lock, and a
+    crash mid-write left a half-written knowledge.json.
+    """
+    from core.file_lock import locked_knowledge_update
 
     entry = {
         "date": date,
@@ -1227,11 +1222,20 @@ def _save_to_knowledge(date: str, per_miner: Dict[str, str], fleet_synth: str,
         "source": "qwen_daily_deep_dive",
     }
 
-    # Keep last 30 days of deep dives
-    knowledge["daily_deep_analyses"] = [entry] + knowledge["daily_deep_analyses"][:29]
-    knowledge["last_updated"] = datetime.now().isoformat()
+    with locked_knowledge_update(str(KNOWLEDGE_PATH)) as knowledge:
+        if not isinstance(knowledge.get("daily_deep_analyses"), list):
+            knowledge["daily_deep_analyses"] = []
 
-    KNOWLEDGE_PATH.write_text(json.dumps(knowledge, indent=2))
+        # Dedup: remove any existing entry for the same date (in case of re-run)
+        knowledge["daily_deep_analyses"] = [
+            e for e in knowledge["daily_deep_analyses"]
+            if e.get("date") != date
+        ]
+
+        # Keep last 30 days of deep dives
+        knowledge["daily_deep_analyses"] = [entry] + knowledge["daily_deep_analyses"][:29]
+        knowledge["last_updated"] = datetime.now().isoformat()
+
     logger.info("Saved deep dive to knowledge.json under daily_deep_analyses[0]")
 
 

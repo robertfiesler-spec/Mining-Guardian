@@ -669,29 +669,27 @@ Keep it to one clear, specific rule."""
         return analysis
 
     def _store_analysis(self, scan_id: int, analysis: str) -> None:
-        """Store LLM analysis in knowledge.json."""
+        """Store LLM analysis in knowledge.json.
+
+        P-035: routes the read-modify-write through `core.file_lock.
+        locked_knowledge_update` so this writer cannot race with the
+        Qwen scan analyzer in core/mining_guardian.py (which writes the
+        same `llm_scan_analyses` list) or with KnowledgeManager.save.
+        Pre-P-035 this used a hand-rolled tmp + os.replace.
+        """
         try:
-            knowledge = {}
-            if KNOWLEDGE_PATH.exists():
-                knowledge = json.loads(KNOWLEDGE_PATH.read_text())
-
-            # Store latest LLM analyses (keep last 50)
-            llm_analyses = knowledge.get("llm_scan_analyses", [])
-            llm_analyses.insert(0, {
-                "scan_id": scan_id,
-                "timestamp": datetime.now().isoformat(),
-                "analysis": analysis[:2000],
-                "source": "local_llm",
-                "model": self.model,
-            })
-            knowledge["llm_scan_analyses"] = llm_analyses[:50]
-
-            # Atomic write
-            tmp = str(KNOWLEDGE_PATH) + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump(knowledge, f, indent=2)
-            import os
-            os.replace(tmp, str(KNOWLEDGE_PATH))
+            from core.file_lock import locked_knowledge_update
+            with locked_knowledge_update(str(KNOWLEDGE_PATH)) as knowledge:
+                # Store latest LLM analyses (keep last 50)
+                llm_analyses = knowledge.get("llm_scan_analyses", [])
+                llm_analyses.insert(0, {
+                    "scan_id": scan_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "analysis": analysis[:2000],
+                    "source": "local_llm",
+                    "model": self.model,
+                })
+                knowledge["llm_scan_analyses"] = llm_analyses[:50]
         except Exception as e:
             logger.warning("Failed to store LLM analysis: %s", e)
 

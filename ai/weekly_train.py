@@ -7,7 +7,8 @@ Runs once a week (Sunday 3am) to deep-analyze the full fleet
 with ALL accumulated data — logs, chain readings, pool stats,
 hardware identity, per-chip data, HVAC/weather correlation.
 
-Cron: 0 3 * * 0 cd /root/Mining-Guardian && venv/bin/python weekly_train.py >> /tmp/weekly_train.log 2>&1
+Schedule: managed by a launchd plist on the Mac Mini install (see
+docs/CRON_SCHEDULE.md for the canonical schedule).
 """
 
 import sys
