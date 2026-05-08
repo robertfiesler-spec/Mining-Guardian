@@ -608,6 +608,135 @@ step_layout_install_root() {
     log "INFO laid out install root at ${MG_INSTALL_ROOT} (bin/+logs/ root:wheel, rest miningguardian:staff)"
 }
 
+# P-028 (2026-05-08) — payload-scripts allowlist for the upgrade
+# cleanup. MUST stay byte-aligned with the per-file `--include`
+# `scripts/...` block in installer/macos-pkg/scripts/build_pkg.sh
+# step 4a (P-024). Drift between the two is asserted by
+# tests/installer/test_p028_upgrade_stale_scripts_cleanup.sh §2 so a
+# future change that adds a new scheduled-job entrypoint to the
+# payload but forgets to add it here cannot quietly land.
+#
+# Read these as: "the only files that should remain inside
+# `${MG_INSTALL_ROOT}/scripts/` after a clean install or upgrade." Any
+# other file under that path on an already-installed Mini is stale
+# residue from a pre-P-024 payload — pkgbuild does not remove files
+# dropped by an older payload, only adds and overwrites, so the
+# upgrade path silently inherits operator-only scripts (backup_db.sh,
+# backup_mining_guardian.sh, start_guardian.sh, setup.sh, the
+# branding/ and diagnostics/ subdirs) unless this step explicitly
+# quarantines them.
+readonly MG_P028_ALLOWED_PAYLOAD_SCRIPTS=(
+    "__init__.py"
+    "cleanup_ams_logs.py"
+    "db_maintenance.sh"
+    "direct_collect_logs.py"
+    "daily_log_failure_report.py"
+    "morning_briefing.py"
+    "daily_operator_review.py"
+)
+
+step_quarantine_stale_payload_scripts() {
+    # P-028 (2026-05-08) — quarantine stale scripts left in
+    # `${MG_INSTALL_ROOT}/scripts/` from pre-P-024 installs.
+    #
+    # Live Mini finding (after install of build b1999c25346f on
+    # 2026-05-08): the package payload was clean (P-024 allowlist
+    # honoured), but `${MG_INSTALL_ROOT}/scripts/` on the upgraded
+    # Mini still contained `backup_db.sh`, `backup_mining_guardian.sh`,
+    # `start_guardian.sh`, `setup.sh`, plus other operator/dead
+    # scripts from the pre-P-024 payload. `pkgbuild` ADDS and
+    # OVERWRITES files but never removes files that were dropped by
+    # an older payload but omitted from the new one — so the upgrade
+    # path silently inherits operator-only scripts that reference
+    # `BigBobby`, `100.103.185.53`, the retired Hostinger VPS, and
+    # `/Volumes/Big-Bobby-T9/...`.
+    #
+    # Strategy: quarantine, not delete. Move every non-allowlisted
+    # entry under `${MG_INSTALL_ROOT}/scripts/` into a timestamped
+    # quarantine directory at
+    # `${MG_INSTALL_ROOT}/quarantine/scripts-<ts>/` and chmod 0700
+    # root:wheel. The quarantine is OUTSIDE
+    # `${MG_INSTALL_ROOT}/scripts/` so no scheduled-job launcher can
+    # exec it, and operators can recover or delete it later without
+    # the next install reverting their decision. Matches the
+    # `cp config.json config.json.bak.$(date +%Y%m%d-%H%M%S)` pattern
+    # documented in CLAUDE.md "Failure Mode 6" / "Stop-and-check
+    # before irreversible actions".
+    #
+    # Idempotent: on a fresh install the scripts dir contains only
+    # allowlisted files and the quarantine dir is never created. On a
+    # second install over an already-cleaned tree the scan also finds
+    # nothing to move.
+    local scripts_dir="${MG_INSTALL_ROOT}/scripts"
+    if [[ ! -d "$scripts_dir" ]]; then
+        log "INFO P-028: ${scripts_dir} absent; nothing to quarantine"
+        return 0
+    fi
+
+    # Bash-3.2-safe membership check (no associative arrays).
+    _p028_is_allowed() {
+        local name="$1" allowed
+        for allowed in "${MG_P028_ALLOWED_PAYLOAD_SCRIPTS[@]}"; do
+            if [[ "$name" == "$allowed" ]]; then return 0; fi
+        done
+        return 1
+    }
+
+    # First pass: collect stale entries WITHOUT moving anything, so
+    # the quarantine dir is only created when there is something to
+    # move.
+    local stale_entries=()
+    local entry name
+    # `find -mindepth 1 -maxdepth 1` lists scripts/ children only —
+    # subdirs like `branding/` and `diagnostics/` (left behind by a
+    # pre-P-024 install) are quarantined as a unit.
+    while IFS= read -r entry; do
+        [[ -z "$entry" ]] && continue
+        name="$(basename "$entry")"
+        if ! _p028_is_allowed "$name"; then
+            stale_entries+=("$entry")
+        fi
+    done < <(find "$scripts_dir" -mindepth 1 -maxdepth 1 2>/dev/null)
+
+    if (( ${#stale_entries[@]} == 0 )); then
+        log "INFO P-028: ${scripts_dir} already clean (no stale entries)"
+        unset -f _p028_is_allowed
+        return 0
+    fi
+
+    local ts quarantine_root quarantine_dir
+    ts="$(date -u +%Y%m%dT%H%M%SZ)"
+    quarantine_root="${MG_INSTALL_ROOT}/quarantine"
+    quarantine_dir="${quarantine_root}/scripts-${ts}"
+
+    install -d -m 0700 -o root -g wheel "$quarantine_root"
+    install -d -m 0700 -o root -g wheel "$quarantine_dir"
+
+    local moved=0 failed=0
+    for entry in "${stale_entries[@]}"; do
+        name="$(basename "$entry")"
+        if /bin/mv "$entry" "${quarantine_dir}/${name}" 2>>"$MG_INSTALL_LOG"; then
+            moved=$((moved + 1))
+        else
+            failed=$((failed + 1))
+        fi
+    done
+    # Quarantined contents must NOT be world- or group-readable;
+    # files like `backup_db.sh` reference operator-only paths the
+    # customer should never copy/paste.
+    chmod -R go-rwx "$quarantine_dir" 2>>"$MG_INSTALL_LOG" || true
+
+    log "INFO P-028: quarantined ${moved} stale entr(y/ies) from ${scripts_dir} -> ${quarantine_dir} (failed=${failed})"
+    if (( failed > 0 )); then
+        # Non-fatal warn rather than a hard fail: install should
+        # still complete with services up. Operator can investigate
+        # via `ls ${scripts_dir}` post-install.
+        log "WARN P-028: ${failed} entr(y/ies) could not be quarantined; ${scripts_dir} may still contain stale residue"
+    fi
+    unset -f _p028_is_allowed
+    return 0
+}
+
 step_normalize_discovery_sink_perms() {
     # P-027 (2026-05-08) — pre-create the P-022 scanner discovery sink
     # directory tree under MG_INSTALL_ROOT and (re-)normalise ownership
@@ -2518,6 +2647,12 @@ main() {
     # half-installed.
     step_collect_customer_info
     step_layout_install_root
+    # P-028 first: quarantine stale pre-P-024 scripts BEFORE any
+    # downstream step might exec one. Independent of P-027 (different
+    # paths: scripts/ vs cron_tracking/scanner_discovery/).
+    step_quarantine_stale_payload_scripts
+    # P-027 second: pre-create + normalise the discovery sink dir so
+    # the scanner's first append succeeds. Independent of P-028.
     step_normalize_discovery_sink_perms
     step_drop_dotenv
     step_provision_postgres
