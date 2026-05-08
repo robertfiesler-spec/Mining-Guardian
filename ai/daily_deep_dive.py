@@ -144,11 +144,20 @@ except Exception:
 # `local_llm_url` and `ollama_url` are still honored when set, and either
 # may carry a `/api/generate` suffix that we strip below to obtain the
 # base host this module needs.
+# P-031 (2026-05-08): model resolution delegated to core.ollama_config so
+# `local_llm_model` / `ollama_model` config keys still win, but the
+# fallback chain is OLLAMA_MODEL env → MG_INSTALL_LLM_MODEL env →
+# llama3.2:3b instead of the never-pulled qwen2.5:32b.
 LLM_URL = _cfg.get("local_llm_url") or _cfg.get("ollama_url") or os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 # ollama_url in config points at /api/generate; strip it
 if LLM_URL.endswith("/api/generate"):
     LLM_URL = LLM_URL[: -len("/api/generate")]
-LLM_MODEL = _cfg.get("local_llm_model") or "qwen2.5:32b-instruct-q4_K_M"
+try:
+    from core.ollama_config import resolve_ollama_model as _resolve_ollama_model
+except Exception:  # pragma: no cover — defensive, core/ should always import
+    def _resolve_ollama_model(explicit=None):
+        return explicit or os.getenv("OLLAMA_MODEL") or os.getenv("MG_INSTALL_LLM_MODEL") or "llama3.2:3b"
+LLM_MODEL = _resolve_ollama_model(_cfg.get("local_llm_model") or _cfg.get("ollama_model"))
 
 NUM_CTX = 32768        # Qwen 2.5 32B quantized model's full context window
 NUM_PREDICT = -1       # -1 = unlimited output tokens per Ollama

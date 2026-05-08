@@ -35,8 +35,20 @@ logger = logging.getLogger("combine_knowledge")
 # P-018E: collapsed the doubled os.getenv (the inner call resolved the same
 # env var, dead code) and switched the default from retired ROBS-PC to the
 # local Mini Ollama (D-9 / S-13 / .env shipped by postinstall.sh:948).
+# P-031 (2026-05-08): MODEL fallback now sourced from
+# core.ollama_config.resolve_ollama_model so the 32B fallback that no D-13
+# install path ever pulled is gone. Resolution: OLLAMA_MODEL env →
+# MG_INSTALL_LLM_MODEL env → llama3.2:3b.
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
-MODEL      = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct-q4_K_M")
+try:
+    # combine_knowledge.py is sometimes invoked outside the repo root (e.g.
+    # from the federated mastering box that only has the ai/ directory).
+    # Falling back to an inline resolver keeps that path working.
+    from core.ollama_config import resolve_ollama_model as _resolve_ollama_model
+except Exception:  # pragma: no cover
+    def _resolve_ollama_model(explicit=None):
+        return explicit or os.getenv("OLLAMA_MODEL") or os.getenv("MG_INSTALL_LLM_MODEL") or "llama3.2:3b"
+MODEL      = _resolve_ollama_model()
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "master_knowledge.json")
 
 # Use Claude API if available, fall back to Ollama
