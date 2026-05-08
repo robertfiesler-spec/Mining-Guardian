@@ -341,6 +341,44 @@ step_4_assemble_payload() {
             --exclude 'python-runtime/' \
             "${vendor_dir}/" "${PAYLOAD_DIR}/runtime/"
         _log "  vendored runtime from ${vendor_dir} (python-wheels/ split out — see step 4e; python-runtime/ split out — see step 4i, P-026)"
+
+        # P-026 image-sidecar portability (2026-05-08).
+        # Normalise every `runtime/images/*.sha256` so its filename
+        # field is the basename only, never an absolute build-Mac path.
+        # Pre-fix sidecars carried `<hash>  /Users/BigBobby/MiningGuardian-vendor/images/<file>.tar`
+        # which (1) leaked the build Mac's home path into the customer
+        # payload and (2) made `shasum -c` non-portable — the customer
+        # would have to keep that exact absolute layout to verify.
+        # Post-fix the format is `<hash>  <basename>.tar`, which is what
+        # `shasum -c` expects when run from the same directory as the
+        # tarball. No installer step currently consumes the sidecar
+        # (load_postgres_image in lib/install_colima.sh reads the .tar
+        # only); this is purely a portability + payload-hygiene fix.
+        local images_dir="${PAYLOAD_DIR}/runtime/images"
+        if [[ -d "$images_dir" ]]; then
+            local sidecar
+            for sidecar in "${images_dir}"/*.sha256; do
+                [[ -f "$sidecar" ]] || continue
+                local tmp
+                tmp="$(/usr/bin/mktemp "${sidecar}.XXXXXX")" || _die 49 "step 4c: mktemp failed for ${sidecar}"
+                # awk: keep $1 (hash); rewrite the path field to basename.
+                # Using awk (not sed) to stay BSD/GNU portable per
+                # CLAUDE.md "Failure mode 8" and prior P-019 BSD-sed
+                # lessons. Two-space separator matches `shasum` output.
+                /usr/bin/awk '
+                    {
+                        hash = $1
+                        rest = $0
+                        sub(/^[^ ]+[ ]+/, "", rest)
+                        n = split(rest, parts, "/")
+                        base = parts[n]
+                        printf "%s  %s\n", hash, base
+                    }
+                ' "$sidecar" > "$tmp" || _die 49 "step 4c: awk normalize failed for ${sidecar}"
+                /bin/mv "$tmp" "$sidecar" || _die 49 "step 4c: mv failed for ${sidecar}"
+                _log "  normalised sidecar: ${sidecar#${PAYLOAD_DIR}/}"
+            done
+        fi
     else
         _log "  WARN ${vendor_dir} missing — runtime/ left empty (postinstall will fail at install time, but pkg build proceeds for layout testing)"
     fi

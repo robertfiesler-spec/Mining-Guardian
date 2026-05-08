@@ -300,6 +300,18 @@ def test_send_deep_dive_report_is_deleted():
 # assembled payload. The pytest guard below catches NEW Bobby-Mac
 # contamination introduced into shipped runtime files (api/, core/, ai/,
 # etc.) without depending on rsync availability inside CI.
+#
+# Out of scope for this pytest guard: the post-build `runtime/images/`
+# directory (vendored .tar tarballs + .sha256 sidecars copied in by
+# build_pkg.sh step 4c from `${HOME}/MiningGuardian-vendor/`). Those
+# files do NOT exist in the repo tree — they only land in the assembled
+# payload during a real `make pkg` run on the build Mac. The image
+# sidecar Bobby-Mac contamination surface is covered separately by the
+# rsync-replay-style installer test
+# `tests/installer/test_p026_image_sha_sidecar_portability.sh`, which
+# re-runs the build_pkg.sh step-4c normalisation against a fixture and
+# asserts no `*.sha256` line ends up with `/Users/BigBobby`,
+# `/Volumes/`, or `MiningGuardian-vendor` in its filename field.
 
 BIG_BOBBY = "BigBobby"
 BOBBY_HOME_PATH = "/Users/BigBobby"
