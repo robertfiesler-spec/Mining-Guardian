@@ -818,6 +818,64 @@ step_4_assemble_payload() {
     fi
     _log "step 4k OK: installer-resources staged at ${installer_resources_dst} (D-18 P-025)"
 
+    # 4l. Baseline knowledge.json seed (P-029 knowledge — 2026-05-08).
+    #
+    # Mining Guardian's local-LLM learning loop reads/writes a single
+    # `knowledge.json` artifact (miner_profiles, miner_fingerprints,
+    # refined_insights, operator_decisions, baselines, hardware_facts,
+    # ...). v1.0.3 shipped without one — every fresh customer install
+    # started cold, lost the 96 miner_profiles / 133 fingerprints / 61
+    # refined_insights captured in the canonical seed
+    # (`installer/macos-pkg/resources/knowledge/knowledge.json`,
+    # SHA-256 prefix 2edea974d711, last_updated 2026-04-29). See
+    # docs/DECISIONS.md D-29 and docs/MONTHLY_KNOWLEDGE_UPDATE.md.
+    #
+    # The seed is staged into the customer payload at
+    # `<payload>/installer-resources/knowledge/knowledge.json`.
+    # postinstall.sh::step_install_knowledge_json reads it from there and
+    # places it at `${MG_INSTALL_ROOT}/knowledge/knowledge.json` on a
+    # FRESH install (creates dir tree, copies, validates JSON, sets
+    # miningguardian:staff dirs=0775 files=0664, emits a P-029 proof
+    # log line). On UPGRADE the postinstall preserves the existing
+    # runtime file and stages the new seed alongside as
+    # `${MG_INSTALL_ROOT}/knowledge/incoming/knowledge-seed-<version>-<sha>.json`
+    # — never overwrites learned site-specific runtime knowledge.
+    #
+    # Build-time hard-fail rules (this step):
+    #   1. Seed file must exist in repo at the canonical path.
+    #   2. Seed file must parse as JSON.
+    #   3. Seed file must contain at least one of the three primary
+    #      knowledge sections (miner_profiles, miner_fingerprints,
+    #      refined_insights). An empty seed would defeat the purpose;
+    #      a future refresh that accidentally truncates the file fails
+    #      the build instead of silently shipping cold-start to customers.
+    local knowledge_src="${PKG_DIR}/resources/knowledge/knowledge.json"
+    if [[ ! -r "$knowledge_src" ]]; then
+        _die 43 "step 4l: baseline knowledge seed missing: ${knowledge_src} — P-029 (knowledge) requires the seed at this path. Restore from knowledge_backup.json or the master knowledge artifact (see docs/MONTHLY_KNOWLEDGE_UPDATE.md)."
+    fi
+    if ! /usr/bin/python3 -c "
+import json, sys
+with open(sys.argv[1], 'rb') as fh:
+    d = json.load(fh)
+if not isinstance(d, dict):
+    sys.exit('seed is not a JSON object')
+keys = set(d.keys())
+required_any = {'miner_profiles', 'miner_fingerprints', 'refined_insights'}
+if not (keys & required_any):
+    sys.exit('seed has none of the primary knowledge sections: %s' % sorted(required_any))
+" "$knowledge_src" >/dev/null 2>&1; then
+        _die 43 "step 4l: baseline knowledge seed at ${knowledge_src} failed JSON / shape validation (P-029 knowledge)"
+    fi
+    install -d -m 0755 "${installer_resources_dst}/knowledge"
+    install -m 0644 "$knowledge_src" "${installer_resources_dst}/knowledge/knowledge.json"
+    if [[ ! -r "${installer_resources_dst}/knowledge/knowledge.json" ]]; then
+        _die 43 "step 4l: staged knowledge.json not readable in payload (P-029 knowledge)"
+    fi
+    local knowledge_size knowledge_sha
+    knowledge_size="$(/usr/bin/wc -c < "${installer_resources_dst}/knowledge/knowledge.json" | /usr/bin/tr -d ' ')"
+    knowledge_sha="$(/usr/bin/shasum -a 256 "${installer_resources_dst}/knowledge/knowledge.json" | /usr/bin/awk '{print $1}')"
+    _log "step 4l OK: baseline knowledge.json staged at ${installer_resources_dst}/knowledge/knowledge.json size=${knowledge_size} sha256=${knowledge_sha:0:12} (P-029 knowledge)"
+
     _log "step 4 OK: payload assembled at ${PAYLOAD_DIR}"
 }
 
