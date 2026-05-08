@@ -86,8 +86,27 @@ logger = logging.getLogger("mining_guardian")
 # IP to localhost. Operators with a remote Ollama can still set
 # OLLAMA_URL (or config.json "local_llm_url") explicitly; the default is
 # Mini-local so a fresh customer install never reaches off-Mini.
-DEFAULT_LLM_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
-DEFAULT_MODEL = "qwen2.5:32b-instruct-q4_K_M"
+# P-031 (2026-05-08): default model now sourced from
+# core.ollama_config.resolve_ollama_model so the never-installed
+# qwen2.5:32b fallback can no longer be hit. Resolution order is OLLAMA_MODEL
+# env → MG_INSTALL_LLM_MODEL env (the value the .pkg actually pulled per
+# D-13) → llama3.2:3b. The /api/generate suffix is stripped here because
+# this module's __init__ re-appends it; the rest of the code expects a
+# bare host URL.
+def _default_llm_url() -> str:
+    raw = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+    if raw.endswith("/api/generate"):
+        raw = raw[: -len("/api/generate")]
+    return raw
+
+
+def _default_model() -> str:
+    from core.ollama_config import resolve_ollama_model
+    return resolve_ollama_model()
+
+
+DEFAULT_LLM_URL = _default_llm_url()
+DEFAULT_MODEL = _default_model()
 
 
 class LocalLLMAnalyzer:

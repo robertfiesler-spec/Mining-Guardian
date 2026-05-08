@@ -1318,7 +1318,17 @@ CATALOG_API_KEY=${_CAT_KEY_Q}
 INTERNAL_API_SECRET=${_INT_SEC_Q}
 
 # Ollama — local GPU inference on 127.0.0.1 (S-13 fix: no hardcoded Tailscale IPs)
+# P-031 (2026-05-08): OLLAMA_URL + OLLAMA_MODEL exported here so every Python
+# call site (core/mining_guardian.py scan analyzer, ai/local_llm_analyzer.py,
+# ai/daily_deep_dive.py, ai/refinement_chain.py, ai/combine_knowledge.py)
+# resolves the model the .pkg actually pulled per D-13. Without these the
+# scanner fell back to qwen2.5:32b-instruct-q4_K_M which no D-13 install
+# path pulls — every scan logged "Qwen scan analysis failed: HTTP Error 404:
+# Not Found". The model value is the same MG_INSTALL_LLM_MODEL the
+# detect_ram.sh / install_ollama.sh chain wrote.
 OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_URL=http://127.0.0.1:11434/api/generate
+OLLAMA_MODEL=${MG_INSTALL_LLM_MODEL_Q}
 
 # Runtime config (D-2: auto_approve=false — explicit opt-in required)
 MG_DRY_RUN=${MG_DRY_RUN_Q}
@@ -2085,6 +2095,15 @@ cfg["ams_password"]      = "env:AMS_PASSWORD"
 cfg["ams_workspace_id"]  = "env:AMS_WORKSPACE_ID"
 cfg["slack_webhook_url"] = "env:SLACK_WEBHOOK_URL"
 cfg["slack_bot_token"]   = "env:SLACK_BOT_TOKEN"
+# P-031 (2026-05-08): surface Ollama URL + model on config.json so
+# GuardianConfig.from_file picks them up. `env:` placeholders mean a key
+# rotation is a one-line .env edit; the .env values are the OLLAMA_URL /
+# OLLAMA_MODEL written by step_drop_dotenv from MG_INSTALL_LLM_MODEL
+# (the model detect_ram.sh / install_ollama.sh actually pulled per D-13).
+# core.ollama_config.resolve_* still falls back gracefully if these env
+# vars are absent on a future custom install.
+cfg["ollama_url"]        = "env:OLLAMA_URL"
+cfg["ollama_model"]      = "env:OLLAMA_MODEL"
 cfg["dry_run"]           = dry
 cfg.setdefault("approval_mode", "manual")
 cfg.setdefault("rules", [])

@@ -2382,15 +2382,21 @@ class MiningGuardian:
                     f"\nWeather: {wx_data}\nHVAC (both systems): {hvac_data}\n\n"
                     "Provide: DIAGNOSIS (1 sentence), ACTION (bullet list with miner IPs), PATTERN (1 sentence or 'none')."
                 )
+                # P-031: resolve via core.ollama_config so the never-pulled
+                # `qwen2.5:32b-instruct-q4_K_M` cannot creep back in as a
+                # silent default. GuardianConfig.from_file already populates
+                # `ollama_url` / `ollama_model` from env-first resolution; the
+                # call below is the belt + suspenders for code paths that
+                # construct a config directly.
+                from core.ollama_config import resolve_ollama_url, resolve_ollama_model
                 payload = {
-                    "model": getattr(self.config, "ollama_model", "qwen2.5:32b-instruct-q4_K_M"),
+                    "model": resolve_ollama_model(getattr(self.config, "ollama_model", None)),
                     "prompt": qwen_prompt,
                     "stream": False,
                     "options": {"temperature": 0.3, "num_ctx": 16384},
                 }
                 req = _urlreq.Request(
-                    # P-018E: local Mini Ollama default; was retired ROBS-PC.
-                    getattr(self.config, "ollama_url", os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")),
+                    resolve_ollama_url(getattr(self.config, "ollama_url", None)),
                     data=_json.dumps(payload).encode(),
                     headers={"Content-Type": "application/json"},
                 )

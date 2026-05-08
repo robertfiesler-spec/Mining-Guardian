@@ -149,13 +149,16 @@ def preflight_checks(config, resume_from, smoke_test):
 
     # Check 5: Qwen endpoint reachable (skip if resuming past Pass 3)
     if resume_from < 4:
-        url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate"))
+        # P-031: resolve via core.ollama_config so the un-installed 32B is
+        # never the silent default.
+        from core.ollama_config import resolve_ollama_url, resolve_ollama_model
+        url = resolve_ollama_url(config.get("ollama_url"))
         tags_url = url.replace("/api/generate", "/api/tags")
         try:
             with urllib.request.urlopen(tags_url, timeout=10) as r:
                 data = json.loads(r.read().decode())
             models = [m["name"] for m in data.get("models", [])]
-            target = config.get("ollama_model", "qwen2.5:32b-instruct-q4_K_M")
+            target = resolve_ollama_model(config.get("ollama_model"))
             if target not in models:
                 errors.append(f"Qwen model '{target}' not loaded on local Ollama. Available: {models}")
             else:
@@ -254,13 +257,15 @@ def fire_pass_3_qwen_reflection(pass_1, pass_2, config, smoke_test=False):
         prompt = "Say 'SMOKE TEST PASS 3 OK' and nothing else."
     else:
         prompt = build_pass_3_prompt(pass_1, pass_2)
+    # P-031: env-first resolution (see core.ollama_config docstring).
+    from core.ollama_config import resolve_ollama_url, resolve_ollama_model
     payload = {
-        "model": config.get("ollama_model", "qwen2.5:32b-instruct-q4_K_M"),
+        "model": resolve_ollama_model(config.get("ollama_model")),
         "prompt": prompt,
         "stream": False,
         "options": {"temperature": 0.4, "num_ctx": 32768, "num_predict": -1},
     }
-    url = config.get("ollama_url", os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate"))
+    url = resolve_ollama_url(config.get("ollama_url"))
     logger.info("Pass 3: firing Qwen (prompt %d chars, unconstrained output)", len(prompt))
     t0 = time.time()
     req = urllib.request.Request(

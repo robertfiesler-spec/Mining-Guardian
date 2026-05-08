@@ -76,6 +76,12 @@ class GuardianConfig:
     approval_mode: str = "manual"
     miner_filters: Dict[str, Any] = field(default_factory=dict)
     rules: List[ParameterRule] = field(default_factory=list)
+    # P-031 (2026-05-08): Ollama endpoint + model surfaced on the config so
+    # callers stop falling back to the never-installed
+    # `qwen2.5:32b-instruct-q4_K_M`. Resolution order is env-first via
+    # core.ollama_config — see that module's docstring for the rationale.
+    ollama_url: Optional[str] = None
+    ollama_model: Optional[str] = None
 
     @staticmethod
     def _resolve(value: str) -> str:
@@ -93,6 +99,26 @@ class GuardianConfig:
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         rules = [ParameterRule(**item) for item in raw.get("rules", [])]
+        # P-031: resolve Ollama URL + model with env-first precedence so the
+        # scanner never falls back to the un-installed 32B model. config.json
+        # values (if any) are resolved through `_resolve` so `env:OLLAMA_URL`
+        # / `env:OLLAMA_MODEL` placeholders work. When the key is absent OR
+        # the env var the placeholder points to is unset, the helper falls
+        # back to env-direct → D-13 default — the placeholder must NOT
+        # raise on the OLLAMA path because the env file legitimately may
+        # not carry one (helper has its own defaults).
+        from core.ollama_config import resolve_ollama_url, resolve_ollama_model
+
+        def _try_resolve(value):
+            if not value:
+                return None
+            try:
+                return GuardianConfig._resolve(value)
+            except EnvironmentError:
+                return None
+
+        cfg_ollama_url = _try_resolve(raw.get("ollama_url"))
+        cfg_ollama_model = _try_resolve(raw.get("ollama_model"))
         return GuardianConfig(
             ams_base_url=raw["ams_base_url"],
             ams_email=GuardianConfig._resolve(raw["ams_email"]),
@@ -107,6 +133,8 @@ class GuardianConfig:
             approval_mode=raw.get("approval_mode", "manual"),
             miner_filters=raw.get("miner_filters", {}),
             rules=rules,
+            ollama_url=resolve_ollama_url(cfg_ollama_url),
+            ollama_model=resolve_ollama_model(cfg_ollama_model),
         )
 
 
