@@ -293,3 +293,138 @@ The decision matrix for delivering the P-034 + P-035 fix to the Mini
 fresh-install media for the next customer Mini, a rebuild from `main`
 1327060 is the recommended step so the new build does not ship with
 the same drift.
+
+---
+
+## Late afternoon update (2026-05-08) — `2b41764` rebuild + Mini install + B-45 / P-036 surfaced
+
+After the eecde3a-based audit above, the operator decided to deliver
+P-034 + P-035 to the Mini via a fresh package rebuild (Outcome B in
+the handoff decision matrix), since the install tree on the Mini is
+not git-managed (`git rev-parse --is-inside-work-tree` returned
+`not_git`). The rebuild ran from main commit `2b41764` (the merge
+commit for PR #166 / docs handoff), which had `33bac6f` (P-034 +
+P-035) as a direct ancestor.
+
+| Field | Value |
+|---|---|
+| Source `main` commit | `2b41764` (full SHA `2b417642121b...`) |
+| Source `main` commit message | `Merge pull request #166 from robertfiesler-spec/docs/handoff-2026-05-08-pkg-build` |
+| Pkg path on build Mac | `build/MiningGuardian-1.0.3-2b41764a121b.pkg` |
+| Pkg SHA-256 (corrected sidecar) | `463ca8d69d4e86ed9be96a76432628f83ee34f00b0764edad73a2c7f85b67387` |
+| Notarization | submitted, accepted, stapled, validated |
+| Gatekeeper | `spctl --assess -t install -v` → accepted (Notarized Developer ID) |
+| Install on Mini | `installer -pkg ... -target /` rc=0 |
+| Build stamp on Mini | `version=1.0.3 / git_sha=2b41764a121b / stamped_utc=2026-05-08T20:18:17Z` |
+
+**Note on the SHA-256 sidecar:** the sidecar had to be **regenerated**
+(the first sidecar value did not match the actual pkg bytes once the
+final stapled artifact was on disk). The corrected sidecar value
+above is the only one to use; do not refer to any earlier value as
+canonical.
+
+### Postinstall behavior on the Mini (2b41764 build)
+
+All as designed:
+
+- preserved the existing runtime `knowledge.json` (upgrade branch),
+- staged the packaged seed under
+  `${MG_INSTALL_ROOT}/knowledge/incoming/knowledge-seed-1.0.3-2b41764a121b.json`
+  (deterministic name — short SHA matches the build),
+- reconciled the Postgres `mg` role and re-verified TCP auth,
+- preserved `config.json`,
+- finished cleanly.
+
+### What the first scan after install proved (P-034 / P-035 working)
+
+The first post-install scan ran with **exit code 0** and persisted
+to Postgres. Logs confirmed every earlier-today fix took effect:
+
+- ❌ `Errno 2 No such file or directory: '/root/Mining-Guardian/knowledge.json.tmp'` — gone (P-034)
+- ❌ `Knowledge update skipped: 'total_flags'` — gone (P-035 backfill)
+- ❌ `No module named 'knowledge_manager'` — gone (P-030 sys.path)
+- ❌ `Qwen scan analysis failed: HTTP Error 404` — gone (P-031 model resolver)
+- ✅ `INFO llm_scan_analyses written` lines now appear; the canonical
+  file's `llm_scan_analyses` array reached 176 entries — Vision
+  Anchor 1's training stream is finally accumulating.
+
+### The new failure mode the same scan exposed (B-45 / P-036)
+
+P-035's `core.file_lock.locked_knowledge_update` and
+`atomic_write_json` create a temp file in the parent directory of
+the path they were given and call `os.replace(tmp, path)`. When
+`path` is the P-029 compat symlink at
+`${MG_INSTALL_ROOT}/knowledge.json`, POSIX `rename` overwrites the
+**symlink** with a regular file rather than updating the target.
+Every active writer computes its target as `_ROOT / "knowledge.json"`
+which in the install layout IS the symlink — so the first writer to
+fire after install broke the compat path immediately.
+
+Live observation on the Mini at 15:43 (the same day):
+
+- `${MG_INSTALL_ROOT}/knowledge/knowledge.json` (canonical) —
+  intact: 3,739,968 bytes, sha256
+  `2edea974d711ac0ca648e796468cdb8ca0779fe32539f97a41b8b2f1a921820c`,
+  96 miner_profiles, 133 miner_fingerprints, 176 llm_scan_analyses.
+- `${MG_INSTALL_ROOT}/knowledge.json` (was symlink) — replaced by a
+  root-owned **regular file of 948 bytes**.
+- Reads via canonical path kept working; reads via the compat path
+  silently saw a stale 948-byte file. A divergence that would
+  compound over time. Vision Anchor 1 risk.
+
+### Manual mitigation applied on the Mini before the next scan window
+
+(Already done — listed here for the audit trail, not as instructions.)
+
+1. Quarantined the bad regular file under
+   `${MG_INSTALL_ROOT}/knowledge/quarantine/knowledge-json-regular-file-<timestamp>.json`.
+2. Removed the regular file at the symlink path.
+3. Recreated the symlink:
+   `ln -s knowledge/knowledge.json /Library/Application\ Support/MiningGuardian/knowledge.json`
+4. `chown -h miningguardian:staff` on the link.
+5. Verified with `ls -la` — leading character is `l` (symlink); the
+   canonical file is intact.
+
+### P-036 fix landed on `main` after the mitigation
+
+PR #169 (`mg/p036-knowledge-symlink-preserve-canonical-resolver`,
+squash `906fa4a`, merge `fab6694`) was opened, reviewed, and merged
+the same evening. The fix routes both `locked_knowledge_update` and
+`atomic_write_json` through a new private helper
+`_resolve_write_target(path)` that, if the supplied path is a
+symlink whose target's parent exists, returns the symlink's target
+as the rename destination. The temp file lands in the **target's**
+parent and `os.replace` lands on the canonical file, leaving the
+symlink itself untouched. The lock file is keyed off the resolved
+target so two writers — one given the symlink, one given the
+canonical path — serialize against the same flock.
+
+Tests on `main` at `fab6694`:
+
+- `tests/test_p036_knowledge_symlink_preserve.py` — **9/9 PASS** (new)
+- `tests/test_p035_knowledge_persistence_hardening.py` — **26/26 PASS** (no regression)
+- `tests/test_p022_discovery_sink.py` — **23/23 OK** (no regression)
+
+### Status of `2b41764` package — superseded for new install media
+
+The `2b41764` package is **operational and installed on the Mini**,
+but it lacks the P-036 fix. It is therefore **superseded for new
+install media** by the rebuild from `main` at `fab6694`. The
+`fab6694` build is the recommended next-install artifact for both
+the existing customer Mini (delivers the P-036 fix) and any
+fresh-install media for the next customer.
+
+The `2b41764` package and its corrected sidecar should NOT be
+regenerated, deleted, or modified — they are the audit trail for
+the install that uncovered B-45.
+
+### Resume from here — `fab6694` rebuild + Mini install (paste-along)
+
+The full one-at-a-time resume sequence (build → notarize → staple →
+spctl → transfer → install → verify symlink survives the next scan
+→ run VPS/ROBS-PC shutdown gates) is in
+`docs/handoffs/HANDOFF_2026-05-08.md` under
+`⏸ PAUSED EOD 2026-05-08 — read this FIRST before anything else` →
+"Resume plan — pick up here in 1–2 hours (one-at-a-time)". That
+section is the canonical resume checklist; this runbook is the
+build-receipt half of the same story.
