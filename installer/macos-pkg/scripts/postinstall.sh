@@ -608,6 +608,55 @@ step_layout_install_root() {
     log "INFO laid out install root at ${MG_INSTALL_ROOT} (bin/+logs/ root:wheel, rest miningguardian:staff)"
 }
 
+step_normalize_discovery_sink_perms() {
+    # P-027 (2026-05-08) — pre-create the P-022 scanner discovery sink
+    # directory tree under MG_INSTALL_ROOT and (re-)normalise ownership
+    # and mode on every install. Bakes in the manual repair Rob applied
+    # on the live Mini after installing build b1999c25346f, where the
+    # scanner had logged repeated:
+    #   discovery_sink: failed to persist ... [Errno 13] Permission
+    #   denied: '${MG_INSTALL_ROOT}/cron_tracking/scanner_discovery/events-YYYY-MM-DD.jsonl'
+    # because the directory was `miningguardian:staff` 0755 but
+    # `events-*.jsonl` had been created `root:staff` 0644 by an earlier
+    # process and the next writer could not append. The repair was:
+    #   chown -R miningguardian:staff <sink-dir>
+    #   chmod 0775 <sink-dir>
+    #   chmod 0664 <sink-dir>/events-*.jsonl <sink-dir>/latest_findings.json
+    #
+    # This step replays that exact repair as a build-time idempotent
+    # normalisation. On a fresh install the dir does not exist yet and
+    # we only create it. On an upgrade over a Mini that already has
+    # root-owned event files, this step heals them BEFORE the scanner's
+    # next run, so subsequent appends succeed.
+    #
+    # The sink directory and on-disk format are owned by
+    # `core/discovery_sink.py` (P-022). The path here must stay in sync
+    # with `core.discovery_sink.resolve_sink_dir()`'s default. Override
+    # remains available via `MG_DISCOVERY_SINK_DIR` in `.env` for
+    # operator-side relocation.
+    local sink_parent="${MG_INSTALL_ROOT}/cron_tracking"
+    local sink_dir="${sink_parent}/scanner_discovery"
+
+    install -d -m 0775 "$sink_parent"
+    install -d -m 0775 "$sink_dir"
+    chown "${MG_INSTALL_OPERATOR_USER}:staff" "$sink_parent" "$sink_dir"
+    # 0775 (g+w) so the scanner — whatever uid it ends up running as —
+    # can append. group=staff is the LaunchDaemon's effective primary
+    # group on macOS regardless of the active console user.
+    chmod 0775 "$sink_parent" "$sink_dir"
+
+    # Self-heal upgrade case: if a prior install left files behind under
+    # an unexpected uid (e.g., `root:staff`), bring them back to
+    # `${MG_INSTALL_OPERATOR_USER}:staff` and 0664. Globs are best-effort
+    # because the sink may legitimately have zero files on a fresh
+    # install. `2>/dev/null || true` matches the manual repair shape.
+    chown -R "${MG_INSTALL_OPERATOR_USER}:staff" "$sink_dir" 2>/dev/null || true
+    chmod 0664 "$sink_dir"/events-*.jsonl 2>/dev/null || true
+    chmod 0664 "$sink_dir/latest_findings.json" 2>/dev/null || true
+
+    log "INFO normalised discovery sink ${sink_dir} (${MG_INSTALL_OPERATOR_USER}:staff, dir=0775, files=0664)"
+}
+
 _cocoa_alert() {
     # Best-effort macOS GUI dialog.
     #
@@ -2469,6 +2518,7 @@ main() {
     # half-installed.
     step_collect_customer_info
     step_layout_install_root
+    step_normalize_discovery_sink_perms
     step_drop_dotenv
     step_provision_postgres
     # P-029 — reconcile the `mg` Postgres role's password to .env
