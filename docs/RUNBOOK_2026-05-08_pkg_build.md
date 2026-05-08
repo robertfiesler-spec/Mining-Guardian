@@ -259,3 +259,37 @@ ROBS-PC + the historical archive on the VPS remain the safety net.
 - Comprehensive build-from-scratch runbook: `docs/RUNBOOK_2026-04-28_pkg_build.md`
 - Rebuild + USB + GitHub Release runbook: `docs/RUNBOOK_PKG_REBUILD.md`
 - Apple Developer credentials notes (off-repo): `/Users/BigBobby/Documents/Apple Cert/CREDENTIALS_NOTES.txt`
+
+---
+
+## Post-build update (2026-05-08 evening)
+
+The `MiningGuardian-1.0.3-eecde3a94c5b.pkg` documented above was
+**installed on the customer Mini** later the same day. Build stamp
+on the Mini matches `eecde3a94c5bfb3e102d50596eb25a1b447e7356`.
+Post-install verification passed every gate — see
+`docs/handoffs/HANDOFF_2026-05-08.md` "Post-install verification on
+the Mini" for the full list (knowledge.json size + sha + profile
+counts; OLLAMA env / config.json correct; scanner completed and
+persisted to Postgres; `latest_findings.json` mode 0664).
+
+Two new latent bugs surfaced live-only (the test suite did not catch
+them) and were fixed and merged the same day as **PR #168** (P-034
+Qwen scan path + P-035 KnowledgeManager `total_flags` backfill +
+writer-race sweep across 7 sites), squash `33bac6f` on merge
+`1327060`. **PR #167** (P-034-only) was closed as superseded by #168;
+no code from #167 reached `main`.
+
+PR #168 is **pure Python source** — no installer, payload,
+postinstall, plist, schema, migration, or notarization changes. As a
+result this `eecde3a` package remains a valid distribution artifact
+and **was NOT regenerated**. The package on the Mini is the same one
+documented above (SHA-256 still
+`dbe5c653ec375eec696df3538aef8d7525d852f1f7e5a4795162f7c836fe49ec`).
+
+The decision matrix for delivering the P-034 + P-035 fix to the Mini
+(git pull vs. rebuild from `main` 1327060) is in
+`docs/handoffs/HANDOFF_2026-05-08.md` under "Next exact steps". For
+fresh-install media for the next customer Mini, a rebuild from `main`
+1327060 is the recommended step so the new build does not ship with
+the same drift.
