@@ -120,6 +120,14 @@ class KnowledgeManager:
                 }
 
             profile = self.knowledge["miner_profiles"][mid]
+            # P-035 (B-35): seeded / federated / partially-merged knowledge
+            # may carry profiles missing one or more of these keys (live
+            # evidence on Mini install eecde3a: 3 of 96 seeded profiles had
+            # no `total_flags`). Backfill defensively before mutating so
+            # `update_from_scan` cannot raise `KeyError: 'total_flags'`.
+            profile.setdefault("total_flags", 0)
+            profile.setdefault("last_flagged", None)
+            profile.setdefault("issue_history", [])
             profile["total_flags"] += 1
             profile["last_flagged"] = now
             # Keep last 10 issues per miner
@@ -236,15 +244,19 @@ class KnowledgeManager:
             parts.append(f"(Live DB context unavailable: {e})")
 
         # Chronic problem miners from knowledge.json
+        # P-035: read sites use .get() defensively so legacy / federated /
+        # partially-merged seed profiles missing `total_flags` /
+        # `issue_history` cannot trip a KeyError here.
         profiles = self.knowledge.get("miner_profiles", {})
         chronic = sorted(profiles.items(), key=lambda x: x[1].get("total_flags", 0), reverse=True)[:10]
         if chronic:
             parts.append("\nChronic problem miners (most flagged):")
             for mid, p in chronic:
-                if p["total_flags"] >= 3:
-                    recent = p["issue_history"][-1]["summary"] if p["issue_history"] else "unknown"
-                    parts.append(f"  - Miner {mid} ({p['model']}) @ {p['ip']}: "
-                                f"flagged {p['total_flags']}x, last: {recent[:100]}")
+                if p.get("total_flags", 0) >= 3:
+                    issue_hist = p.get("issue_history") or []
+                    recent = issue_hist[-1].get("summary", "unknown") if issue_hist else "unknown"
+                    parts.append(f"  - Miner {mid} ({p.get('model', '?')}) @ {p.get('ip', '?')}: "
+                                f"flagged {p.get('total_flags', 0)}x, last: {recent[:100]}")
 
         # Recent LLM insights
         insights = self.knowledge.get("known_issues", [])[-5:]

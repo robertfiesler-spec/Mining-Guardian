@@ -291,11 +291,23 @@ def main():
     # Build master knowledge
     master = build_master_knowledge(sites, llm_response)
 
-    # Save
-    tmp = OUTPUT_PATH + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(master, f, indent=2)
-    os.replace(tmp, OUTPUT_PATH)
+    # Save — P-035: use the canonical atomic_write_json helper instead of
+    # a hand-rolled tmp + os.replace. This is the single-writer
+    # federated-master path so no flock is needed; atomic_write_json gives
+    # us the same crash-safe temp-file-then-rename guarantee in one place.
+    try:
+        from core.file_lock import atomic_write_json
+    except Exception:
+        # combine_knowledge.py is sometimes invoked outside the repo root
+        # (e.g. on the federated mastering host that only has the ai/
+        # directory). Fall back to the inline atomic-write idiom on import
+        # failure so the script keeps working in that environment.
+        tmp = OUTPUT_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(master, f, indent=2)
+        os.replace(tmp, OUTPUT_PATH)
+    else:
+        atomic_write_json(OUTPUT_PATH, master)
 
     logger.info("=" * 60)
     logger.info("MERGE COMPLETE — master_knowledge.json")
