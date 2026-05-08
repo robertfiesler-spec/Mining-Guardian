@@ -2405,26 +2405,34 @@ class MiningGuardian:
                 analysis_text = resp.get("response", "").strip()
                 if analysis_text:
                     logger.info("Qwen scan analysis: %s", analysis_text[:200])
-                    # Write to llm_scan_analyses stream (the one weekly_train.py reads)
-                    kpath = _P("/root/Mining-Guardian/knowledge.json")
-                    knowledge = _json.loads(kpath.read_text()) if kpath.exists() else {}
-                    if not isinstance(knowledge.get("llm_scan_analyses"), list):
-                        knowledge["llm_scan_analyses"] = []
-                    knowledge["llm_scan_analyses"].append({
-                        "timestamp": _dt.now().isoformat(),
-                        "analysis": analysis_text,
-                        "model": payload["model"],
-                        "scan_id": scan_id,
-                        "source": "qwen_scan_loop",
-                    })
-                    # Keep last 500 entries to bound file size
-                    knowledge["llm_scan_analyses"] = knowledge["llm_scan_analyses"][-500:]
-                    tmp = str(kpath) + ".tmp"
-                    with open(tmp, "w") as f:
-                        _json.dump(knowledge, f, indent=2)
-                    import os as _os
-                    _os.replace(tmp, str(kpath))
-                    logger.info("llm_scan_analyses written, now %d entries", len(knowledge["llm_scan_analyses"]))
+                    # P-034: persist via _ROOT-relative path + the canonical
+                    # locked_knowledge_update helper. Pre-P-034 this block
+                    # hard-coded `/root/Mining-Guardian/knowledge.json`, which
+                    # is a Linux/legacy path that does not exist on the Mac
+                    # Mini install tree (`${MG_INSTALL_ROOT}/knowledge.json`,
+                    # symlinked to `${MG_INSTALL_ROOT}/knowledge/knowledge.json`).
+                    # Live evidence: every scan logged
+                    # `[Errno 2] No such file or directory: '/root/Mining-Guardian/knowledge.json.tmp'`
+                    # on the Mini after install eecde3a. Using _ROOT keeps the
+                    # path correct under both the dev clone and the installed
+                    # tree; using locked_knowledge_update avoids clobbering
+                    # the seeded knowledge under concurrent writes.
+                    from core.file_lock import locked_knowledge_update
+                    kpath = _ROOT / "knowledge.json"
+                    with locked_knowledge_update(str(kpath)) as knowledge:
+                        if not isinstance(knowledge.get("llm_scan_analyses"), list):
+                            knowledge["llm_scan_analyses"] = []
+                        knowledge["llm_scan_analyses"].append({
+                            "timestamp": _dt.now().isoformat(),
+                            "analysis": analysis_text,
+                            "model": payload["model"],
+                            "scan_id": scan_id,
+                            "source": "qwen_scan_loop",
+                        })
+                        # Keep last 500 entries to bound file size
+                        knowledge["llm_scan_analyses"] = knowledge["llm_scan_analyses"][-500:]
+                        _new_count = len(knowledge["llm_scan_analyses"])
+                    logger.info("llm_scan_analyses written, now %d entries", _new_count)
                 else:
                     logger.warning("Qwen returned empty response for scan #%d", scan_id)
             except Exception as e:
