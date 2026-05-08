@@ -24,8 +24,16 @@ config.json
 guardian.db
 *.sqbpro
 
-# LLM knowledge (backed up separately as knowledge_backup.json)
+# LLM knowledge (backed up separately as knowledge_backup.json).
+# Runtime knowledge.json is mutable site-state — never tracked.
+# EXCEPTION (P-029 knowledge — D-29, 2026-05-08): the baseline seed
+# shipped in the installer payload at
+# installer/macos-pkg/resources/knowledge/knowledge.json IS tracked, so
+# every .pkg builds against a known-good 96-profile baseline. Do not
+# remove this exception without coordinating with build_pkg.sh step 4l
+# and tests/installer/test_p029_knowledge_json_installer.sh.
 knowledge.json
+!installer/macos-pkg/resources/knowledge/knowledge.json
 master_knowledge.json
 
 # Logs

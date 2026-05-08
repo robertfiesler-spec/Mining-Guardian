@@ -335,6 +335,18 @@ readonly PLISTS_DEST="/Library/LaunchDaemons"
 # 0755 in the source tree.
 readonly UNINSTALL_SH_SRC="${INSTALLER_RESOURCES_SRC}/uninstall.sh"
 
+# P-029 (knowledge — 2026-05-08). Baseline knowledge.json seed staged into
+# `<payload>/installer-resources/knowledge/knowledge.json` by build_pkg.sh
+# step 4l. step_install_knowledge_json reads it from this path.
+# Active runtime knowledge lives at `${MG_INSTALL_ROOT}/knowledge/knowledge.json`
+# (design D-29). A compatibility symlink at `${MG_INSTALL_ROOT}/knowledge.json`
+# points to the active file so existing callers (ai/ai_score.py,
+# ai/action_diversity.py, ai/backup_knowledge.py, core/mining_guardian.py,
+# etc., which compute the path as `_ROOT / "knowledge.json"`) keep working
+# without code change. See docs/MONTHLY_KNOWLEDGE_UPDATE.md for the merge
+# workflow that consumes `${MG_INSTALL_ROOT}/knowledge/incoming/`.
+readonly KNOWLEDGE_SEED_SRC="${INSTALLER_RESOURCES_SRC}/knowledge/knowledge.json"
+
 # Bucket 6: 9 services. v1.0.3 D-19 (P-006): 10th service added — the
 # customer operator console (com.miningguardian.console).
 # The 9 plists that ship from installer/macos-pkg/resources/launchd/ are
@@ -784,6 +796,164 @@ step_normalize_discovery_sink_perms() {
     chmod 0664 "$sink_dir/latest_findings.json" 2>/dev/null || true
 
     log "INFO normalised discovery sink ${sink_dir} (${MG_INSTALL_OPERATOR_USER}:staff, dir=0775, files=0664)"
+}
+
+step_install_knowledge_json() {
+    # P-029 (knowledge — 2026-05-08). Baseline-seed install + upgrade
+    # preservation for the local-LLM `knowledge.json` learning artifact.
+    #
+    # Background. v1.0.3 shipped without a baseline knowledge.json in the
+    # installer payload. Every fresh customer install therefore started
+    # cold — no `miner_profiles`, no `miner_fingerprints`, no
+    # `refined_insights`, no `operator_decisions`, no `baselines`. The
+    # local-LLM analysis loop in `core/mining_guardian.py::loop()` and the
+    # 8 AI features under `ai/` all degrade silently to "first scan" shape
+    # (Vision Anchor 1: the LLM IS the product). A 96-profile / 133-
+    # fingerprint / 61-insight superset (SHA-256 prefix 2edea974d711,
+    # last_updated 2026-04-29) was identified as the canonical baseline
+    # in the inventory at docs/MONTHLY_KNOWLEDGE_UPDATE.md and committed
+    # into the repo at installer/macos-pkg/resources/knowledge/knowledge.json.
+    # build_pkg.sh step 4l stages it into the payload at
+    # <payload>/installer-resources/knowledge/knowledge.json (validated
+    # at build time — JSON parse + at least one of the three primary
+    # sections; build hard-fails if the seed regresses).
+    #
+    # Behavior:
+    #   FRESH INSTALL (active runtime knowledge.json absent):
+    #     - Create ${MG_INSTALL_ROOT}/knowledge/{,backups,incoming} as
+    #       ${MG_INSTALL_OPERATOR_USER}:staff dirs=0775.
+    #     - Copy the packaged seed to
+    #       ${MG_INSTALL_ROOT}/knowledge/knowledge.json
+    #       and ${MG_INSTALL_ROOT}/knowledge.json (compat symlink).
+    #     - chown miningguardian:staff, chmod 0664 the file.
+    #     - Validate JSON parse + emit a single P-029 proof log line with
+    #       path / size / sha256 / miner_profiles / miner_fingerprints /
+    #       refined_insights counts.
+    #
+    #   UPGRADE (active runtime knowledge.json already exists):
+    #     - DO NOT overwrite. Site-specific learned knowledge —
+    #       operator_decisions, refined_insights from the operator's own
+    #       fleet, baselines, llm_scan_analyses — must survive a re-install.
+    #     - Stage the packaged seed alongside as
+    #       ${MG_INSTALL_ROOT}/knowledge/incoming/knowledge-seed-<version>-<sha>.json
+    #       so the monthly merge workflow (docs/MONTHLY_KNOWLEDGE_UPDATE.md)
+    #       can consume it deterministically.
+    #     - Validate the staged seed JSON parse and log preservation +
+    #       seed-staging proof lines.
+    #
+    # No network, no DB call. The active file's lifecycle is otherwise
+    # owned by the runtime — ai/backup_knowledge.py rotates it to
+    # ${MG_INSTALL_ROOT}/knowledge_backup.json on the daily backup cron;
+    # the merge workflow rotates older copies into knowledge/backups/.
+    #
+    # Idempotent. A second install over an already-installed Mini takes
+    # the upgrade branch even if the seed itself is unchanged — the
+    # `incoming/` filename is version+sha-tagged so duplicate stages
+    # write to the same path harmlessly.
+    if [[ ! -r "$KNOWLEDGE_SEED_SRC" ]]; then
+        # The build-time assertion in build_pkg.sh step 4l should have
+        # caught this. Belt-and-suspenders here so a future repackage
+        # that breaks the staging cannot silently ship cold-start to
+        # customers — surface an exit-43 the operator can debug from
+        # ${MG_INSTALL_LOG} alone.
+        fail 43 "P-029 (knowledge): baseline seed missing in payload at ${KNOWLEDGE_SEED_SRC}"
+    fi
+
+    local kdir="${MG_INSTALL_ROOT}/knowledge"
+    local active="${kdir}/knowledge.json"
+    local compat="${MG_INSTALL_ROOT}/knowledge.json"
+    local incoming_dir="${kdir}/incoming"
+    local backups_dir="${kdir}/backups"
+
+    install -d -m 0775 "$kdir"
+    install -d -m 0775 "$incoming_dir"
+    install -d -m 0775 "$backups_dir"
+    chown "${MG_INSTALL_OPERATOR_USER}:staff" "$kdir" "$incoming_dir" "$backups_dir" 2>/dev/null || true
+
+    # Resolve packaged seed identity for proof + incoming filename. Use
+    # /usr/bin/python3 for JSON parse + counts so the helper survives
+    # without `jq` (D-13 customer Mini may not have jq installed).
+    local seed_size seed_sha kpi_line
+    seed_size="$(/usr/bin/wc -c < "$KNOWLEDGE_SEED_SRC" | /usr/bin/tr -d ' ')"
+    seed_sha="$(/usr/bin/shasum -a 256 "$KNOWLEDGE_SEED_SRC" | /usr/bin/awk '{print $1}')"
+    kpi_line="$(/usr/bin/python3 - "$KNOWLEDGE_SEED_SRC" <<'PY'
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p, 'rb') as fh:
+        d = json.load(fh)
+except Exception as e:
+    sys.stderr.write('P-029_PARSE_FAIL %s\n' % e)
+    sys.exit(1)
+def _count(obj):
+    if isinstance(obj, (list, dict)):
+        return len(obj)
+    return 0
+mp = _count(d.get('miner_profiles'))
+mf = _count(d.get('miner_fingerprints'))
+ri = _count(d.get('refined_insights'))
+print('miner_profiles=%d miner_fingerprints=%d refined_insights=%d' % (mp, mf, ri))
+PY
+)"
+    if [[ -z "$kpi_line" ]]; then
+        fail 43 "P-029 (knowledge): packaged seed at ${KNOWLEDGE_SEED_SRC} failed JSON parse — refusing to proceed"
+    fi
+
+    # Resolve packaged version + git sha for the incoming filename.
+    local stamp_file="${MG_PKG_PAYLOAD}/BUILD_STAMP.json"
+    local pkg_version="unknown" pkg_sha="unknown"
+    if [[ -r "$stamp_file" ]]; then
+        pkg_version="$(/usr/bin/python3 -c "
+import json, sys
+try:
+    print(json.load(open(sys.argv[1])).get('version','unknown'))
+except Exception:
+    print('unknown')
+" "$stamp_file" 2>/dev/null || echo unknown)"
+        pkg_sha="$(/usr/bin/python3 -c "
+import json, sys
+try:
+    print(json.load(open(sys.argv[1])).get('git_sha','unknown'))
+except Exception:
+    print('unknown')
+" "$stamp_file" 2>/dev/null || echo unknown)"
+    fi
+
+    if [[ -e "$active" ]]; then
+        # UPGRADE: preserve learned runtime knowledge. Stage the new
+        # packaged seed under incoming/ for the monthly merge workflow.
+        local incoming_path="${incoming_dir}/knowledge-seed-${pkg_version}-${pkg_sha}.json"
+        install -m 0664 "$KNOWLEDGE_SEED_SRC" "$incoming_path"
+        chown "${MG_INSTALL_OPERATOR_USER}:staff" "$incoming_path" 2>/dev/null || true
+        log "INFO P-029: preserved existing runtime knowledge.json path=\"${active}\""
+        log "INFO P-029: staged packaged seed path=\"${incoming_path}\" size=${seed_size} sha256=${seed_sha} ${kpi_line}"
+        return 0
+    fi
+
+    # FRESH INSTALL: copy seed into active runtime path + compat symlink.
+    install -m 0664 "$KNOWLEDGE_SEED_SRC" "$active"
+    chown "${MG_INSTALL_OPERATOR_USER}:staff" "$active" 2>/dev/null || true
+
+    # Compatibility symlink at ${MG_INSTALL_ROOT}/knowledge.json — the
+    # path most existing runtime callers compute as `_ROOT / "knowledge.json"`
+    # (ai/ai_score.py, ai/action_diversity.py, ai/backup_knowledge.py,
+    # core/mining_guardian.py:2403). Without this, fresh installs would
+    # read the active file at the new design path but those callers would
+    # still see `FileNotFoundError`. Symlink (not copy) so writes from
+    # either path land in one file. Removed first if it already exists
+    # (e.g., re-install after the active file was deleted manually).
+    if [[ -L "$compat" || -e "$compat" ]]; then
+        rm -f "$compat"
+    fi
+    /bin/ln -s "${kdir}/knowledge.json" "$compat"
+
+    # Post-copy validation: the on-disk file must still parse as JSON.
+    if ! /usr/bin/python3 -c "import json; json.load(open('${active}'))" >/dev/null 2>&1; then
+        fail 43 "P-029 (knowledge): active runtime knowledge.json failed post-copy JSON parse at ${active}"
+    fi
+
+    log "INFO P-029: installed knowledge.json path=\"${active}\" size=${seed_size} sha256=${seed_sha} ${kpi_line}"
+    log "INFO P-029: compat symlink ${compat} -> ${kdir}/knowledge.json"
 }
 
 _cocoa_alert() {
@@ -2654,6 +2824,14 @@ main() {
     # P-027 second: pre-create + normalise the discovery sink dir so
     # the scanner's first append succeeds. Independent of P-028.
     step_normalize_discovery_sink_perms
+    # P-029 (knowledge — 2026-05-08): install baseline knowledge.json on
+    # fresh install, preserve existing runtime knowledge on upgrade
+    # (stages packaged seed under knowledge/incoming/ for the monthly
+    # merge workflow). Independent of P-027/P-028. Runs before .env /
+    # postgres / migrations / launchd bootstrap so the scanner / AI tier
+    # services see a valid knowledge.json on first fire and so a missing
+    # payload seed surfaces an exit-43 BEFORE Colima or model-pull.
+    step_install_knowledge_json
     step_drop_dotenv
     step_provision_postgres
     # P-029 — reconcile the `mg` Postgres role's password to .env
