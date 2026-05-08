@@ -32,8 +32,16 @@ def _parse_hashrate_pct(val) -> float:
         return 0.0
 
 # ── Path setup — works whether run from repo root or core/ directory ──────────
+# P-030 (2026-05-08) — `ai/` MUST be on sys.path before run_once() executes.
+# `loop()` injects `ai/` at line ~2444, but the production scanner is invoked
+# as `mining_guardian.py --once` which calls `run_once()` directly (see L2695).
+# `run_once()` does `from knowledge_manager import KnowledgeManager` (an
+# `ai/` module) and similar bare imports — without `ai/` on sys.path the
+# scanner logs `Knowledge update skipped: No module named 'knowledge_manager'`
+# every scan, silently disabling the persistent knowledge feed that the
+# weekly Claude training and daily deep dive rely on.
 _ROOT = Path(__file__).resolve().parent.parent
-for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"), str(_ROOT / "ai")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
