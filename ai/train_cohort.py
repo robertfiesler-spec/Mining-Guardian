@@ -1074,21 +1074,22 @@ def run_cohort_training():
         km.add_llm_insight(fleet_response[:50000], miner_id='fleet')
         # Store in cross_miner_analysis for the local LLM to read next week.
         # This MUST be the last write to knowledge.json in this function.
-        knowledge = json.loads(KNOWLEDGE_PATH.read_text())
-        if not isinstance(knowledge.get('cross_miner_analysis'), list):
-            knowledge['cross_miner_analysis'] = []
-        knowledge['cross_miner_analysis'].insert(0, {
-            'timestamp': datetime.now().isoformat(),
-            'analysis': fleet_response,
-            'cohort_count': len(cohort_results),
-            'outlier_count': len(outlier_results),
-            'source': 'claude_weekly_cohort',
-        })
-        knowledge['cross_miner_analysis'] = knowledge['cross_miner_analysis'][:10]  # keep last 10 weeks
-        tmp_path = str(KNOWLEDGE_PATH) + '.tmp'
-        with open(tmp_path, 'w') as f:
-            json.dump(knowledge, f, indent=2)
-        os.replace(tmp_path, str(KNOWLEDGE_PATH))
+        # P-035: route through core.file_lock.locked_knowledge_update so the
+        # read-modify-write cannot race with the Qwen scan analyzer or any
+        # other concurrent knowledge writer (was a hand-rolled
+        # tmp-file + os.replace pre-P-035).
+        from core.file_lock import locked_knowledge_update
+        with locked_knowledge_update(str(KNOWLEDGE_PATH)) as knowledge:
+            if not isinstance(knowledge.get('cross_miner_analysis'), list):
+                knowledge['cross_miner_analysis'] = []
+            knowledge['cross_miner_analysis'].insert(0, {
+                'timestamp': datetime.now().isoformat(),
+                'analysis': fleet_response,
+                'cohort_count': len(cohort_results),
+                'outlier_count': len(outlier_results),
+                'source': 'claude_weekly_cohort',
+            })
+            knowledge['cross_miner_analysis'] = knowledge['cross_miner_analysis'][:10]  # keep last 10 weeks
 
         # Extract and store refined insights from Claude's response
         logger.info('Processing refined insights from fleet response...')
