@@ -64,9 +64,11 @@ Public API
 
 from __future__ import annotations
 
+import grp
 import json
 import logging
 import os
+import pwd
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,6 +82,54 @@ _ROOT = Path(__file__).resolve().parent.parent
 # rolling file. 16 unique IPs is enough to characterise the spread of a
 # new model across the fleet without retaining every observation.
 _MAX_IPS_PER_KEY = 16
+
+# P-037 (2026-05-09). Match the ownership/mode P-027 postinstall
+# normalises to so the cron-driven catalog-importer (which runs under
+# the operator account, not root) can keep reading the rolling
+# snapshot after every scan. P-032 already pinned the mode to 0664;
+# this adds the owner half — without it, a root-launched daemon write
+# leaves the file root-owned and the operator account loses write
+# access until postinstall runs again. See B-46 / P-037.
+_SINK_FILE_MODE = 0o664
+_SINK_FILE_GROUP = "staff"
+_SINK_FILE_OWNER_DEFAULT = "miningguardian"
+
+
+def _resolve_sink_owner_user() -> str:
+    """Honour ``MG_INSTALL_OPERATOR_USER`` (set by postinstall)."""
+    return (
+        os.environ.get("MG_INSTALL_OPERATOR_USER")
+        or _SINK_FILE_OWNER_DEFAULT
+    )
+
+
+def _normalize_sink_perms(path: str) -> None:
+    """P-037 — chmod 0664 + best-effort chown to operator:staff.
+
+    Mirrors ``core.file_lock._normalize_knowledge_perms`` semantics:
+    chmod is unconditional and idempotent; chown is silently skipped
+    when the user/group does not exist (dev/test workstations) or
+    when the process lacks privilege.
+    """
+    try:
+        os.chmod(path, _SINK_FILE_MODE)
+    except OSError as exc:
+        logger.debug("discovery_sink: chmod %o on %s failed: %s",
+                     _SINK_FILE_MODE, path, exc)
+        return
+    user_name = _resolve_sink_owner_user()
+    try:
+        uid = pwd.getpwnam(user_name).pw_uid
+        gid = grp.getgrnam(_SINK_FILE_GROUP).gr_gid
+    except KeyError:
+        return
+    try:
+        os.chown(path, uid, gid)
+    except OSError as exc:
+        logger.debug(
+            "discovery_sink: chown %s:%s on %s failed: %s",
+            user_name, _SINK_FILE_GROUP, path, exc,
+        )
 
 
 def resolve_sink_dir() -> Path:
@@ -142,6 +192,15 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
         # rolling snapshot after each scan.
         os.chmod(tmp_name, 0o664)
         os.replace(tmp_name, path)
+        # P-037 (2026-05-09): also normalize owner to
+        # ``${MG_INSTALL_OPERATOR_USER:-miningguardian}:staff``. The
+        # chmod above keeps the mode at 0664 across rewrites, but the
+        # daemon runs as root under launchd so each rewrite leaves the
+        # file root-owned. Cross-account readers (the catalog importer
+        # cron) need group ownership preserved to write back; the
+        # operator's `chown miningguardian:staff` after install would
+        # otherwise drift on every scan.
+        _normalize_sink_perms(str(path))
     except Exception:
         # Best-effort cleanup of the temp file; never raise.
         try:
