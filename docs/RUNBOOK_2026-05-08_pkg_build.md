@@ -428,3 +428,129 @@ spctl → transfer → install → verify symlink survives the next scan
 "Resume plan — pick up here in 1–2 hours (one-at-a-time)". That
 section is the canonical resume checklist; this runbook is the
 build-receipt half of the same story.
+
+---
+
+## Late evening update (2026-05-08) — `e3461260af2a` package built tonight
+
+After PR #170 (PM pause docs handoff) merged as `e346126`, the
+operator built the post-P-036 .pkg from the latest `main` so it would
+be ready for tomorrow morning's install. **The package has been
+built, signed, notarized, and `spctl`-accepted on the build Mac, but
+has NOT been copied to or installed on the Mini yet.**
+
+| Field | Value |
+|---|---|
+| Source `main` commit | `e346126` (full SHA `e3461260af2a5cc8b40497a019009c4430a1fa32`) |
+| Source `main` commit message | `Merge pull request #170 from robertfiesler-spec/docs/handoff-2026-05-08-pm-p036-mini-paused-eod` |
+| Pkg path on build Mac | `/Users/BigBobby/Documents/GitHub/Mining-Guardian/build/MiningGuardian-1.0.3-e3461260af2a.pkg` |
+| Pkg sidecar | `/Users/BigBobby/Documents/GitHub/Mining-Guardian/build/MiningGuardian-1.0.3-e3461260af2a.pkg.sha256` |
+| Pkg SHA-256 | `6b82bd3954366de3388f74e6c29d60ffe6f1c611e9bde9835bdfa089f0f8706c` |
+| Pkg size | ~510 MB |
+| Signing identity | `Developer ID Installer: Robert Fiesler (ARJZ5FYU94)` |
+| `pkgutil --check-signature` | signed by Apple-issued Developer ID cert; Notarization trusted by the Apple notary service; signed with trusted timestamp `2026-05-09 00:31:15 +0000` |
+| `spctl --assess -t install -v` | `accepted`; source `Notarized Developer ID`; origin `Developer ID Installer: Robert Fiesler (ARJZ5FYU94)` |
+| `xcrun stapler validate` (via bridge) | **failed** — CloudKit `NSPOSIXErrorDomain` "Operation not permitted" / "validate action failed Error 68" — bridge-only environmental restriction; not a notarization failure (see below) |
+| Installed on Mini | **NOT YET** — copy + install is the first action tomorrow morning |
+
+### What this build contains (delta from what's installed on the Mini)
+
+The Mini is currently running `MiningGuardian-1.0.3-2b41764a121b.pkg`
+(post-P-035, lacks P-036). The new `e3461260af2a` package adds
+exactly one functional PR over that — **PR #169 (P-036, the
+symlink-preserving file_lock fix)** — plus the 2026-05-08 evening
+documentation merged in PR #170.
+
+### Bridge stapler caveat — why `spctl` and `pkgutil` are the authoritative gates
+
+The bridge that ran `xcrun stapler validate` against the build Mac
+tonight returned a CloudKit `NSPOSIXErrorDomain` error — "Operation
+not permitted" / "validate action failed Error 68". That code path
+needs CloudKit access permissions the bridge does not have in this
+session. **It is NOT a notarization failure:**
+
+- `spctl --assess -t install -v` accepted the pkg as **Notarized
+  Developer ID**, with origin `Developer ID Installer: Robert
+  Fiesler (ARJZ5FYU94)`.
+- `pkgutil --check-signature` reported the package is signed by a
+  developer certificate issued by Apple for distribution AND that
+  the **notarization is trusted by the Apple notary service**, with
+  signed timestamp `2026-05-09 00:31:15 +0000`.
+
+If a clean stapler receipt is desired for the audit trail, the
+operator may optionally re-run `xcrun stapler validate
+build/MiningGuardian-1.0.3-e3461260af2a.pkg` directly from the Mac
+Terminal tomorrow morning — that is not a bridge invocation and is
+expected to succeed. **Do not block the install on the bridge
+stapler error.** `spctl` and `pkgutil` are the authoritative gates
+and both passed.
+
+### Tomorrow morning — exact first actions
+
+Run these from the build Mac tomorrow morning, one at a time. The
+canonical step-by-step (with R-1 through R-8) is in
+`docs/handoffs/HANDOFF_2026-05-08.md` under "Resume plan — pick up
+tomorrow morning (one-at-a-time)". Quick reference:
+
+```bash
+# 1. Verify the artifact is intact on the build Mac
+cd /Users/BigBobby/Documents/GitHub/Mining-Guardian/build
+shasum -a 256 MiningGuardian-1.0.3-e3461260af2a.pkg
+cat          MiningGuardian-1.0.3-e3461260af2a.pkg.sha256
+# Both must print:
+#   6b82bd3954366de3388f74e6c29d60ffe6f1c611e9bde9835bdfa089f0f8706c
+
+# 2. Re-verify Apple gates
+pkgutil --check-signature MiningGuardian-1.0.3-e3461260af2a.pkg
+spctl --assess -t install -v MiningGuardian-1.0.3-e3461260af2a.pkg
+
+# 2b. (Optional) Re-run stapler validate from the Mac Terminal directly
+xcrun stapler validate MiningGuardian-1.0.3-e3461260af2a.pkg
+
+# 3. Copy to Mini + re-verify there
+scp MiningGuardian-1.0.3-e3461260af2a.pkg \
+    MiningGuardian-1.0.3-e3461260af2a.pkg.sha256 \
+    miningguardian@100.69.66.32:/tmp/
+ssh miningguardian@100.69.66.32 'cd /tmp && \
+  shasum -a 256 -c MiningGuardian-1.0.3-e3461260af2a.pkg.sha256 && \
+  spctl --assess -t install -v /tmp/MiningGuardian-1.0.3-e3461260af2a.pkg && \
+  pkgutil --check-signature   /tmp/MiningGuardian-1.0.3-e3461260af2a.pkg | head -20'
+
+# 4. Install
+ssh miningguardian@100.69.66.32 'sudo installer -pkg /tmp/MiningGuardian-1.0.3-e3461260af2a.pkg -target /'
+
+# 5. Verify build stamp BEFORE kickstarting the scanner
+ssh miningguardian@100.69.66.32 'sudo cat "/Library/Application Support/MiningGuardian/build_stamp.json"'
+# Expected: git_sha contains "e3461260af2a"
+
+# 6. Verify symlink BEFORE kickstart
+ssh miningguardian@100.69.66.32 'ls -la "/Library/Application Support/MiningGuardian/knowledge.json"'
+# Expected: leading character 'l' (symlink)
+
+# 7. Kickstart scanner ONCE; verify symlink survives + invariants stay green
+ssh miningguardian@100.69.66.32 'sudo launchctl kickstart -k system/com.miningguardian.scanner'
+sleep 90
+# Then run the grep invariants from the handoff R-7b block.
+```
+
+After R-7 passes, continue to **R-8 — passover audit shutdown
+gates** (catalog row counts, Ollama local tags, no traffic to
+ROBS-PC `100.110.87.1` or VPS `100.106.123.83`, optional ROBS-PC
+staging research dump). All four gates are gated on the
+`e3461260af2a` install completing cleanly first.
+
+### Status of `2b41764` package — operational on the Mini until tomorrow morning
+
+The `2b41764` package is **operational on the Mini at pause time**
+but lacks P-036. It is **superseded for the next install** by the
+`e3461260af2a` package documented above. The `2b41764` artifact and
+its corrected sidecar
+(`463ca8d69d4e86ed9be96a76432628f83ee34f00b0764edad73a2c7f85b67387`)
+should NOT be regenerated, deleted, or modified — they are the
+audit trail for the install that uncovered B-45.
+
+### Status of `eecde3a94c5b` package — superseded; do not install
+
+The earlier `eecde3a94c5b` package (post-P-031) is two PRs behind the
+new `e3461260af2a` build (it lacks P-034 + P-035 + P-036). It should
+not be installed; keep on disk as audit trail only.
