@@ -720,3 +720,165 @@ passed cleanly.
   research-data dump + deliberate power-off). All four passover-
   audit gates passed live on the Mini today, but the controlled-
   shutdown step is operator-driven, not automated.
+
+---
+
+## 2026-05-10 Sunday addendum — VPS + ROBS-PC isolation crossover (Mini sole runtime)
+
+This addendum records the Sunday 2026-05-10 morning crossover. **No new
+pkg was built or installed today.** The Mini stayed pinned at
+`MiningGuardian-1.0.3-53eac9397f00.pkg` (`git_sha=53eac9397f00`,
+`stamped_utc=2026-05-09T14:32:02Z`) through the entire isolation
+window. The crossover stopped Mining Guardian / Grafana / Postgres on
+the legacy VPS and stopped Ollama on ROBS-PC, leaving the Mini as the
+**sole active Mining Guardian runtime**. Both legacy hosts remain
+powered for rollback / observation; full power-off is deferred.
+
+For the full operator-side narrative see
+`docs/handoffs/HANDOFF_2026-05-08.md` under
+"✅ RESOLVED 2026-05-10 — Sunday VPS + ROBS-PC isolation crossover".
+
+### Pre-isolation Mini gate (load-bearing — captured as the rollback baseline)
+
+```
+Mini scanner last_exit_code:           0
+Final Saturday scanner logs:           green (zero matches for the seven invariants on any timestamp newer than the 2026-05-09 install)
+Knowledge canonical perms:             0664 miningguardian:staff   # P-037 holding
+Knowledge compat symlink:              symlink (leading 'l')        # P-036 holding
+Discovery sink rolling snapshot perms: 0664 miningguardian:staff   # P-037 holding
+Ollama tags (curl 127.0.0.1:11434):    llama3.2:3b   # D-13 16-GB tier
+Dashboard/API health:                  127.0.0.1:8590/health → status=ok
+Local Postgres container:              mining-guardian-db at 127.0.0.1:5432
+No old-host TCP (pre-isolation):       NO_OLD_HOST_TCP for ROBS-PC (100.110.87.1)
+                                       NO_OLD_HOST_TCP for VPS (187.124.247.182)
+                                       NO_OLD_HOST_TCP for VPS Tailscale (100.106.123.83)
+```
+
+The Mini was already independent of VPS + ROBS-PC at the START of the
+isolation window; today's crossover is the formal sign-off, not the
+cutover itself. The cutover landed in the eight-week train P-029 →
+P-037 that was installed on 2026-05-09.
+
+### ROBS-PC isolation
+
+```
+docker ps                              0 running containers
+Notable processes pre-stop             Docker Desktop, Ollama
+Action                                 stopped Ollama processes
+Get-Process ollama* (post-stop)        no output (Ollama processes gone)
+Power state after isolation            powered (kept up for rollback / staging-research dump)
+MG runtime dependency after isolation  none active
+```
+
+ROBS-PC stays powered for rollback and the optional staging-research
+data dump. There is no longer any Mining Guardian runtime active on
+ROBS-PC.
+
+### VPS isolation (in this exact order)
+
+```
+Initial running services pre-isolation:
+  - approval-api
+  - dashboard-api
+  - grafana-server
+  - intelligence-report
+  - mining-guardian-alerts
+  - mining-guardian
+  - overnight-automation
+  - slack-commands
+  - slack-listener
+  - postgresql@16-main
+
+Order:
+  1. Stop the 8 MG services + Grafana (one rollback step from
+     a fully working VPS).
+  2. Re-verify Mini still green BEFORE touching Postgres on the
+     VPS — load-bearing safety check; confirms no Mini-side
+     dependency on VPS Postgres.
+  3. Stop postgresql@16-main on the VPS.
+  4. Confirm only Prometheus port 9090 remains listening.
+
+Remaining listening ports after isolation: Prometheus 9090 only
+MG / Postgres / Grafana / API ports left:  none
+Power state after isolation:               powered (kept up for rollback / observation window)
+```
+
+### Post-isolation Mini proof — ✅ green
+
+```
+No old-host TCP (post-isolation):      NO_OLD_HOST_TCP for all three (ROBS-PC, VPS, VPS Tailscale)
+Dashboard/API health:                  127.0.0.1:8590/health → status=ok
+Local Postgres container:              mining-guardian-db at 127.0.0.1:5432
+Manual scanner kickstart (one shot):
+  launchctl last_exit_code:            0
+  Postgres scan #25 saved:             yes   # was scan #22 at the 2026-05-09 install;
+                                             # 3 hourly scheduled scans completed between
+                                             # Saturday and this manual kickstart — the
+                                             # launchd cron path is intact end-to-end.
+  Qwen analysis:                       succeeded
+  guardian.log:                        "INFO llm_scan_analyses written, now 183 entries"
+                                       "INFO Knowledge saved — 50 known issues, 7 patterns"
+
+Log invariants (zero matches on any timestamp newer than the isolation window):
+  /root/Mining-Guardian
+  Knowledge update skipped
+  Qwen scan analysis failed: HTTP Error 404
+  Permission denied
+
+Knowledge / sink perms after kickstart:
+  knowledge/knowledge.json             0664 miningguardian:staff   # P-037 holds
+  knowledge.json (compat symlink)      symlink (leading 'l')        # P-036 holds
+  cron_tracking/scanner_discovery/
+    latest_findings.json               0664 miningguardian:staff   # P-037 holds
+```
+
+### Scheduled-job audit captured (Mini-local, non-blocking — P-038 follow-up)
+
+The morning audit of the Mini's launchd-driven scheduled jobs found
+**7 failures**. None of the 7 affect the operational scan/decision
+loop, the VPS / ROBS-PC isolation, or the Mini's green state. They
+are recorded here for the build runbook's audit trail; the canonical
+records live in:
+
+- `docs/handoffs/HANDOFF_2026-05-08.md` (2026-05-10 RESOLVED section)
+- `docs/MG_UNIFIED_TODO_LIST.md` row 10ad (P-038)
+- `docs/LATENT_BUGS.md` entry B-47 (P-038)
+
+| # | Failing job | Symptom | Fix bucket |
+|---|---|---|---|
+| 1 | `catalog_import` | shell heredoc bug | shell quoting |
+| 2 | `log_failure_report` | `timestamptz` vs `text` cast bug | SQL cast |
+| 3 | `daily_deep_dive` | `timestamptz` vs `text` cast bug | SQL cast |
+| 4 | `refinement_chain` | missing `ANTHROPIC_API_KEY` | env / secret provisioning |
+| 5 | `weekly_training` | missing Claude key + `datetime` slicing bug | env / secret + Python coercion |
+| 6 | `db_maintenance` | Linux-native `pg_*` script (assumes Postgres on the host, not Colima) | macOS-portable rewrite |
+| 7 | `ams_cleanup` | hardcoded `/root/Mining-Guardian/config.json` (legacy retired Linux dev path) | path resolution via `MG_INSTALL_ROOT` |
+
+**Why this is non-blocking for the crossover:** items 1, 2, 3, 6, 7
+are LLM-feeding / catalog-import / cleanup paths that do not gate the
+operational scan/decision loop. Items 4 and 5 are Anthropic-API-keyed
+paths only Bobby's proof-of-concept Mini runs, and the env-var
+provisioning is independent of the crossover. **All 7 should ship in
+their own small surgical PRs — do not bundle.**
+
+### Status of earlier packages (carries forward unchanged from 2026-05-09)
+
+`MiningGuardian-1.0.3-53eac9397f00.pkg` remains **CURRENT, OPERATIONAL
+ON MINI** through the 2026-05-10 crossover. No new build was produced
+today; all earlier-package "audit trail only; do not install" rules
+still hold.
+
+### Forward caution — addendum
+
+- **Do not power off VPS or ROBS-PC** during the observation window.
+  Both hosts stay powered-but-isolated until the operator makes the
+  controlled-shutdown call after one clean Mini scheduled-scan cycle.
+- **Do not re-enable any stopped VPS service** to "test." A rollback,
+  if ever needed, is its own deliberate session — not a smoke-test
+  poke.
+- **Do not bundle P-038 fixes with any other concern.** Each of the
+  7 scheduled-job failures is a small surgical fix; bundling them is
+  how Failure Mode 9 (stacked PRs) recurs.
+- The 2026-05-09 forward caution above (do not regenerate the
+  53eac9397f00 build artifact; do not decommission VPS / ROBS-PC
+  before the controlled-shutdown window) **all continues to apply.**
