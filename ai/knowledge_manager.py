@@ -186,7 +186,7 @@ class KnowledgeManager:
             hwerr = conn.execute("""
                 SELECT miner_id, ip, board_index, SUM(hw_errors) as total_errors
                 FROM chain_readings
-                WHERE scanned_at > (NOW() - INTERVAL '7 days')::text
+                WHERE scanned_at > (NOW() - INTERVAL '7 days')
                 GROUP BY miner_id, board_index
                 HAVING total_errors > 0
                 ORDER BY total_errors DESC LIMIT 10
@@ -201,7 +201,7 @@ class KnowledgeManager:
                 SELECT miner_id, ip, pool_url,
                        ROUND(MAX(rejected)*100.0/NULLIF(MAX(accepted)+MAX(rejected),0), 2) as reject_pct
                 FROM pool_readings
-                WHERE scanned_at > (NOW() - INTERVAL '24 hours')::text
+                WHERE scanned_at > (NOW() - INTERVAL '24 hours')
                 GROUP BY miner_id
                 HAVING reject_pct > 1.0
                 ORDER BY reject_pct DESC LIMIT 5
@@ -227,7 +227,7 @@ class KnowledgeManager:
                 SELECT ip, metric_type, COUNT(*) as cnt,
                        AVG(CASE WHEN numeric_value IS NOT NULL THEN numeric_value END) as avg_val
                 FROM log_metrics
-                WHERE recorded_at >= (NOW() - INTERVAL '24 hours')::text
+                WHERE recorded_at >= (NOW() - INTERVAL '24 hours')
                   AND metric_type IN ('chain_event', 'chip_hashrate', 'voltage_domain', 'fan_speed', 'psu_status')
                 GROUP BY ip, metric_type
                 HAVING cnt >= 3
