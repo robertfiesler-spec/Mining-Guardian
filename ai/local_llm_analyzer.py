@@ -29,6 +29,13 @@ from typing import Optional, Dict, List
 
 from ai.knowledge_manager import KnowledgeManager
 from ai.catalog_context import get_catalog_context
+# P-038 item #5 (2026-05-11): pre/post-restart log `[:16]` slices crash
+# with `TypeError: 'datetime.datetime' object is not subscriptable` now
+# that `miner_logs.collected_at` is timestamptz. The failure is silent
+# because `analyze_scan` wraps the prompt build in `_query_llm`'s
+# try/except, so Qwen has been getting a prompt that bails out at the
+# RESTART LOG COMPARISONS section for 4+ days. See core/dt_format.py.
+from core.dt_format import fmt_dt
 _ROOT = Path(__file__).resolve().parent.parent
 def _pg_dsn() -> str:
     """Build Postgres DSN from environment variables."""
@@ -421,9 +428,9 @@ class LocalLLMAnalyzer:
             for mid, logs in list(by_miner.items())[:5]:
                 if logs["pre"] and logs["post"]:
                     lines.append(f"\n  Miner {mid}:")
-                    lines.append(f"    PRE-RESTART ({logs['pre'][0]['collected_at'][:16]}):")
+                    lines.append(f"    PRE-RESTART ({fmt_dt(logs['pre'][0]['collected_at'])}):")
                     lines.append(f"      {logs['pre'][0].get('content_preview', '')[:500]}")
-                    lines.append(f"    POST-RESTART ({logs['post'][0]['collected_at'][:16]}):")
+                    lines.append(f"    POST-RESTART ({fmt_dt(logs['post'][0]['collected_at'])}):")
                     lines.append(f"      {logs['post'][0].get('content_preview', '')[:500]}")
 
         # Recent log downloads

@@ -1,6 +1,23 @@
 #!/usr/bin/env python3
-"""Verify denial reasons will be in training data — simple DB query test."""
+"""Verify denial reasons will be in training data — simple DB query test.
+
+Legacy debug script (originally SQLite-era). Kept around for reference;
+the scheduled-job path uses `ai/train_comprehensive.py` directly.
+"""
 import sqlite3
+import sys
+from pathlib import Path
+
+# P-038 item #5 (2026-05-11): the `[:16]` slices below were caught by
+# the cohort-guard regression test as siblings of the
+# `train_comprehensive.py` outlier-prompt crash. They only run if
+# someone manually drives this debug script against a current Postgres
+# (or a backfilled SQLite that returned datetime objects), but the bug
+# shape is identical and easy to silence here. See core/dt_format.py.
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+from core.dt_format import fmt_dt
 
 c = sqlite3.connect("guardian.db", timeout=30)
 c.row_factory = sqlite3.Row
@@ -23,7 +40,7 @@ if denial_reasons:
         import re
         match = re.search(r"DENIAL_REASON: (.+?)(?:\||$)", r["notes"])
         reason = match.group(1).strip() if match else "parse failed"
-        print(f"  [{r['timestamp'][:16]}] {r['ip']} {r['action_taken']}")
+        print(f"  [{fmt_dt(r['timestamp'])}] {r['ip']} {r['action_taken']}")
         print(f"    Operator said: \"{reason[:80]}\"")
         print()
 else:
@@ -51,6 +68,6 @@ detailed = c.execute("""
 """).fetchall()
 print(f"\nLatest 10 restart outcomes (per-miner training data):")
 for d in detailed:
-    print(f"  {d['ip']} {d['outcome']} before={d['hashrate_before']} after={d['hashrate_after']} at {d['restarted_at'][:16]}")
+    print(f"  {d['ip']} {d['outcome']} before={d['hashrate_before']} after={d['hashrate_after']} at {fmt_dt(d['restarted_at'])}")
 
 c.close()

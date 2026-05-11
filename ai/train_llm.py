@@ -19,6 +19,12 @@ if str(_ROOT / "core") not in sys.path:
     sys.path.insert(0, str(_ROOT / "core"))
 
 from llm_analyzer import LLMAnalyzer
+# P-038 item #5 (2026-05-11): legacy `collected_at` slice on miner_logs
+# crashed with `TypeError: 'datetime.datetime' object is not
+# subscriptable` now that the column is timestamptz. See core/dt_format.py.
+# Short-form import matches the existing
+# `from llm_analyzer import LLMAnalyzer` convention above.
+from dt_format import fmt_dt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("train_llm")
@@ -82,7 +88,7 @@ def train_on_logs():
             else:
                 full_excerpt = content
             log_excerpts.append(
-                f"[{l['collected_at'][:16]}] {l['log_file']} ({l['health_status']}):\n{full_excerpt}"
+                f"[{fmt_dt(l['collected_at'])}] {l['log_file']} ({l['health_status']}):\n{full_excerpt}"
             )
 
         prompt = (

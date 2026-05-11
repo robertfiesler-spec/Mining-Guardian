@@ -69,6 +69,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# P-038 item #5 (2026-05-11): the legacy `analyzed_at` slice at line
+# ~685 was caught by the cohort-guard regression test as a sibling of
+# the `train_comprehensive.py` outlier-prompt crash. `analyzed_at` from
+# `llm_analyses` is timestamptz, so the legacy slice raised
+# `TypeError: 'datetime.datetime' object is not subscriptable`. See
+# core/dt_format.py.
+from core.dt_format import fmt_dt
+
 # ── Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
 def _pg_dsn() -> str:
@@ -678,7 +686,7 @@ def build_per_miner_prompt(
         lines.append("\n--- PAST AI ANALYSES (last 7 days) ---")
         lines.append("What AI previously said about this miner (do NOT repeat, focus on what changed):")
         for pa in past_analyses:
-            ts = pa["analyzed_at"][:16] if pa["analyzed_at"] else "%s"
+            ts = fmt_dt(pa["analyzed_at"]) if pa["analyzed_at"] else "%s"
             model = pa["model_used"] or "%s"
             text = (pa["response"] or "")[:300]
             lines.append(f"  [{ts}] ({model}): {text}...")
