@@ -45,6 +45,11 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "ai"))
+# P-038 items #4 + #5 env-gate (2026-05-11): need _ROOT itself on sys.path
+# for `from core.anthropic_gate import ...`. The existing line above only
+# inserts `_ROOT / "ai"` for bare-name imports inside this module.
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -454,6 +459,13 @@ if __name__ == "__main__":
     parser.add_argument("--smoke-test", action="store_true")
     parser.add_argument("--resume-from", type=int, default=3, choices=[3, 4])
     args = parser.parse_args()
+    # P-038 items #4 + #5 env-gate (2026-05-11): exit cleanly when
+    # Anthropic is not provisioned at install time. Must fire BEFORE
+    # run_chain() so the existing preflight_checks() never gets to its
+    # 'ANTHROPIC_API_KEY present' check on a customer Mini that opted
+    # out of Anthropic at install time. See core/anthropic_gate.py.
+    from core.anthropic_gate import require_anthropic_or_exit
+    require_anthropic_or_exit("refinement_chain", logger)
     try:
         run_chain(dry_run=args.dry_run, smoke_test=args.smoke_test, resume_from=args.resume_from)
     except Exception as e:
