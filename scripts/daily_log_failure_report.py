@@ -84,11 +84,11 @@ def get_miners_without_logs():
     rows = conn.execute("""
         SELECT DISTINCT mr.miner_id, mr.ip, mr.model, mr.status
         FROM miner_readings mr
-        WHERE mr.scanned_at > ((NOW() - INTERVAL '1 day')::text)
+        WHERE mr.scanned_at > (NOW() - INTERVAL '1 day')
         AND mr.id = (SELECT MAX(id) FROM miner_readings WHERE miner_id = mr.miner_id)
         AND mr.miner_id NOT IN (
             SELECT DISTINCT miner_id FROM miner_logs 
-            WHERE collected_at > ((NOW() - INTERVAL '12 hours')::text)
+            WHERE collected_at > (NOW() - INTERVAL '12 hours')
         )
         ORDER BY mr.ip
     """).fetchall()
@@ -102,11 +102,11 @@ def get_fleet_stats():
     conn = _PgConnWrapper(_pg_dsn())
     
     fleet = conn.execute(
-        "SELECT COUNT(DISTINCT miner_id) FROM miner_readings WHERE scanned_at > ((NOW() - INTERVAL '1 day')::text)"
+        "SELECT COUNT(DISTINCT miner_id) FROM miner_readings WHERE scanned_at > (NOW() - INTERVAL '1 day')"
     ).fetchone()[0]
     
     with_logs = conn.execute(
-        "SELECT COUNT(DISTINCT miner_id) FROM miner_logs WHERE collected_at > ((NOW() - INTERVAL '12 hours')::text)"
+        "SELECT COUNT(DISTINCT miner_id) FROM miner_logs WHERE collected_at > (NOW() - INTERVAL '12 hours')"
     ).fetchone()[0]
     
     conn.close()

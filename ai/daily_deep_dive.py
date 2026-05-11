@@ -363,7 +363,7 @@ def get_miner_daily_log(conn: "_PgConnWrapper", miner_id: str,
         SELECT content, collected_at, health_status FROM miner_logs
         WHERE miner_id = %s
           AND log_file LIKE '%%miner.log'
-          AND collected_at >= TO_CHAR(NOW() - INTERVAL '12 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+          AND collected_at >= (NOW() - INTERVAL '12 hours')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
     if row:
@@ -373,7 +373,7 @@ def get_miner_daily_log(conn: "_PgConnWrapper", miner_id: str,
         SELECT content, collected_at, health_status FROM miner_logs
         WHERE miner_id = %s
           AND log_file LIKE '%%miner.log'
-          AND collected_at >= TO_CHAR(NOW() - INTERVAL '36 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+          AND collected_at >= (NOW() - INTERVAL '36 hours')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
     if row:
@@ -389,8 +389,8 @@ def get_miner_yesterday_log(conn: "_PgConnWrapper", miner_id: str) -> Optional[s
         SELECT content FROM miner_logs
         WHERE miner_id = %s
           AND log_file LIKE '%%miner.log'
-          AND collected_at < TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
-          AND collected_at >= TO_CHAR(NOW() - INTERVAL '72 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+          AND collected_at < (NOW() - INTERVAL '24 hours')
+          AND collected_at >= (NOW() - INTERVAL '72 hours')
         ORDER BY collected_at DESC LIMIT 1
     """, (miner_id,)).fetchone()
     return row["content"] if row else None
@@ -405,7 +405,7 @@ def get_miner_24h_trends(conn: "_PgConnWrapper", miner_id: str) -> Dict:
         SELECT scanned_at, board_index, rate_mhs, temp_chip, temp_board,
                voltage, freq_mhz, hw_errors
         FROM chain_readings
-        WHERE miner_id = %s AND scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+        WHERE miner_id = %s AND scanned_at >= (NOW() - INTERVAL '24 hours')
         ORDER BY scanned_at ASC, board_index ASC
     """, (miner_id,)).fetchall()
     trends["chain_readings"] = [dict(r) for r in chains]
@@ -415,7 +415,7 @@ def get_miner_24h_trends(conn: "_PgConnWrapper", miner_id: str) -> Dict:
         SELECT scanned_at, hashrate_pct, temp_chip, temp_board, current_profile,
                consumption
         FROM miner_readings
-        WHERE miner_id = %s AND scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+        WHERE miner_id = %s AND scanned_at >= (NOW() - INTERVAL '24 hours')
         ORDER BY scanned_at ASC
     """, (miner_id,)).fetchall()
     trends["readings"] = [dict(r) for r in readings]
@@ -425,7 +425,7 @@ def get_miner_24h_trends(conn: "_PgConnWrapper", miner_id: str) -> Dict:
         SELECT restarted_at, restart_type, outcome, hashrate_before, hashrate_after,
                recovery_time_scans
         FROM miner_restarts
-        WHERE miner_id = %s AND restarted_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+        WHERE miner_id = %s AND restarted_at >= (NOW() - INTERVAL '24 hours')
         ORDER BY restarted_at ASC
     """, (miner_id,)).fetchall()
     trends["restarts"] = [dict(r) for r in restarts]
@@ -434,7 +434,7 @@ def get_miner_24h_trends(conn: "_PgConnWrapper", miner_id: str) -> Dict:
     actions = conn.execute("""
         SELECT timestamp, action_taken, decision, approved_by, notes
         FROM action_audit_log
-        WHERE miner_id = %s AND timestamp >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+        WHERE miner_id = %s AND timestamp >= (NOW() - INTERVAL '24 hours')
         ORDER BY timestamp ASC
     """, (miner_id,)).fetchall()
     trends["operator_actions"] = [dict(r) for r in actions]
@@ -443,7 +443,7 @@ def get_miner_24h_trends(conn: "_PgConnWrapper", miner_id: str) -> Dict:
     pools = conn.execute("""
         SELECT scanned_at, pool_url, accepted, rejected, accepted_diff, rejected_diff, status
         FROM pool_readings
-        WHERE miner_id = %s AND scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+        WHERE miner_id = %s AND scanned_at >= (NOW() - INTERVAL '24 hours')
         ORDER BY scanned_at ASC
     """, (miner_id,)).fetchall()
     trends["pool_readings"] = [dict(r) for r in pools]
@@ -476,7 +476,7 @@ def get_facility_24h(conn: "_PgConnWrapper") -> Dict:
                    diff_pressure, spray_pump_on, cwp2_vfd_pct, ct1_vfd_pct, ct2_vfd_pct,
                    outside_air_f, container_temp_f
             FROM hvac_readings
-            WHERE system_id = %s AND recorded_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+            WHERE system_id = %s AND recorded_at >= (NOW() - INTERVAL '24 hours')
             ORDER BY recorded_at ASC
         """, (system_id,)).fetchall()
         facility[f"hvac_{system_id}"] = [dict(r) for r in hvac]
@@ -488,7 +488,7 @@ def get_facility_24h(conn: "_PgConnWrapper") -> Dict:
         SELECT recorded_at, temp_f, humidity_pct, feels_like_f,
                temp_high_f, temp_low_f
         FROM weather_readings
-        WHERE recorded_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+        WHERE recorded_at >= (NOW() - INTERVAL '24 hours')
         ORDER BY recorded_at ASC
     """).fetchall()
     facility["weather"] = [dict(r) for r in weather]
@@ -496,7 +496,7 @@ def get_facility_24h(conn: "_PgConnWrapper") -> Dict:
     scans = conn.execute("""
         SELECT id, scanned_at, total_miners, online, offline, issues
         FROM scans
-        WHERE scanned_at >= TO_CHAR(NOW() - INTERVAL '24 hours', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+        WHERE scanned_at >= (NOW() - INTERVAL '24 hours')
         ORDER BY scanned_at ASC
     """).fetchall()
     facility["scans"] = [dict(r) for r in scans]
@@ -1065,7 +1065,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_ove
                 SELECT analyzed_at, response, model_used
                 FROM llm_analysis
                 WHERE (miner_id=%s OR ip=%s)
-                  AND analyzed_at >= TO_CHAR(NOW() - INTERVAL '7 days', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+                  AND analyzed_at >= (NOW() - INTERVAL '7 days')
                   AND response IS NOT NULL AND response != ''
                 ORDER BY analyzed_at DESC LIMIT 3
             """, (mid, miner_ip)).fetchall()
@@ -1140,7 +1140,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_ove
             SELECT DATE(analyzed_at) as day, COUNT(*) as cnt,
                    COUNT(DISTINCT miner_id) as miners_analyzed
             FROM llm_analysis
-            WHERE analyzed_at >= TO_CHAR(NOW() - INTERVAL '7 days', 'YYYY-MM-DD"T"HH24:MI:SS.US')
+            WHERE analyzed_at >= (NOW() - INTERVAL '7 days')
               AND response IS NOT NULL AND response != ''
             GROUP BY DATE(analyzed_at)
             ORDER BY day DESC
