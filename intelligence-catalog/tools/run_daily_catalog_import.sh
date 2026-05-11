@@ -46,9 +46,12 @@ LABEL="catalog_import"
 
 ts() { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-if [[ ! -d "$SWEEP_DIR" ]]; then
-    echo "[$(ts)] [${LABEL}] INFO sweep dir not present: ${SWEEP_DIR} — nothing to import from enrichment_sweep"
-fi
+# P-038 item #1 (2026-05-11): the duplicate "sweep dir not present" log
+# block that USED to live here was removed. It only logged INFO and fell
+# through to the scanner_discovery block, then to the canonical SWEEP_DIR
+# guard below (which DOES `exit 0`). Removing the duplicate eliminates a
+# confusing repeated log line; the canonical guard below is still the
+# one that controls flow.
 
 # P-022 (2026-05-08) — surface scanner_discovery findings so the file-
 # based intake produced by core/discovery_sink.py is never silent. The
@@ -63,7 +66,15 @@ if [[ -f "$SCANNER_DISCOVERY_LATEST" ]]; then
     # Count event keys without requiring `jq` (mac default install
     # doesn't ship it). Python is in the venv we already verify below.
     if [[ -x "$VENV_PYTHON" ]]; then
-        count="$("$VENV_PYTHON" - <<'PYEOF'
+        # P-038 item #1 (2026-05-11): the JSON path must be passed as a
+        # positional arg to the python process ON THE SAME LINE as the
+        # heredoc redirection — see `man bash` §HERE DOCUMENTS. The
+        # previous shape put `"$SCANNER_DISCOVERY_LATEST"` on a separate
+        # line AFTER the PYEOF terminator, which bash treated as a new
+        # command ("execute that JSON file"), failing with exit 126
+        # `Permission denied`. The Python heredoc, even if it had run,
+        # would have IndexError'd on sys.argv[1].
+        count="$("$VENV_PYTHON" - "$SCANNER_DISCOVERY_LATEST" <<'PYEOF'
 import json, sys
 try:
     with open(sys.argv[1], "r", encoding="utf-8") as f:
@@ -73,7 +84,7 @@ try:
 except Exception:
     print(0)
 PYEOF
-"$SCANNER_DISCOVERY_LATEST")"
+)"
         echo "[$(ts)] [${LABEL}] INFO scanner_discovery findings present at ${SCANNER_DISCOVERY_LATEST}: ${count} unique events (NOT yet imported to staging.miner_model_proposals — see P-022 follow-up)"
     else
         echo "[$(ts)] [${LABEL}] INFO scanner_discovery findings present at ${SCANNER_DISCOVERY_LATEST}; venv python missing so count not reported"
