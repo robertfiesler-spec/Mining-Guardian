@@ -20,6 +20,52 @@
 
   The wrapper exists because launchd has no EnvironmentFile= equivalent;
   the wrapper sources .env then execs python.
+
+  Recurrence (P-039, 2026-05-11)
+  ==============================
+  The scanner is a long-running daemon. The launcher passes the loop
+  flag to core/mining_guardian.py, which iterates internally every
+  `scan_interval_seconds` (read from config.json / .env). Under normal
+  operation the daemon stays alive between scans so the 8 in-process AI
+  features (outcome checker, HVAC correlation, daily deep dive scheduling,
+  local LLM analyzer threads, etc.) can run after each scan.
+
+  Recurrence layers:
+    1. RunAtLoad=true               : launchd starts the daemon on boot
+                                       and on `launchctl bootstrap`.
+    2. Internal `while True` loop   : daemon sleeps scan_interval_seconds
+       in `loop()`                    between scans. Honors .env.
+    3. KeepAlive.Crashed=true       : launchd re-launches if the daemon
+                                       crashes (non-zero exit).
+    4. StartInterval=3600           : SAFETY NET. If the daemon ever exits
+                                       cleanly (which should not happen in
+                                       loop mode), launchd re-launches it
+                                       within one hour. While the daemon is
+                                       alive, launchd skips re-launches.
+
+  Why StartInterval was missing before P-039
+  ==========================================
+  Bug history: prior to P-039 the launcher exec'd python WITHOUT loop mode,
+  so the daemon performed a single `run_once()` and exited successfully.
+  KeepAlive only matched Crashed=true, so the clean exit was not retried,
+  and no StartInterval existed to re-launch on a clock. Result: one scan
+  per `launchctl bootstrap`, then silence overnight. Detected during the
+  2026-05-10/11 VPS+ROBS-PC isolation crossover (Mini scan #25/#26 only
+  ran after manual `launchctl kickstart`). P-039 fixes both the launcher
+  (adds the loop flag) and the plist (adds StartInterval as a belt-and-
+  suspenders safety net).
+
+  Why launchd cannot read scan_interval_seconds from .env
+  =======================================================
+  launchd plists are static XML loaded by the system before any Mining
+  Guardian process runs. There is no EnvironmentFile= equivalent to
+  systemd. The daemon's internal loop reads .env-driven config at runtime
+  via core/models.py: that is the authoritative cadence for normal
+  operation. The plist's StartInterval is a packaged hourly safety net
+  matching the documented "1 scan per hour" cadence in CLAUDE.md and
+  AI_ROADMAP.md (`scan_interval_seconds: 3600`). It is intentionally not
+  shorter than the documented cadence: it should never fire under normal
+  operation.
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -47,6 +93,16 @@
         <key>Crashed</key>
         <true/>
     </dict>
+
+    <!--
+      P-039 (2026-05-11) — recurrence safety net.
+      Under normal operation the daemon stays alive between scans (launcher
+      passes the loop flag). StartInterval only fires if the daemon exits
+      cleanly somehow; it is the belt-and-suspenders backstop for the
+      overnight-no-scan bug found during the 2026-05-10 isolation crossover.
+    -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
 
     <key>ThrottleInterval</key>
     <integer>10</integer>
