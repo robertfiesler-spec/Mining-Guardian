@@ -56,4 +56,11 @@ set +a
 export MG_INSTALL_ROOT="${INSTALL_ROOT}"
 
 cd "${INSTALL_ROOT}"
-exec "${VENV_PYTHON}" -u "${ENTRY_POINT}"
+# P-039 (2026-05-11) — pass --loop so the scanner runs the long-lived
+# scan loop (core/mining_guardian.py::loop()), not run_once(). Without
+# --loop the daemon performed a single scan and exited cleanly, and
+# the plist's KeepAlive=Crashed-only branch never re-launched it. That
+# is the root cause of the 2026-05-10/11 overnight-no-scan gap. The
+# loop honors scan_interval_seconds from config (.env-derivable) and
+# runs the 8 AI features after each scan per CLAUDE.md project intent.
+exec "${VENV_PYTHON}" -u "${ENTRY_POINT}" --loop
