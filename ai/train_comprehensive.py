@@ -34,6 +34,13 @@ for _p in [str(_ROOT / "ai"), str(_ROOT / "core")]:
 
 from llm_analyzer import LLMAnalyzer
 from knowledge_manager import KnowledgeManager
+# P-038 item #5 (2026-05-11): legacy `row['<timestamptz_col>'][:N]` slices
+# crash with `TypeError: 'datetime.datetime' object is not subscriptable`
+# now that the columns are timestamptz. `fmt_dt` formats datetime, str,
+# or None into a fixed-length display string. See core/dt_format.py.
+# Short-form import matches the existing `from llm_analyzer import ...`
+# convention above (sys.path has `_ROOT / "core"` inserted on line 32).
+from dt_format import fmt_dt
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("train_comprehensive")
@@ -210,7 +217,7 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
             temp_change = round((r["temp_chip"] or 0) - (r["prev_temp"] or 0), 1)
             if abs(hr_change) >= 10 or abs(temp_change) >= 5 or r["action"]:
                 delta_analysis.append({
-                    "time": r["scanned_at"][:16],
+                    "time": fmt_dt(r["scanned_at"]),
                     "hr_pct": r["hashrate_pct"],
                     "hr_change": hr_change,
                     "temp": r["temp_chip"],
@@ -287,7 +294,7 @@ def build_miner_prompt(miner_id: str, profile: dict) -> str:
         f"=== COMPREHENSIVE ANALYSIS: Miner {miner_id} ===",
         f"Model: {s.get('model')} | IP: {s.get('ip')} | Location: {s.get('locations')}",
         f"Profiles seen: {s.get('profiles_seen')}",
-        f"Scans: {s.get('scan_count')} | Last seen: {s.get('last_seen', '')[:16]}",
+        f"Scans: {s.get('scan_count')} | Last seen: {fmt_dt(s.get('last_seen'))}",
         f"Hashrate: avg={s.get('avg_hr')}% min={s.get('min_hr')}% max={s.get('max_hr')}%",
         f"Chip temp: avg={s.get('avg_temp')}°C max={s.get('max_temp')}°C",
         f"PDU power: avg={s.get('avg_pdu_kw')} kW",
@@ -381,14 +388,14 @@ def build_miner_prompt(miner_id: str, profile: dict) -> str:
     if profile["ams"]:
         lines.append("\n--- AMS ALERTS ---")
         for a in profile["ams"]:
-            lines.append(f"  {a['key']} ({a['alert_level']}): {a['cnt']}x, last: {a['last_seen'][:16]}")
+            lines.append(f"  {a['key']} ({a['alert_level']}): {a['cnt']}x, last: {fmt_dt(a['last_seen'])}")
 
     # Audit history
     if profile["audit"]:
         lines.append("\n--- ACTION HISTORY ---")
         for a in profile["audit"]:
             lines.append(
-                f"  [{a['timestamp'][:16]}] {a['decision']} {a['action_taken']} "
+                f"  [{fmt_dt(a['timestamp'])}] {a['decision']} {a['action_taken']} "
                 f"by {a['approved_by']} — {str(a['problem'])[:120]}"
             )
 
@@ -432,7 +439,7 @@ def build_miner_prompt(miner_id: str, profile: dict) -> str:
         lines.append(f"\n--- MINER LOGS ({len(profile['logs'])} files) ---")
         for l in profile["logs"]:
             lines.append(
-                f"\n[{l['collected_at'][:16]}] {l['log_file']} ({l['health_status']}):\n"
+                f"\n[{fmt_dt(l['collected_at'])}] {l['log_file']} ({l['health_status']}):\n"
                 f"{l['content']}"
             )
 
@@ -646,7 +653,7 @@ def get_cross_miner_correlations(conn) -> str:
                     reason_text = match.group(1).strip()
             if reason_text:
                 lines.append(
-                    f"  [{r['timestamp'][:10]}] {r['ip']} ({r['model']}) "
+                    f"  [{fmt_dt(r['timestamp'], 10)}] {r['ip']} ({r['model']}) "
                     f"action={r['action_taken']} | Operator said: \"{reason_text}\""
                 )
 
@@ -679,7 +686,7 @@ def get_cross_miner_correlations(conn) -> str:
             if pre and post:
                 lines.append(
                     f"  Miner {mid}: {len(pre)} pre-restart + {len(post)} post-restart logs "
-                    f"(pre: {pre[0]['collected_at'][:16]}, post: {post[0]['collected_at'][:16]})"
+                    f"(pre: {fmt_dt(pre[0]['collected_at'])}, post: {fmt_dt(post[0]['collected_at'])})"
                 )
 
     # ── Restart outcome details with hashrate deltas ─────────────────
@@ -703,7 +710,7 @@ def get_cross_miner_correlations(conn) -> str:
             hr_a = f"{r['hashrate_after']:.0f}%" if r['hashrate_after'] else "?"
             rec = f"{r['recovery_time_scans']} scans" if r['recovery_time_scans'] else "N/A"
             lines.append(
-                f"  [{r['restarted_at'][:10]}] {r['ip']} {r['outcome']} "
+                f"  [{fmt_dt(r['restarted_at'], 10)}] {r['ip']} {r['outcome']} "
                 f"HR: {hr_b} -> {hr_a} | Recovery: {rec} | {r['restart_type'] or '?'}"
             )
 
