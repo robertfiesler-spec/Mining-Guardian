@@ -163,17 +163,47 @@ Cross-references the existing `04_MASTER_EXECUTION_PLAN.md` W## numbering. The n
 
 **Source:** [`02_TWO_DATABASE_DEEP_DIVE.md`](02_TWO_DATABASE_DEEP_DIVE.md) §"Operational learnings flowing back to master": *"Most catalog tables already have updated_at; the ones that do not should add it as part of preparing for federation. This is a tiny migration."*
 
-**Effort:** XS (under 2 hours)
-**Risk:** Low — pure additive schema change
+**Status (audited 2026-05-12 evening):** 🟢 **Near-zero scope.** Audit query against live `mining_guardian_catalog` on Mini found **89 of 98 catalog tables already have `updated_at`.** The remaining 9 tables are all intentionally append-only event logs that should NOT have `updated_at` because they semantically never get updated. See breakdown below.
+
+**Audit results.** Tables WITHOUT `updated_at`:
+
+| Table | Reason missing | Federation column to use instead |
+|---|---|---|
+| `knowledge.field_discovery_log` | Append-only event log of newly-discovered fields | `created_at` |
+| `knowledge.freshness_log` | Append-only event log of verified-but-unchanged watcher runs | `created_at` |
+| `knowledge.raw_ingestion_log` | Append-only parent partitioned table | `ingested_at` |
+| `knowledge.raw_ingestion_log_2026_q1` | Partition (inherits append-only shape) | `ingested_at` |
+| `knowledge.raw_ingestion_log_2026_q2` | Partition (inherits append-only shape) | `ingested_at` |
+| `knowledge.raw_ingestion_log_2026_q3` | Partition (inherits append-only shape) | `ingested_at` |
+| `knowledge.raw_ingestion_log_2026_q4` | Partition (inherits append-only shape) | `ingested_at` |
+| `knowledge.raw_ingestion_log_2027_q1` | Partition (inherits append-only shape) | `ingested_at` |
+| `pool.bitcoin_network_snapshots` | Append-only time-series of BTC difficulty/hashrate observations | `created_at` |
+
+All 9 tables already have a meaningful per-row timestamp column — just not literally named `updated_at`. The federation pull (W28) handles this via a tiny constant:
+
+```python
+# In the W28 federation pull script:
+APPEND_ONLY_TIMESTAMP_COLUMN = {
+    "knowledge.field_discovery_log": "created_at",
+    "knowledge.freshness_log": "created_at",
+    "knowledge.raw_ingestion_log": "ingested_at",  # parent + all partitions
+    "pool.bitcoin_network_snapshots": "created_at",
+}
+# All other 89 tables use "updated_at" by convention.
+```
+
+**Decision (LOCKED 2026-05-12 evening): Approach A.** Don't add `updated_at` to the 9 append-only tables. The federation pull script handles them via the constant above. Adding `updated_at` as a redundant alias for `created_at` / `ingested_at` would be schema noise (a column that never changes from its insert value).
+
+**Effort:** XS — reduced from "under 2 hours" to **"under 30 minutes"** (write the cohort guard test only; no schema migration).
+**Risk:** Negligible — no schema change.
 **Files:**
-- `migrations/0NN_catalog_updated_at_columns.sql` *(new)*
-- Cohort guard test: `tests/test_w26_all_catalog_tables_have_updated_at.py` *(new)*
+- ~~`migrations/0NN_catalog_updated_at_columns.sql`~~ — NOT NEEDED per audit
+- `tests/test_w26_catalog_timestamp_columns.py` *(new)* — cohort guard that queries `information_schema` and verifies (a) all expected tables have `updated_at`, OR (b) appear in `KNOWN_APPEND_ONLY_TABLES` constant matching the table above. Test fails on any new catalog table that has NEITHER.
+- `intelligence-catalog/db/federation_constants.py` *(new at W28 time)* — defines the `APPEND_ONLY_TIMESTAMP_COLUMN` mapping shared between the cohort guard test and the W28 pull script.
 
-**What to do.** Audit every table in `mining_guardian_catalog` for an `updated_at TIMESTAMPTZ` column with a trigger that maintains it. For tables missing it: `ALTER TABLE x ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();` + trigger. The cohort guard test queries `information_schema` and fails if any catalog table lacks the column.
+**Why this matters.** The pre-W28 audit prevents federation from silently missing rows in the 9 append-only tables. With this finding documented, the W28 pull script is uniform (2 query templates instead of "figure it out per table"), and future schema additions can't accidentally break federation — the cohort guard fails immediately if a table lacks both `updated_at` AND a known append-only mapping.
 
-**Why now.** Federation v1 (W28) does delta pulls via `WHERE updated_at > last_sync_ts`. Without consistent `updated_at` discipline, the pull silently misses rows or duplicates them.
-
-**Definition of done.** Every catalog table has `updated_at`. Cohort guard passes. Manual `UPDATE` of any row touches the column.
+**Definition of done.** Cohort guard test exists and passes against current schema. Future tables either have `updated_at` (the default) or are added to `KNOWN_APPEND_ONLY_TABLES` with an explicit timestamp column choice.
 
 ---
 
