@@ -63,7 +63,7 @@
     <integer>5</integer>
 
     <key>ProcessType</key>
-    <string>Background</string>
+    <string>Standard</string>
 
     <key>StandardOutPath</key>
     <string>/Library/Application Support/MiningGuardian/logs/intelligence-report.out.log</string>

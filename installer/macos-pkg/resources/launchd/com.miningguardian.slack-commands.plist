@@ -52,7 +52,7 @@
     <integer>10</integer>
 
     <key>ProcessType</key>
-    <string>Background</string>
+    <string>Standard</string>
 
     <key>StandardOutPath</key>
     <string>/Library/Application Support/MiningGuardian/logs/slack-commands.out.log</string>
