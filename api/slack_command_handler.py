@@ -27,6 +27,8 @@ import json
 import logging
 import psycopg2
 from psycopg2.extras import DictCursor
+
+from core.db_targets import operational_target
 import requests
 from collections import OrderedDict
 from datetime import datetime
@@ -58,13 +60,14 @@ CHANNEL_IDS = [
 ]
 CHANNEL_ID = CHANNEL_IDS[0]  # Default for backwards compat
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. Slack command handlers query operational tables
+    (action_audit_log, miner_readings, scans, system_settings).
+    """
+    return operational_target().dsn()
 
 
 # Kept as a module-level value so CostTracker(DB_PATH) at line ~256 still works.

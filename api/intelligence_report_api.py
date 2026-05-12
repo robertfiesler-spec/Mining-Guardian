@@ -25,6 +25,8 @@ Version: 2.2.0 — Real fleet data from guardian.db + all prior fixes (April 16 
 import json, csv, os, re, math, time, threading
 import psycopg2
 from psycopg2.extras import DictCursor
+
+from core.db_targets import operational_target
 from pathlib import Path as FilePath
 from datetime import datetime
 from typing import Optional
@@ -51,13 +53,16 @@ def _safe_float(val, default=0.0) -> float:
 BASE_DIR = FilePath(__file__).resolve().parent
 REPO_DIR = BASE_DIR.parent  # Go up from api/ to repo root
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. intelligence_report_api reads operational tables (scans,
+    miner_readings) and assembles formatted reports that reference
+    catalog concepts by name only — the reports themselves do not
+    open a catalog DB connection.
+    """
+    return operational_target().dsn()
 
 
 # Kept for compatibility with any external callers that import this constant.

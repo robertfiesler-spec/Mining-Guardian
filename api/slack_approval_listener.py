@@ -17,6 +17,8 @@ import json
 import logging
 import psycopg2
 from psycopg2.extras import DictCursor
+
+from core.db_targets import operational_target
 import requests
 import threading
 from collections import OrderedDict
@@ -40,13 +42,14 @@ SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID      = "C0AQ8SE1448"
 APPROVAL_API    = "http://localhost:8686"
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. This listener reads the operational action_audit_log to
+    poll for newly-queued approvals.
+    """
+    return operational_target().dsn()
 POLL_INTERVAL   = 15
 
 # Authorized Slack user IDs — only these users can approve/deny actions.

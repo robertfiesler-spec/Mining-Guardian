@@ -54,6 +54,8 @@ import logging
 import os
 import psycopg2
 from psycopg2.extras import DictCursor
+
+from core.db_targets import operational_target
 import sys
 import time
 from datetime import datetime, timezone
@@ -73,18 +75,14 @@ logging.basicConfig(
 logger = logging.getLogger('alert_listener')
 
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables.
+    """Operational Postgres DSN via core.db_targets.
 
-    Defaults match the standard mining_guardian install — override via env:
-      GUARDIAN_PG_HOST, GUARDIAN_PG_PORT, GUARDIAN_PG_DBNAME,
-      GUARDIAN_PG_USER, GUARDIAN_PG_PASSWORD
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. The AMS alert listener writes operational tables only
+    (action_audit_log, miner_readings).
     """
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    return operational_target().dsn()
 CONFIG_PATH = str(_ROOT / 'config.json')
 
 # Notifications we treat as urgent and what to do about each

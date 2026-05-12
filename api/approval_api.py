@@ -12,6 +12,8 @@ Runs on: http://localhost:8686
 import sys
 import psycopg2
 from psycopg2.extras import DictCursor
+
+from core.db_targets import operational_target
 import json
 import logging
 import hashlib
@@ -35,13 +37,14 @@ logger = logging.getLogger("approval_api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. All tables this module touches (action_audit_log,
+    miner_readings, scans, etc.) are operational.
+    """
+    return operational_target().dsn()
 
 
 class _PgConnWrapper:
