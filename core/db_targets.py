@@ -187,6 +187,73 @@ def _resolve_user() -> str:
     )
 
 
+# ============================================================================
+# W14 (2026-05-13) — catalog can live on a different Postgres instance
+# ============================================================================
+# Before W14, catalog and operational share one Postgres container on port
+# 5432. After W14, catalog moves to its own container on port 5433.
+#
+# The two resolvers below fall back to operational host/port when their
+# CATALOG-specific env vars are unset. This means:
+#
+#   - Pre-W14 (today): `GUARDIAN_PG_CATALOG_HOST` and `GUARDIAN_PG_CATALOG_PORT`
+#     are NOT set in .env. Both functions fall through to _resolve_host() and
+#     _resolve_port(), returning 127.0.0.1:5432 — same as operational.
+#     `catalog_target()` is byte-identical to its pre-W14 behavior.
+#
+#   - Post-W14 (after tomorrow's split): .env adds the two new vars pointing
+#     at the catalog container's port (5433). `catalog_target()` automatically
+#     routes there. No Python code changes needed at split time.
+#
+# This pattern means W14 Step 4 in W14_PREP.md is just two `echo >> .env`
+# lines plus service bootout/bootstrap — no code edit during the maintenance
+# window. Rolling W14 back is also config-only: remove the two new env vars
+# and catalog reads return to port 5432.
+#
+# See: docs/strategy/W14_PREP.md §"Step 4 — Update .env and db_targets.py"
+# See: docs/strategy/AMENDMENTS_2026-05-12.md §A01 (W14 sequencing)
+
+
+def _resolve_catalog_host() -> str:
+    """Resolve the Postgres host for the CATALOG DB.
+
+    Falls back to the operational host (`_resolve_host()`) when the
+    `GUARDIAN_PG_CATALOG_HOST` env var is unset. Pre-W14 this means
+    catalog reads share the operational host/port (one container, two
+    databases). Post-W14 the var is set in `.env` and catalog reads
+    route to the dedicated catalog container.
+
+    Accepts `MG_DB_CATALOG_HOST` as a secondary fallback for symmetry
+    with the `MG_DB_*` env-var family.
+    """
+    return (
+        os.environ.get("GUARDIAN_PG_CATALOG_HOST")
+        or os.environ.get("MG_DB_CATALOG_HOST")
+        or _resolve_host()
+    )
+
+
+def _resolve_catalog_port() -> int:
+    """Resolve the Postgres port for the CATALOG DB.
+
+    Falls back to the operational port (`_resolve_port()`) when the
+    `GUARDIAN_PG_CATALOG_PORT` env var is unset. Pre-W14 this means
+    catalog reads share the operational port (5432). Post-W14 the var
+    is set to 5433 in `.env`.
+
+    A non-integer port value falls back to operational rather than
+    crashing — same failure-mode philosophy as `_resolve_port()`.
+    Accepts `MG_DB_CATALOG_PORT` as a secondary fallback for symmetry.
+    """
+    raw = os.environ.get("GUARDIAN_PG_CATALOG_PORT") or os.environ.get("MG_DB_CATALOG_PORT") or ""
+    if not raw:
+        return _resolve_port()
+    try:
+        return int(raw)
+    except ValueError:
+        return _resolve_port()
+
+
 def operational_target() -> DBTarget:
     """Return the resolved Postgres target for the OPERATIONAL DB.
 
@@ -211,12 +278,22 @@ def catalog_target() -> DBTarget:
     """Return the resolved Postgres target for the CATALOG DB.
 
     dbname comes from `GUARDIAN_PG_CATALOG_DBNAME` (default
-    `mining_guardian_catalog`). All other fields are shared with
-    `operational_target()` — both DBs live on the same Postgres container.
+    `mining_guardian_catalog`).
+
+    host/port come from `_resolve_catalog_host()` and
+    `_resolve_catalog_port()` (W14, 2026-05-13). These fall back to the
+    operational host/port when the catalog-specific env vars are unset,
+    so pre-W14 deployments see byte-identical behavior to the previous
+    implementation. Post-W14 customer Mini installs set the catalog
+    vars to point at the dedicated catalog container.
+
+    user/password are still shared with `operational_target()` per
+    decision D2 (locked 2026-05-12 evening): one MG_DB_PASSWORD covers
+    both instances since both are bound to 127.0.0.1 only.
     """
     return DBTarget(
-        host=_resolve_host(),
-        port=_resolve_port(),
+        host=_resolve_catalog_host(),
+        port=_resolve_catalog_port(),
         user=_resolve_user(),
         password=_resolve_password(),
         dbname=os.environ.get("GUARDIAN_PG_CATALOG_DBNAME", _DEFAULT_CATALOG_DBNAME),
