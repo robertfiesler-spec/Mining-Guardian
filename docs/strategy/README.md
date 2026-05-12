@@ -15,6 +15,7 @@
 | "What's the next thing to work on?" | [`../EXECUTION_PLAN_STATUS.md`](../EXECUTION_PLAN_STATUS.md) → find first `[ ]` in dependency order |
 | "What's been done already?" | [`../EXECUTION_PLAN_STATUS.md`](../EXECUTION_PLAN_STATUS.md) → look for `[X]` and `[~]` rows |
 | "Why are we doing W##?" | [`04_MASTER_EXECUTION_PLAN.md`](04_MASTER_EXECUTION_PLAN.md) → find the W## section |
+| "What's the catalog supposed to be / how do the 4 loops work?" | [`05_CATALOG_DESIGN_PLAN_2026-05-12.md`](05_CATALOG_DESIGN_PLAN_2026-05-12.md) — locked design, federation, real-world ranges, Slack /intel |
 | "What did the audit find specifically?" | [`01_PERFORMANCE_AUDIT.md`](01_PERFORMANCE_AUDIT.md) — performance findings in 3 tiers |
 | "How do the two databases interact?" | [`02_TWO_DATABASE_DEEP_DIVE.md`](02_TWO_DATABASE_DEEP_DIVE.md) — operational↔catalog flow, write-only catalog tables, Perplexity gap |
 | "Why does the audit believe A+ is reachable?" | [`03_OVERALL_ASSESSMENT.md`](03_OVERALL_ASSESSMENT.md) — three-layer ceiling, risk factors |
@@ -64,6 +65,20 @@ Read this when you need to remember *why the discipline matters* — it explains
 
 **But trust the status file over the Plan for current state.** The Plan was written 2026-05-09; everything since has been amendments. Always cross-reference with `EXECUTION_PLAN_STATUS.md`.
 
+### [`05_CATALOG_DESIGN_PLAN_2026-05-12.md`](05_CATALOG_DESIGN_PLAN_2026-05-12.md) — Intelligence Catalog Design Plan
+
+The locked architectural design for the intelligence catalog from the 2026-05-12 operator/Claude design dialogue. Covers:
+
+- The catalog mission (NORTH-STAR-1: "foremost authority of btc miners in the world")
+- The four loops feeding the catalog (Perplexity intake, friend archives, operational feedback, AI consumers)
+- The two-section model (factory specs vs real-world ranges)
+- Monthly two-way federation with customer Minis (Loop 5)
+- New W-items W26 (`updated_at` discipline), W27 (`ops.field_observed_specs` + Layer 2.5 aggregator), W28 (federation v1), W29 (Pass 2 cadence flag), W30 (enrichment CSV structured extraction)
+- The expanded Slack `/intel` command design (two intake patterns, Approve-All UX)
+- Full re-sequenced timeline working backward from mid-August 2026 customer ship
+
+Read this when starting any catalog-related work. Cite section IDs (NORTH-STAR-1, OPERATOR-CADENCE-1, OPERATOR-RANGES-1, DEFAULT-MERGE-1, PERPLEXITY-PASTE-1, Loop 1–5) in commit messages.
+
 ### [`AMENDMENTS_2026-05-12.md`](AMENDMENTS_2026-05-12.md) — Plan Amendments (living)
 
 Every meaningful delta between the Plan as written and reality. New W-items (W23-W25), scope adjustments (W05 from 6 to 9 plists), sub-items (W14a, W14b), status corrections (W16 done, W17 untouched, W03 half-done). Cite amendments by ID (A01, A02, ...) in commit messages.
@@ -93,7 +108,7 @@ Read this **before starting any Phase 1.5 work**.
 
 | Filename pattern | Lifecycle |
 |---|---|
-| `01_*.md` through `04_*.md` | **Frozen snapshots** of the 2026-05-09 audit reports + Plan. Do not edit. If something is wrong, file an amendment in `AMENDMENTS_<date>.md`. |
+| `01_*.md` through `05_*.md` | **Frozen snapshots** — the 2026-05-09 audit reports + Plan (01–04) and the 2026-05-12 catalog design (05). Do not edit. If something is wrong, file an amendment in `AMENDMENTS_<date>.md`. |
 | `AMENDMENTS_<date>.md` | **Living amendment files.** When the count of amendments in one file grows past ~10 or the file passes a quarter boundary, start a new dated file. Each amendment has a stable ID. |
 | `RECONCILIATION_<date>.md` | **Point-in-time snapshots.** Each dated reconciliation captures `main`-state on that date. They're not edited after the fact. |
 | `W##_PREP.md` | **Living prep docs** for L-effort items. Updated as decisions are made; archived once the W-item completes. |
@@ -102,7 +117,7 @@ Read this **before starting any Phase 1.5 work**.
 
 ## How to open a fresh session
 
-> *Continuing the Mining Guardian project. The execution plan status is at `docs/EXECUTION_PLAN_STATUS.md`. The strategic docs are in `docs/strategy/`. Currently working on W##. The relevant amendment is A## in `docs/strategy/AMENDMENTS_2026-05-12.md`.*
+> *Continuing the Mining Guardian project. The execution plan status is at `docs/EXECUTION_PLAN_STATUS.md`. The strategic docs are in `docs/strategy/`. The locked catalog design is at `docs/strategy/05_CATALOG_DESIGN_PLAN_2026-05-12.md`. Currently working on W##. The relevant amendment is A## in `docs/strategy/AMENDMENTS_2026-05-12.md`.*
 
 That single paragraph gives a fresh Claude session the entry points to everything else. Trust the files; if any chat memory conflicts with a file, the file wins.
 

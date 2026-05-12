@@ -318,6 +318,102 @@ During the Mini-side W05 deployment, `sudo launchctl list | grep com.miningguard
 
 ---
 
+---
+
+## A08 — New phase order locked, working backward from mid-August customer ship
+
+**Decided:** 2026-05-12, after the catalog design dialogue with operator. Full design in [`05_CATALOG_DESIGN_PLAN_2026-05-12.md`](05_CATALOG_DESIGN_PLAN_2026-05-12.md) §3.
+
+### Plan as written
+
+The Master Plan ([`04_MASTER_EXECUTION_PLAN.md`](04_MASTER_EXECUTION_PLAN.md)) had this order:
+
+- Phase 2 (W06–W09): Closing integration gap — Weeks 2–3
+- Phase 3 (W10–W13): External intake & operator surfaces — Week 4
+- Phase 4 (W14–W17): Architectural correctness — Weeks 5–6
+- Phase 5 (W18–W22): Performance polish — Weeks 7–8
+- Phase 6: Federation — Months 3–6
+
+### Amendment summary
+
+Operator-locked ship target: mid-August 2026. Federation cannot wait for "Months 3–6" because customer Minis depend on it from day one. Three new W-items (W26, W27, W30) are required to deliver on the catalog mission stated by operator ("foremost authority of btc miners in the world"). New order:
+
+- ✅ Phase 1.5 (W14a → W14 → W14b) — this week
+- **Phase 2 (W10 → W11)** — next 2 weeks — Slack `/intel` lights up daily Perplexity ingest
+- **Phase 2b (W06 → W07 → W08 → W09)** — following 2 weeks — AI reads catalog; daily Pass 2 catalog-aware
+- **Phase 3 (W26 → W27 → W30)** — June — `updated_at` discipline + field_observed_specs + Layer 2.5 + enrichment CSV extraction
+- **Phase 3b (W23/W24/W25 + W12)** — late June — Grafana intelligence dashboard rebuild
+- **Phase 4 (W28 + W29)** — July — federation v1 + Pass 2 cadence flag + customer installer two-instance support
+- **Phase 5** — first two weeks August — bake / notarization / dry run
+- **Phase 6** — post-August — old performance polish (W15, W17, W18–W22) returns
+
+W15 (knowledge.json split) and W17 (tz-aware datetime sweep) move from Phase 4 to post-August because neither blocks customer ship and both are improvements to a working system.
+
+### Why this re-sequencing
+
+The Plan was written without knowing two key operator preferences clarified 2026-05-12:
+
+1. **Daily Pass 2 (not weekly).** Per [`05_CATALOG_DESIGN_PLAN_2026-05-12.md`](05_CATALOG_DESIGN_PLAN_2026-05-12.md) §1.3 (OPERATOR-CADENCE-1), the operator runs the deep dive every day. That multiplies W09's value by ~7 and makes it Tier 1 priority for master.
+
+2. **Federation before customer ship, not after.** Per [`05_CATALOG_DESIGN_PLAN_2026-05-12.md`](05_CATALOG_DESIGN_PLAN_2026-05-12.md) §2, customer Minis pull from master monthly. Cannot ship customer Minis in August without federation v1 already running.
+
+---
+
+## A09 — W11 effort revised M → M-L; two intake patterns; Approve-All UX
+
+**Decided:** 2026-05-12, after reviewing actual Perplexity watcher output format.
+
+### Plan as written
+
+[`04_MASTER_EXECUTION_PLAN.md`](04_MASTER_EXECUTION_PLAN.md) W11: M effort (3–4 days). Single intake pattern: `/intel <event_type> "<raw_text>"`. Single confirmation card.
+
+### Amendment summary
+
+Reality of operator workflow (from chat 2026-05-12 "Q1: I look on the chat daily that they are running out of" + the pasted morning Perplexity output sample):
+
+- Operator reads ONE Perplexity chat per morning that contains output from all 3–4 scheduled watchers
+- Most days are "nothing new" days — each watcher reports a freshness check, not a content finding
+- A "nothing new" report is itself catalog data and must be recorded via `record_freshness_check`
+- The duplicate-digit gotcha is real (`886886 TH/s` instead of `886 TH/s`) and requires explicit preprocessing
+
+Full design in [`05_CATALOG_DESIGN_PLAN_2026-05-12.md`](05_CATALOG_DESIGN_PLAN_2026-05-12.md) §4. Highlights:
+
+- **Two intake patterns:** `/intel paste` (primary, daily) + `/intel <type> "<text>"` (ad-hoc)
+- **Approve-All UX:** Slack Block Kit card with separate buttons for freshness checks (bulk approve) vs. content findings (individual review). Keeps daily operator time ~30 seconds.
+- **Structure extractor preprocessing:** regex `\b(\d+)\1\b → \1` to collapse duplicate-digit paste artifacts (PERPLEXITY-PASTE-1).
+- **W10 grows by one propose function:** `propose_community_intel` for watch-item-type findings (e.g., "treat S23 series specs as rumor unless corroborated"). Original W10 had 4 new functions; now 5.
+
+Effort revised from M (3–4 days) to **M-L (5–7 days)**.
+
+---
+
+## A10 — W30 added: enrichment CSV structured extraction
+
+**Decided:** 2026-05-12, after operator described the "parts section" complaint.
+
+### Plan as written
+
+The Plan did not include any work to extract structured rows from `intelligence-catalog/data/miner_enrichment_master.csv`. The CSV has been read by the Intelligence Report API for display, but never promoted to structured catalog rows.
+
+### Amendment summary
+
+Operator complaint 2026-05-12:
+
+> *"Under parts it should be listing the chip type and number control board types and brands, hashboard types and numbers."*
+
+Root cause: the data exists in `miner_enrichment_master.csv` freeform fields (especially `Distinguishing Features`, `PSU Requirements`) but has never been parsed into the structured `hardware.chips`, `hardware.psu_models`, `hardware.control_boards`, `hardware.hashboards` tables. Today `hardware.chips` has 4 rows but the CSV references 30+ distinct chip models.
+
+Full spec in [`05_CATALOG_DESIGN_PLAN_2026-05-12.md`](05_CATALOG_DESIGN_PLAN_2026-05-12.md) §5 W30. M effort (3–4 days). One-shot importer at `intelligence-catalog/seed-data/extract_structured_specs_from_csv.py`. Targets bring:
+
+- `hardware.chips` from 4 → 30+ rows
+- `hardware.psu_models` from 0 → 50+ rows
+- `hardware.miner_models.voltage_min/voltage_max` from mostly NULL → 270+/317 populated
+- `hardware.miner_models.release_date` from 15% → 90%+ populated
+
+This is the gap that makes the catalog feel empty today. Lands in June per A08 phase order.
+
+---
+
 ## How to use this file in commits and chat
 
 When applying any amendment:
