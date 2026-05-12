@@ -27,6 +27,8 @@ import statistics
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from core.db_targets import operational_target
+
 _ROOT = Path(__file__).resolve().parent.parent
 from typing import Optional, Tuple
 
@@ -291,15 +293,14 @@ class HashrateTierResolver:
         # BiXBiT firmware. Check the DB for the last non-empty profile.
         if firmware.upper() == "BIXBIT" and not profile:
             try:
-                import os
-                _dsn = (
-                    f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
-                    f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
-                    f"dbname={os.environ.get('GUARDIAN_PG_DBNAME', 'mining_guardian')} "
-                    f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
-                    f"password={os.environ.get('GUARDIAN_PG_PASSWORD', '')}"
+                # W14a (2026-05-12): was reading env vars directly;
+                # delegate to core.db_targets.operational_target() so this
+                # query stays on the right Postgres instance after W14.
+                # The lookup hits `miner_readings`, an operational table.
+                conn = psycopg2.connect(
+                    **operational_target().connect_kwargs(),
+                    cursor_factory=DictCursor,
                 )
-                conn = psycopg2.connect(_dsn, cursor_factory=DictCursor)
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT current_profile FROM miner_readings "
@@ -411,17 +412,14 @@ class BaselineManager:
         mining_guardian.py line 100) get the DSN string. If caller passes a
         legacy path like "guardian.db", we ignore it and build DSN from env.
         """
-        import os
-        def _build_dsn() -> str:
-            host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-            port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-            dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-            user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-            password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-            return f"host={host} port={port} dbname={dbname} user={user} password={password}"
-
+        # W14a (2026-05-12): was building DSN by reading env vars directly
+        # in a nested _build_dsn() helper. Delegate to
+        # core.db_targets.operational_target() so callers stay on the right
+        # Postgres instance after W14 splits catalog onto port 5433. The
+        # BaselineManager only touches `miner_baselines` and `miner_readings`,
+        # both operational tables.
         if db_path is None or db_path.endswith(".db") or db_path.startswith("/"):
-            self.db_path = _build_dsn()
+            self.db_path = operational_target().dsn()
         else:
             self.db_path = db_path
 
