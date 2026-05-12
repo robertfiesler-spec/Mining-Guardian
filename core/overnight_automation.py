@@ -37,8 +37,13 @@ from dotenv import load_dotenv
 # core/core/db_targets.py), but `from db_targets import ...` resolves
 # because we explicitly add core/ to sys.path here. W14a regression
 # 2026-05-12.
+#
+# Path X (2026-05-12): also add `_ROOT` itself (install root) so that
+# any module loaded via the install-tree paths that uses dotted imports
+# (`from core.X import ...`) can still resolve them. Even though THIS
+# file uses the bare form for db_targets, modules it imports may not.
 _ROOT = Path(__file__).resolve().parent.parent
-for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"), str(_ROOT / "ai")]:
+for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"), str(_ROOT / "ai")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

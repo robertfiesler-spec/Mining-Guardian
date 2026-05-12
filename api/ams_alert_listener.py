@@ -61,10 +61,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 # Make the core daemon importable so we share the AMSClient + GuardianConfig.
-# This sys.path setup MUST come before `from core.db_targets import ...`
-# below, otherwise the launcher (which runs us via direct script path, not
-# python -m) can't find the `core` package. W14a regression 2026-05-12.
+# This sys.path setup MUST come before `from db_targets import ...` below,
+# otherwise the launcher (which runs us via direct script path, not python
+# -m) can't find the `core` package. W14a regression 2026-05-12.
+#
+# Path X (2026-05-12): also add `_ROOT` itself (install root) so dotted
+# imports like `from core.X import ...` work when this module is loaded
+# standalone, not just when called via a parent that already set up its
+# own sys.path. Makes the file self-contained regardless of caller.
 _ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / 'core'))
 sys.path.insert(0, str(_ROOT / 'ai'))
 

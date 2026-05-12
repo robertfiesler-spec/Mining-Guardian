@@ -70,7 +70,13 @@ from typing import Dict, List, Optional, Tuple
 # module is ever invoked directly rather than imported by a parent that
 # already set sys.path, `core` won't be on sys.path yet. W14a regression
 # 2026-05-12.
+#
+# Path X (2026-05-12): also add `_ROOT` itself (install root) so dotted
+# imports like `from core.X import ...` work standalone too. This is
+# essential here because train_cohort imports `llm_analyzer` (which is
+# `core/llm_analyzer.py` with `from core.db_targets import ...` dotted).
 _ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / 'ai'))
 sys.path.insert(0, str(_ROOT / 'core'))
 

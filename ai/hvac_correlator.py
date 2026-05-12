@@ -35,8 +35,11 @@ from typing import Dict, Any, Optional, List
 # module is ever invoked directly rather than imported by a parent that
 # already set sys.path, `core` won't be on sys.path yet. W14a regression
 # 2026-05-12.
+#
+# Path X (2026-05-12): also add `_ROOT` itself (install root) so dotted
+# imports like `from core.X import ...` work standalone too.
 _ROOT = Path(__file__).resolve().parent.parent
-for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
+for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "ai")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
