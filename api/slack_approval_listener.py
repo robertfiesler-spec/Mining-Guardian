@@ -17,8 +17,6 @@ import json
 import logging
 import psycopg2
 from psycopg2.extras import DictCursor
-
-from core.db_targets import operational_target
 import requests
 import threading
 from collections import OrderedDict
@@ -32,11 +30,17 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("slack_approval_listener")
 
-# ── Path setup ────────────────────────────────────────────────────────────────
+# Path setup MUST come before `from db_targets import ...` below — the
+# launcher runs us via direct script path (not python -m) so `core`
+# isn't auto-discovered. W14a regression 2026-05-12.
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Bare form (not `from core.db_targets`) since `core/` itself is on
+# sys.path, not the install root.
+from db_targets import operational_target  # noqa: E402
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID      = "C0AQ8SE1448"

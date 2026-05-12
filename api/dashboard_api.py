@@ -17,8 +17,6 @@ Runs on: http://localhost:8585
 import sys
 import psycopg2
 from psycopg2.extras import DictCursor
-
-from core.db_targets import operational_target
 import os
 import json
 import html as html_lib
@@ -30,10 +28,18 @@ import logging
 logger = logging.getLogger('dashboard_api')
 
 # ── Path setup ────────────────────────────────────────────────────────────────
+# Must come BEFORE `from db_targets import ...` below, otherwise the
+# launcher (which runs this script via direct path, not python -m) can't
+# find the `core` package. W14a regression 2026-05-12.
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Now that `core/` is on sys.path, db_targets is reachable as a top-level
+# module. Using the bare form because we added `core/` itself, not the
+# install root.
+from db_targets import operational_target  # noqa: E402
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware

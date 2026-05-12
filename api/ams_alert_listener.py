@@ -54,18 +54,25 @@ import logging
 import os
 import psycopg2
 from psycopg2.extras import DictCursor
-
-from core.db_targets import operational_target
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
-# Make the core daemon importable so we share the AMSClient + GuardianConfig
+# Make the core daemon importable so we share the AMSClient + GuardianConfig.
+# This sys.path setup MUST come before `from core.db_targets import ...`
+# below, otherwise the launcher (which runs us via direct script path, not
+# python -m) can't find the `core` package. W14a regression 2026-05-12.
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / 'core'))
 sys.path.insert(0, str(_ROOT / 'ai'))
+
+# Now that `core/` is on sys.path, `from db_targets import ...` resolves
+# (the sys.path adds `core/`, so db_targets is reachable as a top-level
+# module). Using the bare form rather than `from core.db_targets` because
+# we added `core/` itself to sys.path, not the install root.
+from db_targets import operational_target  # noqa: E402
 
 # Logging setup — write to stdout so systemd journal captures it
 logging.basicConfig(
