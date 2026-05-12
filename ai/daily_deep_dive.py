@@ -60,6 +60,8 @@ import logging
 import os
 import psycopg2
 from psycopg2.extras import DictCursor
+
+from core.db_targets import operational_target
 import sys
 import time
 import traceback
@@ -80,13 +82,14 @@ from core.dt_format import fmt_dt
 # ── Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver. daily_deep_dive
+    reads operational tables (scans, miner_readings, ai_scores,
+    action_audit_log, weather_readings, hvac_readings) and writes
+    operational daily_deep_analyses.
+    """
+    return operational_target().dsn()
 
 
 class _PgConnWrapper:

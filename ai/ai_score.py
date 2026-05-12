@@ -28,19 +28,26 @@ from datetime import datetime, timedelta
 import psycopg2
 from psycopg2.extras import DictCursor
 
+from core.db_targets import operational_target
+
 _ROOT = Path(__file__).resolve().parent.parent
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
 
 def _pg_dsn() -> str:
-    """Build a Postgres DSN from GUARDIAN_PG_* env vars."""
-    return (
-        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
-        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
-        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
-        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
-        f"dbname={os.environ.get('GUARDIAN_PG_DBNAME', 'mining_guardian')}"
-    )
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. ai_score reads operational miner_readings + writes
+    operational ai_scores.
+
+    Resolver also defaults the user to 'mg' (vs the old hard-coded
+    'guardian_app' fallback) and tolerates a missing password
+    GUARDIAN_PG_PASSWORD by returning empty string — psycopg2 then
+    surfaces a clear auth error instead of KeyError at import.
+    """
+    return operational_target().dsn()
 
 
 class _PgConnWrapper:

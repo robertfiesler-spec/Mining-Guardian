@@ -24,6 +24,8 @@ from typing import Any, Dict, Optional
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
+from core.db_targets import operational_target
+
 logger = logging.getLogger("console.system_state")
 
 # Bounded probe timeout. Tight enough that a single page render stays
@@ -53,11 +55,15 @@ def _http_probe(url: str) -> Optional[int]:
 # ── Individual probes ────────────────────────────────────────────────────────
 
 def probe_postgres() -> Dict[str, Any]:
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    try:
-        port = int(os.environ.get("GUARDIAN_PG_PORT", "5432"))
-    except ValueError:
-        port = 5432
+    # W14a (2026-05-12): was reading host/port directly via os.environ.get().
+    # Delegate to core.db_targets.operational_target() so this probe targets
+    # the same instance the rest of the operational code talks to. Probe
+    # remains a TCP-only check — we deliberately do not open a real DB
+    # connection here since the console renders this panel synchronously
+    # and a slow Postgres response must not hang the page.
+    target = operational_target()
+    host = target.host
+    port = target.port
     if _tcp_probe(host, port):
         return {"status": "up", "detail": f"{host}:{port}"}
     return {"status": "down", "detail": f"{host}:{port} unreachable"}

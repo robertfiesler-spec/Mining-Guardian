@@ -9,10 +9,13 @@ local catalog DB `mining_guardian_catalog`.
 
 Per D-14 sub-lock 5 ("AI consumers talk psycopg-direct to catalog DB on
 the Mini, no HTTP round-trip") and Vision Anchor 6 (no cloud-only
-operational-loop dependencies), the catalog DB lives in the same
-Postgres container as the operational DB, on `127.0.0.1:5432`. The DSN
-is resolved through `core.db_targets.catalog_target()` (P-018A), which
-reads `GUARDIAN_PG_HOST/_PORT/_USER/_PASSWORD/_CATALOG_DBNAME` from .env.
+operational-loop dependencies), the catalog DB lives on the same Mini
+host as the operational DB. In State A (today) both are inside one
+Postgres container on port 5432; in State B (W14 target topology)
+catalog moves to a separate container on port 5433. The DSN is
+resolved through `core.db_targets.catalog_target()` (P-018A), which
+reads the catalog-side env vars from .env — see core/db_targets.py
+for the canonical list.
 
 Public surface preserved exactly (callers in ai/*.py, core/*.py
 unmodified):

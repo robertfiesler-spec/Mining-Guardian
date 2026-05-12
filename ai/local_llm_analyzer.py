@@ -21,6 +21,8 @@ import logging
 import os
 import psycopg2
 from psycopg2.extras import DictCursor
+
+from core.db_targets import operational_target
 import time
 import requests
 from datetime import datetime, timedelta
@@ -38,13 +40,12 @@ from ai.catalog_context import get_catalog_context
 from core.dt_format import fmt_dt
 _ROOT = Path(__file__).resolve().parent.parent
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver. local_llm_analyzer
+    reads operational miner_readings + writes operational ai_analyses.
+    """
+    return operational_target().dsn()
 
 
 class _PgConnWrapper:

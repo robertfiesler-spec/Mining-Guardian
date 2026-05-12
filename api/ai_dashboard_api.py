@@ -20,6 +20,8 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import DictCursor
 
+from core.db_targets import operational_target
+
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "ai"), str(_ROOT / "core")]:
     if _p not in sys.path:
@@ -29,18 +31,20 @@ KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
 
 def _pg_dsn() -> str:
-    """Build a Postgres DSN from GUARDIAN_PG_* env vars.
+    """Operational Postgres DSN via core.db_targets.
 
-    Required: GUARDIAN_PG_PASSWORD. Defaults: host=localhost, port=5432,
-    user=guardian_app, dbname=mining_guardian.
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. The AI dashboard reads operational tables
+    (miner_readings, scans, action_audit_log).
+
+    Note: the previous implementation required GUARDIAN_PG_PASSWORD to be
+    set (used `os.environ['...']`, raising KeyError on missing).
+    The resolver returns empty-string for password if both
+    GUARDIAN_PG_PASSWORD and MG_DB_PASSWORD are unset; psycopg2 then
+    surfaces a clearer authentication error to the caller.
     """
-    return (
-        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
-        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
-        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
-        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
-        f"dbname={os.environ.get('GUARDIAN_PG_DBNAME', 'mining_guardian')}"
-    )
+    return operational_target().dsn()
 
 
 class _PgConnWrapper:

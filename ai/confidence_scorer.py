@@ -27,6 +27,8 @@ from typing import Optional, Tuple
 import psycopg2
 from psycopg2.extras import DictCursor
 
+from core.db_targets import operational_target
+
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "ai")]:
     if _p not in sys.path:
@@ -36,14 +38,12 @@ logger = logging.getLogger("confidence_scorer")
 
 
 def _pg_dsn() -> str:
-    """Build a Postgres DSN from GUARDIAN_PG_* env vars."""
-    return (
-        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
-        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
-        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
-        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
-        f"dbname={os.environ.get('GUARDIAN_PG_DBNAME', 'mining_guardian')}"
-    )
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver. confidence_scorer
+    reads operational miner_readings and ai_scores; both operational.
+    """
+    return operational_target().dsn()
 
 
 class _PgConnWrapper:

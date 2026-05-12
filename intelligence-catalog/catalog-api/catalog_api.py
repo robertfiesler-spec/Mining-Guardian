@@ -43,10 +43,10 @@ logger = logging.getLogger("catalog-api")
 # Configuration
 # ---------------------------------------------------------------------------
 # P-018E (2026-05-06): canonical DSN resolution comes from
-# `core.db_targets.catalog_target()` which reads
-# GUARDIAN_PG_HOST/_PORT/_USER/_PASSWORD/_CATALOG_DBNAME (the env-var
-# family the customer Mac mini's .env actually writes — see
-# `installer/macos-pkg/scripts/postinstall.sh:919-929`). The previous
+# `core.db_targets.catalog_target()` which reads the catalog-side
+# env-var family the customer Mac mini's .env actually writes (see
+# `installer/macos-pkg/scripts/postinstall.sh:919-929`, and
+# `core/db_targets.py` for the canonical list). The previous
 # defaults (`DB_HOST=mining-guardian-db`, `DB_NAME=mining_guardian`) were
 # disjoint from that family and silently pointed the catalog API at the
 # operational DB on every customer install.
@@ -54,7 +54,7 @@ logger = logging.getLogger("catalog-api")
 # Backward-compat: legacy `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` /
 # `DB_NAME` env vars still take precedence when set, so a third-party
 # .env that already wires them keeps working. New deployments should
-# rely solely on the GUARDIAN_PG_* family.
+# rely solely on the canonical resolver.
 def _resolve_catalog_target():
     """Resolve the catalog DB target via core.db_targets, sys.path-resilient.
 
