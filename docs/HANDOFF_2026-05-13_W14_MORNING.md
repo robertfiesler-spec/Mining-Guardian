@@ -59,7 +59,7 @@ These are locked text in [`W14_PREP.md`](strategy/W14_PREP.md). No re-litigation
 | 1 | Unload 12 scheduled launchd jobs (leave 10 always-on running) | Yes — just reload |
 | 2 | `docker run` new `mg-catalog-db` container on port 5433 with its own pgdata volume | Yes — stop+remove container |
 | 3 | Drop empty bootstrap DB inside new container, restore from `pre-w14-catalog-*.dump` | Yes — stop+remove |
-| 4 | Add `GUARDIAN_PG_CATALOG_HOST=127.0.0.1` and `GUARDIAN_PG_CATALOG_PORT=5433` to .env. Update `core/db_targets.py` with `_resolve_catalog_host()` and `_resolve_catalog_port()` (W14_PREP §Step 4 has exact code) | Yes — remove env vars |
+| 4 | Add `GUARDIAN_PG_CATALOG_HOST=127.0.0.1` and `GUARDIAN_PG_CATALOG_PORT=5433` to .env. **`core/db_targets.py` resolver functions are ALREADY pre-staged in `main` (PR #197, 2026-05-12 evening)** — just `scp` the file to Mini's install root. No code edit during the maintenance window. | Yes — remove env vars |
 | 5 | Bootout/bootstrap **all 10** always-on services (W14_PREP says 9; **it's actually 10** — include `feedback-loop-daemon`) | Yes — just restart |
 | 6 | Smoke test: `core.db_targets` reports catalog on `127.0.0.1:5433`; one deep-dive smoke run; one normal scan | n/a |
 | 7 | **`DROP DATABASE mining_guardian_catalog`** on old container | 🚨 **IRREVERSIBLE** without restoring from backup |
@@ -115,6 +115,7 @@ W14_PREP was written 2026-05-09 before some things were locked. The doc text did
 1. **"9 always-on services"** in W14_PREP Step 5 — should be **10**. The 10th is `feedback-loop-daemon` (added in PR #185 / AMENDMENT A07). When you bootout/bootstrap, include it.
 2. **"W14a not yet done"** language in W14_PREP — W14a is done (PRs #186–#189 merged + deployed today).
 3. **Docker CLI path** — `/usr/local/bin/docker` (Colima). The doc just says `docker`. If `docker` isn't on PATH (Claude's SSH sessions hit this), use the full path.
+4. **`core/db_targets.py` code change in Step 4 is ALREADY DONE in `main` (PR #197).** W14_PREP §Step 4 shows code to edit live — don't. Instead just `scp` the file from your laptop to the Mini's install root. The new resolver functions are backward-compatible by design (fall back to operational host/port when catalog env vars are unset), so deploying the file is safe pre-W14. The behavior change is gated on the env vars from Step 4's `.env` edit.
 
 ---
 
