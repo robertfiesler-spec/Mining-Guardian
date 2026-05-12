@@ -38,17 +38,19 @@ Everything else (Ollama, Grafana, the 9 launchd services, the .env file) stays a
 
 ## Open decisions before execution
 
-These need a Yes/No or a value before W14 starts. None are blockers for W14a.
+**✅ ALL D1-D7 LOCKED AT DEFAULTS by operator on 2026-05-12 evening session, before tomorrow's W14 execution.**
 
-| ID | Decision | Default if not chosen | Why it matters |
+| ID | Decision | **LOCKED VALUE** | Why it matters |
 |---|---|---|---|
-| **D1** | Rename `mining-guardian-db` → `mg-operational-db`, or keep it? | **Keep** (less risk; one fewer thing to migrate) | Rename means updating every script that does `docker exec mining-guardian-db ...`; `db_maintenance.sh` and `daily_backup.sh` reference it by name |
-| **D2** | Same password for both instances, or different? | **Same** (one `GUARDIAN_PG_PASSWORD` covers both) | Different is more secure but means two `.env` vars and two backup-script credentials |
-| **D3** | Same data directory parent, or two separate parents? | **One parent dir** (`/Library/Application Support/MiningGuardian/pgdata-{operational,catalog}/`) | One parent makes backup-scripts simpler; two parents protect against shared-filesystem corruption |
-| **D4** | Catalog instance `shared_buffers` size | `512MB` | Catalog is smaller and read-mostly; doesn't need operational's 1GB. After W04 lands, both get explicit tuning |
-| **D5** | Apply Phase 1 tuning (W02, W04) before or after the split? | **After**, per A01 sequencing | If tuned before, tunables get re-applied after the split anyway |
-| **D6** | Backup script changes — single combined script or two separate scripts? | **Two scripts** (`backup_operational.sh`, `backup_catalog.sh`) called by a wrapper | Clearer rollback if one backup fails; aligns with future federation where catalog goes to master and operational stays local |
-| **D7** | First customer-ship .pkg builds include the two-container provisioning, or wait one cycle? | **Include** | Otherwise the next customer install would be State A and W14 would have to happen on every customer Mini |
+| **D1** | Rename `mining-guardian-db` → `mg-operational-db`, or keep it? | **✅ KEEP** | Renaming means updating every script that does `docker exec mining-guardian-db ...`; `db_maintenance.sh` and `daily_backup.sh` reference it by name. Containers differentiated by port (5432 vs 5433). |
+| **D2** | Same password for both instances, or different? | **✅ SAME** (one `MG_DB_PASSWORD` covers both) | Different is more secure but means two `.env` vars and two backup-script credentials. Both DBs on `127.0.0.1` only — same blast radius. |
+| **D3** | Same data directory parent, or two separate parents? | **✅ ONE parent dir** — `/Library/Application Support/MiningGuardian/pgdata/` (operational, current) + `/Library/Application Support/MiningGuardian/pgdata-catalog/` (catalog, new) | One parent makes the backup script's pattern trivial. Two parents would protect against very specific shared-filesystem corruption scenarios that don't apply (same physical disk anyway). |
+| **D4** | Catalog instance `shared_buffers` size | **✅ 512MB** (catalog) / 1GB stays on operational | Catalog is much smaller (~500 rows across ~95 tables), read-mostly, simple lookups. Operational has the hot tables. After W04 lands, both get explicit tuning. |
+| **D5** | Apply Phase 1 tuning (W02, W04) before or after the split? | **✅ AFTER the split** | Per AMENDMENT A08's phase order: W14 first, then tuning. Tuning before split would need re-applying anyway. Tuning after means each container tuned for its actual workload. |
+| **D6** | Backup script changes — single combined script or two separate scripts? | **✅ TWO scripts + wrapper** — `scripts/backup_operational.sh`, `scripts/backup_catalog.sh`, `scripts/daily_backup.sh` (wrapper) | Clearer rollback if one fails. Aligns with federation where catalog ships to master and operational stays local. Each script is short and obvious. |
+| **D7** | First customer-ship .pkg builds include the two-container provisioning, or wait one cycle? | **✅ INCLUDE** | Mid-August customer ship locked. Per catalog design plan §2.6, federation requires both DBs separated on the customer side too. Shipping State A first means every customer Mini needs W14 done remotely. |
+
+**Cross-reference:** These decisions are also captured in the History section of [`../EXECUTION_PLAN_STATUS.md`](../EXECUTION_PLAN_STATUS.md) under 2026-05-12 (evening).
 
 ---
 
@@ -496,7 +498,16 @@ Document the two-container assumption at the top of the file:
 
 ## Open questions for operator before kickoff
 
-1. Decisions D1-D7 above — pick defaults or override.
-2. When is the maintenance window? The catalog read path goes through a circuit breaker, so brief outages are tolerated by the always-on services. The risk window is Step 7 (DROP DATABASE on the old catalog) — that needs to happen between scan cycles, not during one. Quietest hour is 02:00-04:00 CDT (between the 01:00 refinement chain and the 04:00 db_maintenance).
-3. Do we want a "dry run" Mini-side rehearsal in a sandbox before doing it on the live Mini? Not strictly necessary given the rollback design, but cheap insurance.
-4. After W14 lands, are we ready to start W02/W04 (Postgres tuning + pg_stat_statements) against the new topology? Or defer those?
+1. ~~Decisions D1-D7 above~~ — ✅ **LOCKED at defaults 2026-05-12 evening**, see Decisions table above.
+2. **Maintenance window:** Tomorrow (2026-05-13). The catalog read path goes through a circuit breaker, so brief outages are tolerated by the always-on services. The risk window is Step 7 (DROP DATABASE on the old catalog) — that needs to happen between scan cycles, not during one. Quietest hour is 02:00-04:00 CDT (between the 01:00 refinement chain and the 04:00 db_maintenance). **Actual window decision** — operator to confirm tomorrow.
+3. ~~Dry-run rehearsal in a sandbox?~~ — **Skipped.** Rollback design covers it. Step 0 backup with verified restore is the insurance.
+4. After W14 lands, are we ready to start W02/W04 (Postgres tuning + pg_stat_statements) against the new topology? Or defer those? — **Per D5 + A08 phase order: tuning lands AFTER W14, in Phase 3 / June timeframe.**
+
+## Pre-W14 status (as of 2026-05-12 evening)
+
+- ✅ W14a complete (PRs #186, #187, #188, #189 merged; deployed to Mini; 37+ min clean soak)
+- ✅ D1-D7 all locked at defaults
+- ✅ pmset sleep=0, disksleep=0 (W01 portion)
+- ✅ May 11 Anthropic API key rotated; slack-commands restarted with new key (PID 28448)
+- ⏳ Step 0 (pre-W14 backup with verified restore) — running tonight 2026-05-12 evening
+- ⏳ W14 itself — tomorrow 2026-05-13
