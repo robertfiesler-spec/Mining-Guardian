@@ -1,0 +1,117 @@
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.alerts.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.alerts.plist
+index 7189865..3e1e3e3 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.alerts.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.alerts.plist
+@@ -59,7 +59,7 @@
+     <integer>10</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/alerts.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.approval-api.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.approval-api.plist
+index 1d4aa0b..f0f17de 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.approval-api.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.approval-api.plist
+@@ -43,7 +43,7 @@
+     <integer>10</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/approval_api.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.console.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.console.plist
+index 41a2350..9f58749 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.console.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.console.plist
+@@ -49,7 +49,7 @@
+     <integer>10</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/console.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.dashboard-api.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.dashboard-api.plist
+index 5fe2216..6f2dbe7 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.dashboard-api.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.dashboard-api.plist
+@@ -43,7 +43,7 @@
+     <integer>10</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/dashboard_api.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.intelligence-report.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.intelligence-report.plist
+index a661fa1..477fea3 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.intelligence-report.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.intelligence-report.plist
+@@ -63,7 +63,7 @@
+     <integer>5</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/intelligence-report.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.overnight-automation.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.overnight-automation.plist
+index dad5f61..a053de4 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.overnight-automation.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.overnight-automation.plist
+@@ -52,7 +52,7 @@
+     <integer>30</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/overnight-automation.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.scanner.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.scanner.plist
+index 32b35b1..4b9f600 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.scanner.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.scanner.plist
+@@ -108,7 +108,7 @@
+     <integer>10</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/scanner.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.slack-commands.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.slack-commands.plist
+index e1f40b8..9ff4526 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.slack-commands.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.slack-commands.plist
+@@ -52,7 +52,7 @@
+     <integer>10</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/slack-commands.out.log</string>
+diff --git a/installer/macos-pkg/resources/launchd/com.miningguardian.slack-listener.plist b/installer/macos-pkg/resources/launchd/com.miningguardian.slack-listener.plist
+index 57cbc67..9f3a745 100644
+--- a/installer/macos-pkg/resources/launchd/com.miningguardian.slack-listener.plist
++++ b/installer/macos-pkg/resources/launchd/com.miningguardian.slack-listener.plist
+@@ -55,7 +55,7 @@
+     <integer>10</integer>
+ 
+     <key>ProcessType</key>
+-    <string>Background</string>
++    <string>Standard</string>
+ 
+     <key>StandardOutPath</key>
+     <string>/Library/Application Support/MiningGuardian/logs/slack-listener.out.log</string>
