@@ -3,13 +3,13 @@
 # BiXBiT USA  •  Bucket 6d  •  §7.3 row 7g
 #
 # File-based dashboard provisioning. Grafana watches
-# /usr/local/MiningGuardian/grafana/dashboards/*.json and reloads on change.
+# /Library/Application Support/MiningGuardian/grafana/dashboards/*.json and reloads on change.
 #
 # Path is the runtime install path that setup.sh Phase 11 writes — it is
 # NOT this directory. The plist installer copies
 #   installer/macos-pkg/resources/grafana/dashboards/*.json
 #   →
-#   /usr/local/MiningGuardian/grafana/dashboards/*.json
+#   /Library/Application Support/MiningGuardian/grafana/dashboards/*.json
 # at install time.
 #
 # `allowUiUpdates: false` enforces "the JSON file is truth" — operators can
@@ -30,5 +30,5 @@ providers:
     updateIntervalSeconds: 30
     allowUiUpdates: false
     options:
-      path: /usr/local/MiningGuardian/grafana/dashboards
+      path: /Library/Application Support/MiningGuardian/grafana/dashboards
       foldersFromFilesStructure: false
