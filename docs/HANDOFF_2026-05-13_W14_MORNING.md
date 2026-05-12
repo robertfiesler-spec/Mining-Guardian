@@ -159,7 +159,7 @@ If all 6 boxes check, run W14_PREP Step 1.
 ## Open items not blocking W14 (for context, not for tomorrow)
 
 - **W23 sub-items** still open: datasource user standardization deferred to W14b; password inlining deferred to W24
-- **W25 Grafana panels** still showing "No data" — Bobby's preference is Path B (rebuild the 6 April-era branded dashboards). Doesn't block W14.
+- **W25 Grafana panels** still showing "No data" — goal is debugging the queries to get the existing dashboards working (per operator clarification 2026-05-12 evening: *"i did not know i said rebuild them i just want them working, they already were close to perfect"*). Doesn't block W14.
 - **W22 raw_ingestion_log partition** extension deadline is 2027-Q2 — months away
 - **AMS BiXBiT API key** in mg_import_tool was redacted to first 8 chars of sha256 in some old branch — investigate before customer ship
 

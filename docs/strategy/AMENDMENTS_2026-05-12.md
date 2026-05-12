@@ -272,12 +272,12 @@ The handoff §4.4 surfaced three Grafana follow-ups not in the original Plan. Ca
 
 **Symptom.** 3 dashboards under "Mining Guardian" folder load but panels render "No data" (green text, not red errors). Grafana log shows `/api/ds/query → status=400 status_source=downstream`. Postgres-side error, likely SQL syntax mismatch between Postgres 16 and the May-era dashboard queries.
 
-**Two paths (operator decision):**
+**Two diagnostic paths (in order of preference):**
 
-- **Path A** — Fix the queries in the 3 existing May-era dashboards
-- **Path B** — Rebuild the 6 April-era branded dashboards Bobby actually wants from `archive/tmp_scripts_apr08/grafana_brand_dashboards.py` (Main, Fleet Overview, Per Miner, Board Health, AI & Learning, Pool Stats)
+- **Path A (preferred)** — Fix the queries in the existing dashboards. Per operator clarification 2026-05-12 evening: *"i did not know i said rebuild them i just want them working, they already were close to perfect."* The dashboards were close to perfect before the panels broke; the goal is to get them WORKING, not to throw them out. Debug the Postgres-side 400 errors, likely SQL syntax mismatches between Postgres 16 and the May-era queries.
+- **Path B (fallback only)** — If Path A reveals the existing dashboards are unrecoverable (e.g., schema drift too severe to fix economically), regenerate from `archive/tmp_scripts_apr08/grafana_brand_dashboards.py`. This is a **fallback**, not a preference. Operator wants the existing dashboards working, not replaced.
 
-Operator preference per 2026-05-11: Path B. But may revisit when the time comes.
+**Correction note (2026-05-12 evening):** An earlier version of this amendment (and the docs derived from it) claimed "Operator preference per 2026-05-11: Path B." That was a misinterpretation — the operator did not lock Path B; the operator wants the existing dashboards working. This amendment is corrected. Future-Claude reading the older HANDOFF_2026-05-12_EVENING.md morning section should treat the "Path B preference" line there as obsolete; the live position is what's written here.
 
 ---
 
