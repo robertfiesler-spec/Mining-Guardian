@@ -293,6 +293,31 @@ Rationale: this is the discipline that produced the existing cohort guards (`tes
 
 ---
 
+## A07 — W05b: feedback-loop-daemon is the 10th always-on service
+
+**Recorded:** 2026-05-12 (after PR #184 merged and was deployed to the Mini).
+
+During the Mini-side W05 deployment, `sudo launchctl list | grep com.miningguardian` surfaced a 10th always-on service we hadn't audited: `com.miningguardian.feedback-loop-daemon`, running as root with PID 80022 (older than the 83xxx range the W05 bootout/bootstrap produced).
+
+**What feedback-loop-daemon is.** The C5 NOTIFY/LISTEN feedback daemon shipped in D-14 PR 4a. Mirrors `deploy/feedback-loop-daemon.service` for VPS parity. Runs `intelligence-catalog/db/feedback_loop_daemon.py` and listens on Postgres `catalog_feedback` channel via LISTEN. Event-driven — idle when the channel is quiet, which is most of the time today since the closed learning loop (W06–W11) isn't fully wired yet.
+
+**State before W05b:** `ProcessType: Background`, NOT in `installer/macos-pkg/resources/launchd/` despite being deployed (manual install, presumably during D-14 work on May 5–9). Logs show healthy lifecycle through three restart cycles 2026-05-08 → 2026-05-09; quiet since 10:59 May 9 because the channel is quiet, not because the daemon is broken.
+
+**Amendment.**
+
+| Item | Change |
+|---|---|
+| Repo bundle | Add `installer/macos-pkg/resources/launchd/com.miningguardian.feedback-loop-daemon.plist` (didn't exist before this PR) |
+| ProcessType | `Background` → `Standard` (matches the W05 rationale for always-on services) |
+| `scripts/apply_w05_processtype.sh` | `SERVICES` array grows from 9 to 10; this script reused for the W05b deployment |
+| W05 scope | Now covers 10 services. Plan said 6, then A02 said 9; reality is 10 |
+
+**Risk.** Low. Single 1-line change in plist plus 1-line change in script. Same bootout/bootstrap pattern proven on the other 9 services in W05.
+
+**Why the daemon was missing from the installer bundle is still unknown.** D-14 PR 4a should have committed the plist. Worth a `git log -- installer/macos-pkg/resources/launchd/com.miningguardian.feedback-loop-daemon.plist` once after merge to confirm whether this PR is the first time it lands in the repo or whether it was deleted at some point.
+
+---
+
 ## How to use this file in commits and chat
 
 When applying any amendment:
