@@ -489,7 +489,7 @@ The morning §4 "Where the plan stands going forward" table is now obsolete. Upd
 - **W01 backup destination decision** — local backup works (Step 0 proves it); remote destination is hardening for later
 - **W23 datasource user standardization** — deferred to W14b
 - **W24 Grafana password secret management** — deferred to dedicated PR (real concern, separate scope)
-- **W25 Grafana panel "No data"** — Bobby's preference is Path B (rebuild the 6 April-era branded dashboards)
+- **W25 Grafana panel "No data"** — goal is debugging the queries to get the existing dashboards working. **Correction (2026-05-12 evening):** earlier docs incorrectly claimed operator preferred "Path B = rebuild." Operator clarified this evening: *"i did not know i said rebuild them i just want them working, they already were close to perfect."* Path A (fix queries) is preferred; rebuild is fallback only.
 - **W22 raw_ingestion_log partition** extension — deadline 2027-Q2, months away
 - **AMS BiXBiT API key** in mg_import_tool was redacted to first 8 chars of sha256 in some old branch — investigate before customer ship
 - **Customer-facing installer UI (P-040)** — deferred per morning §5.6, blocked on first-customer-ship timing
