@@ -33,8 +33,12 @@ logger = logging.getLogger("slack_approval_listener")
 # Path setup MUST come before `from db_targets import ...` below — the
 # launcher runs us via direct script path (not python -m) so `core`
 # isn't auto-discovered. W14a regression 2026-05-12.
+#
+# Path X (2026-05-12): also add `_ROOT` itself (install root) so dotted
+# imports like `from core.X import ...` work when this module is loaded
+# standalone. Makes the file self-contained regardless of caller.
 _ROOT = Path(__file__).resolve().parent.parent
-for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
+for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

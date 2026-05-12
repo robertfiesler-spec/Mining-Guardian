@@ -43,8 +43,12 @@ load_dotenv()
 # Must come BEFORE `from db_targets import ...` below, otherwise the
 # launcher (which runs this script via direct path, not python -m) can't
 # find the `core` package. W14a regression 2026-05-12.
+#
+# Path X (2026-05-12): also add `_ROOT` itself (install root) so dotted
+# imports like `from core.X import ...` work when this module is loaded
+# standalone. Makes the file self-contained regardless of caller.
 _ROOT = Path(__file__).resolve().parent.parent
-for _p in [str(_ROOT / "core"), str(_ROOT / "clients")]:
+for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
