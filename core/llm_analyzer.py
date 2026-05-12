@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 import psycopg2
 from psycopg2.extras import DictCursor
 
+from core.db_targets import operational_target
+
 load_dotenv()
 logger = logging.getLogger("llm_analyzer")
 
@@ -35,14 +37,20 @@ DB_PATH = "postgres"  # sentinel; constructor still accepts it for API compat
 
 
 def _pg_dsn() -> str:
-    """Build a Postgres DSN from GUARDIAN_PG_* env vars."""
-    return (
-        f"host={os.environ.get('GUARDIAN_PG_HOST', 'localhost')} "
-        f"port={os.environ.get('GUARDIAN_PG_PORT', '5432')} "
-        f"user={os.environ.get('GUARDIAN_PG_USER', 'guardian_app')} "
-        f"password={os.environ['GUARDIAN_PG_PASSWORD']} "
-        f"dbname={os.environ.get('GUARDIAN_PG_DBNAME', 'mining_guardian')}"
-    )
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. llm_analyzer reads operational miner_readings and writes
+    operational ai_analyses.
+
+    Note: the previous implementation required GUARDIAN_PG_PASSWORD to
+    be present (used `os.environ['...']`, raising KeyError on missing).
+    The resolver tolerates missing password by returning empty string,
+    so psycopg2 surfaces a clear auth error to the caller instead of
+    KeyError at import.
+    """
+    return operational_target().dsn()
 
 # Claude API for deep analysis (weekly training, knowledge merge)
 CLAUDE_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")

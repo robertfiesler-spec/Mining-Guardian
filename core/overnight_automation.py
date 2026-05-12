@@ -29,6 +29,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
+from core.db_targets import operational_target
+
 # ── Path setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"), str(_ROOT / "ai")]:
@@ -64,13 +66,14 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("overnight")
 
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Operational Postgres DSN via core.db_targets.
+
+    W14a (2026-05-12): delegated to the resolver so this module stays
+    on the operational instance after W14 splits catalog onto port
+    5433. overnight_automation reads and writes operational
+    action_audit_log and miner_readings during the autonomous window.
+    """
+    return operational_target().dsn()
 APPROVAL_API     = "http://localhost:8686"
 
 # ── Overnight window (24h clock) ──────────────────────────────────────────────

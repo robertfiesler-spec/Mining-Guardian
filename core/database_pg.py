@@ -38,6 +38,8 @@ from typing import Any, Dict, List, Optional
 import psycopg2
 from psycopg2.extras import DictCursor, execute_batch
 
+from core.db_targets import operational_target
+
 logger = logging.getLogger(__name__)
 
 # Schema file that defines the Postgres tables. Idempotent (uses IF NOT EXISTS).
@@ -122,67 +124,54 @@ class GuardianPGDB:
         """Connect to Postgres and ensure the schema is loaded.
 
         Either pass a full DSN or individual host/port/dbname/user/password.
-        For each kwarg left at the default `None`, the value is resolved from
-        the environment in this order, with installer-provisioned values
-        winning when present:
+        For each kwarg left at the default `None`, the value is resolved
+        through `core.db_targets.operational_target()`, which reads the
+        installer-provisioned env-var family (see `core/db_targets.py`
+        for the canonical list). Explicit kwargs still win when provided
+        — the kwarg path is unchanged from before W14a.
 
-            host:     GUARDIAN_PG_HOST → MG_DB_HOST → PGHOST → "127.0.0.1"
-            port:     GUARDIAN_PG_PORT → MG_DB_PORT → PGPORT → 5432
-            dbname:   GUARDIAN_PG_DBNAME → MG_DB_NAME → PGDATABASE → "mining_guardian"
-            user:     GUARDIAN_PG_USER → MG_DB_USER → PGUSER → "mg"
-            password: GUARDIAN_PG_PASSWORD → MG_DB_PASSWORD → PGPASSWORD → ""
+        W14a (2026-05-12): consolidated five inline env-fallback chains
+        (host / port / dbname / user / password — each three levels deep)
+        into a single call through `operational_target()`. The previous
+        implementation also fell back to libpq's `PGHOST/PGPORT/PGDATABASE/
+        PGUSER/PGPASSWORD` envs after `GUARDIAN_PG_*` / `MG_DB_*`. Those
+        libpq fallbacks are intentionally NOT honored by `core.db_targets`
+        — see its docstring for the rationale (mixing `PGDATABASE` would
+        silently misroute catalog callers back to the operational DB).
+        The installer writes the canonical env-var family directly
+        (`installer/macos-pkg/scripts/postinstall.sh:919-927`), so the
+        `PG*` paths never fired on a customer install; this change
+        formalises that.
 
-        P-020 (2026-05-07): the prior defaults baked in `host="localhost"`
-        and `user="guardian_app"`. On the Mac mini the installer's
-        `step_drop_dotenv` writes `GUARDIAN_PG_HOST=127.0.0.1` and
-        `GUARDIAN_PG_USER=mg`, but `core/mining_guardian.py:156` calls
-        `GuardianDB()` with NO kwargs — so the no-arg defaults won, and
-        the scanner crash-looped with
+        P-020 (2026-05-07): the pre-P-020 defaults baked in
+        `host="localhost"` and `user="guardian_app"`. On the Mac mini
+        the installer writes a different host (`127.0.0.1`) and user
+        (`mg`), but `core/mining_guardian.py:156` calls `GuardianDB()`
+        with NO kwargs — so the no-arg defaults won, and the scanner
+        crash-looped with
             FATAL: password authentication failed for user "guardian_app"
-        before ever consulting the .env values. The fix is to read those
-        env vars when the kwarg is left as `None`, so the no-arg path
-        picks up the installer's provisioned config. Explicit-kwarg
-        callers (`GuardianPGDB(host=..., user=...)`) are unchanged.
+        before ever consulting the .env values. P-020 fixed this by
+        reading env vars when the kwarg was None; W14a moves that
+        env-reading machinery into the resolver where the rest of the
+        codebase already lives. Explicit-kwarg callers
+        (`GuardianPGDB(host=..., user=...)`) are unchanged.
 
-        The host fallback is `127.0.0.1` (NOT `localhost`) because the
-        Postgres container in colima only listens on IPv4; `localhost`
-        resolves to `::1` first on macOS, fails immediately with
-        `Connection refused`, then falls back to IPv4 — half a second of
-        wasted retry per connect on every hour-tick scan.
+        The host default (via the resolver) is `127.0.0.1` (NOT
+        `localhost`) because the Postgres container in colima only
+        listens on IPv4; `localhost` resolves to `::1` first on macOS,
+        fails immediately with `Connection refused`, then falls back to
+        IPv4 — half a second of wasted retry per connect on every
+        hour-tick scan.
         """
         if dsn is not None:
             self._dsn = dsn
         else:
-            host_v = host if host is not None else (
-                os.environ.get("GUARDIAN_PG_HOST")
-                or os.environ.get("MG_DB_HOST")
-                or os.environ.get("PGHOST")
-                or "127.0.0.1"
-            )
-            port_v = port if port is not None else int(
-                os.environ.get("GUARDIAN_PG_PORT")
-                or os.environ.get("MG_DB_PORT")
-                or os.environ.get("PGPORT")
-                or 5432
-            )
-            dbname_v = dbname if dbname is not None else (
-                os.environ.get("GUARDIAN_PG_DBNAME")
-                or os.environ.get("MG_DB_NAME")
-                or os.environ.get("PGDATABASE")
-                or "mining_guardian"
-            )
-            user_v = user if user is not None else (
-                os.environ.get("GUARDIAN_PG_USER")
-                or os.environ.get("MG_DB_USER")
-                or os.environ.get("PGUSER")
-                or "mg"
-            )
-            pw = password if password is not None else (
-                os.environ.get("GUARDIAN_PG_PASSWORD")
-                or os.environ.get("MG_DB_PASSWORD")
-                or os.environ.get("PGPASSWORD")
-                or ""
-            )
+            target = operational_target()
+            host_v = host if host is not None else target.host
+            port_v = port if port is not None else target.port
+            dbname_v = dbname if dbname is not None else target.dbname
+            user_v = user if user is not None else target.user
+            pw = password if password is not None else target.password
             self._dsn = f"host={host_v} port={port_v} dbname={dbname_v} user={user_v} password={pw}"
         self._schema_sql_path = Path(schema_sql_path) if schema_sql_path else DEFAULT_SCHEMA_SQL
         # Ping the DB to fail fast if credentials are wrong.

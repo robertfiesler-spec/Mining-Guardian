@@ -149,13 +149,17 @@ def _resolve_password() -> str:
 
 
 def _resolve_port() -> int:
-    """Parse `GUARDIAN_PG_PORT` as int; default to 5432 if unset/invalid.
+    """Parse the Postgres port from env; default to 5432 if unset/invalid.
 
-    A non-integer port is a misconfiguration we surface as the default
-    rather than a crash inside resolve — psycopg2 will surface a clearer
-    error if 5432 is wrong than a `ValueError` from this helper.
+    Reads `GUARDIAN_PG_PORT` first, then falls back to `MG_DB_PORT` so
+    the `MG_DB_*` env-var family the installer writes is symmetric with
+    `GUARDIAN_PG_*` across all five fields (host/port/dbname/user/
+    password). A non-integer port is a misconfiguration we surface as
+    the default rather than a crash inside resolve — psycopg2 will
+    surface a clearer error if 5432 is wrong than a `ValueError` from
+    this helper.
     """
-    raw = os.environ.get("GUARDIAN_PG_PORT", "")
+    raw = os.environ.get("GUARDIAN_PG_PORT") or os.environ.get("MG_DB_PORT") or ""
     if not raw:
         return _DEFAULT_PORT
     try:
