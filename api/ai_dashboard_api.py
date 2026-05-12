@@ -20,12 +20,19 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import DictCursor
 
-from core.db_targets import operational_target
-
+# Path setup MUST come before `from db_targets import ...` below — if this
+# module is ever invoked directly (e.g. `python api/ai_dashboard_api.py`)
+# rather than imported by a parent that already set sys.path, the launcher
+# pattern (direct script path, not python -m) means `core` isn't on
+# sys.path yet. W14a regression 2026-05-12.
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "ai"), str(_ROOT / "core")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Bare form (not `from core.db_targets`) since `core/` itself is on
+# sys.path, not the install root.
+from db_targets import operational_target  # noqa: E402
 
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 

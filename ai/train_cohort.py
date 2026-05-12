@@ -60,17 +60,23 @@ import logging
 import os
 import psycopg2
 from psycopg2.extras import DictCursor
-
-from core.db_targets import operational_target
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# Path setup MUST come before `from db_targets import ...` below — if this
+# module is ever invoked directly rather than imported by a parent that
+# already set sys.path, `core` won't be on sys.path yet. W14a regression
+# 2026-05-12.
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / 'ai'))
 sys.path.insert(0, str(_ROOT / 'core'))
+
+# Bare form (not `from core.db_targets`) since `core/` itself is on
+# sys.path, not the install root.
+from db_targets import operational_target  # noqa: E402
 
 from llm_analyzer import LLMAnalyzer
 from knowledge_manager import KnowledgeManager
