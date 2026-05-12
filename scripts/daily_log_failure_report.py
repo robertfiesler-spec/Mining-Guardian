@@ -17,19 +17,29 @@ from pathlib import Path
 from datetime import datetime
 from slack_sdk import WebClient
 
+from core.db_targets import operational_target
+
 _ROOT = Path(__file__).resolve().parent.parent
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Build operational Postgres DSN via core.db_targets.
+
+    Delegates to the resolver (W14a, 2026-05-12) — the previous direct
+    `os.environ.get(...)` reads of the connect params bypassed
+    `core.db_targets` and would silently misroute to the operational
+    instance once W14 splits catalog onto port 5433. This script reads
+    only operational tables (miner_readings, miner_logs, scans), so
+    `operational_target()` is correct here.
+
+    Also fixes a latent bug from the pre-W14a defaults: this function
+    used to hardcode a user default of `"guardian_app"`, the wrong
+    role name. The current resolver defaults to `"mg"`, matching the
+    role the installer's `step_reconcile_postgres_password` provisions.
+    """
+    return operational_target().dsn()
 
 
 class _PgConnWrapper:

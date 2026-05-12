@@ -10,6 +10,8 @@ from datetime import datetime, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, List, Tuple
 
+from core.db_targets import operational_target
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
@@ -18,13 +20,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Build operational Postgres DSN via core.db_targets.
+
+    Delegates to the resolver (W14a, 2026-05-12). This script reads
+    `scans` and `miner_state_readings` and writes `miner_logs` — all
+    operational tables — so `operational_target()` is correct here.
+    Also picks up the resolver's `"mg"` default for `GUARDIAN_PG_USER`,
+    fixing the latent `"guardian_app"` default this function used to
+    carry from pre-P-020 days.
+    """
+    return operational_target().dsn()
 TIMEOUT = 60
 MAX_WORKERS = 5
 # Stock firmware miners - skip these (they return 404 on log backup endpoint)

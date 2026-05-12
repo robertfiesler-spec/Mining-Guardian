@@ -23,6 +23,8 @@ from datetime import datetime, timedelta
 from slack_sdk import WebClient
 from dotenv import load_dotenv
 
+from core.db_targets import operational_target
+
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("morning_briefing")
@@ -30,13 +32,16 @@ logger = logging.getLogger("morning_briefing")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID      = "C0AQ8SE1448"
 def _pg_dsn() -> str:
-    """Build Postgres DSN from environment variables."""
-    host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
-    port = os.environ.get("GUARDIAN_PG_PORT", "5432")
-    dbname = os.environ.get("GUARDIAN_PG_DBNAME", "mining_guardian")
-    user = os.environ.get("GUARDIAN_PG_USER", "guardian_app")
-    password = os.environ.get("GUARDIAN_PG_PASSWORD", "")
-    return f"host={host} port={port} dbname={dbname} user={user} password={password}"
+    """Build operational Postgres DSN via core.db_targets.
+
+    Delegates to the resolver (W14a, 2026-05-12). This script reads
+    `action_audit_log`, `scans`, `miner_readings`, `hvac_readings`,
+    `weather_readings`, `known_dead_boards` — all operational tables —
+    so `operational_target()` is correct here. Also picks up the
+    resolver's `"mg"` default for `GUARDIAN_PG_USER`, fixing the latent
+    `"guardian_app"` default this function used to carry.
+    """
+    return operational_target().dsn()
 OLLAMA_URL      = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 ANTHROPIC_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
