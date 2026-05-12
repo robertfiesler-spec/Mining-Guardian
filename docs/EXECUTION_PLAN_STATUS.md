@@ -5,7 +5,7 @@
 > Every `[X]` (done) and `[~]` (partial) MUST cite the evidence (commit, grep result, file path) that supports it.
 > Companion: [`HANDOFF_2026-05-11_EVENING.md`](HANDOFF_2026-05-11_EVENING.md) (yesterday's handoff), [`strategy/RECONCILIATION_2026-05-12.md`](strategy/RECONCILIATION_2026-05-12.md) (today's grep receipts), [`strategy/AMENDMENTS_2026-05-12.md`](strategy/AMENDMENTS_2026-05-12.md) (plan deltas).
 
-**Last reconciliation:** 2026-05-12 against `main` HEAD `9d2e117` (PR #182 merge, P-038 cohort closed).
+**Last reconciliation:** 2026-05-12 against `main` HEAD `a38b7fc` (PR #190 merge, catalog design plan locked).
 
 ---
 
@@ -29,13 +29,15 @@
 | W02 | `pg_stat_statements` for query observability | `[ ]` | — | Grep of repo for `pg_stat_statements` and `shared_preload_libraries`: **0 hits** in any tracked file. Not started. |
 | W03 | `psycopg2.pool.ThreadedConnectionPool` in `GuardianPGDB` | `[~]` | — | `intelligence-catalog/catalog-api/catalog_api.py` **already uses** `ThreadedConnectionPool` — that side is done. But `core/database_pg.py` header docstring (lines 22–24, 27–29) still says *"conn is checked out per-call (no pool today — simple for correctness)"* and *"Connection pooling (add when we deploy)"*. Operational adapter pool is not done. This is the higher-call-volume side; Report 1 §2.1 estimates ~500 calls/scan come through here. |
 | W04 | Postgres tuning for 16GB shared host | `[ ]` | — | Not started. `deploy/postgresql.conf.template` does not yet exist. |
-| W05 | `ProcessType: Background` → `Standard` on always-on services | `[ ]` | — | All **9** always-on plists in `installer/macos-pkg/resources/launchd/` confirmed `<string>Background</string>`. Master Plan W05 lists 6; the other 3 (`console`, `intelligence-report`, `overnight-automation`) are also service-shaped per inspection — see [`strategy/AMENDMENTS_2026-05-12.md`](strategy/AMENDMENTS_2026-05-12.md). PR patch ready at `/patches/w05_processtype_standard.patch`. |
+| W05 | `ProcessType: Background` → `Standard` on always-on services | `[X]` | 2026-05-12 | PR #184 merged + applied to Mini. Re-scoped: **10 services** (not 6, not 9) per AMENDMENT A07 — added `com.miningguardian.feedback-loop-daemon` via PR #185. All 10 services bootstrapped to `Standard`, verified by `sudo launchctl list \| grep com.miningguardian` returning numeric PIDs across the cohort. |
 
 ## Phase 1.5 — Architectural restoration (moved from Phase 4 per 2026-05-11 decision)
 
 | ID | Title | Status | When | Evidence |
 |---|---|---|---|---|
-| W14 | Split Postgres into two separate instances | `[ ]` | — | Not started. Prep doc at [`strategy/W14_PREP.md`](strategy/W14_PREP.md). Code-side impact looks smaller than the original L estimate suggested: only 12 call sites use `catalog_target()` / `operational_target()` in `core/db_targets.py`, and the resolver was designed for two distinct targets from day one (P-018A docstring confirms). Bulk of the work is ops/installer/data-migration, not code refactor. |
+| W14a | Refactor 27 files bypassing `core/db_targets.py` | `[X]` | 2026-05-12 | PRs #186 (initial 27-file refactor) + #187 (import-order hotfix on 7 entry-point files) + #188 (import-order sweep on 5 latent siblings) + #189 (self-contained sys.path Path X on all 12 files). All 4 PRs merged to `main`. Deployed to Mini via surgical scp + bootout/bootstrap; all 10 services healthy on W14a code as of 2026-05-12 10:22 CDT. 37+ minute soak with zero ModuleNotFoundError. Cohort guard test `tests/test_w14a_no_direct_pg_env_reads.py` passes on `main`. |
+| W14 | Split Postgres into two separate instances | `[ ]` | TOMORROW (2026-05-13) | Not started. Prep doc at [`strategy/W14_PREP.md`](strategy/W14_PREP.md). W14a (prerequisite) complete. D1–D7 decisions still at defaults. |
+| W14b | Lock two-target convention in CLAUDE.md + .env.example + postinstall.sh | `[ ]` | — | Blocked on W14 landing. |
 
 ## Phase 2 — Closing the integration gap
 
@@ -81,13 +83,18 @@
 
 ## New W-items (not in the original plan)
 
-These were surfaced by the 2026-05-11 evening Grafana stand-up and the 2026-05-12 reconciliation pass. Captured here so they're not lost. Full rationale in [`strategy/AMENDMENTS_2026-05-12.md`](strategy/AMENDMENTS_2026-05-12.md).
+These were surfaced by the 2026-05-11 evening Grafana stand-up, the 2026-05-12 reconciliation pass, and the 2026-05-12 catalog design dialogue. Captured here so they're not lost. Full rationale in [`strategy/AMENDMENTS_2026-05-12.md`](strategy/AMENDMENTS_2026-05-12.md) and [`strategy/05_CATALOG_DESIGN_PLAN_2026-05-12.md`](strategy/05_CATALOG_DESIGN_PLAN_2026-05-12.md).
 
 | ID | Title | Status | When | Evidence |
 |---|---|---|---|---|
 | W23 | Fix Grafana installer bundle bugs (yaml path + datasource user) | `[ ]` | — | Both files in `installer/macos-pkg/resources/grafana/`: `provisioning/dashboards/mining_guardian.yml` has wrong path; `provisioning/datasources/mining_guardian.yml` has `user: guardian_app` (should be `mg`). Mini was patched on-disk on 2026-05-11; repo still has the bugs. |
 | W24 | Grafana password secret management | `[ ]` | — | Password currently inlined in deployed yaml on Mini. Needs proper handling before customer ship. |
 | W25 | Grafana panel "No data" — debug or rebuild dashboards | `[ ]` | — | 3 May-era dashboards load but panels return 400 from Postgres-side. Bobby's preference: rebuild the 6 April-era branded dashboards instead. |
+| W26 | `updated_at` discipline across catalog tables | `[ ]` | — | Federation v1 prerequisite. XS effort. See `05_CATALOG_DESIGN_PLAN` §3 W26. |
+| W27 | `ops.field_observed_specs` table + mg_import_tool Layer 2.5 aggregator | `[ ]` | — | Friend archive imports enrich real-world ranges with site_id provenance (OPERATOR-RANGES-1). M effort. See `05_CATALOG_DESIGN_PLAN` §3 W27 + §1.4. |
+| W28 | Federation v1: pull/merge/push scripts + customer_contribution_log | `[ ]` | — | Required for August customer ship. L effort. See `05_CATALOG_DESIGN_PLAN` §2 + §3 W28. |
+| W29 | Pass 2 cadence config flag | `[ ]` | — | Daily on master, weekly on customer Minis (OPERATOR-CADENCE-1). XS effort. See `05_CATALOG_DESIGN_PLAN` §1.3 + §3 W29. |
+| W30 | Enrichment CSV structured extraction | `[ ]` | — | Populate `hardware.chips` (4 → 30+ rows), `hardware.psu_models`, voltage/frequency columns, release dates from existing CSV freeform fields. Closes the "parts section" gap. M effort. See `05_CATALOG_DESIGN_PLAN` §5 W30. |
 
 ---
 
@@ -122,4 +129,8 @@ Full receipts: [`strategy/RECONCILIATION_2026-05-12.md`](strategy/RECONCILIATION
 - **2026-05-09** — Plan created (W01–W22). Source: strategy reports 1–4 prepared by external reader.
 - **2026-05-11 (evening)** — Cohort P-038 (7 PRs + 1 bonus) merged. W16 closed. W01 substantially complete on cutover side. W14 moved from Phase 4 to Phase 1.5 by operator decision.
 - **2026-05-11 (evening)** — Grafana 13.0.1 stood up via Homebrew on Mini. 3 bundle bugs surfaced → W23/W24/W25 added.
-- **2026-05-12** — First formal reconciliation pass. W16/W17 status verified against `main` HEAD `9d2e117`. W03 status refined: catalog API side already pooled; operational adapter side still per-call. W05 scope verified at 9 plists (not 6 as Plan §W05 says). This file created as single source of truth.
+- **2026-05-12 (morning)** — First formal reconciliation pass. W16/W17 status verified against `main` HEAD `9d2e117`. W03 status refined: catalog API side already pooled; operational adapter side still per-call. W05 scope verified at 9 plists (not 6 as Plan §W05 says). This file created as single source of truth.
+- **2026-05-12 (morning)** — W05 + W05b merged + deployed (PRs #184, #185). 10 launchd services (not 6, not 9) now `ProcessType=Standard` on Mini. AMENDMENT A07.
+- **2026-05-12 (mid-day)** — W14a complete. PRs #186 → #187 → #188 → #189 merged. 27 files routed through `core.db_targets`, 12 files received self-contained sys.path with install root. Surgical redeploy to Mini at 10:22 CDT; all 10 services healthy on W14a code with 37+ minute clean soak. Cohort guard test passing.
+- **2026-05-12 (afternoon)** — Catalog design plan locked from operator/Claude dialogue. PR #190 merged. New doc at `strategy/05_CATALOG_DESIGN_PLAN_2026-05-12.md` (623 lines). New work items W26–W30 added. New AMENDMENTS A08/A09/A10. Phase order re-sequenced working backward from mid-August 2026 customer ship target.
+- **Tomorrow (2026-05-13)** — Planned: W14 (two-Postgres-instance split on master).
