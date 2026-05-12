@@ -35,12 +35,13 @@ Design choices
    `staging.manufacturer_proposals`, `staging.alias_proposals`, and
    `hardware.miner_models` (read by the promote step) all live there.
    Connection parameters resolve through `core.db_targets.catalog_target()`
-   (P-018A), which reads `GUARDIAN_PG_HOST/_PORT/_USER/_PASSWORD/
-   _CATALOG_DBNAME` and falls back to `MG_DB_PASSWORD`. The previous
-   single-DB defaults (`PGHOST/PGPORT/PGUSER/PGDATABASE` → operational
-   `mining_guardian`) silently routed every proposal to the operational
-   stub of `staging.miner_model_proposals`, where they were invisible
-   to anyone reading the seeded catalog. P-018B closed that gap.
+   (P-018A), which reads the catalog-side env-var family and falls back
+   to `MG_DB_PASSWORD` for the password — see `core/db_targets.py` for
+   the canonical list. The previous single-DB defaults
+   (`PGHOST/PGPORT/PGUSER/PGDATABASE` → operational `mining_guardian`)
+   silently routed every proposal to the operational stub of
+   `staging.miner_model_proposals`, where they were invisible to anyone
+   reading the seeded catalog. P-018B closed that gap.
 
    Watchers may still run in cron jobs independent of the API process —
    `core.db_targets` is dependency-free and safe to import there.
