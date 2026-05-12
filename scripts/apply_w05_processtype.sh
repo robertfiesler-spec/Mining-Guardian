@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # scripts/apply_w05_processtype.sh
 #
-# W05 — flip ProcessType from Background to Standard for the 9 always-on
+# W05 — flip ProcessType from Background to Standard for the 10 always-on
 # Mining Guardian services on the Mac Mini. See:
 #   - docs/strategy/04_MASTER_EXECUTION_PLAN.md  §W05  (original Plan, 6 plists)
 #   - docs/strategy/AMENDMENTS_2026-05-12.md     §A02  (expansion to 9 plists)
+#   - docs/strategy/AMENDMENTS_2026-05-12.md     §A07  (W05b: feedback-loop-daemon added, 10th service)
 #
 # This script runs ON the Mac Mini, AFTER the patch has been applied to
 # /Library/Application Support/MiningGuardian/ via either an installer
@@ -28,6 +29,7 @@ SERVICES=(
   approval-api
   console
   dashboard-api
+  feedback-loop-daemon
   intelligence-report
   overnight-automation
   slack-commands

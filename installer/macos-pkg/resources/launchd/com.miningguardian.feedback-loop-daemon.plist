@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.feedback-loop-daemon.plist (D-14 PR 4b)
+
+  launchd LaunchDaemon for the C5 NOTIFY/LISTEN feedback daemon shipped in
+  D-14 PR 4a. Mirrors deploy/feedback-loop-daemon.service for VPS parity.
+
+  Target host:  Mac Mini (May 5 to 9 install, cutover scope gamma).
+  Install path: this plist is copied by the .pkg postinstall script to
+      /Library/LaunchDaemons/com.miningguardian.feedback-loop-daemon.plist
+  and loaded with:
+      sudo launchctl bootstrap system <path-to-plist>
+
+  Path assumptions:
+  This plist hard-codes /Library/Application Support/MiningGuardian as the install root. The
+  installer postinstall.sh is the single source of truth for that path
+  (see installer/macos-pkg/README.md). If the install root changes, the
+  postinstall script must rewrite this plist ProgramArguments and
+  WorkingDirectory before loading it.
+
+  Environment:
+  Postgres credentials (MG_DB_PASSWORD, PGHOST, etc.) are provided via
+  the environment file dropped by the installer at
+      /Library/Application Support/MiningGuardian/.env
+  launchd does not read .env files natively. The installer postinstall
+  generates a small wrapper script
+      /Library/Application Support/MiningGuardian/bin/feedback_loop_daemon_launcher.sh
+  that sources .env then execs python; this plist invokes that wrapper.
+  This matches the systemd unit EnvironmentFile= directive without needing
+  a third-party launchd extension.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.feedback-loop-daemon</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/feedback_loop_daemon_launcher.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Standard</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/feedback_loop_daemon.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/feedback_loop_daemon.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
