@@ -12,8 +12,6 @@ Runs on: http://localhost:8686
 import sys
 import psycopg2
 from psycopg2.extras import DictCursor
-
-from core.db_targets import operational_target
 import json
 import logging
 import hashlib
@@ -28,10 +26,18 @@ from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
 # ── Path setup — add core/ so mining_guardian imports work ───────────────────
+# Must come BEFORE `from db_targets import ...` below, otherwise the
+# launcher (which runs this script via direct path, not python -m) can't
+# find the `core` package. W14a regression 2026-05-12.
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Now that `core/` is on sys.path, db_targets is reachable as a top-level
+# module. Using the bare form because we added `core/` itself, not the
+# install root.
+from db_targets import operational_target  # noqa: E402
 
 logger = logging.getLogger("approval_api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

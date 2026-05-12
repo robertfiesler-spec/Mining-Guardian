@@ -29,13 +29,23 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
-from core.db_targets import operational_target
-
 # ── Path setup ────────────────────────────────────────────────────────────────
+# MUST come before `from db_targets import ...` below — the launcher
+# runs us via direct script path (not python -m). When the script
+# itself lives under core/, Python sets sys.path[0] to core/ — so
+# `from core.db_targets import ...` would fail (looking for
+# core/core/db_targets.py), but `from db_targets import ...` resolves
+# because we explicitly add core/ to sys.path here. W14a regression
+# 2026-05-12.
 _ROOT = Path(__file__).resolve().parent.parent
 for _p in [str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / "monitoring"), str(_ROOT / "ai")]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Bare form (not `from core.db_targets`) since `core/` itself is on
+# sys.path, not the install root — and this file lives inside core/
+# so the `core.` prefix wouldn't resolve regardless.
+from db_targets import operational_target  # noqa: E402
 
 # Import confidence scorer for audit logging
 try:

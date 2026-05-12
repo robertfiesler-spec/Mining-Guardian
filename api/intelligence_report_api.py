@@ -22,17 +22,28 @@ Endpoints:
 Version: 2.2.0 — Real fleet data from guardian.db + all prior fixes (April 16 2026)
 """
 
+import sys
 import json, csv, os, re, math, time, threading
 import psycopg2
 from psycopg2.extras import DictCursor
-
-from core.db_targets import operational_target
 from pathlib import Path as FilePath
 from datetime import datetime
 from typing import Optional
 from collections import defaultdict
 from urllib.request import urlopen, Request
 from urllib.error import URLError
+
+# Path setup MUST come before `from db_targets import ...` below — the
+# launcher runs us via direct script path (not python -m) so `core`
+# isn't auto-discovered. W14a regression 2026-05-12.
+_ROOT = FilePath(__file__).resolve().parent.parent
+for _p in [str(_ROOT / "core")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+# Bare form (not `from core.db_targets`) since `core/` itself is on
+# sys.path, not the install root.
+from db_targets import operational_target  # noqa: E402
 
 from fastapi import FastAPI, Query, Path as APIPath, Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
