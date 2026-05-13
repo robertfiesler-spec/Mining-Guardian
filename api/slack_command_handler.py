@@ -56,6 +56,13 @@ for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients")]:
 # module. Using the bare form because we added `core/` itself, not the
 # install root.
 from db_targets import operational_target  # noqa: E402
+# P-038 sibling sweep 2026-05-13: this module had 4 latent
+# `row['<col>'][:16]` slices on timestamptz fields that would crash with
+# `TypeError: 'datetime.datetime' object is not subscriptable` whenever
+# the operator ran the relevant Slack command. They hadn't fired yet
+# because Slack-interactive code paths fire less than the daily cron,
+# but they were broken the moment W16 timestamptz casts landed.
+from dt_format import fmt_dt  # noqa: E402
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 # All Mining Guardian channels to listen for commands
@@ -176,7 +183,7 @@ class CommandHandler:
         hvac = conn.execute("SELECT * FROM hvac_readings ORDER BY id DESC LIMIT 1").fetchone()
         conn.close()
 
-        lines = [f"*🤖 Fleet Status — {scan['scanned_at'][:16]}*",
+        lines = [f"*🤖 Fleet Status — {fmt_dt(scan['scanned_at'])}*",
                  f"Miners: *{scan['total_miners']}* | 🟢 {scan['online']} online | 🔴 {scan['offline']} offline | ⚠️ {scan['issues']} issues"]
         if wx:
             lines.append(f"🌡️ Outside: *{wx['temp_f']}°F* | Humidity: *{wx['humidity_pct']}%*")
@@ -376,7 +383,7 @@ class CommandHandler:
             if recent:
                 lines.append("\nRECENT ACTIONS:")
                 for a in recent:
-                    lines.append(f"  {a['timestamp'][:16]} {a['ip']} — "
+                    lines.append(f"  {fmt_dt(a['timestamp'])} {a['ip']} — "
                                 f"{a['action_taken']} {a['decision']}")
             try:
                 from knowledge_manager import KnowledgeManager
@@ -455,7 +462,7 @@ class CommandHandler:
             lines.append(f"\nAUDIT TRAIL (last 10 actions):")
             if audit:
                 for a in audit:
-                    lines.append(f"  {a['timestamp'][:16]}: {a['action_taken']} → "
+                    lines.append(f"  {fmt_dt(a['timestamp'])}: {a['action_taken']} → "
                                 f"{a['decision']} by {a['approved_by'] or 'auto'}")
             else:
                 lines.append("  No actions taken yet")
@@ -464,14 +471,14 @@ class CommandHandler:
                 lines.append(f"\nDEAD BOARD HISTORY:")
                 for d in dead:
                     status = "resolved" if d["resolved_at"] else "UNRESOLVED"
-                    lines.append(f"  Boards {d['board_indices']} — first seen {d['first_seen'][:10]} "
+                    lines.append(f"  Boards {d['board_indices']} — first seen {fmt_dt(d['first_seen'], length=10)} "
                                 f"— restart result: {d['restart_result'] or 'N/A'} — {status}")
 
             if logs:
                 lines.append(f"\nRECENT LOG SNIPPETS:")
                 for log in logs:
                     snippet = log["content"][:300].replace("\n", " ")
-                    lines.append(f"  [{log['collected_at'][:16]} {log['health_status']}]: {snippet}")
+                    lines.append(f"  [{fmt_dt(log['collected_at'])} {log['health_status']}]: {snippet}")
 
             return "\n".join(lines)
         except Exception as e:
@@ -597,13 +604,16 @@ class CommandHandler:
         if auto:
             lines.append(f"\n*Auto-executed ({len(auto)}):*")
             for a in auto:
+                # fmt_dt with length=16 yields "YYYY-MM-DD HH:MM"; we want
+                # just HH:MM for the overnight summary's compact display.
+                # Slicing the result is safe — fmt_dt returns str, not datetime.
                 lines.append(f"  • `{a['ip']}` — {a['action_taken']} {a['decision']} "
-                             f"@ {a['timestamp'][11:16]}")
+                             f"@ {fmt_dt(a['timestamp'])[11:16]}")
         if manual:
             lines.append(f"\n*Operator actions ({len(manual)}):*")
             for a in manual:
                 lines.append(f"  • `{a['ip']}` — {a['action_taken']} {a['decision']} "
-                             f"by {a['approved_by']} @ {a['timestamp'][11:16]}")
+                             f"by {a['approved_by']} @ {fmt_dt(a['timestamp'])[11:16]}")
         self._reply(channel, thread_ts, "\n".join(lines))
 
     def cmd_predict(self, channel, thread_ts):
@@ -705,8 +715,11 @@ class CommandHandler:
         lines = [f"*📋 Recent Actions (last 10)*"]
         for r in rows:
             icon = "✅" if r["decision"] in ("APPROVED","AUTO_OVERNIGHT") else "❌"
+            # Original sliced "YYYY-MM-DD HH:MM:SS"[5:16] → "MM-DD HH:MM"
+            # (drops the year + seconds). fmt_dt gives "YYYY-MM-DD HH:MM";
+            # slicing [5:] strips the year, matching the compact original.
             lines.append(f"  {icon} `{r['ip']}` {r['action_taken']} → {r['decision']} "
-                        f"by {r['approved_by'] or 'auto'} @ {r['timestamp'][5:16]}")
+                        f"by {r['approved_by'] or 'auto'} @ {fmt_dt(r['timestamp'])[5:]}")
         self._reply(channel, thread_ts, "\n".join(lines))
 
 

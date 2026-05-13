@@ -83,6 +83,12 @@ sys.path.insert(0, str(_ROOT / 'core'))
 # Bare form (not `from core.db_targets`) since `core/` itself is on
 # sys.path, not the install root.
 from db_targets import operational_target  # noqa: E402
+# P-038 sibling sweep 2026-05-13: line 447 reads `analyzed_at` from
+# psycopg2 (llm_analysis.analyzed_at is timestamptz → datetime), where
+# the legacy `[:16]` slice crashes. Other sites in this file read from
+# knowledge.json (strings) but use fmt_dt uniformly for consistency
+# and to satisfy the cohort guard test.
+from dt_format import fmt_dt  # noqa: E402
 
 from llm_analyzer import LLMAnalyzer
 from knowledge_manager import KnowledgeManager
@@ -429,7 +435,9 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         lines.append('')
         lines.append(f'--- Local LLM analyses for this cohort (most recent {len(local_llm_analyses)}) ---')
         for a in local_llm_analyses:
-            ts = (a.get('timestamp') or '%s')[:16]
+            # Source is knowledge.json (JSON strings via datetime.now().isoformat())
+            # — fmt_dt for cohort-guard consistency, no behavior change today.
+            ts = fmt_dt(a.get('timestamp'))
             text = (a.get('analysis') or '')[:400]
             lines.append(f"  [{ts}] {text}")
             lines.append('')
@@ -444,7 +452,10 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         lines.append(f'=== PAST AI ANALYSES FOR COHORT MINERS (last 7 days, {len(past_analyses)}) ===')
         lines.append('What AI previously said about these miners (do NOT repeat, focus on what changed):')
         for pa in past_analyses:
-            ts = (pa.get("analyzed_at") or "%s")[:16]
+            # `pa` is from the psycopg2 query above (llm_analysis.analyzed_at is
+            # timestamptz → datetime). Legacy `[:16]` slice crashed with
+            # TypeError. fmt_dt handles datetime/str/None uniformly.
+            ts = fmt_dt(pa.get("analyzed_at"))
             model = pa.get("model_used") or "%s"
             ip = pa.get("ip") or "%s"
             text = (pa.get("response") or "")[:300]
@@ -539,7 +550,8 @@ def build_outlier_prompt(miner_id: str, profile: dict, cohort_key: Tuple,
         extras.append('')
         extras.append(f'--- Local LLM observations mentioning this miner ({len(local_llm_analyses)}) ---')
         for a in local_llm_analyses:
-            ts = (a.get('timestamp') or '%s')[:16]
+            # Source: knowledge.json (JSON strings). fmt_dt for consistency.
+            ts = fmt_dt(a.get('timestamp'))
             text = (a.get('analysis') or '')[:300]
             extras.append(f'  [{ts}] {text}')
             extras.append('')
@@ -646,7 +658,8 @@ def build_fleet_prompt(cohort_results: List[Dict], outlier_results: List[Dict],
         lines.append('Below are all the analyses the on-site LLM (Qwen 32B) produced.')
         lines.append('Validate its conclusions, correct mistakes, identify patterns it missed.')
         for a in all_local_llm_analyses:
-            ts = (a.get('timestamp') or '%s')[:16]
+            # Source: knowledge.json. fmt_dt for consistency.
+            ts = fmt_dt(a.get('timestamp'))
             text = (a.get('analysis') or '')[:300]
             lines.append('')
             lines.append(f'[{ts}] {text}')

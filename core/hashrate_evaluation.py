@@ -28,6 +28,12 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from core.db_targets import operational_target
+# P-038 sibling sweep 2026-05-13: state['locked_at'][:10] slice at the
+# baseline-display site below. miner_baselines.locked_at is currently
+# declared TEXT (safe today), but fmt_dt() keeps this site forward-
+# compatible for the W17 sweep that may move it to timestamptz. Also
+# satisfies the cohort guard test for `[:N]` on timestamp-named keys.
+from core.dt_format import fmt_dt
 
 _ROOT = Path(__file__).resolve().parent.parent
 from typing import Optional, Tuple
@@ -371,7 +377,7 @@ class HashrateTierResolver:
                 baseline_ths,
                 "3_baseline",
                 f"Learned baseline — {baseline_ths:.1f} TH/s "
-                f"(locked {state['locked_at'][:10]})"
+                f"(locked {fmt_dt(state['locked_at'], length=10)})"
             )
 
         return (None, "unknown", "No rated TH/s available — cannot evaluate hashrate")

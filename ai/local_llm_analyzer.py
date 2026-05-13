@@ -451,7 +451,13 @@ class LocalLLMAnalyzer:
             lines.append("Focus on what's CHANGED or NEW since then:")
             for p in prev:
                 if isinstance(p, dict):
-                    ts = p.get("timestamp", "%s")[:16]
+                    # `p` is from knowledge.json `llm_scan_analyses` (JSON
+                    # strings today via datetime.now().isoformat() in
+                    # _store_analysis below). Using fmt_dt for defensive
+                    # consistency with the P-038 cohort and to satisfy the
+                    # `[:N]`-on-timestamp-keys cohort guard test. Behavior
+                    # is identical on string input.
+                    ts = fmt_dt(p.get("timestamp"))
                     txt = p.get("analysis", "")[:150]
                     lines.append(f"  [{ts}] {txt}...")
         

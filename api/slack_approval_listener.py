@@ -45,6 +45,9 @@ for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / 
 # Bare form (not `from core.db_targets`) since `core/` itself is on
 # sys.path, not the install root.
 from db_targets import operational_target  # noqa: E402
+# P-038 sibling sweep 2026-05-13: line 149 reads action_audit_log.timestamp
+# from psycopg2 (timestamptz → datetime); pre-fix [:10] slice crashed.
+from dt_format import fmt_dt  # noqa: E402
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 CHANNEL_ID      = "C0AQ8SE1448"
@@ -146,7 +149,7 @@ def build_miner_context(miner_ids: list) -> str:
                 if flags and flags["avg_hr"]:
                     line += f" | avg HR: {flags['avg_hr']:.0f}%"
                 if last:
-                    line += f" | last: {last['action_taken']} {last['decision']} ({last['timestamp'][:10]})"
+                    line += f" | last: {last['action_taken']} {last['decision']} ({fmt_dt(last['timestamp'], length=10)})"
                 lines.append(line)
         conn.close()
     except Exception as e:
