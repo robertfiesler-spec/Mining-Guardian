@@ -94,14 +94,11 @@ ALLOWED_DIR_PREFIXES = (
     "fixes/",
 )
 
-# Files in active code paths whose `[:N]` slices on timestamp-named keys
-# are the deliberate next-PR scope (PR #207 — dashboard_api HTML rendering
-# with [:19] "YYYY-MM-DD HH:MM:SS" displays). Listed here so today's
-# cohort-guard test passes while the deferred files are tracked.
-DEFERRED_TO_PR_207 = {
-    "api/dashboard_api.py",
-    "api/ai_dashboard_api.py",
-}
+# PR #207 (2026-05-13) closed out the DEFERRED_TO_PR_207 set —
+# api/dashboard_api.py (12 sites) + api/ai_dashboard_api.py (2 sites)
+# all converted to fmt_dt(). Set kept empty for traceability; if a future
+# PR needs to defer files again, the mechanism is right here.
+DEFERRED_TO_PR_207 = set()
 
 # Specific lines that look like a timestamp slice but aren't (false
 # positives in the regex). Format: "<relpath>:<exact match text>".
@@ -109,7 +106,12 @@ DEFERRED_TO_PR_207 = {
 # explanation. If you find yourself adding more than a handful, the
 # regex needs refinement, not more exceptions.
 KNOWN_FALSE_POSITIVES = {
-    # (none today; placeholder for future precision tuning)
+    # api/ai_dashboard_api.py L173: `sorted(preds, key=lambda x: x.get(
+    # "predicted_at", ""), reverse=True)[:15]` — `[:15]` here slices the
+    # LIST to its first 15 elements, not a string. The regex falsely
+    # matches because `predicted_at` is timestamp-like and `[:15]` is a
+    # slice within the lookback window. Format: "<relpath>:<exact code substring>".
+    'api/ai_dashboard_api.py:preds = sorted(preds, key=lambda x: x.get("predicted_at", ""), reverse=True)[:15]',
 }
 
 

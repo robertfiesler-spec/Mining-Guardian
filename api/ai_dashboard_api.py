@@ -36,6 +36,10 @@ for _p in [str(_ROOT), str(_ROOT / "ai"), str(_ROOT / "core")]:
 # Bare form (not `from core.db_targets`) since `core/` itself is on
 # sys.path, not the install root.
 from db_targets import operational_target  # noqa: E402
+# P-038 PR #207 (2026-05-13): timestamp [:N] slices on timestamptz fields
+# (action_audit_log.timestamp, pending_approvals/predictions etc) crash on
+# datetime. fmt_dt is the canonical fix.
+from dt_format import fmt_dt  # noqa: E402
 
 KNOWLEDGE_PATH = str(_ROOT / "knowledge.json")
 
@@ -324,7 +328,8 @@ def render_ai_dashboard_html():
             "SUCCESS": G, "FAILURE": R, "PARTIAL": O
         }.get(oc, TD)
         badge = f'<span style="background:{bc};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{_e(oc)}</span>'
-        ts = str(a.get("timestamp", ""))[:16]
+        # action_audit_log.timestamp is timestamptz; fmt_dt handles datetime/str.
+        ts = fmt_dt(a.get("timestamp"))
         
         # Calculate confidence dynamically using confidence_scorer
         auto_conf = 75  # fallback
@@ -353,7 +358,9 @@ def render_ai_dashboard_html():
     # Prediction rows — uses REAL confidence from knowledge.json
     pr = ""
     for p in predictions:
-        ts = str(p.get("timestamp", ""))[:16]
+        # `p` is from get_prediction_status() (knowledge.json). fmt_dt for
+        # consistency with the P-038 cohort and to satisfy the cohort guard.
+        ts = fmt_dt(p.get("timestamp"))
         # Use actual confidence field directly (not parsed from text!)
         pred_conf = p.get("confidence", 75)
         if not isinstance(pred_conf, (int, float)):

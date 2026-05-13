@@ -44,6 +44,11 @@ for _p in [str(_ROOT), str(_ROOT / "core"), str(_ROOT / "clients"), str(_ROOT / 
 # module. Using the bare form because we added `core/` itself, not the
 # install root.
 from db_targets import operational_target  # noqa: E402
+# P-038 PR #207 (2026-05-13): HTML rendering [:19] slices on timestamptz
+# columns (scans.scanned_at, action_audit_log.timestamp, known_dead_boards.
+# first_seen, hvac_readings.recorded_at) crash with TypeError on datetime.
+# fmt_dt handles datetime/str/None and returns a fixed-length display string.
+from dt_format import fmt_dt  # noqa: E402
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -1009,7 +1014,7 @@ def miner_status_html(miner_ip: str):
             <div class="row"><span class="label">Hashrate</span><span>{e(current["hashrate_pct"])}%</span></div>
             <div class="row"><span class="label">Chip Temp</span><span>{e(current["temp_chip"])}°C</span></div>
             <div class="row"><span class="label">PDU Power</span><span>{e(current["pdu_power"])} kW</span></div>
-            <div class="row"><span class="label">Last Scan</span><span>{e(current["scanned_at"])[:16].replace("T"," ")}</span></div>
+            <div class="row"><span class="label">Last Scan</span><span>{e(fmt_dt(current["scanned_at"]))}</span></div>
             {f'<div class="issue-box">⚠️ {e(current["issue"])}</div>' if current["issue"] else '<div class="ok-box">✅ No active issues</div>'}
         </div>"""
     else:
@@ -1021,7 +1026,7 @@ def miner_status_html(miner_ip: str):
         dead_html = f"""
         <div class="dead-board-box">
             🔴 <strong>Known Dead Boards:</strong> {e(dead["board_indices"])}<br>
-            First seen: {e(dead["first_seen"])[:16].replace("T"," ")} |
+            First seen: {e(fmt_dt(dead["first_seen"]))} |
             Ticket: {e(dead["ticket_created"]) or "pending"}
         </div>"""
 
@@ -1030,7 +1035,7 @@ def miner_status_html(miner_ip: str):
         rows_html = ""
         for h in history:
             dec_color = "#2ecc71" if h["decision"] == "APPROVED" else "#e74c3c" if h["decision"] == "DENIED" else "#f39c12"
-            ts = e(h["timestamp"])[:16].replace("T", " ")
+            ts = e(fmt_dt(h["timestamp"]))
             rows_html += f"""<tr>
                 <td>{ts}</td>
                 <td><span style="color:{dec_color};font-weight:600">{e(h["decision"])}</span></td>
@@ -2612,7 +2617,7 @@ def ask_query(q: str):
         for r in rows:
             issue = (r["issue"] or "").replace("<", "&lt;")[:40]
             html += (
-                f"<tr><td>{r['scanned_at'][:19]}</td>"
+                f"<tr><td>{fmt_dt(r['scanned_at'], length=19)}</td>"
                 f"<td>{r['status']}</td>"
                 f"<td>{_fmt_pct(r['hashrate_pct'])}</td>"
                 f"<td>{_fmt_temp(r['temp_chip'])}</td>"
@@ -2671,7 +2676,7 @@ def ask_query(q: str):
         html += f"<b class='{'warn' if flagged > 0 else 'good'}'>{flagged}</b> flagged<br>"
         html += f"Average hashrate: {_fmt_pct(avg)}<br>"
         html += f"Total tracked: {scan['total_miners']} miners"
-        return {"html": html, "meta": f"Scan #{scan['id']} · {scan['scanned_at'][:19]}"}
+        return {"html": html, "meta": f"Scan #{scan['id']} · {fmt_dt(scan['scanned_at'], length=19)}"}
 
     # How many online
     if "online" in ql and any(w in ql for w in ["how many", "count", "number"]):
@@ -2683,7 +2688,7 @@ def ask_query(q: str):
             return {"error": "no scans in DB"}
         html = f"<h3>{scan['online']} miners online</h3>"
         html += f"{scan['offline']} offline · {scan['total_miners']} total"
-        return {"html": html, "meta": f"Scan #{scan['id']} · {scan['scanned_at'][:19]}"}
+        return {"html": html, "meta": f"Scan #{scan['id']} · {fmt_dt(scan['scanned_at'], length=19)}"}
 
     # Flagged miners
     if any(w in ql for w in ["flag", "broken", "problem", "issue", "wrong"]):
@@ -2712,7 +2717,7 @@ def ask_query(q: str):
                 f"<td>{r['action'] or ''}</td></tr>"
             )
         html += "</table>"
-        return {"html": html, "meta": f"Scan #{scan['id']} · {scan['scanned_at'][:19]}"}
+        return {"html": html, "meta": f"Scan #{scan['id']} · {fmt_dt(scan['scanned_at'], length=19)}"}
 
     # Worst performers
     if any(w in ql for w in ["worst", "bottom", "lowest", "underperform", "under performing", "performing the worst"]):
@@ -2747,7 +2752,7 @@ def ask_query(q: str):
                 f"<td>{issue}</td></tr>"
             )
         html += "</table>"
-        return {"html": html, "meta": f"Scan #{scan['id']} · {scan['scanned_at'][:19]}"}
+        return {"html": html, "meta": f"Scan #{scan['id']} · {fmt_dt(scan['scanned_at'], length=19)}"}
 
     # Best performers
     if any(w in ql for w in ["best", "top", "highest", "performing the best"]):
@@ -2780,7 +2785,7 @@ def ask_query(q: str):
                 f"<td>{_fmt_temp(r['temp_chip'])}</td></tr>"
             )
         html += "</table>"
-        return {"html": html, "meta": f"Scan #{scan['id']} · {scan['scanned_at'][:19]}"}
+        return {"html": html, "meta": f"Scan #{scan['id']} · {fmt_dt(scan['scanned_at'], length=19)}"}
 
     # Recent actions
     if any(w in ql for w in ["action", "restart", "approval", "approve", "denied", "done", "doing", "activity"]):
@@ -2807,7 +2812,7 @@ def ask_query(q: str):
             dec = r["decision"] or ""
             dec_class = "good" if dec == "APPROVED" else ("bad" if dec == "DENIED" else "warn")
             html += (
-                f"<tr><td>{(r['timestamp'] or '')[:19]}</td>"
+                f"<tr><td>{fmt_dt(r['timestamp'], length=19)}</td>"
                 f"<td>{html.escape(str(r['ip']))}</td>"
                 f"<td>{(r['action_taken'] or '')[:18]}</td>"
                 f"<td class='{dec_class}'>{dec}</td>"
@@ -2832,7 +2837,7 @@ def ask_query(q: str):
                 f"<tr><td>{html.escape(str(r['ip']))}</td>"
                 f"<td>{(r['model'] or '')[:18]}</td>"
                 f"<td>{r['board_indices']}</td>"
-                f"<td>{(r['first_seen'] or '')[:19]}</td>"
+                f"<td>{fmt_dt(r['first_seen'], length=19)}</td>"
                 f"<td>{r['ticket_created'] or ''}</td></tr>"
             )
         html += "</table>"
@@ -2854,7 +2859,7 @@ def ask_query(q: str):
         html += f"CT1: {row['ct1_vfd_pct']:.0f}% · CT2: {row['ct2_vfd_pct']:.0f}%"
         if row["leak_alarm"]:
             html += "<br><span class='bad'>⚠ LEAK ALARM</span>"
-        return {"html": html, "meta": f"{row['recorded_at'][:19]}"}
+        return {"html": html, "meta": f"{fmt_dt(row['recorded_at'], length=19)}"}
 
     # Fallback — didn't match anything
     return {
