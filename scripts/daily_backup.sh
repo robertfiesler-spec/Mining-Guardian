@@ -1,37 +1,88 @@
-#!/usr/bin/env bash
-# daily_backup.sh — Mining Guardian daily backup
-# Runs at 2pm CDT via cron
-# Backs up: guardian.db, config.json, .env, knowledge.json, miner_specs.json
-# Keeps 7 days of backups, auto-deletes older ones
+#!/bin/bash
+# scripts/daily_backup.sh
+#
+# W14 Step 9 (D6) — Daily backup wrapper.
+#
+# Mining Guardian runs two Postgres containers on the Mini (W14, 2026-05-13).
+# This wrapper runs both per-instance backup scripts and returns non-zero
+# if either fails, so the launchd .last-run.json correctly reports
+# partial-failure days to the operator.
+#
+# Invoked by the scheduled launchd job
+#   installer/macos-pkg/resources/launchd/scheduled/com.miningguardian.scheduled.daily-backup.plist
+# which calls this wrapper through scripts/scheduled_job_launcher.sh.
+#
+# Why a wrapper instead of one combined script (D6):
+#   - Each instance's dump is independent; one failure shouldn't block
+#     the other from attempting
+#   - Per-script exit codes give the operator a clearer signal:
+#     "operational succeeded, catalog failed" is more actionable than
+#     "the backup failed (somewhere)"
+#   - When federation (W28) lands, the catalog dump is what ships to
+#     master; the operational dump stays local. Keeping the two paths
+#     separate now reduces friction then.
+#
+# Exit codes:
+#   0 — both scripts exited 0
+#   1 — at least one script exited non-zero (operator must investigate)
+#
+# This wrapper does NOT back up application-level files (knowledge.json,
+# .env, miner_specs.json). Those are handled separately by
+# ai/backup_knowledge.py (the existing knowledge-backup scheduled job)
+# and the system installer (the .pkg payload contains pristine copies
+# of templates; live secrets are operator-supplied at install time and
+# not part of automated backup scope). If the scope ever expands to
+# include application files, add a third per-domain script here rather
+# than mixing concerns in the wrapper.
+#
+# Historical note: the previous scripts/daily_backup.sh (and its
+# companions scripts/backup_db.sh, scripts/backup_mining_guardian.sh)
+# were VPS-era SQLite backup scripts. They referenced /root/Mining-Guardian
+# and guardian.db — neither of which exist post-cutover. They have been
+# preserved as *.legacy-vps-decommissioned alongside this PR so the
+# history is traceable but they are not in the execution path.
 
-BACKUP_ROOT="/root/Mining-Guardian/backups"
-TODAY=$(date +%Y-%m-%d)
-BACKUP_DIR="$BACKUP_ROOT/$TODAY"
-SRC="/root/Mining-Guardian"
+set -uo pipefail
+# NOTE: `set -e` is intentionally not used — we want to run BOTH scripts
+# even if the first fails, then report the combined result. Per-script
+# failure handling is explicit below.
 
-mkdir -p "$BACKUP_DIR"
+INSTALL_ROOT="${MG_INSTALL_ROOT:-/Library/Application Support/MiningGuardian}"
+SCRIPTS_DIR="${INSTALL_ROOT}/scripts"
+LABEL="daily_backup"
 
-echo "$(date) — Starting daily backup to $BACKUP_DIR"
+ts() { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
+log() { echo "[$(ts)] [${LABEL}] $*"; }
 
-# Copy critical files
-cp "$SRC/config.json" "$BACKUP_DIR/config.json" 2>/dev/null
-cp "$SRC/.env" "$BACKUP_DIR/dot-env" 2>/dev/null
-cp "$SRC/knowledge.json" "$BACKUP_DIR/knowledge.json" 2>/dev/null
-cp "$SRC/knowledge_backup.json" "$BACKUP_DIR/knowledge_backup.json" 2>/dev/null
-cp "$SRC/miner_specs.json" "$BACKUP_DIR/miner_specs.json" 2>/dev/null
+log "starting daily backup cycle for both Postgres instances"
 
-# SQLite safe backup (copy while WAL is active)
-# A-2 FIX: Use sqlite3 .backup instead of cp
-sqlite3 "$SRC/guardian.db" ".backup '$BACKUP_DIR/guardian.db'"
+# Run operational backup
+log "→ invoking backup_operational.sh"
+operational_rc=0
+"${SCRIPTS_DIR}/backup_operational.sh" || operational_rc=$?
+if [[ "${operational_rc}" -eq 0 ]]; then
+    log "→ backup_operational.sh: OK"
+else
+    log "→ backup_operational.sh: FAILED (exit ${operational_rc})"
+fi
 
-# Compress the DB to save space
-gzip -1 -f "$BACKUP_DIR/guardian.db" 2>/dev/null
+# Run catalog backup (regardless of operational outcome)
+log "→ invoking backup_catalog.sh"
+catalog_rc=0
+"${SCRIPTS_DIR}/backup_catalog.sh" || catalog_rc=$?
+if [[ "${catalog_rc}" -eq 0 ]]; then
+    log "→ backup_catalog.sh: OK"
+else
+    log "→ backup_catalog.sh: FAILED (exit ${catalog_rc})"
+fi
 
-# Delete backups older than 7 days
-find "$BACKUP_ROOT" -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null
+# Combined result
+if [[ "${operational_rc}" -eq 0 ]] && [[ "${catalog_rc}" -eq 0 ]]; then
+    log "OK both backups succeeded"
+    exit 0
+fi
 
-# Summary
-TOTAL=$(du -sh "$BACKUP_DIR" 2>/dev/null | awk '{print $1}')
-echo "$(date) — Backup complete: $BACKUP_DIR ($TOTAL)"
-echo "$(date) — Files:"
-ls -lh "$BACKUP_DIR/"
+# Summarize the failure mode for the operator
+log "FAIL operational_rc=${operational_rc} catalog_rc=${catalog_rc}"
+log "    inspect ${INSTALL_ROOT}/backups/ and logs/scheduled/daily_backup.err.log"
+exit 1

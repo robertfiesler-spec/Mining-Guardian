@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.miningguardian.scheduled.daily-backup.plist — W14 Step 9 / D6 (2026-05-13)
+
+  Runs scripts/daily_backup.sh which invokes:
+    - scripts/backup_operational.sh  (dumps mining_guardian from mining-guardian-db)
+    - scripts/backup_catalog.sh      (dumps mining_guardian_catalog from mg-catalog-db)
+  Output lands in $MG_INSTALL_ROOT/backups/.
+
+  Schedule: 02:00 CDT.
+
+    Why 02:00:
+      Quiet hour between 01:00 refinement-chain (LLM-heavy; typically
+      completes ~01:30) and 03:30 db_maintenance. The W14 maintenance
+      window followed the same reasoning. The schedule itself is the
+      only operator-tunable knob in this file — backup scripts have no
+      time-of-day dependencies and work the same at any hour.
+
+    Future re-arrangement:
+      Per operator (2026-05-13): the daily cron schedule will be
+      re-arranged. CRON_SCHEDULE.md is the authoritative source for
+      every scheduled job's time-of-day. When re-arranging, edit
+      StartCalendarInterval below and update CRON_SCHEDULE.md's row
+      for this job — no script changes needed.
+
+  Time semantics: StartCalendarInterval fires in the Mac's local
+  timezone. Per docs/CRON_SCHEDULE.md "All times are CDT (Mac Mini
+  timezone)" — set the Mini's timezone before install.
+
+  No KeepAlive — scheduled jobs run, exit, and wait for the next fire.
+
+  See:
+    docs/strategy/W14_PREP.md §"Step 9" — D6 decision
+    docs/strategy/W14_POSTMORTEM_2026-05-13.md §4.1 — quote-safe
+        password injection pattern the backup scripts follow
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.miningguardian.scheduled.daily-backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Library/Application Support/MiningGuardian/bin/scheduled_job_launcher.sh</string>
+        <string>scripts/daily_backup.sh</string>
+        <string>daily_backup</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/MiningGuardian</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/daily_backup.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/MiningGuardian/logs/scheduled/daily_backup.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>PATH</key>
+        <string>/Library/Application Support/MiningGuardian/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
