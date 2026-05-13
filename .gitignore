@@ -93,3 +93,9 @@ intelligence-catalog/data/*.bak_*
 # Generated reports (local outputs, regenerated on demand)
 reports/
 .env.backup*
+
+# Morning-bundle convenience folders — copies of repo docs assembled
+# for one-time upload to claude.ai Project Knowledge. The canonical
+# content lives in docs/ and docs/strategy/ — the bundles are not
+# durable repo content.
+morning-bundle-*/
