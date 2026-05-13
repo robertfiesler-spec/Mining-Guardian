@@ -22,6 +22,7 @@
 | "What's changed since the Plan was written?" | [`AMENDMENTS_2026-05-12.md`](AMENDMENTS_2026-05-12.md) — every W-item adjustment with rationale |
 | "Are the W##-done claims actually true?" | [`RECONCILIATION_2026-05-12.md`](RECONCILIATION_2026-05-12.md) — grep receipts against `main` |
 | "How do we do the two-Postgres split (W14)?" | [`W14_PREP.md`](W14_PREP.md) — operational plan with rollbacks |
+| "What actually happened during W14 / what went wrong?" | [`W14_POSTMORTEM_2026-05-13.md`](W14_POSTMORTEM_2026-05-13.md) — bug found in Step 6 smoke gate, root cause, prevention rules |
 
 ---
 
@@ -102,6 +103,19 @@ The operational plan for W14a → W14 → W14b. Includes:
 
 Read this **before starting any Phase 1.5 work**.
 
+### [`W14_POSTMORTEM_2026-05-13.md`](W14_POSTMORTEM_2026-05-13.md) — W14 execution post-mortem
+
+The record of what actually happened when W14 ran on 2026-05-13. Includes:
+
+- Minute-by-minute timeline of the 22-minute maintenance window
+- Root cause of the password-quoting bug found at the Step 6 smoke gate (`cut -d=` preserved literal quotes from `.env`, applications strip them via `xargs`, mismatch broke catalog auth on 5433)
+- Why the bug was missed by three earlier sanity checks
+- The in-window fix (`ALTER USER`)
+- Permanent prevention: installer must use `--env-file` (Option A) for password injection; new cohort guard test `tests/test_w14_password_quote_consistency.py`; `CLAUDE.md` rule about `.env` value sourcing in shell scripts
+- Related risks observed during the window but not the post-mortem subject (naming asymmetry, Colima bind-mount opacity, stale daily_deep_dive last-run date)
+
+Read this when working on Step 9 (backup script), Step 10 (installer), or W14b (convention lock) — the prevention rules in §4 are binding on those PRs.
+
 ---
 
 ## File conventions
@@ -112,6 +126,7 @@ Read this **before starting any Phase 1.5 work**.
 | `AMENDMENTS_<date>.md` | **Living amendment files.** When the count of amendments in one file grows past ~10 or the file passes a quarter boundary, start a new dated file. Each amendment has a stable ID. |
 | `RECONCILIATION_<date>.md` | **Point-in-time snapshots.** Each dated reconciliation captures `main`-state on that date. They're not edited after the fact. |
 | `W##_PREP.md` | **Living prep docs** for L-effort items. Updated as decisions are made; archived once the W-item completes. |
+| `W##_POSTMORTEM_<date>.md` | **Frozen postmortems** for W-items that surfaced lessons worth capturing. Written within 24 hours of the event while context is hot. Not edited after the fact. |
 
 ---
 
