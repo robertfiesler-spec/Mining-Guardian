@@ -1,0 +1,150 @@
+{
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "ffj6dpxcsts74d"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "orientation": "horizontal",
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT COUNT(DISTINCT schemaname) as schemas, COUNT(*) as tables FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')",
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "ffj6dpxcsts74d"
+          }
+        }
+      ],
+      "title": "📊 Database Overview",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "ffj6dpxcsts74d"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 15,
+          "min": 0
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT schemaname as metric, COUNT(*) as value FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema') GROUP BY schemaname ORDER BY value DESC",
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "ffj6dpxcsts74d"
+          }
+        }
+      ],
+      "title": "🔧 Tables by Schema",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "ffj6dpxcsts74d"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 3,
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT schemaname as schema, tablename as table FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema') ORDER BY schemaname, tablename",
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "ffj6dpxcsts74d"
+          }
+        }
+      ],
+      "title": "📋 All 165 Tables",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "ffj6dpxcsts74d"
+      },
+      "description": "7 tables tracking every firmware version, bug, and compatibility matrix",
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 4,
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT tablename as table, 'firmware' as schema FROM pg_tables WHERE schemaname = 'firmware' ORDER BY tablename",
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "ffj6dpxcsts74d"
+          }
+        }
+      ],
+      "title": "💡 Example: Firmware Tables",
+      "type": "table"
+    },
+    {
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 5,
+      "options": {
+        "content": "# 🧠 Mining Intelligence Catalog\n\n**The world's most comprehensive Bitcoin miner knowledge base**\n\n## 165 Tables Across 10 Schemas:\n\n| Schema | Tables | Purpose |\n|--------|--------|---------|\n| **knowledge** | 5 | Source tracking, auto-discovery, citations |\n| **hardware** | 10 | Chips, PSUs, boards, miners, specs |\n| **firmware** | 7 | Releases, bugs, compatibility, APIs |\n| **ops** | 8 | Failure patterns, thresholds, correlations |\n| **market** | 7 | Reviews, pricing, reputation, war stories |\n| **repair** | 9 | Parts, procedures, service records (1M+ capacity) |\n| **pool** | 7 | Mining pools, network data |\n| **facility** | 5 | HVAC, cooling, containers |\n| **regulatory** | 5 | Compliance, standards |\n\n## 🔥 Key Features:\n\n✅ **Auto-Discovery Mechanism** — Never loses unknown data points\n✅ **Complete Firmware Intelligence** — Every version, bug, and API endpoint\n✅ **Failure Knowledge Base** — Symptom → diagnosis → repair mapping\n✅ **Community Intelligence** — Reddit/Telegram/Discord aggregation\n✅ **1M+ Record Design** — Built to scale with BiXBiT service network\n\n**Status:** ✅ Fully operational on ROBS-PC (100.110.87.1:5432)\n**Mining Guardian Integration:** ✅ AI consumers actively querying catalog",
+        "mode": "markdown"
+      },
+      "title": "📖 Intelligence Catalog Documentation",
+      "type": "text"
+    }
+  ],
+  "refresh": false,
+  "schemaVersion": 39,
+  "tags": [
+    "intelligence",
+    "catalog",
+    "demo"
+  ],
+  "timezone": "browser",
+  "title": "🧠 Intelligence Catalog — Live Queries",
+  "uid": "cfj6drj3pbk74b",
+  "version": 1
+}
