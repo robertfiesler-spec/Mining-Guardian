@@ -270,23 +270,32 @@ def test_file_parses_cleanly(path: Path):
 def test_text_typed_log_timestamp_slice_still_present():
     """`ai/train_comprehensive.py` builds chain-event display lines
     from `log_metrics.log_timestamp` which IS `text` in the DB (not
-    timestamptz). Those slices should NOT be replaced — psycopg2
-    returns them as strings already, and the helper would be
-    unnecessary overhead. This test guards against over-correction.
+    timestamptz).
 
-    Verified live on the Mini's Postgres on 2026-05-11:
-        log_metrics.log_timestamp | text
+    HISTORY:
+      - PR #178 (2026-05-11, P-038 #5): this test was an "over-correction
+        sanity check" — verified we kept `e['first'][:16]` AS-IS because
+        the text column slices fine without fmt_dt.
+      - PR #206 (2026-05-13, P-038 sibling sweep): we deliberately
+        converted this site to `fmt_dt(e['first'])` for forward-compat
+        with the W17 column-type sweep. fmt_dt is a no-op on string
+        input, so the runtime behavior is identical. The "over-correction"
+        framing no longer applies — we're now intentionally consistent.
+
+    The assertion below was updated in PR #206 from the old slice form
+    to the new fmt_dt form.
     """
     src = _src(REPO_ROOT / "ai" / "train_comprehensive.py")
-    # The `e['first'][:16]` line was line 367 pre-fix. After the fix
-    # it stays — log_timestamp is a text column so the slice works.
+    # Updated assertion (PR #206): the fmt_dt-wrapped form must be present.
     assert re.search(
-        r"e\[['\"]first['\"]\]\s*\[\s*:\s*16\s*\]",
+        r"fmt_dt\(\s*e\[['\"]first['\"]\]\s*\)",
         src,
     ), (
-        "ai/train_comprehensive.py no longer slices "
-        "`e['first'][:16]`. That column comes from "
-        "`log_metrics.log_timestamp` which is `text` on the Mini — "
-        "the slice is correct and should not have been replaced. "
-        "Over-correction sanity check failed."
+        "ai/train_comprehensive.py no longer wraps `e['first']` in "
+        "`fmt_dt(...)`. PR #206 (P-038 sibling sweep) converted the "
+        "legacy `e['first'][:16]` slice to `fmt_dt(e['first'])` for "
+        "forward-compat with W17 (text → timestamptz). If this fix "
+        "was reverted, restore it. See "
+        "tests/test_p038_no_slice_on_timestamp_fields.py for the "
+        "cohort guard."
     )

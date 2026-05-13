@@ -648,8 +648,13 @@ def build_per_miner_prompt(
     if restarts:
         lines.append(f"--- RESTARTS IN LAST 24H ({len(restarts)}) ---")
         for r in restarts:
+            # `restarted_at` from miner_restarts is timestamptz → psycopg2
+            # returns datetime. Pre-fix this line did `[:16]` directly on
+            # the value, crashing `daily_deep_dive` on the first miner with
+            # any restart in the last 24h. Observed live 2026-05-12 on
+            # miner 19/69. fmt_dt handles datetime, str, None uniformly.
             lines.append(
-                f"  [{r.get('restarted_at', '%s')[:16]}] {r.get('restart_type') or '%s'} "
+                f"  [{fmt_dt(r.get('restarted_at'))}] {r.get('restart_type') or '%s'} "
                 f"outcome={r.get('outcome') or '%s'} "
                 f"HR: {r.get('hashrate_before', '%s')}% → {r.get('hashrate_after', '%s')}%"
             )
@@ -661,8 +666,13 @@ def build_per_miner_prompt(
     if actions:
         lines.append(f"--- OPERATOR ACTIONS IN LAST 24H ({len(actions)}) ---")
         for a in actions:
+            # `timestamp` from action_audit_log is timestamptz; same fix as
+            # the restarts block above. Pre-fix line was a latent sibling
+            # of the line 652 crash — would have triggered as soon as the
+            # restarts loop was skipped (zero recent restarts) AND any
+            # operator action existed in the same window.
             lines.append(
-                f"  [{a.get('timestamp', '%s')[:16]}] {a.get('action_taken') or '%s'} "
+                f"  [{fmt_dt(a.get('timestamp'))}] {a.get('action_taken') or '%s'} "
                 f"decision={a.get('decision') or '%s'} by={a.get('approved_by') or '%s'}"
             )
             if a.get("notes"):

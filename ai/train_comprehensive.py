@@ -241,22 +241,39 @@ def get_miner_full_profile(conn, miner_id: str) -> dict:
 
     for restart in audit_rows:
         ts = restart["timestamp"]
-        # Reading just before restart
+        # `ts` from action_audit_log.timestamp is timestamptz today
+        # (psycopg2 returns datetime) but may be str if a pre-W16 row
+        # ever surfaces. Both arithmetic (timedelta add) and display
+        # need a datetime, but datetime.fromisoformat(ts) crashes on
+        # datetime input with `TypeError: fromisoformat: argument must
+        # be str`. Polymorphic coercion: pass-through if already a
+        # datetime, parse if str, else give up gracefully.
+        if isinstance(ts, datetime):
+            ts_dt = ts
+        elif isinstance(ts, str):
+            try:
+                ts_dt = datetime.fromisoformat(ts)
+            except ValueError:
+                continue  # malformed row, skip — same effect as pre-fix crash but recoverable
+        else:
+            continue
+        # Reading just before restart — DB takes either str or datetime
+        # via psycopg2 parameter binding.
         before = conn.execute("""
             SELECT hashrate_pct, temp_chip, issue, scanned_at
             FROM miner_readings WHERE miner_id = %s AND scanned_at <= %s
             ORDER BY scanned_at DESC LIMIT 1
-        """, (miner_id, ts)).fetchone()
+        """, (miner_id, ts_dt)).fetchone()
         # Reading 30 minutes after restart
-        after_ts = datetime.fromisoformat(ts) + timedelta(minutes=30)
+        after_ts = ts_dt + timedelta(minutes=30)
         after = conn.execute("""
             SELECT hashrate_pct, temp_chip, issue, scanned_at
             FROM miner_readings WHERE miner_id = %s AND scanned_at >= %s
             ORDER BY scanned_at ASC LIMIT 1
-        """, (miner_id, after_ts.isoformat())).fetchone()
+        """, (miner_id, after_ts)).fetchone()
 
         outcome = {
-            "restart_time": ts[:16],
+            "restart_time": fmt_dt(ts_dt),
             "action": restart["action_taken"],
             "problem": (restart["problem"] or "")[:100],
             "before": dict(before) if before else None,
@@ -369,9 +386,14 @@ def build_miner_prompt(miner_id: str, profile: dict) -> str:
     if profile["chain_events"]:
         lines.append("\n--- CHAIN ATTACH/DETACH EVENTS ---")
         for e in profile["chain_events"]:
+            # `first`/`last` come from MIN/MAX(log_timestamp) in
+            # get_miner_full_profile. log_metrics.log_timestamp is text
+            # today (per core/dt_format.py docstring) but the W17 sweep
+            # will move text columns to timestamptz. fmt_dt handles both
+            # uniformly so this stays correct under either column type.
             lines.append(
                 f"Board {e['board_index']}: {e['event']} {e['count']}x "
-                f"(first: {e['first'][:16]}, last: {e['last'][:16]})"
+                f"(first: {fmt_dt(e['first'])}, last: {fmt_dt(e['last'])})"
             )
 
     # Pool data
@@ -732,7 +754,8 @@ def get_cross_miner_correlations(conn) -> str:
                 lines.append("and identify patterns the local AI missed that you can see fleet-wide.")
                 # Show most recent 10 analyses
                 for a in local_analyses:
-                    ts = a.get("timestamp", "?")[:16]
+                    # Source: knowledge.json. fmt_dt for consistency.
+                    ts = fmt_dt(a.get("timestamp"))
                     scan = a.get("scan_id", "?")
                     text = a.get("analysis", "")[:300]
                     lines.append(f"\n  [Scan #{scan} @ {ts}]:")
