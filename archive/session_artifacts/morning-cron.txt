@@ -1,1 +1,0 @@
-0 7 * * * /bin/zsh /Users/BigBobby/Documents/GitHub/mac-scripts/morning.sh >> /Users/BigBobby/morning-log.txt 2>&1
