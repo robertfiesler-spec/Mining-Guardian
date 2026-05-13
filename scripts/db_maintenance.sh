@@ -1,125 +1,79 @@
 #!/bin/bash
-# Database Maintenance Script — Postgres-in-Docker version (P-038 #6, 2026-05-11)
-# Runs daily to keep the mining_guardian Postgres database healthy.
+# scripts/db_maintenance.sh
 #
-# Originally written for a Linux host with a native `postgres` Unix user
-# and `psql` on PATH. The Mac Mini deployment runs Postgres inside the
-# Docker container `mining-guardian-db`, so `sudo -u postgres psql` does
-# not work — there is no `postgres` Unix user on macOS. Rewritten 2026-
-# 05-11 (P-038 item #6) to invoke psql via `docker exec` against the
-# container.
+# W14 Step 9c (2026-05-13) — daily DB maintenance wrapper.
 #
-# Output flow:
-#   This script writes ALL output to stdout/stderr. The LaunchDaemon
-#   that schedules it (com.miningguardian.scheduled.db-maintenance) runs
-#   through scheduled_job_launcher.sh, which captures stdout to
-#   ${MG_INSTALL_ROOT}/logs/scheduled/db_maintenance.out.log and stderr
-#   to db_maintenance.err.log. No /var/log/ writes; the launcher's
-#   canonical Mac log location is the single source of truth.
+# Mining Guardian runs two Postgres containers on the Mini (W14, 2026-05-13).
+# This wrapper runs both per-instance maintenance scripts and returns
+# non-zero if either fails, so the launchd .last-run.json correctly
+# reports partial-failure days to the operator.
 #
-# Failure handling:
-#   `set -e` removed. Each step has explicit per-command error handling
-#   so one step's failure does not silently abort the rest (and so the
-#   operator sees the failed step name on stderr instead of an empty
-#   .err.log). A counter tracks failures and the script exits non-zero
-#   at the end if any step failed, so the launcher's .last-run.json
-#   stamps exit_code=1 and the operator sees something is off.
+# Invoked by the scheduled launchd job
+#   installer/macos-pkg/resources/launchd/scheduled/com.miningguardian.scheduled.db-maintenance.plist
+# which calls this wrapper through scripts/scheduled_job_launcher.sh.
 #
-# Container / DB identity:
-#   Hardcoded — these names are deployment identities baked into the
-#   .pkg install layout, not env-configurable. Changing them is a
-#   coordinated install-time change (postinstall, plist, payload).
-#     CONTAINER = mining-guardian-db
-#     DB_USER   = mg
-#     DB_NAME   = mining_guardian
+# Why a wrapper instead of one combined script:
+#   Mirrors the D6 backup-script pattern (PR #204). Each instance's
+#   maintenance is independent; one failure shouldn't block the other
+#   from attempting. Per-script exit codes give the operator a clearer
+#   signal: "operational ok, catalog failed" is more actionable than
+#   "maintenance failed (somewhere)".
+#
+# Exit codes:
+#   0 — both scripts exited 0
+#   1 — at least one script exited non-zero (operator must investigate)
+#
+# History:
+#   Pre-W14: a single combined script (Linux-VPS era → Mac Mini rewrite
+#   P-038 #6 on 2026-05-11) maintained one Postgres container holding
+#   both DBs. Post-W14 split into two containers (2026-05-13), so this
+#   wrapper + the two per-instance scripts replace the previous combined
+#   shape. The previous combined script also had the same Colima socket
+#   bug we're fixing here — `dial unix /var/run/docker.sock: connect:
+#   no such file or directory` for every step under launchd context.
+#   Fixed by setting DOCKER_HOST explicitly inside each per-instance
+#   script (W14 Step 9 / 9c).
 
-# Ensure docker is reachable. The plist's EnvironmentVariables.PATH
-# already includes /usr/local/bin, but defense-in-depth costs one line —
-# if a future plist edit drops the override, the script still finds
-# docker.
-export PATH=/usr/local/bin:$PATH
+set -uo pipefail
+# NOTE: `set -e` is intentionally not used — we want to run BOTH scripts
+# even if the first fails, then report the combined result. Per-script
+# failure handling is explicit below.
 
-CONTAINER="mining-guardian-db"
-DB_USER="mg"
-DB_NAME="mining_guardian"
+INSTALL_ROOT="${MG_INSTALL_ROOT:-/Library/Application Support/MiningGuardian}"
+SCRIPTS_DIR="${INSTALL_ROOT}/scripts"
+LABEL="db_maintenance"
 
-# Single helper so every psql call shares the same shape and is easy
-# to audit. Args are passed straight through to psql inside the
-# container.
-db_exec() {
-    docker exec "$CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" "$@"
-}
+ts() { /bin/date -u +%Y-%m-%dT%H:%M:%SZ; }
+log() { echo "[$(ts)] [${LABEL}] $*"; }
 
-# Each step uses explicit if/else error handling. A step's failure
-# logs to stderr (caught by the launcher's .err.log) but the script
-# continues so the operator still sees the size report and integrity
-# check even if VACUUM ANALYZE hiccups. If ANY step fails, the script
-# exits non-zero at the end so the launcher's .last-run.json shows
-# exit_code=1 and the operator notices something is off rather than
-# silently swallowing the failure.
-FAIL_COUNT=0
-run_step() {
-    local label="$1"
-    shift
-    echo "  ${label}..."
-    if ! "$@"; then
-        echo "  FAIL: ${label} returned non-zero" >&2
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        return 1
-    fi
-}
+log "starting daily maintenance cycle for both Postgres instances"
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') Starting database maintenance (Postgres in Docker)..."
-
-# 1. VACUUM ANALYZE — reclaims space from deleted rows AND updates
-#    query planner stats. Safe to run while services are active; uses
-#    MVCC, no exclusive locks on active tables.
-run_step "Running VACUUM ANALYZE" db_exec -c "VACUUM ANALYZE;"
-
-# 2. ANALYZE alone — redundant after VACUUM ANALYZE but cheap and
-#    catches the case where VACUUM ANALYZE was skipped.
-run_step "Running ANALYZE" db_exec -c "ANALYZE;"
-
-# 3. Database size reporting.
-db_size="$(db_exec -tAc "SELECT pg_size_pretty(pg_database_size('${DB_NAME}'))" 2>/dev/null)"
-if [[ -n "$db_size" ]]; then
-    echo "  Database size: ${db_size}"
+# Run operational maintenance
+log "→ invoking db_maintenance_operational.sh"
+operational_rc=0
+"${SCRIPTS_DIR}/db_maintenance_operational.sh" || operational_rc=$?
+if [[ "${operational_rc}" -eq 0 ]]; then
+    log "→ db_maintenance_operational.sh: OK"
 else
-    echo "  WARN: could not read database size" >&2
-    FAIL_COUNT=$((FAIL_COUNT + 1))
+    log "→ db_maintenance_operational.sh: FAILED (exit ${operational_rc})"
 fi
 
-# 4. Top 10 largest tables.
-echo "  Top 10 largest tables:"
-if ! db_exec -c "
-SELECT
-    schemaname || '.' || relname AS table_name,
-    pg_size_pretty(pg_total_relation_size(schemaname || '.' || relname)) AS total_size,
-    n_live_tup AS live_rows
-FROM pg_stat_user_tables
-ORDER BY pg_total_relation_size(schemaname || '.' || relname) DESC
-LIMIT 10;
-"; then
-    echo "  WARN: top-10 tables report failed" >&2
-    FAIL_COUNT=$((FAIL_COUNT + 1))
-fi
-
-# 5. Integrity check — confirm we can count rows in a key table.
-rows="$(db_exec -tAc "SELECT COUNT(*) FROM scans" 2>/dev/null)"
-if [[ -n "$rows" ]]; then
-    echo "  Integrity: OK (scans=${rows})"
+# Run catalog maintenance (regardless of operational outcome)
+log "→ invoking db_maintenance_catalog.sh"
+catalog_rc=0
+"${SCRIPTS_DIR}/db_maintenance_catalog.sh" || catalog_rc=$?
+if [[ "${catalog_rc}" -eq 0 ]]; then
+    log "→ db_maintenance_catalog.sh: OK"
 else
-    echo "  WARN: integrity check failed — could not read scans table" >&2
-    FAIL_COUNT=$((FAIL_COUNT + 1))
+    log "→ db_maintenance_catalog.sh: FAILED (exit ${catalog_rc})"
 fi
 
-echo "$(date '+%Y-%m-%d %H:%M:%S') Database maintenance complete (${FAIL_COUNT} step(s) failed)"
-echo "---"
-
-# Exit non-zero if ANY step failed, so the launcher's .last-run.json
-# stamps exit_code=1 and the operator notices. Pure-success day gets
-# exit_code=0.
-if [[ "$FAIL_COUNT" -gt 0 ]]; then
-    exit 1
+# Combined result
+if [[ "${operational_rc}" -eq 0 ]] && [[ "${catalog_rc}" -eq 0 ]]; then
+    log "OK both maintenance runs succeeded"
+    exit 0
 fi
-exit 0
+
+log "FAIL operational_rc=${operational_rc} catalog_rc=${catalog_rc}"
+log "    inspect ${INSTALL_ROOT}/logs/scheduled/db_maintenance.{out,err}.log"
+exit 1
