@@ -84,15 +84,13 @@ ALLOWED_FILES = {
     "tests/test_p038_datetime_slicing.py",  # PR #178 test — docstring includes pre-fix pattern as history
 }
 
-# Directories whose contents are dead code (one-time patches, archived
-# experiments, fix scripts that were merged long ago). They still live in
-# the repo for historical reference but are NEVER imported by the running
-# system. The cohort guard skips them; the PR #208 follow-up will either
-# delete them outright or sweep them too.
-ALLOWED_DIR_PREFIXES = (
-    "archive/",
-    "fixes/",
-)
+# Directories whose contents are dead code, scanned out of the guard.
+# Was used for archive/ + fixes/ in PR #206; PR #208 (2026-05-13) deleted
+# both directories outright (91 files / ~896 KB) since git ls-files
+# confirmed nothing in the live codebase imported them. Tuple kept empty
+# for traceability — if a future PR needs to exclude another dead-code
+# directory, the mechanism is right here.
+ALLOWED_DIR_PREFIXES = ()
 
 # PR #207 (2026-05-13) closed out the DEFERRED_TO_PR_207 set —
 # api/dashboard_api.py (12 sites) + api/ai_dashboard_api.py (2 sites)
