@@ -3,8 +3,57 @@
 #
 # Stand up Colima as the local container runtime + load the bundled
 # Postgres 16-bookworm image (vendored inside the .pkg payload — no
-# network call needed for this step). Mining Guardian's database lives
-# inside this Colima-managed Postgres container.
+# network call needed for this step). Mining Guardian's databases live
+# inside Colima-managed Postgres containers.
+#
+# Topology (W14, locked 2026-05-13):
+#
+#   This installer provisions TWO Postgres containers on the Mini:
+#
+#     mining-guardian-db (operational) on 127.0.0.1:5432
+#       Holds the `mining_guardian` database: scan/audit/AI tables.
+#       Bind-mount: $MG_INSTALL_ROOT/postgres-data/
+#
+#     mg-catalog-db (catalog) on 127.0.0.1:5433
+#       Holds the `mining_guardian_catalog` database: the seeded Mining
+#       Intelligence Catalog (hardware.miner_models, manufacturers,
+#       firmware.*, market.war_stories, …).
+#       Bind-mount: $MG_INSTALL_ROOT/pgdata-catalog/
+#
+#   Same user (`mg`) and same MG_DB_PASSWORD for both instances (D2,
+#   locked 2026-05-12). Each has its own data volume and is backed up
+#   separately (see scripts/daily_backup.sh — D6, two scripts + wrapper).
+#   Per D7 (locked 2026-05-12), the first customer-ship .pkg must
+#   provision both containers from a fresh install. Do not skip the
+#   catalog container at install time — the federation work (W28) and
+#   the catalog read paths (W06–W09) both assume two-container topology
+#   from day one.
+#
+# CRITICAL — password injection (W14 postmortem prevention rule):
+#   When provisioning either container's Postgres role, do NOT use
+#   `cut -d= -f2-` on the `.env` value and pass the result directly to
+#   `docker run -e POSTGRES_PASSWORD=...`. If the `.env` value happens
+#   to be quoted (`MG_DB_PASSWORD='...'`), `cut` preserves the quotes
+#   and the container's role gets a 66-character literally-quoted
+#   password while the application sends the 64-character unquoted
+#   value. Every catalog read fails with `password authentication
+#   failed for user "mg"`. Use one of:
+#
+#     1. `xargs` to strip surrounding quotes:
+#          export MG_DB_PASSWORD=$(grep ^MG_DB_PASSWORD= "$ENV_FILE" \
+#                                    | xargs)
+#          (note: $MG_DB_PASSWORD will still be prefixed with the
+#          variable name; strip with parameter expansion if needed)
+#
+#     2. Write a 0600 env file and use `--env-file` (recommended):
+#          umask 077
+#          grep ^MG_DB_PASSWORD= "$ENV_FILE" | xargs > "$TMP_ENV"
+#          docker run --env-file "$TMP_ENV" ...
+#          rm -P "$TMP_ENV"
+#
+#   See docs/strategy/W14_POSTMORTEM_2026-05-13.md §4.1 for the full
+#   prevention rule. The cohort guard test
+#   tests/test_w14_password_quote_consistency.py catches regressions.
 #
 # Q1 (hybrid .pkg) calls for Colima + the Postgres image to be
 # **shipped inside** the .pkg so a customer can stand up the database
@@ -26,6 +75,12 @@
 #   provision_postgres       — create persistent volume + start container
 #                              + run migrations 000/002/003 + wait for
 #                              "ready" before returning
+#                              (W14: TODO — extend to provision both
+#                               containers. Tracked as Step 10 of W14_PREP.
+#                               Until that PR lands, only the operational
+#                               container is provisioned at install time;
+#                               catalog must be added manually via the
+#                               W14 runbook on existing deployments.)
 #
 # Vision Anchor 7 (local-only) — no curl, no brew install. All bytes
 # are vendored.

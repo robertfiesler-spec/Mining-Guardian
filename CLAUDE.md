@@ -315,10 +315,16 @@ the live deployment.
   block_actions. Web GUI mode selector and operator schedules also live here.
 - **Database engine:** PostgreSQL 16 (`postgres:16-bookworm` image). Postgres
   is the canonical store. SQLite is no longer in the data plane.
-- **Database name:** `mining_guardian` (operational catalog). Operational
-  password is `MG_DB_PASSWORD` from `.env`, never committed.
-- **Container name:** `mining-guardian-db` (the Postgres container that hosts
-  the operational database).
+- **Database name:** `mining_guardian` (operational) on the
+  `mining-guardian-db` container, port 5432. `mining_guardian_catalog`
+  (intelligence catalog) on the `mg-catalog-db` container, port 5433
+  (W14, 2026-05-13). Same `MG_DB_PASSWORD` from `.env` for both, never
+  committed. All Python code goes through `core.db_targets` — see
+  Coding Conventions.
+- **Container names:** `mining-guardian-db` (operational Postgres on 5432)
+  and `mg-catalog-db` (catalog Postgres on 5433). Both `postgres:16-bookworm`,
+  both bind-mounted under `/Library/Application Support/MiningGuardian/`
+  (`postgres-data/` for operational, `pgdata-catalog/` for catalog).
 - **Monitoring:** Prometheus + Grafana, 6 dashboards.
 - **Two-tier AI:**
   - **Local LLM** — runs on every scan (~4.6s per analysis). Ollama natively
@@ -509,6 +515,84 @@ verification command), pick the recommendation and proceed. Reserve the
   verify shows the miner is reachable, flag as AMS SYNC for up to 10
   consecutive scans. After 10, suppress entirely — it's a persistent AMS
   sync lag, not a miner problem.
+
+---
+
+## Coding Conventions
+
+These rules are binding on all new code and any meaningful edits to existing
+code. The first rule is enforced by the cohort guard test
+`tests/test_w14a_no_direct_pg_env_reads.py`; the second by
+`tests/test_w14_password_quote_consistency.py`. CI failures here block merge.
+
+### Postgres connections — go through `core.db_targets`
+
+All Postgres access goes through `core.db_targets.operational_target()` or
+`core.db_targets.catalog_target()`. **Never read `GUARDIAN_PG_HOST`,
+`GUARDIAN_PG_PORT`, `MG_DB_HOST`, or `MG_DB_PORT` directly** outside
+`core/db_targets.py` itself — the cohort guard test
+`tests/test_w14a_no_direct_pg_env_reads.py` will fail CI.
+
+Why: the operational and catalog DBs live on **different ports** (W14,
+landed 2026-05-13). The resolver functions handle host/port/dbname for
+whichever target you ask for; reading the env vars directly silently
+misroutes catalog reads to the operational instance, and during pre-W14
+deploys still routed correctly only by accident. Post-W14 this is no
+longer accidental — it is broken.
+
+```python
+# Right
+from core.db_targets import operational_target, catalog_target
+op_conn  = psycopg2.connect(**operational_target().connect_kwargs())
+cat_conn = psycopg2.connect(**catalog_target().connect_kwargs())
+
+# Wrong — fails CI via cohort guard test
+import os
+host = os.environ.get("GUARDIAN_PG_HOST", "localhost")
+port = os.environ.get("GUARDIAN_PG_PORT", "5432")
+```
+
+See `docs/strategy/AMENDMENTS_2026-05-12.md` §A01 for the architectural
+rationale, `docs/strategy/W14_PREP.md` for the topology, and
+`docs/strategy/W14_POSTMORTEM_2026-05-13.md` for what goes wrong when
+the rule is bypassed.
+
+### Sourcing `.env` values in shell scripts — strip quotes, always
+
+When a shell script reads a value from `.env`, always pipe through
+`xargs` (which strips surrounding single/double quotes) **before** passing
+it to a downstream command. Do **not** pass raw `cut -d= -f2-` output to
+`docker run`, `pg_dump`, `pg_restore`, `psql`, or any other consumer.
+
+```bash
+# Right — xargs strips quotes; the value passed to docker run is the actual secret
+export MG_DB_PASSWORD=$(grep "^MG_DB_PASSWORD=" "${ENV_FILE}" | xargs)
+docker run ... -e POSTGRES_PASSWORD="${MG_DB_PASSWORD#MG_DB_PASSWORD=}" ...
+
+# Better — write a temp env file (mode 0600), use --env-file, then shred
+umask 077
+grep -E "^MG_DB_PASSWORD=" "${ENV_FILE}" | xargs > "${TMP_ENV}"
+docker run ... --env-file "${TMP_ENV}" ...
+rm -P "${TMP_ENV}"
+
+# Wrong — preserves literal quotes if .env has MG_DB_PASSWORD='...'
+export MG_DB_PASSWORD=$(grep "^MG_DB_PASSWORD=" "${ENV_FILE}" | cut -d= -f2-)
+docker run ... -e POSTGRES_PASSWORD="$MG_DB_PASSWORD" ...
+```
+
+Why: on 2026-05-13 the W14 Step 2 `docker run` for `mg-catalog-db` used
+the wrong pattern. The `.env` value was `MG_DB_PASSWORD='<64chars>'` (with
+quotes); `cut -d= -f2-` preserved the quotes; the new container was
+provisioned with a 66-character quoted password. Application code loads
+`.env` via `xargs` which strips quotes, so apps sent the 64-character
+unquoted value — every catalog read failed with `password authentication
+failed for user "mg"`. The W14 Step 6 smoke gate caught it before the
+irreversible `DROP DATABASE`; fixed in-window via `ALTER USER`.
+
+The cohort guard test `tests/test_w14_password_quote_consistency.py`
+catches future regressions of this exact bug class.
+
+See `docs/strategy/W14_POSTMORTEM_2026-05-13.md` §4 for full prevention rules.
 
 ---
 
