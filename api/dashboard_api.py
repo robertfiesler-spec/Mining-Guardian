@@ -771,6 +771,14 @@ def fleet_board_stats():
             conn.close()
             return HTMLResponse("<p>No scan data yet.</p>")
 
+        # W25b (2026-05-13): Postgres requires every non-aggregated SELECT
+        # column to appear in GROUP BY (SQLite was lenient and picked an
+        # arbitrary value). Two fixes here:
+        #   (a) Subquery: `DISTINCT ON (ip)` is Postgres shorthand for
+        #       "exactly one row per ip"; preserves the original
+        #       defensive intent without the SQLite-ism.
+        #   (b) Outer query: add `m.model` to GROUP BY so the SELECT'd
+        #       model column is grouped.
         rej_rows = conn.execute("""
             SELECT p.ip,
                    COALESCE(m.model, 'Unknown') as model,
@@ -779,9 +787,10 @@ def fleet_board_stats():
                         ELSE 0 END as rej_rate
             FROM pool_readings p
             LEFT JOIN (
-                SELECT ip, model FROM miner_readings WHERE scan_id=%s GROUP BY ip
+                SELECT DISTINCT ON (ip) ip, model FROM miner_readings
+                WHERE scan_id=%s ORDER BY ip
             ) m ON p.ip = m.ip
-            WHERE p.scan_id=%s GROUP BY p.ip
+            WHERE p.scan_id=%s GROUP BY p.ip, m.model
             ORDER BY rej_rate DESC LIMIT 10
         """, (scan["id"], scan["id"])).fetchall()
 
@@ -791,10 +800,11 @@ def fleet_board_stats():
                    SUM(c.hw_errors) as total_hw
             FROM chain_readings c
             LEFT JOIN (
-                SELECT ip, model FROM miner_readings WHERE scan_id=%s GROUP BY ip
+                SELECT DISTINCT ON (ip) ip, model FROM miner_readings
+                WHERE scan_id=%s ORDER BY ip
             ) m ON c.ip = m.ip
             WHERE c.scan_id=%s
-            GROUP BY c.ip HAVING total_hw > 0
+            GROUP BY c.ip, m.model HAVING SUM(c.hw_errors) > 0
             ORDER BY total_hw DESC LIMIT 10
         """, (scan["id"], scan["id"])).fetchall()
 
