@@ -11,7 +11,26 @@ Usage:
     source venv/bin/activate
     python dashboard_api.py
 
-Runs on: http://localhost:8585
+Bind host/port (W25, 2026-05-13):
+    Default is loopback-only — `127.0.0.1:8585`. Override at the process
+    level by exporting `MG_DASHBOARD_HOST` / `MG_DASHBOARD_PORT` (or
+    setting them in `.env`). The Mac Mini production install sets
+    `MG_DASHBOARD_HOST=0.0.0.0` because Grafana embeds dashboard_api's
+    HTML pages via iframes that hit `http://<tailscale-ip>:8585` — the
+    iframe request crosses interfaces and fails when dashboard_api
+    binds loopback. The Mini's only routable interfaces are loopback
+    and the Tailscale subnet, both of which are inside the operator's
+    trust boundary, so binding `0.0.0.0` does NOT expose the API to
+    the public internet on this deployment.
+
+    When auditing for newer deployments: if the host has a public NIC,
+    keep loopback and front the API with an authenticating reverse
+    proxy (nginx + basic auth, Cloudflare tunnel with auth, etc.)
+    before flipping to `0.0.0.0`. See `intelligence-catalog/catalog-api/
+    catalog_api.py` for the CRIT-6 hardened reference implementation
+    (token auth + rate limiting + bound to loopback by default).
+
+Default: http://localhost:8585
 """
 
 import sys
@@ -3489,11 +3508,20 @@ async def generate_report(days: int = Query(default=7, ge=1, le=30)):
 
 if __name__ == "__main__":
     import uvicorn
+    # W25 (2026-05-13): bind host/port configurable via env so the
+    # production Mini install can flip to 0.0.0.0 for Tailscale-side
+    # iframe reachability without code changes. See module docstring
+    # at the top of this file for the full rationale + audit checklist.
+    # Defaults are intentionally loopback-only to keep developer-laptop
+    # runs safe by default; production override lives in the install's
+    # .env (MG_DASHBOARD_HOST=0.0.0.0).
+    _bind_host = os.environ.get("MG_DASHBOARD_HOST", "127.0.0.1")
+    _bind_port = int(os.environ.get("MG_DASHBOARD_PORT", "8585"))
     print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("  Mining Guardian Dashboard API")
-    print("  http://localhost:8585")
-    print("  http://localhost:8585/docs  ← interactive API docs")
+    print(f"  http://{_bind_host}:{_bind_port}")
+    print(f"  http://{_bind_host}:{_bind_port}/docs  ← interactive API docs")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-    uvicorn.run(app, host="127.0.0.1", port=8585)
+    uvicorn.run(app, host=_bind_host, port=_bind_port)
 
 
