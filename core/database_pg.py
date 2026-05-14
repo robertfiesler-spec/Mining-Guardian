@@ -19,11 +19,40 @@ Design notes:
   - Uses psycopg2 (not psycopg3) to match scripts/migrate_to_postgres.py
   - SQL placeholders are %s (not ? like SQLite)
   - INSERT ... RETURNING id is used instead of cur.lastrowid
-  - conn is checked out per-call (no pool today — simple for correctness)
+  - connections are borrowed from a psycopg2 ThreadedConnectionPool
+    held on the instance (W03, 2026-05-14) — see below
   - _init_db runs migrations/001_initial_schema.sql which is idempotent
 
+Connection pooling (W03, 2026-05-14):
+  Each GuardianPGDB instance owns a psycopg2.pool.ThreadedConnectionPool
+  built in __init__. `_connect()` borrows a connection via getconn() and
+  returns it via putconn() instead of opening a fresh psycopg2.connect()
+  per call. This removes the TCP-connect + auth handshake from the hot
+  path — the hourly scanner makes ~500 calls/scan through this adapter,
+  and every one of them previously paid a full connect/close.
+
+  Lifecycle: the pool is created in __init__ and torn down by close()
+  (which is no longer a no-op). Every process constructs exactly one
+  GuardianPGDB instance (the hourly scanner via core/mining_guardian.py,
+  ai/outcome_checker.py's module singleton, and the short-lived
+  scripts/* each make one), so "one pool per instance" is "one pool per
+  process" in practice. Short-lived scripts that exit without calling
+  close() leak nothing of consequence — process exit reclaims the pool.
+
+  Pool size is env-tunable: MG_PG_POOL_MIN (default 2) and MG_PG_POOL_MAX
+  (default 20), matching the catalog API's pool sizing
+  (intelligence-catalog/catalog-api/catalog_api.py). The pattern is
+  proven there.
+
+  Invariant the cohort guard test enforces: no single method holds two
+  pooled connections concurrently. ThreadedConnectionPool is thread-safe
+  for getconn/putconn, but a method that borrowed a second connection
+  before returning the first could deadlock at maxconn. Every method
+  here uses a single sequential `with self._connect()` block; the
+  cohort guard (tests/test_w03_operational_connection_pool.py) asserts
+  borrow/return is balanced so a future violation is caught.
+
 Non-goals:
-  - Connection pooling (add when we deploy)
   - Async variant
   - Multi-schema / per-table routing (the SQLite split-DB router concept
     doesn't apply — all tables live in the public schema)
@@ -36,6 +65,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import psycopg2
+import psycopg2.pool
 from psycopg2.extras import DictCursor, execute_batch
 
 from core.db_targets import operational_target
@@ -45,6 +75,46 @@ logger = logging.getLogger(__name__)
 # Schema file that defines the Postgres tables. Idempotent (uses IF NOT EXISTS).
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SCHEMA_SQL = REPO_ROOT / "migrations" / "001_initial_schema.sql"
+
+# Connection pool sizing (W03, 2026-05-14). Env-tunable; defaults match the
+# catalog API's proven pool (intelligence-catalog/catalog-api/catalog_api.py).
+# minconn connections are opened eagerly when the pool is built; the pool
+# grows to maxconn on demand and never beyond. A bad MG_PG_POOL_* value
+# (non-int, or min > max) falls back to the defaults with a logged warning
+# rather than crashing the adapter at construction time.
+_DEFAULT_POOL_MIN = 2
+_DEFAULT_POOL_MAX = 20
+
+
+def _resolve_pool_sizing() -> tuple:
+    """Resolve (minconn, maxconn) from MG_PG_POOL_MIN / MG_PG_POOL_MAX env vars.
+
+    Falls back to the documented defaults (2 / 20) on any malformed value:
+    a non-integer, a non-positive number, or min > max. The fallback is
+    logged at WARNING so a typo in .env is visible but never fatal — the
+    operational adapter must construct even with a bad pool env.
+    """
+    raw_min = os.environ.get("MG_PG_POOL_MIN")
+    raw_max = os.environ.get("MG_PG_POOL_MAX")
+    minconn = _DEFAULT_POOL_MIN
+    maxconn = _DEFAULT_POOL_MAX
+    try:
+        if raw_min is not None:
+            minconn = int(raw_min)
+        if raw_max is not None:
+            maxconn = int(raw_max)
+        if minconn < 1 or maxconn < 1 or minconn > maxconn:
+            raise ValueError(
+                f"invalid pool sizing minconn={minconn} maxconn={maxconn}"
+            )
+    except (ValueError, TypeError) as exc:
+        logger.warning(
+            "Bad MG_PG_POOL_MIN/MG_PG_POOL_MAX (%r / %r) — %s; "
+            "falling back to defaults %d/%d",
+            raw_min, raw_max, exc, _DEFAULT_POOL_MIN, _DEFAULT_POOL_MAX,
+        )
+        return _DEFAULT_POOL_MIN, _DEFAULT_POOL_MAX
+    return minconn, maxconn
 
 
 def _profile_parse_ths(profile_str: str) -> Optional[float]:
@@ -96,7 +166,19 @@ class _PgConnShim:
         self._conn.rollback()
 
     def close(self):
-        self._conn.close()
+        """No-op. W03 (2026-05-14): the underlying connection is pooled and
+        its lifecycle is owned exclusively by the `_connect()` contextmanager,
+        which borrows it via the pool's getconn() and returns it via
+        putconn(). If this shim physically closed the connection, it would
+        close one the pool still believes it owns — corrupting the pool.
+
+        No current caller of `_connect()` calls `.close()` on the shim
+        (they all use the `with self._connect() as conn:` form and let the
+        contextmanager handle return), so this is defensive: it keeps the
+        public surface intact while making an accidental future `.close()`
+        call harmless instead of pool-corrupting.
+        """
+        pass
 
     # Some callers do `with self.db._connect() as conn: with conn:` — be safe.
     def __enter__(self):
@@ -174,17 +256,37 @@ class GuardianPGDB:
             pw = password if password is not None else target.password
             self._dsn = f"host={host_v} port={port_v} dbname={dbname_v} user={user_v} password={pw}"
         self._schema_sql_path = Path(schema_sql_path) if schema_sql_path else DEFAULT_SCHEMA_SQL
+
+        # W03 (2026-05-14): build the connection pool. ThreadedConnectionPool
+        # accepts the same DSN string psycopg2.connect() takes, so the DSN
+        # resolution above is reused unchanged. minconn connections open
+        # eagerly here — so a bad DSN fails fast at construction, exactly as
+        # the old per-call psycopg2.connect() did. The SELECT 1 ping below
+        # now exercises the pool (getconn/putconn), which doubles as the
+        # first borrow/return cycle.
+        self._pool_min, self._pool_max = _resolve_pool_sizing()
+        self._pool = psycopg2.pool.ThreadedConnectionPool(
+            self._pool_min,
+            self._pool_max,
+            self._dsn,
+            cursor_factory=DictCursor,
+        )
+
         # Ping the DB to fail fast if credentials are wrong.
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 cur.fetchone()
         self._init_db()
+        logger.info(
+            "GuardianPGDB connection pool ready (min=%d max=%d)",
+            self._pool_min, self._pool_max,
+        )
 
     # ── Connection management ──────────────────────────────────────────
     @contextmanager
     def _connect(self, table_name: str = None):
-        """Open a Postgres connection wrapped in a SQLite-compatible shim.
+        """Borrow a pooled Postgres connection wrapped in a SQLite-compatible shim.
 
         table_name is accepted for API compatibility with the SQLite backend's
         router hint, but it is ignored — all tables live in public.
@@ -196,19 +298,44 @@ class GuardianPGDB:
             (used by database_pg.py's own internal methods)
           - .commit() / .rollback() / context manager protocol
 
-        Wraps a per-connection DictCursor so rows behave like dicts (parallel
-        to SQLite Row factory on the SQLite side).
+        Connections carry a DictCursor factory (set on the pool in __init__)
+        so rows behave like dicts (parallel to SQLite Row factory).
+
+        W03 (2026-05-14): borrows from self._pool via getconn() instead of
+        opening a fresh psycopg2.connect() per call. Transaction semantics
+        are unchanged — commit on clean exit, rollback on exception.
+
+        On the exception path the connection is rolled back and then
+        returned to the pool normally via putconn(raw). rollback() fully
+        clears any aborted-transaction state — that is precisely what
+        rollback is for — so the connection is clean and reusable; there
+        is no "poisoned connection" to discard. An earlier W03 draft
+        called putconn(raw, close=True) here on the theory that an
+        error-path connection had to be thrown away. That was wrong:
+        putconn(close=True) physically closes the connection and removes
+        it from the pool WITHOUT opening a replacement, so every error
+        permanently shrank the pool by one. In a long-lived process (the
+        hourly scanner) that is a slow leak ending in
+        `PoolError: connection pool exhausted`. The W03 cohort guard's S4
+        case (error-path balance) caught this on the Mini before commit.
+        rollback()+putconn(raw) keeps the pool's free count balanced on
+        both the clean and the error path.
         """
-        raw = psycopg2.connect(self._dsn, cursor_factory=DictCursor)
+        raw = self._pool.getconn()
         shim = _PgConnShim(raw)
         try:
             yield shim
             raw.commit()
         except Exception:
+            # rollback() clears any aborted-transaction state, leaving the
+            # connection clean and reusable — return it to the pool
+            # normally. Do NOT putconn(close=True): that shrinks the pool
+            # permanently (no replacement is opened). See docstring.
             raw.rollback()
+            self._pool.putconn(raw)
             raise
-        finally:
-            raw.close()
+        else:
+            self._pool.putconn(raw)
 
     # ── Schema bootstrap ───────────────────────────────────────────────
     def _init_db(self) -> None:
@@ -583,12 +710,34 @@ class GuardianPGDB:
         return row["cnt"] if row else 0
 
     def close(self, force: bool = False) -> None:
-        """No-op for Postgres — connections are per-call and auto-close on context exit.
+        """Close the connection pool, releasing all pooled connections.
 
-        Kept for API compatibility with the SQLite backend which maintained persistent
-        connections.
+        W03 (2026-05-14): previously a no-op (the SQLite backend kept a
+        persistent connection; the pre-W03 Postgres backend opened a fresh
+        connection per call and closed it immediately, so there was nothing
+        to close here). Now that each GuardianPGDB instance owns a
+        ThreadedConnectionPool, close() tears it down via closeall().
+
+        Idempotent and safe to call more than once — a second call after the
+        pool is already closed is swallowed. Long-lived callers (the hourly
+        scanner, the outcome_checker singleton) typically never call this;
+        the pool lives for the life of the process and the OS reclaims it on
+        exit. Short-lived scripts may call it for tidiness but are not
+        required to. The `force` parameter is retained for API compatibility
+        with the SQLite backend's signature and is currently unused — pool
+        teardown is unconditional.
         """
-        pass
+        pool = getattr(self, "_pool", None)
+        if pool is None:
+            return
+        try:
+            pool.closeall()
+        except Exception as exc:
+            # closeall() on an already-closed pool raises PoolError; that's
+            # fine — close() is documented idempotent. Log at debug and move on.
+            logger.debug("GuardianPGDB.close(): pool already closed (%s)", exc)
+        else:
+            logger.info("GuardianPGDB connection pool closed")
 
     # ── Phase 4: medium methods (Postgres-translated from core/database.py) ─────
 
