@@ -414,6 +414,39 @@ This is the gap that makes the catalog feel empty today. Lands in June per A08 p
 
 ---
 
+## A11 — W10 ships 4 of A09's 5 functions; `propose_community_intel` splits out as W10b
+
+**Decided:** 2026-05-14, during W10 implementation.
+
+### Plan as written
+
+[`04_MASTER_EXECUTION_PLAN.md`](04_MASTER_EXECUTION_PLAN.md) §W10 specifies four new `propose_*` functions. [A09](#a09--w11-effort-revised-m--m-l-two-intake-patterns-approve-all-ux) above grew that to five, adding `propose_community_intel` for watch-item-type findings.
+
+### Amendment summary
+
+W10 as shipped delivers the **four well-specified functions** — `propose_firmware_release`, `propose_firmware_compatibility`, `propose_data_conflict`, `record_freshness_check` — all writing direct to their catalog tables. The fifth, `propose_community_intel`, **splits out into a new item W10b.**
+
+**Why the split.** The four shipped functions each have a real target table in the catalog schema (`firmware.firmware_releases`, `firmware.firmware_compatibility`, `knowledge.data_conflicts`, `knowledge.freshness_log`) — schemas confirmed, columns and enums verified, implementation unambiguous. `propose_community_intel` has **no target table**: there is no `community_intel` table anywhere in `intelligence_catalog_schema.sql` or its v2/v3 additions. A09 folded the fifth function in without anyone checking that the table exists. Designing a new catalog table is real schema work — it deserves the same deliberate treatment `ops.field_observed_specs` got in W27 (a thought-through `CREATE TABLE` with the right columns, indexes, provenance, federation-readiness), not a guess bolted onto W10's tail. Shipping the four solid functions now keeps W10 a clean, fully-verifiable unit; the fifth becomes its own small item whose first step is designing the table with the operator.
+
+### W10b — `community_intel` catalog table + `propose_community_intel`
+
+| Field | Value |
+|---|---|
+| Effort | S (table design + one function + tests) |
+| Risk | Low — additive, follows the W10 direct-to-catalog pattern |
+| Blocked by | W10 (the dual_writer catalog-intake section + its test file) — landed |
+| Phase | Phase 2, immediately after W10, before W11 (W11's `/intel` handler calls all five functions) |
+
+**What to do.**
+1. Design the `community_intel` catalog table — likely `knowledge.community_intel` (watch-items are knowledge-layer facts, not hardware/firmware/market). Columns to cover at minimum: an intel `type` (`watch_item`, etc. — A09 §4.2 Pattern 3), the free-text content, provenance (`source_tool`, `primary_source_id`), a `bobby_verified` flag (the W11 Slack-approve gate, consistent with the other four W10 targets), and `created_at`/`updated_at`. Decide dedup strategy as part of the design — likely a payload-hash or a natural key on `(type, content_hash)`.
+2. Add the table via a new `intelligence_catalog_schema_v5_additions.sql` + an `\ir` line in `deploy_schema.sql` — the same mechanism W10's `v4_additions.sql` (the `data_conflicts` dedup index) used.
+3. Add `propose_community_intel` to `intelligence-catalog/db/dual_writer.py`'s catalog-intake section, mirroring the four W10 functions exactly (fail-soft, `ValueError` on bad required args, direct-to-table write).
+4. Add integration + unit tests to `intelligence-catalog/db/tests/test_w10_catalog_intake.py` (or a sibling) following the W10 test pattern.
+
+**Definition of done.** `community_intel` table exists in the catalog schema and ships via `deploy_schema.sql`. `propose_community_intel` lives, is tested, idempotent, and live-Mini-smoke-verified against `mg-catalog-db` — same discipline as the four W10 functions.
+
+---
+
 ## How to use this file in commits and chat
 
 When applying any amendment:
