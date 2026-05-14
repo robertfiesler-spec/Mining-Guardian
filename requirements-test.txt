@@ -1,0 +1,56 @@
+# Mining Guardian — test / development environment requirements
+#
+# This file is the single source of truth for the Python environment
+# the test suite runs in (the `.venv-p018-tests` virtualenv on the
+# operator workstation, and any future CI runner).
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The test suite under tests/ imports real production modules
+# (api/dashboard_api.py, console/main.py, clients/ams_client.py, ...),
+# so the test environment needs the FULL runtime dependency closure —
+# not just pytest. Before this file existed, `.venv-p018-tests` was
+# hand-assembled from an ad-hoc subset of runtime deps, and it drifted:
+# on 2026-05-14 a single `pytest tests/` run surfaced five separate
+# missing packages (websocket-client, fastapi, httpx, slowapi,
+# python-multipart) — every one of which was already listed in
+# installer/macos-pkg/payload-requirements.txt. The venv had simply
+# never been built from a complete spec.
+#
+# WHAT THIS FILE IS
+# -----------------
+# The test environment = the runtime dependency closure + the test
+# tooling. Rather than re-list the runtime closure here (which would
+# immediately start drifting from the real source of truth), this file
+# COMPOSES the existing authoritative lists:
+#
+#   1. installer/macos-pkg/payload-requirements.txt — the authoritative
+#      runtime dependency closure (D-18 Gap 5). Pulled in via `-r` so it
+#      stays automatically in sync; there is no parallel list to drift.
+#   2. The three test-tooling packages from pyproject.toml's
+#      [project.optional-dependencies] dev extra (pytest, pytest-cov,
+#      ruff), inlined below. They are NOT in payload-requirements.txt
+#      by design — test tooling does not ship in the customer .pkg.
+#
+# HOW TO (RE)BUILD THE TEST VENV
+# ------------------------------
+#   python3.12 -m venv .venv-p018-tests
+#   .venv-p018-tests/bin/pip install -r requirements-test.txt
+#
+# Then `.venv-p018-tests/bin/python -m pytest tests/` should be able to
+# COLLECT the entire suite (470+ tests) with zero ModuleNotFoundError.
+#
+# NOTE — known macOS install caveats: weasyprint depends on system
+# libraries (pango / cairo / gdk-pixbuf, installed via Homebrew) and
+# paramiko / cryptography may need a build toolchain. If a fresh
+# `pip install -r` fails on one of those, install the system dependency
+# and retry — do not drop the line. See docs/LATENT_BUGS.md if a
+# caveat has been recorded.
+
+# --- runtime dependency closure (authoritative source of truth) ---
+-r installer/macos-pkg/payload-requirements.txt
+
+# --- test tooling (mirrors pyproject.toml [project.optional-dependencies] dev) ---
+pytest>=9.0
+pytest-cov>=7.0
+ruff>=0.4
