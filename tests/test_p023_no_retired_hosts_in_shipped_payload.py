@@ -99,15 +99,23 @@ ALLOWED_REJECT_GUARD_FILES = {
 # Files where the retired IPs would be unambiguous misconfiguration. No
 # legitimate operator path references the VPS IP from inside the shipped
 # payload — backup tooling that pulled from the VPS was retired with
-# P-023 (see `scripts/send_deep_dive_report.py` deletion). Operator
-# backup scripts that still ship (`scripts/backup_db.sh`,
-# `scripts/backup_mining_guardian.sh`) reference the VPS by design and
-# are explicitly excluded — they are operator-only and never invoked on
-# the customer Mac Mini. Any NEW shipped file that references the VPS
-# must be reviewed before being added here.
+# P-023 (see `scripts/send_deep_dive_report.py` deletion). The two
+# legacy VPS-era backup scripts (`scripts/backup_db.sh.legacy-vps-decommissioned`,
+# `scripts/backup_mining_guardian.sh.legacy-vps-decommissioned`,
+# renamed by W14 Step 9 / PR #204) reference the VPS by design and are
+# explicitly excluded — they are operator-only and never invoked on the
+# customer Mac Mini. Any NEW shipped file that references the VPS must
+# be reviewed before being added here.
 ALLOWED_VPS_FILES = {
-    "scripts/backup_db.sh",            # operator-side, never invoked on Mini
-    "scripts/backup_mining_guardian.sh",  # operator-side, never invoked on Mini
+    # W14 Step 9 / PR #204 (2026-05-13) renamed the two legacy VPS-era
+    # backup scripts to a `.legacy-vps-decommissioned` suffix when the
+    # two-instance pg_dump pipeline replaced them. They remain in the
+    # repo as operator reference, still reference the retired VPS IP by
+    # design, and are excluded from the customer payload by the
+    # `--exclude 'scripts/*'` catch-all in build_pkg.sh step 4a (only
+    # the six enumerated scheduled `scripts/*.py` entrypoints ship).
+    "scripts/backup_db.sh.legacy-vps-decommissioned",
+    "scripts/backup_mining_guardian.sh.legacy-vps-decommissioned",
 }
 
 
@@ -324,15 +332,28 @@ BOBBY_TAILSCALE_IP = "100.103.185.53"
 ALLOWED_BOBBY_MAC_FILES = {
     # Operator backup tooling — pulls from Bobby's facility VPS to
     # Bobby's Mac. Never invoked on the customer Mac Mini. Excluded
-    # from payload by the P-024 build_pkg.sh rsync allowlist.
-    "scripts/backup_db.sh",
-    "scripts/backup_mining_guardian.sh",
+    # from payload by the P-024 build_pkg.sh rsync allowlist. Renamed
+    # to `.legacy-vps-decommissioned` by W14 Step 9 / PR #204 when the
+    # two-instance pg_dump pipeline replaced them.
+    "scripts/backup_db.sh.legacy-vps-decommissioned",
+    "scripts/backup_mining_guardian.sh.legacy-vps-decommissioned",
     # Operator dev-laptop launcher with hardcoded /Users/BigBobby path
     # and the typo'd pre-rename repo name. Dead in Mini path. Excluded
     # from payload by P-024.
     "scripts/start_guardian.sh",
     # Operator setup helper — same story.
     "scripts/setup.sh",
+    # W14a Mini deployment script (PR #187, 2026-05-12). Runs ON THE
+    # LAPTOP and scp's the W14a .py changes to the Mini over Tailscale,
+    # so it legitimately references the operator's repo root
+    # (/Users/BigBobby/...) and username. Operator-only — never invoked
+    # on the customer Mac Mini — and excluded from the customer payload
+    # by the `--exclude 'scripts/*'` catch-all in build_pkg.sh step 4a
+    # (only the six enumerated scheduled `scripts/*.py` entrypoints
+    # ship). Added to this allowlist 2026-05-14: it was introduced
+    # after P-024 built the allowlist and the guard was not updated at
+    # the time.
+    "scripts/deploy_w14a_to_mini.sh",
 }
 
 
