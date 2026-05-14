@@ -17,23 +17,40 @@ grafana/
 ├── README.md                                          (this file)
 ├── provisioning/
 │   ├── datasources/
-│   │   └── mining_guardian.yml                        (2 Postgres datasources)
+│   │   └── mining_guardian.yml                        (4 datasources)
 │   └── dashboards/
 │       └── mining_guardian.yml                        (file-based dashboard provider)
 └── dashboards/
     ├── fleet_overview.json                            (uid: mg-fleet-overview)
     ├── scans_health.json                              (uid: mg-scans-health)
-    └── miner_models_catalog.json                      (uid: mg-miner-models-catalog)
+    ├── miner_models_catalog.json                      (uid: mg-miner-models-catalog)
+    ├── intelligence_catalog_live_queries.json         (uid: cfj6drj3pbk74b) — W26a
+    └── reference-mini/                                (Mini-specific reference snapshots — NOT customer-deployable; see below)
+        ├── mining_guardian_ai_learning.json
+        ├── mining_guardian_board_health.json
+        ├── mining_guardian_fleet_overview.json
+        ├── mining_guardian_intelligence_report.json
+        ├── mining_guardian_main.json
+        ├── mining_guardian_mobile.json
+        ├── mining_guardian_per_miner.json
+        └── mining_guardian_pool_stats.json
 ```
 
 ### Datasources (`provisioning/datasources/mining_guardian.yml`)
 
-| UID | Name | DB |
-|---|---|---|
-| `mg_operational_pg` | Mining Guardian (operational) | `mining_guardian` |
-| `mg_catalog_pg` | Mining Guardian Catalog | `mining_guardian_catalog` |
+| UID | Name | Type | URL | DB |
+|---|---|---|---|---|
+| `mg_operational_pg` | Mining Guardian (operational) | postgres | `127.0.0.1:5432` | `mining_guardian` |
+| `mg_catalog_pg` | Mining Guardian Catalog (legacy uid) | postgres | `127.0.0.1:5433` | `mining_guardian_catalog` |
+| `efi3m84mbf668b` | Prometheus (Mining Guardian) | prometheus | `127.0.0.1:9090` | — |
+| `ffj6dpxcsts74d` | Mining Guardian Catalog (vps uid) | postgres | `127.0.0.1:5433` | `mining_guardian_catalog` |
 
-Both bind to `127.0.0.1:5432` (S-13 — never exposed off-host). Password is
+The two catalog datasources (`mg_catalog_pg`, `ffj6dpxcsts74d`) point at the
+**same** catalog DB on port 5433 — both UIDs are kept so dashboards carrying
+either reference still resolve (the `ffj6dpxcsts74d` UID came in with the
+VPS-restored dashboards). Operational Postgres is on 5432, catalog Postgres
+on 5433 (W14 two-instance split, 2026-05-13). All Postgres datasources bind
+to `127.0.0.1` only (S-13 — never exposed off-host). Password is
 read from the env var `GUARDIAN_PG_PASSWORD` which `setup.sh` Phase 11
 exports from `.env` (`MG_DB_PASSWORD`). **Never hardcode the password
 into this yaml.**
@@ -55,9 +72,72 @@ changes must go through PR.
 | `mg-fleet-overview` | Mining Guardian — Fleet Overview | operational | header + 4 KPI stats + 1 timeseries + 1 table (7) |
 | `mg-scans-health` | Mining Guardian — Scans & Collection Health | operational | header + 4 KPI stats + 2 timeseries + 1 table (8) |
 | `mg-miner-models-catalog` | Mining Guardian — Miner Models Catalog | catalog | header + 4 KPI stats + 2 barcharts + 1 table (8) |
+| `cfj6drj3pbk74b` | 🧠 Intelligence Catalog — Live Queries | catalog | 5 — added W26a (PR #211) |
 
-All dashboards open inside the **`Mining Guardian`** folder (uid `mg`),
+All four dashboards open inside the **`Mining Guardian`** folder (uid `mg`),
 created automatically by the provider.
+
+The eight `mining_guardian_*.json` dashboards under `dashboards/reference-mini/`
+are **not** in this table — they are Mini-specific reference snapshots, not
+customer-deployable, and the provider does not autoload them. See the
+**Reference dashboards (`dashboards/reference-mini/`)** section below.
+
+### Reference dashboards (`dashboards/reference-mini/`)
+
+`dashboards/reference-mini/` holds reference snapshots of the eight
+dashboards that run on the developer Mac Mini at `100.69.66.32`. They were
+restored from the old VPS tarball during the W25/W26a Grafana work and,
+until W26b, lived **only** on the Mini's filesystem. They are mirrored into
+the repo for two reasons:
+
+1. **Durability.** The repo is the disaster-recovery source of truth; the
+   Mini is a deployment target. A Mini disk failure must not lose them.
+2. **Installer parity / future templating.** Keeping them in-repo makes the
+   eventual IP-templating work (see below) tractable and reviewable.
+
+**These eight dashboards are NOT customer-deployable as-shipped.** Five of
+the eight contain hardcoded references to `100.69.66.32` — the developer
+Mini's specific Tailscale IP — in iframe-panel URLs and other panel content:
+
+| File | `100.69.66.32` sites |
+|---|---|
+| `mining_guardian_ai_learning.json` | 2 |
+| `mining_guardian_board_health.json` | 1 |
+| `mining_guardian_fleet_overview.json` | 1 |
+| `mining_guardian_intelligence_report.json` | 1 |
+| `mining_guardian_per_miner.json` | 1 |
+| `mining_guardian_main.json` | 0 |
+| `mining_guardian_mobile.json` | 0 |
+| `mining_guardian_pool_stats.json` | 0 |
+
+A customer running the `.pkg` and getting one of the five IP-bearing
+dashboards would see broken iframes pointing at a host that does not exist
+on their network. So `reference-mini/` is a clearly-labeled holding area,
+**not** part of the customer-deployable set.
+
+**The provider does not autoload `reference-mini/`.** The customer install
+path is `scripts/install_grafana_provisioning.sh`, whose dashboard copy step
+globs `"$BUNDLE/dashboards"/*.json` — the **top level only**, non-recursive.
+`reference-mini/` is a subdirectory, so its JSONs are never copied into the
+runtime dashboards path (`/Library/Application Support/MiningGuardian/grafana/dashboards/`)
+that the provider watches. The provider only ever sees the four
+customer-deployable dashboards at the top of `dashboards/`. No provider-yaml
+exclude rule is needed — the top-level-only glob already enforces the
+boundary. (If that glob is ever changed to recurse, `reference-mini/` would
+need an explicit exclude — a `tests/test_w26b_installer_dashboard_set.py`
+cohort guard asserts the customer-deployable set stays IP-free.)
+
+**Why ship them as-is instead of templating the IPs now?** Templating
+`100.69.66.32` → a per-install configurable host is real work — it needs a
+substitution mechanism and runtime config injection — and was deliberately
+deferred to a future W-item rather than rushed into W26b. Until then the
+honest move is to preserve the dashboards verbatim in a folder whose name
+documents exactly what they are.
+
+**Do not edit the files in `reference-mini/`.** They are byte-for-byte
+snapshots of what the Mini runs; the cohort guard test verifies they parse
+and are schema-current, but their content is intentionally a faithful
+mirror, not a maintained customer artifact.
 
 ---
 
@@ -90,9 +170,11 @@ offline.
 4. `brew services restart grafana`
 
 The helper script copies datasource yaml + provider yaml into the Grafana
-provisioning tree and copies the three dashboard JSONs into the runtime
-dashboards directory referenced by the provider. **Idempotent** — re-running
-overwrites with the latest committed version.
+provisioning tree and copies the top-level dashboard JSONs (the four
+customer-deployable dashboards — its glob is `dashboards/*.json`,
+non-recursive, so `dashboards/reference-mini/` is **not** copied) into the
+runtime dashboards directory referenced by the provider. **Idempotent** —
+re-running overwrites with the latest committed version.
 
 (Setup.sh PR #75 still has a placeholder Phase 11 noting "Bucket 6d will
 overwrite". A follow-up PR will wire Phase 11 to call this helper script

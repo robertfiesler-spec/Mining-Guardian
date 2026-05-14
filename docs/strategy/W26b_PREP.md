@@ -58,7 +58,7 @@ Three plausible ways to handle this:
 
 The dashboards go in `installer/macos-pkg/resources/grafana/dashboards/reference-mini/`. The folder name is documentation: anything inside is **Mini-specific reference content**, not for customer auto-deploy. The installer's main dashboards directory continues to hold customer-deployable dashboards only.
 
-The proper templating fix becomes a future W item (likely W27, dedicated session with design discussion).
+The proper templating fix becomes a future W item — assigned **W32** on 2026-05-14 (a dedicated session with design discussion; W27 was already taken by `field_observed_specs`).
 
 ---
 
@@ -150,6 +150,13 @@ The customer installer's Grafana provisioning config only autoloads dashboards
 from `dashboards/` (the top level), not from `reference-mini/`. The reference
 folder is informational, not operational.
 ```
+
+> **Note (2026-05-14):** the "Future W27" templating work referenced just
+> above was assigned its real number — **W32** — once it became clear W27
+> was already taken by `field_observed_specs`. See `EXECUTION_PLAN_STATUS.md`.
+> A separate sibling defect (W31) surfaced during this runbook's Step 6
+> smoke: 2 of the 8 dashboards (`per_miner`, `ai_learning`) use inline-
+> `<script>` HTML panels that Grafana 13's sanitizer does not execute.
 
 The provisioning config that excludes `reference-mini/` from autoload may need
 to be checked or added:
@@ -300,7 +307,7 @@ The next plausible W-items (in rough priority order):
 2. **Postgres password rotation** — leaked in chat. Separate dedicated session, ~30-60 min.
 3. **W23 final close** — `guardian_app` → `mg` standardization across the codebase. Trivial scan-and-replace.
 4. **W17** — 151 naked `datetime.now()` → tz-aware. Sweep.
-5. **W27 (or sibling)** — IP templating for the `reference-mini/` dashboards so they can graduate to customer-deployable.
+5. **W32** — IP templating for the `reference-mini/` dashboards so they can graduate to customer-deployable. (Originally referred to in this doc as "a future W item" / "W27 or sibling" — W27 was already taken by `field_observed_specs`, so it was assigned the real number W32 on 2026-05-14. A sibling defect, W31, also surfaced during W26b Step 6 smoke: inline-`<script>` HTML panels not executing under Grafana 13's sanitizer.)
 
 ---
 
