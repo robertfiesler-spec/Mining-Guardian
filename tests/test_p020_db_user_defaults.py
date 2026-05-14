@@ -36,11 +36,26 @@ Two fixes landed in P-020:
    `operational_target()` / `catalog_target()` extended to fall back
    to `MG_DB_HOST` / `MG_DB_USER` / `MG_DB_NAME` after `GUARDIAN_PG_*`.
 
+W14a UPDATE (2026-05-12): the constructor no longer inlines the
+env-var chain. `GuardianPGDB.__init__` now delegates every unset
+kwarg to `core.db_targets.operational_target()`, which owns the
+`GUARDIAN_PG_*` → `MG_DB_*` resolution (W14b binding rule 1: all
+Postgres access goes through `core.db_targets`). The P-020 GUARANTEE
+is unchanged — a no-arg `GuardianPGDB()` still resolves to the real
+provisioned `mg` / `127.0.0.1` values, never the crash-loop defaults
+— only the LOCATION of the resolution moved. The source-text check
+below was updated to assert the post-W14a architecture (constructor
+delegates to the resolver) rather than the pre-W14a one (constructor
+greps for raw env-var names). The env-var-name coverage that check
+used to provide is now structurally owned by `core/db_targets.py`
+and guarded by `tests/test_db_targets.py`.
+
 This test asserts:
 
   - hardcoded source defaults are `127.0.0.1` / `mg` (not `localhost`
     or `guardian_app`).
-  - constructor body actually consults the env-var chain.
+  - constructor delegates resolution to `core.db_targets`
+    (post-W14a architecture).
   - operational_target() and catalog_target() resolve to `mg` /
     `127.0.0.1` when no env is set.
   - operational_target() respects `GUARDIAN_PG_*` when set.
@@ -95,25 +110,41 @@ class TestSourceDefaults(unittest.TestCase):
             "have switched to 127.0.0.1 to skip the IPv6 ::1 fallback)",
         )
 
-    def test_database_pg_constructor_reads_env_chain(self) -> None:
-        """Constructor body must consult GUARDIAN_PG_* / MG_DB_* / PG* envs."""
+    def test_database_pg_constructor_delegates_to_db_targets(self) -> None:
+        """Constructor must delegate unset-kwarg resolution to
+        `core.db_targets.operational_target()`.
+
+        W14a moved the env-var chain out of the constructor body and
+        into `core/db_targets.py` (W14b binding rule 1). Pre-W14a this
+        test grepped the constructor source for the raw env-var names
+        (`GUARDIAN_PG_HOST`, `MG_DB_HOST`, ...); post-W14a those names
+        live in the resolver, not here. The P-020 guarantee is still
+        enforced — it just shifted from "constructor inlines the chain"
+        to "constructor delegates to the resolver that owns the chain".
+        The env-var-name coverage is now guarded by
+        `tests/test_db_targets.py`.
+        """
         src = (REPO_ROOT / "core" / "database_pg.py").read_text()
-        for var in (
-            "GUARDIAN_PG_HOST",
-            "GUARDIAN_PG_PORT",
-            "GUARDIAN_PG_DBNAME",
-            "GUARDIAN_PG_USER",
-            "GUARDIAN_PG_PASSWORD",
-            "MG_DB_HOST",
-            "MG_DB_NAME",
-            "MG_DB_USER",
-            "MG_DB_PASSWORD",
-        ):
-            self.assertIn(
-                var,
-                src,
-                f"core/database_pg.py constructor must resolve {var} from env",
-            )
+        self.assertIn(
+            "from core.db_targets import operational_target",
+            src,
+            "core/database_pg.py must import operational_target — W14a "
+            "routes all Postgres target resolution through core.db_targets",
+        )
+        self.assertIn(
+            "operational_target()",
+            src,
+            "core/database_pg.py constructor must call operational_target() "
+            "to resolve unset kwargs (W14a / W14b binding rule 1)",
+        )
+        # The pre-W14a anti-pattern — the constructor must NOT have
+        # reverted to inlining a raw os.environ chain for the DB target.
+        self.assertNotIn(
+            'os.environ.get("GUARDIAN_PG_HOST"',
+            src,
+            "core/database_pg.py constructor inlines GUARDIAN_PG_HOST again "
+            "— W14b binding rule 1 requires going through core.db_targets",
+        )
 
     def test_db_targets_defaults_are_127_and_mg(self) -> None:
         src = (REPO_ROOT / "core" / "db_targets.py").read_text()
