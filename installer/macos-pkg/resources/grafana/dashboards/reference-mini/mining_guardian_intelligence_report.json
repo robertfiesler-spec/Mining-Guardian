@@ -1,0 +1,1433 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": 12,
+  "links": [
+    {
+      "icon": "dashboard",
+      "title": "Back to Main Dashboard",
+      "type": "link",
+      "url": "/d/bfi3t0krwak1sd/"
+    },
+    {
+      "icon": "bolt",
+      "title": "AI & Learning",
+      "type": "link",
+      "url": "/d/llm_learning_001/"
+    }
+  ],
+  "panels": [
+    {
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "content": "<div style=\"display:flex; align-items:center; justify-content:center; height:100%; padding:0; margin:0;\"><img src=\"/public/img/mining_guardian_wordmark.png\" style=\"max-height:100%; max-width:100%; object-fit:contain;\"></div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 2,
+      "options": {
+        "content": "<div style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align:center; padding:12px;\">\n  <h2 style=\"color: #06b6d4; font-size: 22px; margin: 0 0 8px 0; font-weight: 700;\">Miner Intelligence Report</h2>\n  <p style=\"color: #94a3b8; font-size: 14px; margin: 0 0 12px 0;\">\n    Search any Bitcoin SHA-256 miner model from the Intelligence Catalog (235+ models indexed)\n  </p>\n  <div style=\"background: #1e293b; display: inline-block; padding: 8px 16px; border-radius: 6px; border: 1px solid #334155;\">\n    <span style=\"color: #64748b; font-size: 12px;\">\ud83d\udca1 Use the <strong style=\"color:#06b6d4\">Search Miner Model</strong> box above \u2014 type a slug like <code style=\"color:#10b981\">antminer-s21</code>, <code style=\"color:#10b981\">whatsminer-m63s-plus</code>, or <code style=\"color:#10b981\">teraflux-ah3880</code></span>\n  </div>\n</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 3,
+      "options": {
+        "content": "<div style=\"font-family: -apple-system, sans-serif; text-align:center; padding:4px;\">\n  <span style=\"color: #64748b; font-size: 12px; margin-right: 8px;\">Popular:</span>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=antminer-s19j-pro\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">S19J Pro</a>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=antminer-s21\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">S21</a>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=antminer-s21-imm\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">S21 Immersion</a>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=whatsminer-m63s-plus\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">M63S+</a>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=whatsminer-m66s-plus\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">M66S+</a>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=teraflux-ah3880\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">AH3880</a>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=avalon-a15-xp\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">Avalon A15 XP</a>\n  <a href=\"/d/intelligence_report_001/?var-miner_model=sealminer-a3-pro-hyd\" style=\"color:#06b6d4; text-decoration:none; background:#06b6d411; padding:4px 10px; border-radius:4px; font-size:12px; margin:0 4px; border:1px solid #06b6d433;\">SealMiner A3 Pro</a>\n</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 28,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "id": 10,
+      "options": {
+        "content": "<iframe src=\"http://100.69.66.32:8585/api/report/${miner_model}/html/render\" style=\"width:100%; height:700px; border:none; background:transparent;\"></iframe>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_hashrate_pct{model=~\".*${miner_model:regex}.*\"}",
+          "legendFormat": "{{miner_ip}} hashrate %",
+          "refId": "A"
+        }
+      ],
+      "title": "Fleet Hashrate \u2014 ${miner_model}",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "orange",
+                "value": 76
+              },
+              {
+                "color": "red",
+                "value": 86
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_temp_chip{model=~\".*${miner_model:regex}.*\"}",
+          "legendFormat": "{{miner_ip}} chip \u00b0C",
+          "refId": "A"
+        }
+      ],
+      "title": "Fleet Chip Temp \u2014 ${miner_model}",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "id": 30,
+      "options": {
+        "content": "<div style=\"text-align:center; padding:8px; color:#475569; font-size:11px;\">\n  Mining Guardian Intelligence Catalog \u2014 165 tables \u2022 235+ miner models \u2022 10+ manufacturers<br>\n  Data sources: Manufacturer specs, community reports, fleet telemetry, AI analysis (Qwen 32B)\n</div>",
+        "mode": "html"
+      },
+      "transparent": true,
+      "type": "text"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": [
+    "intelligence",
+    "catalog",
+    "report"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "Bitmain Antminer S19j Pro (92 TH) (92 TH/s)",
+          "value": "antminer-s19j-pro"
+        },
+        "description": "Type a miner model name (e.g. S19J Pro, M63S+, AH3880)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "\ud83d\udd0d Search Miner Model",
+        "multi": false,
+        "name": "miner_model",
+        "options": [
+          {
+            "selected": false,
+            "text": "Auradine Auradine Teraflux AH3880 (600 TH) (600 TH/s)",
+            "value": "auradine-teraflux-ah3880"
+          },
+          {
+            "selected": false,
+            "text": "Auradine Auradine Teraflux AI3680 (360 TH) (360 TH/s)",
+            "value": "auradine-teraflux-ai3680"
+          },
+          {
+            "selected": false,
+            "text": "Auradine Auradine Teraflux AT2880 (180 TH) (180 TH/s)",
+            "value": "auradine-teraflux-at2880"
+          },
+          {
+            "selected": false,
+            "text": "Auradine Teraflux AH3880 (600 TH/s)",
+            "value": "teraflux-ah3880"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A2 (226 TH) (226 TH/s)",
+            "value": "sealminer-a2"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A2 Hyd (446 TH) (446 TH/s)",
+            "value": "sealminer-a2-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A2 Pro Air (255 TH) (255 TH/s)",
+            "value": "sealminer-a2-pro-air"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A2 Pro Hyd (500 TH) (500 TH/s)",
+            "value": "sealminer-a2-pro-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A3 Air (260 TH) (260 TH/s)",
+            "value": "sealminer-a3-air"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A3 Hydro (500 TH) (500 TH/s)",
+            "value": "sealminer-a3-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A3 Hydro (500 TH/s)",
+            "value": "sealminer-a3-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A3 Pro Air (290 TH) (290 TH/s)",
+            "value": "sealminer-a3-pro-air"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A3 Pro Hydro (660 TH) (660 TH/s)",
+            "value": "sealminer-a3-pro-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A3 Pro Hydro (660 TH/s)",
+            "value": "sealminer-a3-pro-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A4 Pro Air (336 TH) (336 TH/s)",
+            "value": "sealminer-a4-pro-air"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A4 Pro Hydro (680 TH) (680 TH/s)",
+            "value": "sealminer-a4-pro-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner A4 Ultra Hydro (886 TH) (886 TH/s)",
+            "value": "sealminer-a4-ultra-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitdeer SealMiner DL1 Air (179 TH) (179 TH/s)",
+            "value": "sealminer-dl1-air"
+          },
+          {
+            "selected": false,
+            "text": "Bitfury Bitfury B8 (49 TH) (49 TH/s)",
+            "value": "bitfury-b8"
+          },
+          {
+            "selected": false,
+            "text": "Bitfury Bitfury Tardis (80 TH) (80 TH/s)",
+            "value": "bitfury-tardis"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer R4",
+            "value": "antminer-r4"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S11 (20.5 TH) (20.5 TH/s)",
+            "value": "antminer-s11"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S15 (28 TH) (28 TH/s)",
+            "value": "antminer-s15"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S17 (53 TH) (53 TH/s)",
+            "value": "antminer-s17"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S17 Pro (56 TH) (56 TH/s)",
+            "value": "antminer-s17-pro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S17+ (73 TH) (73 TH/s)",
+            "value": "antminer-s17plus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S17e (64 TH) (64 TH/s)",
+            "value": "antminer-s17e"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 (84 TH) (84 TH/s)",
+            "value": "antminer-s19"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Hydro (158 TH) (158 TH/s)",
+            "value": "antminer-s19-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Pro (105 TH) (105 TH/s)",
+            "value": "antminer-s19-pro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Pro Hyd (177 TH) (177 TH/s)",
+            "value": "antminer-s19-pro-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Pro+ (120 TH) (120 TH/s)",
+            "value": "antminer-s19-proplus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Pro+ Hyd (191 TH) (191 TH/s)",
+            "value": "antminer-s19-proplus-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Pro+ Hydro (198 TH) (198 TH/s)",
+            "value": "antminer-s19-proplus-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Pro++ (125 TH) (125 TH/s)",
+            "value": "antminer-s19-proplusplus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 Pro-A (100 TH) (100 TH/s)",
+            "value": "antminer-s19-pro-a"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 XP (134 TH) (134 TH/s)",
+            "value": "antminer-s19-xp"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 XP Hydro (512 TH) (512 TH/s)",
+            "value": "antminer-s19-xp-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19 XP+ Hyd (293 TH) (293 TH/s)",
+            "value": "antminer-s19-xpplus-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19J Pro (104 TH/s)",
+            "value": "antminer-s19jpro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19a (90 TH) (90 TH/s)",
+            "value": "antminer-s19a"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19a Pro (104 TH) (104 TH/s)",
+            "value": "antminer-s19a-pro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19al (90 TH) (90 TH/s)",
+            "value": "antminer-s19al"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19i (90 TH) (90 TH/s)",
+            "value": "antminer-s19i"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19j (90 TH) (90 TH/s)",
+            "value": "antminer-s19j"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19j Pro (92 TH) (92 TH/s)",
+            "value": "antminer-s19j-pro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19j Pro+ (117 TH) (117 TH/s)",
+            "value": "antminer-s19j-proplus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19j Pro++ (122 TH) (122 TH/s)",
+            "value": "antminer-s19j-proplusplus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19j XP (151 TH) (151 TH/s)",
+            "value": "antminer-s19j-xp"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S19k Pro (120 TH) (120 TH/s)",
+            "value": "antminer-s19k-pro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 (200 TH) (200 TH/s)",
+            "value": "antminer-s21"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 Hyd (335 TH) (335 TH/s)",
+            "value": "antminer-s21-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 Immersion (215 TH/s)",
+            "value": "antminer-s21-imm"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 Immersion (215-301 TH)",
+            "value": "antminer-s21-immersion"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 Pro (234 TH) (234 TH/s)",
+            "value": "antminer-s21-pro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 XP (270 TH) (270 TH/s)",
+            "value": "antminer-s21-xp"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 XP Hyd (473 TH) (473 TH/s)",
+            "value": "antminer-s21-xp-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 XP Immersion (300 TH) (300 TH/s)",
+            "value": "antminer-s21-xp-immersion"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 XP Immersion (300 TH/s)",
+            "value": "antminer-s21-xp-imm"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21 XP+ Hyd (500 TH) (500 TH/s)",
+            "value": "antminer-s21-xpplus-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21+ (225 TH) (225 TH/s)",
+            "value": "antminer-s21plus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21+ Hyd (335 TH) (335 TH/s)",
+            "value": "antminer-s21plus-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21e Hyd (288 TH) (288 TH/s)",
+            "value": "antminer-s21e-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21e XP Hyd (430 TH) (430 TH/s)",
+            "value": "antminer-s21e-xp-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21e XP Hyd 3U (860 TH) (860 TH/s)",
+            "value": "antminer-s21e-xp-hyd-3u"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21e XP Hydro (440 TH/s)",
+            "value": "antminer-s21e-xp-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S21j XP Hyd (495 TH) (495 TH/s)",
+            "value": "antminer-s21j-xp-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S23 (318 TH) (318 TH/s)",
+            "value": "antminer-s23"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S23 Hydro (580 TH) (580 TH/s)",
+            "value": "antminer-s23-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S23 Hydro (580 TH/s)",
+            "value": "antminer-s23-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S23 Hydro 3U (1160 TH) (1160 TH/s)",
+            "value": "antminer-s23-hydro-3u"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S23 Immersion (368-442 TH)",
+            "value": "antminer-s23-immersion"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S23e Hyd 2U (865 TH) (865 TH/s)",
+            "value": "antminer-s23e-hyd-2u"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S3",
+            "value": "antminer-s3"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S4",
+            "value": "antminer-s4"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S5",
+            "value": "antminer-s5"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S5+",
+            "value": "antminer-s5plus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S7",
+            "value": "antminer-s7"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S7-LN",
+            "value": "antminer-s7-ln"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S9 (11.5 TH) (11.5 TH/s)",
+            "value": "antminer-s9"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S9 Hydro",
+            "value": "antminer-s9-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S9 SE (16 TH) (16 TH/s)",
+            "value": "antminer-s9-se"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S9i (14.5 TH) (14.5 TH/s)",
+            "value": "antminer-s9i"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S9j (14.5 TH) (14.5 TH/s)",
+            "value": "antminer-s9j"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer S9k (13.5 TH) (13.5 TH/s)",
+            "value": "antminer-s9k"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T15 (23 TH) (23 TH/s)",
+            "value": "antminer-t15"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T17 (40 TH) (40 TH/s)",
+            "value": "antminer-t17"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T17+ (61 TH) (61 TH/s)",
+            "value": "antminer-t17plus"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T17e (53 TH) (53 TH/s)",
+            "value": "antminer-t17e"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T19 (88 TH) (88 TH/s)",
+            "value": "antminer-t19"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T19 Hydro (145 TH) (145 TH/s)",
+            "value": "antminer-t19-hydro"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T19 Pro Hyd (235 TH) (235 TH/s)",
+            "value": "antminer-t19-pro-hyd"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T21 (190 TH \u2014 NEM) (190 TH/s)",
+            "value": "antminer-t21"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T9 (12.5 TH) (12.5 TH/s)",
+            "value": "antminer-t9"
+          },
+          {
+            "selected": false,
+            "text": "Bitmain Antminer T9+ (10.5 TH) (10.5 TH/s)",
+            "value": "antminer-t9plus"
+          },
+          {
+            "selected": false,
+            "text": "Butterfly_Labs Butterfly Labs Jalapeno (7 GH/s) (7 TH/s)",
+            "value": "butterfly-labs-jalapeno"
+          },
+          {
+            "selected": false,
+            "text": "Butterfly_Labs Butterfly Labs Monarch (700 GH/s) (700 TH/s)",
+            "value": "butterfly-labs-monarch"
+          },
+          {
+            "selected": false,
+            "text": "Butterfly_Labs Butterfly Labs Single SC (60 GH/s) (60 TH/s)",
+            "value": "butterfly-labs-single-sc"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1246 (83 TH) (83 TH/s)",
+            "value": "avalon-a1246"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1266 (100 TH) (100 TH/s)",
+            "value": "avalon-a1266"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1326 (106-115 TH)",
+            "value": "avalon-a1326"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1346 (110 TH) (110 TH/s)",
+            "value": "avalon-a1346"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1366 (130 TH) (130 TH/s)",
+            "value": "avalon-a1366"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1366I (165 TH) (165 TH/s)",
+            "value": "avalon-a1366i"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1446 (135 TH) (135 TH/s)",
+            "value": "avalon-a1446"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1466 (150 TH) (150 TH/s)",
+            "value": "avalon-a1466"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1466I (153 TH) (153 TH/s)",
+            "value": "avalon-a1466i"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A15 (194 TH/s)",
+            "value": "avalon-a15"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A15 Pro (218 TH) (218 TH/s)",
+            "value": "avalon-a15-pro"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A15 SE (177 TH/s)",
+            "value": "avalon-a15-se"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A15 XP (206 TH/s)",
+            "value": "avalon-a15-xp"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1566 (185 TH) (185 TH/s)",
+            "value": "avalon-a1566"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1566HA (2U Hydro) (480 TH/s)",
+            "value": "avalon-a1566ha"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1566HA 2U (480 TH) (480 TH/s)",
+            "value": "avalon-a1566ha-2u"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A1566I (249 TH) (249 TH/s)",
+            "value": "avalon-a1566i"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A15XP (206 TH) (206 TH/s)",
+            "value": "avalon-a15xp"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A16 (282 TH) (282 TH/s)",
+            "value": "avalon-a16"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon A16XP (300 TH) (300 TH/s)",
+            "value": "avalon-a16xp"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon Mini 3",
+            "value": "avalon-mini-3"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon Nano 3S",
+            "value": "avalon-nano-3s"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon Q",
+            "value": "avalon-q"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon1 Batch 1 (66 GH/s) (66 TH/s)",
+            "value": "avalon1-batch-1"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon1 Batch 2 (82 GH/s) (82 TH/s)",
+            "value": "avalon1-batch-2"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon1 Batch 3 (82 GH/s) (82 TH/s)",
+            "value": "avalon1-batch-3"
+          },
+          {
+            "selected": false,
+            "text": "Canaan Avalon4 / Avalon4.1 (1.3 TH/s) (1.3 TH/s)",
+            "value": "avalon4-/-avalon4.1"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 1041",
+            "value": "avalonminer-1041"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 1047",
+            "value": "avalonminer-1047"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 1066",
+            "value": "avalonminer-1066"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 1066 Pro",
+            "value": "avalonminer-1066-pro"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 1126 Pro (60 TH) (60 TH/s)",
+            "value": "avalonminer-1126-pro"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 1146 Pro (63 TH) (63 TH/s)",
+            "value": "avalonminer-1146-pro"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 1166 Pro (75 TH) (75 TH/s)",
+            "value": "avalonminer-1166-pro"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 721",
+            "value": "avalonminer-721"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 741",
+            "value": "avalonminer-741"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 821 (11.5 TH) (11.5 TH/s)",
+            "value": "avalonminer-821"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 841",
+            "value": "avalonminer-841"
+          },
+          {
+            "selected": false,
+            "text": "Canaan AvalonMiner 851",
+            "value": "avalonminer-851"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E10 (18 TH) (18 TH/s)",
+            "value": "ebang-ebit-e10"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E10D (25 TH) (25 TH/s)",
+            "value": "ebang-ebit-e10d"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E11++ (44 TH) (44 TH/s)",
+            "value": "ebang-ebit-e11plusplus"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E12 (44 TH) (44 TH/s)",
+            "value": "ebang-ebit-e12"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E12+ (50 TH) (50 TH/s)",
+            "value": "ebang-ebit-e12plus"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E9+ (9 TH) (9 TH/s)",
+            "value": "ebang-ebit-e9plus"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E9.2 (12 TH) (12 TH/s)",
+            "value": "ebang-ebit-e9.2"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E9.3 (16 TH) (16 TH/s)",
+            "value": "ebang-ebit-e9.3"
+          },
+          {
+            "selected": false,
+            "text": "Ebang Ebang Ebit E9i (13.5 TH) (13.5 TH/s)",
+            "value": "ebang-ebit-e9i"
+          },
+          {
+            "selected": false,
+            "text": "Halong Halong Mining DragonMint T1 (16 TH) (16 TH/s)",
+            "value": "halong-mining-dragonmint-t1"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T2 Terminator (17.2 TH) (17.2 TH/s)",
+            "value": "innosilicon-t2-terminator"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T2 Turbo 25T",
+            "value": "innosilicon-t2-turbo-25t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T2 Turbo 26T",
+            "value": "innosilicon-t2-turbo-26t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T2 Turbo 29T/30T",
+            "value": "innosilicon-t2-turbo-29t/30t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T2 Turbo HF+ (33 TH) (33 TH/s)",
+            "value": "innosilicon-t2-turbo-hfplus"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T2 Turbo+ 32T",
+            "value": "innosilicon-t2-turboplus-32t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T3 39T",
+            "value": "innosilicon-t3-39t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T3 50T",
+            "value": "innosilicon-t3-50t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T3+ 43T",
+            "value": "innosilicon-t3plus-43t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T3+ 52T",
+            "value": "innosilicon-t3plus-52t"
+          },
+          {
+            "selected": false,
+            "text": "Innosilicon Innosilicon T3+ 57T",
+            "value": "innosilicon-t3plus-57t"
+          },
+          {
+            "selected": false,
+            "text": "Kncminer KnCMiner Neptune (3 TH) (3 TH/s)",
+            "value": "kncminer-neptune"
+          },
+          {
+            "selected": false,
+            "text": "Kncminer KnCMiner Solar (400 GH/s) (400 TH/s)",
+            "value": "kncminer-solar"
+          },
+          {
+            "selected": false,
+            "text": "Kncminer KnCMiner Titan (300 GH/s) (300 TH/s)",
+            "value": "kncminer-titan"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M50S++ (158 TH/s)",
+            "value": "whatsminer-m50s-plus-plus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M56S++ (254 TH/s)",
+            "value": "whatsminer-m56s-plus-plus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M60 (160 TH/s)",
+            "value": "whatsminer-m60"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M60S+ (194 TH/s)",
+            "value": "whatsminer-m60s-plus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M60S++ (226 TH/s)",
+            "value": "whatsminer-m60s-plus-plus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M63S+ (450 TH/s)",
+            "value": "whatsminer-m63s-plus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M63S++ (464 TH/s)",
+            "value": "whatsminer-m63s-plus-plus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt WhatsMiner M66S+ (318 TH/s)",
+            "value": "whatsminer-m66s-plus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M10S (55 TH) (55 TH/s)",
+            "value": "whatsminer-m10s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M20S (70 TH) (70 TH/s)",
+            "value": "whatsminer-m20s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M21S (56 TH) (56 TH/s)",
+            "value": "whatsminer-m21s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M21S+",
+            "value": "whatsminer-m21splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M32 (68 TH) (68 TH/s)",
+            "value": "whatsminer-m32"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M33S (80 TH) (80 TH/s)",
+            "value": "whatsminer-m33s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M33S++",
+            "value": "whatsminer-m33splusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M36S (62 TH) (62 TH/s)",
+            "value": "whatsminer-m36s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M3X",
+            "value": "whatsminer-m3x"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M50 (114 TH) (114 TH/s)",
+            "value": "whatsminer-m50"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M50S (126 TH) (126 TH/s)",
+            "value": "whatsminer-m50s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M50S+ (136-148 TH)",
+            "value": "whatsminer-m50splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M50S++ (150-162 TH)",
+            "value": "whatsminer-m50splusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M53 (230 TH) (230 TH/s)",
+            "value": "whatsminer-m53"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M53S (260 TH) (260 TH/s)",
+            "value": "whatsminer-m53s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M53S++ (320 TH) (320 TH/s)",
+            "value": "whatsminer-m53splusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M56 (194 TH) (194 TH/s)",
+            "value": "whatsminer-m56"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M56S (200 TH) (200 TH/s)",
+            "value": "whatsminer-m56s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M56S+ (224 TH) (224 TH/s)",
+            "value": "whatsminer-m56splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M56S++ (254 TH) (254 TH/s)",
+            "value": "whatsminer-m56splusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M60S (186 TH) (186 TH/s)",
+            "value": "whatsminer-m60s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M60S+ (190-200 TH)",
+            "value": "whatsminer-m60splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M60S++ (218-226 TH)",
+            "value": "whatsminer-m60splusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M61 (202 TH) (202 TH/s)",
+            "value": "whatsminer-m61"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M61S (216 TH) (216 TH/s)",
+            "value": "whatsminer-m61s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M61S+ (236 TH) (236 TH/s)",
+            "value": "whatsminer-m61splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M63 (366-372 TH) (350 TH/s)",
+            "value": "whatsminer-m63"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M63S (390-416 TH) (390 TH/s)",
+            "value": "whatsminer-m63s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M63S+ (450 TH) (450 TH/s)",
+            "value": "whatsminer-m63splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M63S++ (464-478 TH)",
+            "value": "whatsminer-m63splusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M64 (202-206 TH)",
+            "value": "whatsminer-m64"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M64S+ (236 TH) (236 TH/s)",
+            "value": "whatsminer-m64splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M65S (390-412 TH)",
+            "value": "whatsminer-m65s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M65S+ (440 TH) (440 TH/s)",
+            "value": "whatsminer-m65splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M66 (276 TH) (276 TH/s)",
+            "value": "whatsminer-m66"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M66S (286-298 TH) (288 TH/s)",
+            "value": "whatsminer-m66s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M66S+ (318 TH) (318 TH/s)",
+            "value": "whatsminer-m66splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M66S++ (356-470 TH)",
+            "value": "whatsminer-m66splusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M6DS+ (504 TH) (504 TH/s)",
+            "value": "whatsminer-m6dsplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M6DS++ (556-592 TH)",
+            "value": "whatsminer-m6dsplusplus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M70 (214 TH) (214 TH/s)",
+            "value": "whatsminer-m70"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M70S (226 TH) (226 TH/s)",
+            "value": "whatsminer-m70s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M70S+ (244 TH) (244 TH/s)",
+            "value": "whatsminer-m70splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M72 (246 TH) (246 TH/s)",
+            "value": "whatsminer-m72"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M72S (920 TH Hydro) (920 TH/s)",
+            "value": "whatsminer-m72s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M73 (470 TH) (470 TH/s)",
+            "value": "whatsminer-m73"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M73S (500 TH) (500 TH/s)",
+            "value": "whatsminer-m73s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M73S+ (540 TH) (540 TH/s)",
+            "value": "whatsminer-m73splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M76 (336 TH) (336 TH/s)",
+            "value": "whatsminer-m76"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M76S (362 TH) (362 TH/s)",
+            "value": "whatsminer-m76s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M76S+ (390 TH) (390 TH/s)",
+            "value": "whatsminer-m76splus"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M78 (440 TH) (440 TH/s)",
+            "value": "whatsminer-m78"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M78S (472 TH) (472 TH/s)",
+            "value": "whatsminer-m78s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M79 (870 TH) (870 TH/s)",
+            "value": "whatsminer-m79"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M79S (930 TH) (930 TH/s)",
+            "value": "whatsminer-m79s"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M7D (594 TH) (594 TH/s)",
+            "value": "whatsminer-m7d"
+          },
+          {
+            "selected": false,
+            "text": "Microbt Whatsminer M7DS (638 TH) (638 TH/s)",
+            "value": "whatsminer-m7ds"
+          },
+          {
+            "selected": false,
+            "text": "Spondoolies Spondoolies-Tech SP20 Jackson (1.3 TH) (1.3 TH/s)",
+            "value": "spondoolies-tech-sp20-jackson"
+          },
+          {
+            "selected": false,
+            "text": "Spondoolies Spondoolies-Tech SP31 Yukon (4.6 TH) (4.6 TH/s)",
+            "value": "spondoolies-tech-sp31-yukon"
+          },
+          {
+            "selected": false,
+            "text": "Spondoolies Spondoolies-Tech SP35 Yukon (5.5 TH) (5.5 TH/s)",
+            "value": "spondoolies-tech-sp35-yukon"
+          },
+          {
+            "selected": false,
+            "text": "Strongu StrongU Hornbill H8 (74 TH) (74 TH/s)",
+            "value": "strongu-hornbill-h8"
+          },
+          {
+            "selected": false,
+            "text": "Strongu StrongU Hornbill H8 Pro (84 TH) (84 TH/s)",
+            "value": "strongu-hornbill-h8-pro"
+          },
+          {
+            "selected": false,
+            "text": "Strongu StrongU STU-U1 (44 TH) (44 TH/s)",
+            "value": "strongu-stu-u1"
+          },
+          {
+            "selected": false,
+            "text": "Strongu StrongU STU-U1++ (60 TH) (60 TH/s)",
+            "value": "strongu-stu-u1plusplus"
+          },
+          {
+            "selected": false,
+            "text": "Strongu StrongU STU-U8 (46 TH) (46 TH/s)",
+            "value": "strongu-stu-u8"
+          },
+          {
+            "selected": false,
+            "text": "Strongu StrongU STU-U8 Pro (60 TH) (60 TH/s)",
+            "value": "strongu-stu-u8-pro"
+          }
+        ],
+        "query": "Auradine Auradine Teraflux AH3880 (600 TH) (600 TH/s) : auradine-teraflux-ah3880,Auradine Auradine Teraflux AI3680 (360 TH) (360 TH/s) : auradine-teraflux-ai3680,Auradine Auradine Teraflux AT2880 (180 TH) (180 TH/s) : auradine-teraflux-at2880,Auradine Teraflux AH3880 (600 TH/s) : teraflux-ah3880,Bitdeer SealMiner A2 (226 TH) (226 TH/s) : sealminer-a2,Bitdeer SealMiner A2 Hyd (446 TH) (446 TH/s) : sealminer-a2-hyd,Bitdeer SealMiner A2 Pro Air (255 TH) (255 TH/s) : sealminer-a2-pro-air,Bitdeer SealMiner A2 Pro Hyd (500 TH) (500 TH/s) : sealminer-a2-pro-hyd,Bitdeer SealMiner A3 Air (260 TH) (260 TH/s) : sealminer-a3-air,Bitdeer SealMiner A3 Hydro (500 TH) (500 TH/s) : sealminer-a3-hydro,Bitdeer SealMiner A3 Hydro (500 TH/s) : sealminer-a3-hyd,Bitdeer SealMiner A3 Pro Air (290 TH) (290 TH/s) : sealminer-a3-pro-air,Bitdeer SealMiner A3 Pro Hydro (660 TH) (660 TH/s) : sealminer-a3-pro-hydro,Bitdeer SealMiner A3 Pro Hydro (660 TH/s) : sealminer-a3-pro-hyd,Bitdeer SealMiner A4 Pro Air (336 TH) (336 TH/s) : sealminer-a4-pro-air,Bitdeer SealMiner A4 Pro Hydro (680 TH) (680 TH/s) : sealminer-a4-pro-hydro,Bitdeer SealMiner A4 Ultra Hydro (886 TH) (886 TH/s) : sealminer-a4-ultra-hydro,Bitdeer SealMiner DL1 Air (179 TH) (179 TH/s) : sealminer-dl1-air,Bitfury Bitfury B8 (49 TH) (49 TH/s) : bitfury-b8,Bitfury Bitfury Tardis (80 TH) (80 TH/s) : bitfury-tardis,Bitmain Antminer R4 : antminer-r4,Bitmain Antminer S11 (20.5 TH) (20.5 TH/s) : antminer-s11,Bitmain Antminer S15 (28 TH) (28 TH/s) : antminer-s15,Bitmain Antminer S17 (53 TH) (53 TH/s) : antminer-s17,Bitmain Antminer S17 Pro (56 TH) (56 TH/s) : antminer-s17-pro,Bitmain Antminer S17+ (73 TH) (73 TH/s) : antminer-s17plus,Bitmain Antminer S17e (64 TH) (64 TH/s) : antminer-s17e,Bitmain Antminer S19 (84 TH) (84 TH/s) : antminer-s19,Bitmain Antminer S19 Hydro (158 TH) (158 TH/s) : antminer-s19-hydro,Bitmain Antminer S19 Pro (105 TH) (105 TH/s) : antminer-s19-pro,Bitmain Antminer S19 Pro Hyd (177 TH) (177 TH/s) : antminer-s19-pro-hyd,Bitmain Antminer S19 Pro+ (120 TH) (120 TH/s) : antminer-s19-proplus,Bitmain Antminer S19 Pro+ Hyd (191 TH) (191 TH/s) : antminer-s19-proplus-hyd,Bitmain Antminer S19 Pro+ Hydro (198 TH) (198 TH/s) : antminer-s19-proplus-hydro,Bitmain Antminer S19 Pro++ (125 TH) (125 TH/s) : antminer-s19-proplusplus,Bitmain Antminer S19 Pro-A (100 TH) (100 TH/s) : antminer-s19-pro-a,Bitmain Antminer S19 XP (134 TH) (134 TH/s) : antminer-s19-xp,Bitmain Antminer S19 XP Hydro (512 TH) (512 TH/s) : antminer-s19-xp-hydro,Bitmain Antminer S19 XP+ Hyd (293 TH) (293 TH/s) : antminer-s19-xpplus-hyd,Bitmain Antminer S19J Pro (104 TH/s) : antminer-s19jpro,Bitmain Antminer S19a (90 TH) (90 TH/s) : antminer-s19a,Bitmain Antminer S19a Pro (104 TH) (104 TH/s) : antminer-s19a-pro,Bitmain Antminer S19al (90 TH) (90 TH/s) : antminer-s19al,Bitmain Antminer S19i (90 TH) (90 TH/s) : antminer-s19i,Bitmain Antminer S19j (90 TH) (90 TH/s) : antminer-s19j,Bitmain Antminer S19j Pro (92 TH) (92 TH/s) : antminer-s19j-pro,Bitmain Antminer S19j Pro+ (117 TH) (117 TH/s) : antminer-s19j-proplus,Bitmain Antminer S19j Pro++ (122 TH) (122 TH/s) : antminer-s19j-proplusplus,Bitmain Antminer S19j XP (151 TH) (151 TH/s) : antminer-s19j-xp,Bitmain Antminer S19k Pro (120 TH) (120 TH/s) : antminer-s19k-pro,Bitmain Antminer S21 (200 TH) (200 TH/s) : antminer-s21,Bitmain Antminer S21 Hyd (335 TH) (335 TH/s) : antminer-s21-hyd,Bitmain Antminer S21 Immersion (215 TH/s) : antminer-s21-imm,Bitmain Antminer S21 Immersion (215-301 TH) : antminer-s21-immersion,Bitmain Antminer S21 Pro (234 TH) (234 TH/s) : antminer-s21-pro,Bitmain Antminer S21 XP (270 TH) (270 TH/s) : antminer-s21-xp,Bitmain Antminer S21 XP Hyd (473 TH) (473 TH/s) : antminer-s21-xp-hyd,Bitmain Antminer S21 XP Immersion (300 TH) (300 TH/s) : antminer-s21-xp-immersion,Bitmain Antminer S21 XP Immersion (300 TH/s) : antminer-s21-xp-imm,Bitmain Antminer S21 XP+ Hyd (500 TH) (500 TH/s) : antminer-s21-xpplus-hyd,Bitmain Antminer S21+ (225 TH) (225 TH/s) : antminer-s21plus,Bitmain Antminer S21+ Hyd (335 TH) (335 TH/s) : antminer-s21plus-hyd,Bitmain Antminer S21e Hyd (288 TH) (288 TH/s) : antminer-s21e-hyd,Bitmain Antminer S21e XP Hyd (430 TH) (430 TH/s) : antminer-s21e-xp-hyd,Bitmain Antminer S21e XP Hyd 3U (860 TH) (860 TH/s) : antminer-s21e-xp-hyd-3u,Bitmain Antminer S21e XP Hydro (440 TH/s) : antminer-s21e-xp-hydro,Bitmain Antminer S21j XP Hyd (495 TH) (495 TH/s) : antminer-s21j-xp-hyd,Bitmain Antminer S23 (318 TH) (318 TH/s) : antminer-s23,Bitmain Antminer S23 Hydro (580 TH) (580 TH/s) : antminer-s23-hydro,Bitmain Antminer S23 Hydro (580 TH/s) : antminer-s23-hyd,Bitmain Antminer S23 Hydro 3U (1160 TH) (1160 TH/s) : antminer-s23-hydro-3u,Bitmain Antminer S23 Immersion (368-442 TH) : antminer-s23-immersion,Bitmain Antminer S23e Hyd 2U (865 TH) (865 TH/s) : antminer-s23e-hyd-2u,Bitmain Antminer S3 : antminer-s3,Bitmain Antminer S4 : antminer-s4,Bitmain Antminer S5 : antminer-s5,Bitmain Antminer S5+ : antminer-s5plus,Bitmain Antminer S7 : antminer-s7,Bitmain Antminer S7-LN : antminer-s7-ln,Bitmain Antminer S9 (11.5 TH) (11.5 TH/s) : antminer-s9,Bitmain Antminer S9 Hydro : antminer-s9-hydro,Bitmain Antminer S9 SE (16 TH) (16 TH/s) : antminer-s9-se,Bitmain Antminer S9i (14.5 TH) (14.5 TH/s) : antminer-s9i,Bitmain Antminer S9j (14.5 TH) (14.5 TH/s) : antminer-s9j,Bitmain Antminer S9k (13.5 TH) (13.5 TH/s) : antminer-s9k,Bitmain Antminer T15 (23 TH) (23 TH/s) : antminer-t15,Bitmain Antminer T17 (40 TH) (40 TH/s) : antminer-t17,Bitmain Antminer T17+ (61 TH) (61 TH/s) : antminer-t17plus,Bitmain Antminer T17e (53 TH) (53 TH/s) : antminer-t17e,Bitmain Antminer T19 (88 TH) (88 TH/s) : antminer-t19,Bitmain Antminer T19 Hydro (145 TH) (145 TH/s) : antminer-t19-hydro,Bitmain Antminer T19 Pro Hyd (235 TH) (235 TH/s) : antminer-t19-pro-hyd,Bitmain Antminer T21 (190 TH \u2014 NEM) (190 TH/s) : antminer-t21,Bitmain Antminer T9 (12.5 TH) (12.5 TH/s) : antminer-t9,Bitmain Antminer T9+ (10.5 TH) (10.5 TH/s) : antminer-t9plus,Butterfly_Labs Butterfly Labs Jalapeno (7 GH/s) (7 TH/s) : butterfly-labs-jalapeno,Butterfly_Labs Butterfly Labs Monarch (700 GH/s) (700 TH/s) : butterfly-labs-monarch,Butterfly_Labs Butterfly Labs Single SC (60 GH/s) (60 TH/s) : butterfly-labs-single-sc,Canaan Avalon A1246 (83 TH) (83 TH/s) : avalon-a1246,Canaan Avalon A1266 (100 TH) (100 TH/s) : avalon-a1266,Canaan Avalon A1326 (106-115 TH) : avalon-a1326,Canaan Avalon A1346 (110 TH) (110 TH/s) : avalon-a1346,Canaan Avalon A1366 (130 TH) (130 TH/s) : avalon-a1366,Canaan Avalon A1366I (165 TH) (165 TH/s) : avalon-a1366i,Canaan Avalon A1446 (135 TH) (135 TH/s) : avalon-a1446,Canaan Avalon A1466 (150 TH) (150 TH/s) : avalon-a1466,Canaan Avalon A1466I (153 TH) (153 TH/s) : avalon-a1466i,Canaan Avalon A15 (194 TH/s) : avalon-a15,Canaan Avalon A15 Pro (218 TH) (218 TH/s) : avalon-a15-pro,Canaan Avalon A15 SE (177 TH/s) : avalon-a15-se,Canaan Avalon A15 XP (206 TH/s) : avalon-a15-xp,Canaan Avalon A1566 (185 TH) (185 TH/s) : avalon-a1566,Canaan Avalon A1566HA (2U Hydro) (480 TH/s) : avalon-a1566ha,Canaan Avalon A1566HA 2U (480 TH) (480 TH/s) : avalon-a1566ha-2u,Canaan Avalon A1566I (249 TH) (249 TH/s) : avalon-a1566i,Canaan Avalon A15XP (206 TH) (206 TH/s) : avalon-a15xp,Canaan Avalon A16 (282 TH) (282 TH/s) : avalon-a16,Canaan Avalon A16XP (300 TH) (300 TH/s) : avalon-a16xp,Canaan Avalon Mini 3 : avalon-mini-3,Canaan Avalon Nano 3S : avalon-nano-3s,Canaan Avalon Q : avalon-q,Canaan Avalon1 Batch 1 (66 GH/s) (66 TH/s) : avalon1-batch-1,Canaan Avalon1 Batch 2 (82 GH/s) (82 TH/s) : avalon1-batch-2,Canaan Avalon1 Batch 3 (82 GH/s) (82 TH/s) : avalon1-batch-3,Canaan Avalon4 / Avalon4.1 (1.3 TH/s) (1.3 TH/s) : avalon4-/-avalon4.1,Canaan AvalonMiner 1041 : avalonminer-1041,Canaan AvalonMiner 1047 : avalonminer-1047,Canaan AvalonMiner 1066 : avalonminer-1066,Canaan AvalonMiner 1066 Pro : avalonminer-1066-pro,Canaan AvalonMiner 1126 Pro (60 TH) (60 TH/s) : avalonminer-1126-pro,Canaan AvalonMiner 1146 Pro (63 TH) (63 TH/s) : avalonminer-1146-pro,Canaan AvalonMiner 1166 Pro (75 TH) (75 TH/s) : avalonminer-1166-pro,Canaan AvalonMiner 721 : avalonminer-721,Canaan AvalonMiner 741 : avalonminer-741,Canaan AvalonMiner 821 (11.5 TH) (11.5 TH/s) : avalonminer-821,Canaan AvalonMiner 841 : avalonminer-841,Canaan AvalonMiner 851 : avalonminer-851,Ebang Ebang Ebit E10 (18 TH) (18 TH/s) : ebang-ebit-e10,Ebang Ebang Ebit E10D (25 TH) (25 TH/s) : ebang-ebit-e10d,Ebang Ebang Ebit E11++ (44 TH) (44 TH/s) : ebang-ebit-e11plusplus,Ebang Ebang Ebit E12 (44 TH) (44 TH/s) : ebang-ebit-e12,Ebang Ebang Ebit E12+ (50 TH) (50 TH/s) : ebang-ebit-e12plus,Ebang Ebang Ebit E9+ (9 TH) (9 TH/s) : ebang-ebit-e9plus,Ebang Ebang Ebit E9.2 (12 TH) (12 TH/s) : ebang-ebit-e9.2,Ebang Ebang Ebit E9.3 (16 TH) (16 TH/s) : ebang-ebit-e9.3,Ebang Ebang Ebit E9i (13.5 TH) (13.5 TH/s) : ebang-ebit-e9i,Halong Halong Mining DragonMint T1 (16 TH) (16 TH/s) : halong-mining-dragonmint-t1,Innosilicon Innosilicon T2 Terminator (17.2 TH) (17.2 TH/s) : innosilicon-t2-terminator,Innosilicon Innosilicon T2 Turbo 25T : innosilicon-t2-turbo-25t,Innosilicon Innosilicon T2 Turbo 26T : innosilicon-t2-turbo-26t,Innosilicon Innosilicon T2 Turbo 29T/30T : innosilicon-t2-turbo-29t/30t,Innosilicon Innosilicon T2 Turbo HF+ (33 TH) (33 TH/s) : innosilicon-t2-turbo-hfplus,Innosilicon Innosilicon T2 Turbo+ 32T : innosilicon-t2-turboplus-32t,Innosilicon Innosilicon T3 39T : innosilicon-t3-39t,Innosilicon Innosilicon T3 50T : innosilicon-t3-50t,Innosilicon Innosilicon T3+ 43T : innosilicon-t3plus-43t,Innosilicon Innosilicon T3+ 52T : innosilicon-t3plus-52t,Innosilicon Innosilicon T3+ 57T : innosilicon-t3plus-57t,Kncminer KnCMiner Neptune (3 TH) (3 TH/s) : kncminer-neptune,Kncminer KnCMiner Solar (400 GH/s) (400 TH/s) : kncminer-solar,Kncminer KnCMiner Titan (300 GH/s) (300 TH/s) : kncminer-titan,Microbt WhatsMiner M50S++ (158 TH/s) : whatsminer-m50s-plus-plus,Microbt WhatsMiner M56S++ (254 TH/s) : whatsminer-m56s-plus-plus,Microbt WhatsMiner M60 (160 TH/s) : whatsminer-m60,Microbt WhatsMiner M60S+ (194 TH/s) : whatsminer-m60s-plus,Microbt WhatsMiner M60S++ (226 TH/s) : whatsminer-m60s-plus-plus,Microbt WhatsMiner M63S+ (450 TH/s) : whatsminer-m63s-plus,Microbt WhatsMiner M63S++ (464 TH/s) : whatsminer-m63s-plus-plus,Microbt WhatsMiner M66S+ (318 TH/s) : whatsminer-m66s-plus,Microbt Whatsminer M10S (55 TH) (55 TH/s) : whatsminer-m10s,Microbt Whatsminer M20S (70 TH) (70 TH/s) : whatsminer-m20s,Microbt Whatsminer M21S (56 TH) (56 TH/s) : whatsminer-m21s,Microbt Whatsminer M21S+ : whatsminer-m21splus,Microbt Whatsminer M32 (68 TH) (68 TH/s) : whatsminer-m32,Microbt Whatsminer M33S (80 TH) (80 TH/s) : whatsminer-m33s,Microbt Whatsminer M33S++ : whatsminer-m33splusplus,Microbt Whatsminer M36S (62 TH) (62 TH/s) : whatsminer-m36s,Microbt Whatsminer M3X : whatsminer-m3x,Microbt Whatsminer M50 (114 TH) (114 TH/s) : whatsminer-m50,Microbt Whatsminer M50S (126 TH) (126 TH/s) : whatsminer-m50s,Microbt Whatsminer M50S+ (136-148 TH) : whatsminer-m50splus,Microbt Whatsminer M50S++ (150-162 TH) : whatsminer-m50splusplus,Microbt Whatsminer M53 (230 TH) (230 TH/s) : whatsminer-m53,Microbt Whatsminer M53S (260 TH) (260 TH/s) : whatsminer-m53s,Microbt Whatsminer M53S++ (320 TH) (320 TH/s) : whatsminer-m53splusplus,Microbt Whatsminer M56 (194 TH) (194 TH/s) : whatsminer-m56,Microbt Whatsminer M56S (200 TH) (200 TH/s) : whatsminer-m56s,Microbt Whatsminer M56S+ (224 TH) (224 TH/s) : whatsminer-m56splus,Microbt Whatsminer M56S++ (254 TH) (254 TH/s) : whatsminer-m56splusplus,Microbt Whatsminer M60S (186 TH) (186 TH/s) : whatsminer-m60s,Microbt Whatsminer M60S+ (190-200 TH) : whatsminer-m60splus,Microbt Whatsminer M60S++ (218-226 TH) : whatsminer-m60splusplus,Microbt Whatsminer M61 (202 TH) (202 TH/s) : whatsminer-m61,Microbt Whatsminer M61S (216 TH) (216 TH/s) : whatsminer-m61s,Microbt Whatsminer M61S+ (236 TH) (236 TH/s) : whatsminer-m61splus,Microbt Whatsminer M63 (366-372 TH) (350 TH/s) : whatsminer-m63,Microbt Whatsminer M63S (390-416 TH) (390 TH/s) : whatsminer-m63s,Microbt Whatsminer M63S+ (450 TH) (450 TH/s) : whatsminer-m63splus,Microbt Whatsminer M63S++ (464-478 TH) : whatsminer-m63splusplus,Microbt Whatsminer M64 (202-206 TH) : whatsminer-m64,Microbt Whatsminer M64S+ (236 TH) (236 TH/s) : whatsminer-m64splus,Microbt Whatsminer M65S (390-412 TH) : whatsminer-m65s,Microbt Whatsminer M65S+ (440 TH) (440 TH/s) : whatsminer-m65splus,Microbt Whatsminer M66 (276 TH) (276 TH/s) : whatsminer-m66,Microbt Whatsminer M66S (286-298 TH) (288 TH/s) : whatsminer-m66s,Microbt Whatsminer M66S+ (318 TH) (318 TH/s) : whatsminer-m66splus,Microbt Whatsminer M66S++ (356-470 TH) : whatsminer-m66splusplus,Microbt Whatsminer M6DS+ (504 TH) (504 TH/s) : whatsminer-m6dsplus,Microbt Whatsminer M6DS++ (556-592 TH) : whatsminer-m6dsplusplus,Microbt Whatsminer M70 (214 TH) (214 TH/s) : whatsminer-m70,Microbt Whatsminer M70S (226 TH) (226 TH/s) : whatsminer-m70s,Microbt Whatsminer M70S+ (244 TH) (244 TH/s) : whatsminer-m70splus,Microbt Whatsminer M72 (246 TH) (246 TH/s) : whatsminer-m72,Microbt Whatsminer M72S (920 TH Hydro) (920 TH/s) : whatsminer-m72s,Microbt Whatsminer M73 (470 TH) (470 TH/s) : whatsminer-m73,Microbt Whatsminer M73S (500 TH) (500 TH/s) : whatsminer-m73s,Microbt Whatsminer M73S+ (540 TH) (540 TH/s) : whatsminer-m73splus,Microbt Whatsminer M76 (336 TH) (336 TH/s) : whatsminer-m76,Microbt Whatsminer M76S (362 TH) (362 TH/s) : whatsminer-m76s,Microbt Whatsminer M76S+ (390 TH) (390 TH/s) : whatsminer-m76splus,Microbt Whatsminer M78 (440 TH) (440 TH/s) : whatsminer-m78,Microbt Whatsminer M78S (472 TH) (472 TH/s) : whatsminer-m78s,Microbt Whatsminer M79 (870 TH) (870 TH/s) : whatsminer-m79,Microbt Whatsminer M79S (930 TH) (930 TH/s) : whatsminer-m79s,Microbt Whatsminer M7D (594 TH) (594 TH/s) : whatsminer-m7d,Microbt Whatsminer M7DS (638 TH) (638 TH/s) : whatsminer-m7ds,Spondoolies Spondoolies-Tech SP20 Jackson (1.3 TH) (1.3 TH/s) : spondoolies-tech-sp20-jackson,Spondoolies Spondoolies-Tech SP31 Yukon (4.6 TH) (4.6 TH/s) : spondoolies-tech-sp31-yukon,Spondoolies Spondoolies-Tech SP35 Yukon (5.5 TH) (5.5 TH/s) : spondoolies-tech-sp35-yukon,Strongu StrongU Hornbill H8 (74 TH) (74 TH/s) : strongu-hornbill-h8,Strongu StrongU Hornbill H8 Pro (84 TH) (84 TH/s) : strongu-hornbill-h8-pro,Strongu StrongU STU-U1 (44 TH) (44 TH/s) : strongu-stu-u1,Strongu StrongU STU-U1++ (60 TH) (60 TH/s) : strongu-stu-u1plusplus,Strongu StrongU STU-U8 (46 TH) (46 TH/s) : strongu-stu-u8,Strongu StrongU STU-U8 Pro (60 TH) (60 TH/s) : strongu-stu-u8-pro",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Mining Guardian \u2014 Intelligence Report",
+  "uid": "intelligence_report_001",
+  "version": 7,
+  "weekStart": ""
+}

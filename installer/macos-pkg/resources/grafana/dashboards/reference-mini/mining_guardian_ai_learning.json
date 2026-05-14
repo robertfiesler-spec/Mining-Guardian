@@ -1,0 +1,965 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": 8,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 99999,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"display:flex; align-items:center; justify-content:center; height:100%; padding:0; margin:0;\">\n  <img src=\"/public/img/mining_guardian_wordmark.png\"\n       style=\"max-height:100%; max-width:100%; object-fit:contain;\">\n</div>",
+        "mode": "html"
+      },
+      "pluginVersion": "10.4.1",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 26,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 1,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<iframe src=\"http://100.69.66.32:8585/ai/dashboard\" style=\"width:100%;height:100%;border:none;background:#0f172a\" frameborder=\"0\"></iframe>",
+        "mode": "html"
+      },
+      "pluginVersion": "10.4.1",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "id": 13,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<style>\n.conf-table{width:100%;border-collapse:collapse;font-size:13px}\n.conf-table th{text-align:left;padding:8px;border-bottom:2px solid #334155;color:#94a3b8}\n.conf-table td{padding:6px 8px;border-bottom:1px solid #1e293b}\n.conf-badge{padding:4px 10px;border-radius:4px;font-weight:bold;font-size:14px;display:inline-block;min-width:45px;text-align:center}\n.conf-high{background:#166534;color:#4ade80;border:1px solid #22c55e}\n.conf-med{background:#854d0e;color:#fde047;border:1px solid #eab308}\n.conf-low{background:#991b1b;color:#fca5a5;border:1px solid #ef4444}\n.type-tag{font-size:10px;padding:2px 6px;border-radius:3px;font-weight:bold}\n.type-PREDICTION{background:#3b82f6;color:white}\n.type-INSIGHT{background:#8b5cf6;color:white}\n.type-ANALYSIS{background:#06b6d4;color:white}\n.summary-box{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}\n.summary-item{background:#1e293b;padding:12px 20px;border-radius:8px;text-align:center;border:1px solid #334155}\n.summary-value{font-size:28px;font-weight:bold}\n.summary-label{font-size:11px;color:#94a3b8;margin-top:4px}\n.high{color:#4ade80}.med{color:#fde047}.low{color:#f87171}\n#status{color:#64748b;font-size:11px;margin-top:8px}\n</style>\n<div id=\"summary\" class=\"summary-box\"></div>\n<table class=\"conf-table\">\n<thead><tr><th>Time</th><th>Type</th><th>IP</th><th>Model</th><th>Statement</th><th style=\"text-align:center\">Confidence</th></tr></thead>\n<tbody id=\"tbody\"></tbody>\n</table>\n<div id=\"status\">Loading...</div>\n<script>\nasync function loadAnalyses(){\n  try{\n    const r=await fetch('http://100.69.66.32:8585/ai/recent_analyses?hours=6');\n    const d=await r.json();\n    if(d.error){document.getElementById('status').textContent='Error: '+d.error;return}\n    const s=d.summary;\n    const avgClass=s.avg_confidence_pct>=80?'high':s.avg_confidence_pct>=50?'med':'low';\n    document.getElementById('summary').innerHTML=\n      '<div class=\"summary-item\"><div class=\"summary-value '+avgClass+'\">'+s.avg_confidence_pct.toFixed(0)+'%</div><div class=\"summary-label\">Avg Confidence</div></div>'+\n      '<div class=\"summary-item\"><div class=\"summary-value\">'+s.total_analyses+'</div><div class=\"summary-label\">Total Analyses</div></div>'+\n      '<div class=\"summary-item\"><div class=\"summary-value high\">'+s.high_confidence+'</div><div class=\"summary-label\">High (80%+)</div></div>'+\n      '<div class=\"summary-item\"><div class=\"summary-value med\">'+s.medium_confidence+'</div><div class=\"summary-label\">Medium</div></div>'+\n      '<div class=\"summary-item\"><div class=\"summary-value low\">'+(s.low_confidence||0)+'</div><div class=\"summary-label\">Low (&lt;50%)</div></div>';\n    const tbody=document.getElementById('tbody');\n    tbody.innerHTML='';\n    d.analyses.slice(0,25).forEach(a=>{\n      const ts=new Date(a.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});\n      const confClass=a.confidence_pct>=80?'conf-high':a.confidence_pct>=50?'conf-med':'conf-low';\n      const stmt=(a.statement||'').substring(0,80)+(a.statement&&a.statement.length>80?'...':'');\n      tbody.innerHTML+=\n        '<tr><td style=\"white-space:nowrap;color:#94a3b8\">'+ts+'</td>'+\n        '<td><span class=\"type-tag type-'+a.type+'\">'+a.type+'</span></td>'+\n        '<td style=\"font-family:monospace;font-size:12px;color:#60a5fa\">'+a.miner_ip+'</td>'+\n        '<td style=\"color:#94a3b8\">'+(a.model||'')+'</td>'+\n        '<td style=\"max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e8f0\">'+stmt+'</td>'+\n        '<td style=\"text-align:center\"><span class=\"conf-badge '+confClass+'\">'+a.confidence_pct+'%</span></td></tr>';\n    });\n    document.getElementById('status').textContent='Updated: '+new Date().toLocaleTimeString()+' | '+d.analyses.length+' analyses';\n  }catch(e){document.getElementById('status').textContent='Error: '+e.message}\n}\nloadAnalyses();\nsetInterval(loadAnalyses,60000);\n</script>",
+        "mode": "html"
+      },
+      "pluginVersion": "10.4.1",
+      "title": "\ud83c\udfaf Recent AI Analyses (Last 6 Hours)",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "id": 2,
+      "panels": [],
+      "title": "\ud83d\udcc8 AI Score Trends",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AI Score"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#06b6d4",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_knowledge_score{site='usa_188'}",
+          "legendFormat": "AI Score",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_ai_data_depth{site='usa_188'}",
+          "legendFormat": "Data Depth",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_ai_knowledge{site='usa_188'}",
+          "legendFormat": "Knowledge",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_ai_experience{site='usa_188'}",
+          "legendFormat": "Experience",
+          "refId": "D"
+        }
+      ],
+      "title": "\ud83e\udde0 AI Score Growth Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Auto Executed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#10b981",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Denied"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#ef4444",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_actions_approved_total{site='usa_188'}",
+          "legendFormat": "Human Approved",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_actions_auto_overnight_total{site='usa_188'}",
+          "legendFormat": "Auto Executed",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_actions_denied_total{site='usa_188'}",
+          "legendFormat": "Denied",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_actions_expired_total{site='usa_188'}",
+          "legendFormat": "Expired",
+          "refId": "D"
+        }
+      ],
+      "title": "\ud83e\udd16 AI Autonomy \u2014 Actions Over Time",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 50
+      },
+      "id": 5,
+      "panels": [],
+      "title": "\ud83c\udfe5 AI Impact on Fleet",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Online"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#10b981",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Offline"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#ef4444",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Flagged"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#f59e0b",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_fleet_online{site='usa_188'}",
+          "legendFormat": "Online",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_fleet_offline{site='usa_188'}",
+          "legendFormat": "Offline",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_fleet_issues{site='usa_188'}",
+          "legendFormat": "Flagged",
+          "refId": "C"
+        }
+      ],
+      "title": "\ud83c\udfe5 Fleet Health \u2014 AI Impact",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#ef4444",
+                "value": null
+              },
+              {
+                "color": "#f59e0b",
+                "value": 20
+              },
+              {
+                "color": "#10b981",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 51
+      },
+      "id": 7,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_actions_auto_overnight_total{site='usa_188'} / (mining_guardian_actions_approved_total{site='usa_188'} + mining_guardian_actions_auto_overnight_total{site='usa_188'} + 1) * 100",
+          "legendFormat": "Auto %",
+          "refId": "A"
+        }
+      ],
+      "title": "\ud83c\udfaf AI Autonomy Rate",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 51
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_restarts_total{site='usa_188'}",
+          "legendFormat": "Total Restarts",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_tickets_created_total{site='usa_188'}",
+          "legendFormat": "Tickets Created",
+          "refId": "B"
+        }
+      ],
+      "title": "\ud83d\udd04 Restarts & Tickets",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 59
+      },
+      "id": 9,
+      "panels": [],
+      "title": "\ud83d\udcca LLM Activity",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 60
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_llm_scan_analyses_total",
+          "legendFormat": "Analyses",
+          "refId": "A"
+        }
+      ],
+      "title": "\ud83e\udde0 LLM Scan Analyses",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "gray"
+              },
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 60
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_operator_rules_total",
+          "legendFormat": "Rules",
+          "refId": "A"
+        }
+      ],
+      "title": "\ud83d\udccf Operator Rules Learned",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#ef4444"
+              },
+              {
+                "color": "#f59e0b",
+                "value": 10000
+              },
+              {
+                "color": "#10b981",
+                "value": 50000
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 60
+      },
+      "id": 12,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_knowledge_score{site='usa_188'}",
+          "legendFormat": "Knowledge Score",
+          "refId": "A"
+        }
+      ],
+      "title": "\ud83e\udde0 Knowledge Score",
+      "type": "gauge"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "ai",
+    "learning",
+    "llm"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Mining Guardian \u2014 AI & Learning",
+  "uid": "llm_learning_001",
+  "version": 22,
+  "weekStart": ""
+}

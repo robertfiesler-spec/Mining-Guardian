@@ -1,0 +1,553 @@
+{
+  "editable": true,
+  "graphTooltip": 1,
+  "id": 4,
+  "links": [],
+  "panels": [
+    {
+      "datasource": null,
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 99999,
+      "options": {
+        "content": "<div style=\"display:flex; align-items:center; justify-content:center; height:100%; padding:0; margin:0;\">\n  <img src=\"/public/img/mining_guardian_wordmark.png\"\n       style=\"max-height:100%; max-width:100%; object-fit:contain;\">\n</div>",
+        "mode": "html"
+      },
+      "title": "",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_hashrate_ths{miner_ip=\"$miner\"}",
+          "legendFormat": "Hashrate TH/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "sum(mining_guardian_board_rate_ths{miner_ip=\"$miner\"})",
+          "legendFormat": "Sum of Board TH/s",
+          "refId": "B"
+        }
+      ],
+      "title": "Hashrate TH/s \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 76
+              },
+              {
+                "color": "red",
+                "value": 86
+              }
+            ]
+          },
+          "unit": "celsius"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_temp_chip{miner_ip=\"$miner\"}",
+          "legendFormat": "Chip Temp",
+          "refId": "A"
+        }
+      ],
+      "title": "Chip Temperature \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "decimals": 2,
+          "unit": "kwatth"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_power_kw{miner_ip=\"$miner\"}",
+          "legendFormat": "Power kW",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_pdu_power_kw{miner_ip=\"$miner\"} > 0",
+          "legendFormat": "PDU kW (confirmed)",
+          "refId": "B"
+        }
+      ],
+      "title": "Power Draw kW \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_rate_ths{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Per-Board Hashrate TH/s \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "volt"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 27
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_voltage{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Board Voltage \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 27
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_freq_mhz{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Board Frequency MHz \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 27
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_hw_errors{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "HW Errors \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_pool_accepted{miner_ip=\"$miner\"}",
+          "legendFormat": "Accepted",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_pool_rejected{miner_ip=\"$miner\"}",
+          "legendFormat": "Rejected",
+          "refId": "B"
+        }
+      ],
+      "title": "Pool Shares \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "rotrpm"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_fan_rpm{miner_ip=\"$miner\"}",
+          "legendFormat": "Fan {{fan}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Fan Speed RPM \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "id": 10,
+      "options": {
+        "content": "<div id=\"mg-status\" style=\"font-family:-apple-system,sans-serif;font-size:12px;color:#ddd;padding:4px\">Loading...</div><script>(function(){var ip='$miner';fetch('http://100.69.66.32:8585/miner/status/'+ip).then(r=>r.json()).then(d=>{var el=document.getElementById('mg-status');var c=d.current||{};var statusColor=c.issue?'#e74c3c':'#2ecc71';var actionColors={RESTART:'#e67e22',PDU_CYCLE:'#e74c3c',MONITOR:'#f39c12',RESTART_CHECK_BOARDS:'#c0392b',PHYSICAL_CYCLE:'#8e44ad'};var html='<div style=\"display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px\">';html+='<div><span style=\"color:#888\">Status</span> <span style=\"background:'+statusColor+';color:#fff;padding:2px 8px;border-radius:4px;font-weight:600\">'+(c.status||'?').toUpperCase()+'</span></div>';if(c.action){html+='<div><span style=\"background:'+(actionColors[c.action]||'#666')+';color:#fff;padding:2px 8px;border-radius:4px;font-weight:600\">'+c.action+'</span></div>';}html+='<div><span style=\"color:#888\">Model</span> '+(c.model||'\u2014')+'</div>';html+='<div><span style=\"color:#888\">HR</span> '+(c.hashrate_pct||'?')+'%</div>';html+='<div><span style=\"color:#888\">Temp</span> '+(c.temp_chip||'?')+'\u00b0C</div>';html+='<div><span style=\"color:#888\">PDU</span> '+(c.pdu_power||0)+' kW</div>';html+='<div><span style=\"color:#888\">Profile</span> '+(c.current_profile||'\u2014')+'</div></div>';if(c.issue){html+='<div style=\"background:#1a0a0a;border-left:3px solid #e74c3c;padding:6px 10px;margin-bottom:10px;color:#e88;border-radius:2px\">'+c.issue+'</div>';}else{html+='<div style=\"background:#0a1a0a;border-left:3px solid #2ecc71;padding:6px 10px;margin-bottom:10px;color:#8e8;border-radius:2px\">No active issues</div>';}if(d.dead_boards){html+='<div style=\"background:#1a0a0a;border-left:3px solid #c0392b;padding:6px 10px;margin-bottom:10px;color:#e88;border-radius:2px\">Dead boards: '+d.dead_boards.board_indices+' | Ticket: '+(d.dead_boards.ticket_created||'pending')+'</div>';}if(d.history&&d.history.length){html+='<table style=\"width:100%;border-collapse:collapse\"><thead><tr style=\"color:#666;border-bottom:1px solid #222\"><th style=\"padding:4px 8px;text-align:left\">Time</th><th style=\"padding:4px 8px;text-align:left\">Decision</th><th style=\"padding:4px 8px;text-align:left\">Action</th><th style=\"padding:4px 8px;text-align:left\">By</th><th style=\"padding:4px 8px;text-align:left\">Problem</th></tr></thead><tbody>';d.history.forEach(function(h){var dc=h.decision==='APPROVED'?'#2ecc71':h.decision==='DENIED'?'#e74c3c':'#f39c12';var ts=(h.timestamp||'').substring(0,16).replace('T',' ');html+='<tr style=\"border-bottom:1px solid #1a1a1a\"><td style=\"padding:4px 8px;color:#888\">'+ts+'</td><td style=\"padding:4px 8px;color:'+dc+';font-weight:600\">'+h.decision+'</td><td style=\"padding:4px 8px\">'+h.action_taken+'</td><td style=\"padding:4px 8px;color:#888\">'+h.approved_by+'</td><td style=\"padding:4px 8px;color:#aaa;font-size:11px\">'+h.problem+'</td></tr>';});html+='</tbody></table>';}else{html+='<div style=\"color:#666;padding:8px\">No actions taken yet</div>';}el.innerHTML=html;}).catch(function(e){document.getElementById('mg-status').innerHTML='<span style=\"color:#e74c3c\">Error loading status: '+e.message+'</span>';});})();</script>",
+        "mode": "html"
+      },
+      "title": "Status & Action History \u2014 $miner",
+      "type": "text"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "mining",
+    "miners"
+  ],
+  "templating": {
+    "list": [
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "efi3m84mbf668b"
+        },
+        "definition": "label_values(mining_guardian_hashrate_pct,miner_ip)",
+        "includeAll": false,
+        "label": "Miner IP",
+        "multi": false,
+        "name": "miner",
+        "query": {
+          "query": "label_values(mining_guardian_hashrate_pct,miner_ip)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "searchFilter": true,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Mining Guardian \u2014 Per Miner",
+  "uid": "cfi3mt5a450xse",
+  "version": 12,
+  "weekStart": ""
+}

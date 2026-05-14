@@ -1,0 +1,390 @@
+{
+  "editable": true,
+  "graphTooltip": 1,
+  "id": 5,
+  "links": [],
+  "panels": [
+    {
+      "datasource": null,
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 99999,
+      "options": {
+        "content": "<div style=\"display:flex; align-items:center; justify-content:center; height:100%; padding:0; margin:0;\">\n  <img src=\"/public/img/mining_guardian_wordmark.png\"\n       style=\"max-height:100%; max-width:100%; object-fit:contain;\">\n</div>",
+        "mode": "html"
+      },
+      "title": "",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_rate_ths{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Board Hashrate TH/s \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "volt"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 11
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_voltage{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Board Voltage \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 11
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_freq_mhz{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Board Frequency MHz \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "unit": "watt"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 11
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_power_w{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Board Power W \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_hw_errors{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "\u26a0\ufe0f HW Errors \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "efi3m84mbf668b"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "spanNulls": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 76
+              },
+              {
+                "color": "red",
+                "value": 86
+              }
+            ]
+          },
+          "unit": "celsius"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "efi3m84mbf668b"
+          },
+          "expr": "mining_guardian_board_temp_c{miner_ip=\"$miner\"}",
+          "legendFormat": "Board {{board}}",
+          "refId": "A"
+        }
+      ],
+      "title": "\ud83c\udf21\ufe0f Board Temp \u00b0C \u2014 $miner",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "id": 7,
+      "options": {
+        "content": "<iframe src=\"http://100.69.66.32:8585/fleet/board_stats\" width=\"100%\" height=\"230px\" frameborder=\"0\" scrolling=\"no\" style=\"background:transparent\"></iframe>",
+        "mode": "html"
+      },
+      "title": "Fleet Board Health \u2014 Rejections & HW Errors",
+      "transparent": true,
+      "type": "text"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "mining",
+    "boards"
+  ],
+  "templating": {
+    "list": [
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "efi3m84mbf668b"
+        },
+        "definition": "label_values(mining_guardian_board_rate_ths,miner_ip)",
+        "includeAll": false,
+        "label": "Miner IP",
+        "multi": false,
+        "name": "miner",
+        "query": {
+          "query": "label_values(mining_guardian_board_rate_ths,miner_ip)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "searchFilter": true,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Mining Guardian \u2014 Board Health",
+  "uid": "afi3p5mhapn9ce",
+  "version": 12,
+  "weekStart": ""
+}
