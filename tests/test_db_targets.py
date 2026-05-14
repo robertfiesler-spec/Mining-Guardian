@@ -46,18 +46,18 @@ def _clean_db_env(monkeypatch):
 
 def test_operational_target_returns_documented_defaults():
     target = operational_target()
-    assert target.host == "localhost"
+    assert target.host == "127.0.0.1"
     assert target.port == 5432
-    assert target.user == "guardian_app"
+    assert target.user == "mg"
     assert target.dbname == "mining_guardian"
     assert target.password == ""
 
 
 def test_catalog_target_returns_documented_defaults():
     target = catalog_target()
-    assert target.host == "localhost"
+    assert target.host == "127.0.0.1"
     assert target.port == 5432
-    assert target.user == "guardian_app"
+    assert target.user == "mg"
     assert target.dbname == "mining_guardian_catalog"
     assert target.password == ""
 
@@ -248,9 +248,9 @@ def test_connect_kwargs_carries_real_password(monkeypatch):
     kwargs = operational_target().connect_kwargs()
 
     assert kwargs == {
-        "host": "localhost",
+        "host": "127.0.0.1",
         "port": 5432,
-        "user": "guardian_app",
+        "user": "mg",
         "password": "real-pw",
         "dbname": "mining_guardian",
     }
@@ -262,9 +262,9 @@ def test_dsn_string_includes_real_password(monkeypatch):
 
     dsn = catalog_target().dsn()
 
-    assert "host=localhost" in dsn
+    assert "host=127.0.0.1" in dsn
     assert "port=5432" in dsn
-    assert "user=guardian_app" in dsn
+    assert "user=mg" in dsn
     assert "password=real-pw" in dsn
     assert "dbname=mining_guardian_catalog" in dsn
 
