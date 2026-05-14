@@ -39,6 +39,24 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # - .git/           : never crawl
 ALLOWED_DIR_PREFIXES = ("archive/", "docs/", "tests/", ".git/")
 
+# Non-source directories that must never be crawled — build artifacts
+# and virtualenvs are not part of the repo's source tree:
+# - build/          : the .pkg staging dir (gitignored, .gitignore:15).
+#                     build_pkg.sh step 3 rm -rf's it and re-stages a
+#                     *copy* of the payload, so e.g.
+#                     build/stage/payload/ai/catalog_context.py duplicates
+#                     the real ai/catalog_context.py. The real file is
+#                     correctly exempt via ALLOWED_FILES; the staged copy
+#                     is a different path string and would false-flag the
+#                     walk.
+# - venv/ / .venv*/ : virtualenvs (e.g. .venv-p018-tests/) carry thousands
+#                     of third-party site-package .py files that are not
+#                     repo source.
+# - __pycache__/    : compiled bytecode dirs.
+# Matches the exclusion convention already used by test_p023 /
+# test_w25 / test_w25b / test_w14a.
+_EXCLUDED_DIR_SEGMENTS = ("build", "venv", ".venv", "__pycache__")
+
 # Files whose retired-host references are intentional refusal guards:
 # - ai/catalog_context.py: the opt-in HTTP fallback safety check
 #                          (`_http_fallback_url` REFUSES the retired host).
@@ -58,6 +76,8 @@ def _iter_python_files():
     for path in REPO_ROOT.rglob("*.py"):
         rel = path.relative_to(REPO_ROOT).as_posix()
         if any(rel.startswith(p) for p in ALLOWED_DIR_PREFIXES):
+            continue
+        if any(seg in _EXCLUDED_DIR_SEGMENTS for seg in rel.split("/")):
             continue
         yield rel, path
 
