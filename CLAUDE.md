@@ -25,6 +25,50 @@ because on April 9 2026 a session skipped this step, spent hours proposing
 alternatives to plans that were already documented, and then had to be forcibly
 stopped and redirected. Don't be that session.
 
+### Step 0 — Verify your access BEFORE anything else (added 2026-05-16)
+
+**This exists because on 2026-05-16 a session spent ~4 hours insisting it had
+no access to the laptop or Mini, when it did — it simply had not loaded the
+tools. The capability was never missing; the session never checked. Do not be
+that session. Do not make the operator prove your tooling works.**
+
+The session's access model, authoritative:
+
+- **Laptop repo** (`/Users/BigBobby/Documents/GitHub/Mining-Guardian/`) — reached
+  via the **Desktop Commander** MCP tool (`start_process` / `interact_with_process`).
+  This is how you read the repo, run `pytest`, `git` commit/push, edit files.
+  It runs ON the laptop; do not expect a local sandbox to see `/Users`.
+- **Mini** (`miningguardian@100.69.66.32`) — NOT a separate tool. You reach it
+  by having Desktop Commander run `ssh miningguardian@100.69.66.32 '<cmd>'`
+  from the laptop. The laptop has key-based passwordless SSH to the Mini over
+  Tailscale, so this works with **no new setup, no Desktop app on the Mini,
+  nothing for the operator to install.** Full Mini diagnostic reach: logs,
+  both Postgres instances, launchd, Docker, the §9 sweep.
+- **VPS** (`root@srv1549463`) — same pattern: Desktop Commander →
+  `ssh root@srv1549463 '<cmd>'` from the laptop, when a task (e.g. W33) needs it.
+- **Deferred tools** — Desktop Commander and the others are NOT in the active
+  toolset at session start. You MUST `tool_search` for them first (e.g.
+  `tool_search("desktop commander filesystem")`). Early-session "I have no
+  access" is almost always "I have not searched for the tool yet." Search,
+  then verify, then proceed.
+
+**Run this verification probe as your literal first action (before the reading
+list). If it passes, you have full laptop+Mini reach — state that and move on,
+do not re-litigate it with the operator:**
+
+```bash
+# 1. laptop repo reachable?
+cd /Users/BigBobby/Documents/GitHub/Mining-Guardian && git log --oneline -1
+# 2. Mini reachable THROUGH the laptop (key-based, no password)?
+ssh -o BatchMode=yes -o ConnectTimeout=8 miningguardian@100.69.66.32 \
+  'echo MINI_OK && /usr/local/bin/docker ps --format "{{.Names}} {{.Status}}" | grep -E "guardian|catalog"'
+```
+
+Expected: a commit SHA, then `MINI_OK` + both `mining-guardian-db` and
+`mg-catalog-db` shown `Up`. If the Mini probe fails, THEN (and only then)
+tell the operator the bridge is down — do not assume it is down without
+running the probe.
+
 ### Required reading, in order, before ANY action or question
 
 1. **This file** (`CLAUDE.md`) — every rule in this file is binding
@@ -706,6 +750,14 @@ What this means in practice:
   `docs/DECISIONS.md` as a new D-N entry before moving on.
 - If you flip an open item to done, also flip its `MG_UNIFIED_TODO_LIST.md`
   row from 🔴 OPEN to ✅ DONE in the same commit.
+- **Every end-of-session handoff MUST include an "Access / tooling used"
+  section** (added 2026-05-16). State explicitly: which MCP tools the session
+  used (e.g. Desktop Commander for laptop repo + as the `ssh` bridge to the
+  Mini/VPS), that laptop→Mini SSH is key-based and needs no setup, and that
+  these tools are deferred and must be `tool_search`ed for at session start.
+  This exists so the next session knows on minute one exactly what it can do
+  and never again makes the operator prove the tooling works. Cross-reference
+  CLAUDE.md "Step 0 — Verify your access."
 
 Do not split documentation into a separate "I'll do it next session" task.
 Next session may not happen, or may not remember the context. The
