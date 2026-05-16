@@ -20,7 +20,7 @@ import logging
 import psycopg2
 from psycopg2.extras import DictCursor
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -124,7 +124,7 @@ def build_all_fingerprints() -> dict:
             logger.warning("Fingerprint failed for %s: %s", m["ip"], e)
 
     knowledge["miner_fingerprints"] = fingerprints
-    knowledge["fingerprints_updated_at"] = datetime.now().isoformat()
+    knowledge["fingerprints_updated_at"] = datetime.now(timezone.utc).isoformat()
     _save_knowledge(knowledge)
     logger.info("Built %d miner fingerprints", len(built))
     return {"built": len(built), "miners": built}
@@ -143,7 +143,7 @@ def _parse_uptime_secs(s: str) -> Optional[int]:
 
 def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
     conn = get_db()
-    cutoff = (datetime.now() - timedelta(days=LOOKBACK_DAYS)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)).isoformat()
 
     # ── 1. Restart outcomes ───────────────────────────────────────────────────
     restarts = conn.execute("""
@@ -400,7 +400,7 @@ def _build_fingerprint(miner_id: str, ip: str, model: str) -> Dict[str, Any]:
         # Chain events from log_metrics (board attach/detach cycles)
         "chain_detaches":         chain_detaches,
         "chain_attaches":         chain_attaches,
-        "last_updated":           datetime.now().isoformat()
+        "last_updated":           datetime.now(timezone.utc).isoformat()
     }
 
 

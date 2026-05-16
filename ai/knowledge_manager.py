@@ -15,7 +15,7 @@ import logging
 import os
 import psycopg2
 from psycopg2.extras import DictCursor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from core.file_lock import locked_knowledge_update
@@ -71,7 +71,7 @@ class KnowledgeManager:
             }
 
     def save(self):
-        self.knowledge["last_updated"] = datetime.now().isoformat()
+        self.knowledge["last_updated"] = datetime.now(timezone.utc).isoformat()
         # Deduplicate patterns before saving
         seen = []
         unique = []
@@ -92,7 +92,7 @@ class KnowledgeManager:
     def update_from_scan(self, miners: List[Dict], issues: List[Dict],
                          weather: Optional[Dict] = None, hvac=None):
         """Update knowledge after each scan with fleet stats and issue patterns."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         online = sum(1 for m in miners if m.get("status") == "online")
 
         # Update fleet summary
@@ -146,7 +146,7 @@ class KnowledgeManager:
             return
 
         entry = {
-            "date": datetime.now().isoformat()[:10],
+            "date": datetime.now(timezone.utc).isoformat()[:10],
             "miner_id": miner_id,
             "insight": insight[:50000],
         }
@@ -404,7 +404,7 @@ class KnowledgeManager:
             "category": category,
             "source": source,
             "confidence": confidence,
-            "added_at": datetime.now().isoformat(),
+            "added_at": datetime.now(timezone.utc).isoformat(),
             "times_applied": 0
         }
         

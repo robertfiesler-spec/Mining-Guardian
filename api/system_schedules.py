@@ -15,7 +15,7 @@ behave the way it did before §10.7 existed.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 from api.system_settings import _pg_dsn  # reuse existing DSN helper
@@ -94,7 +94,7 @@ def _parse_dow(s: str) -> set:
 
 def _today_dow() -> int:
     """Return today's day-of-week using Python convention: Monday=0..Sunday=6."""
-    return datetime.now().weekday()
+    return datetime.now(timezone.utc).weekday()
 
 
 # ── DB layer ─────────────────────────────────────────────────────────────────
@@ -327,7 +327,7 @@ def is_in_window(job_key: str, now: Optional[datetime] = None) -> bool:
         # Caller used the wrong helper; be permissive rather than crash
         return True
 
-    now = now or datetime.now()
+    now = now or datetime.now(timezone.utc)
     if now.weekday() not in _parse_dow(sched["days_of_week"]):
         return False
 
@@ -355,7 +355,7 @@ def should_run_today(job_key: str, now: Optional[datetime] = None) -> bool:
     sched = get_schedule(job_key)
     if not sched["enabled"]:
         return False
-    now = now or datetime.now()
+    now = now or datetime.now(timezone.utc)
     return now.weekday() in _parse_dow(sched["days_of_week"])
 
 

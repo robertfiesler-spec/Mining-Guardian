@@ -20,7 +20,7 @@ import os
 import sys
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -230,7 +230,7 @@ def _miner_success_rate(conn, miner_id: str,
     Per-miner success rate for a specific action type over HISTORY_DAYS.
     Returns (success_rate_0_to_100, outcome_count).
     """
-    cutoff = (datetime.now() - timedelta(days=HISTORY_DAYS)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)).isoformat()
 
     # Map action_type to restart_type patterns
     type_filter = _action_to_restart_type(action_type)
@@ -255,7 +255,7 @@ def _fleet_success_rate(conn,
     Fleet-wide success rate for this action type over HISTORY_DAYS.
     Returns (success_rate_0_to_100, outcome_count).
     """
-    cutoff = (datetime.now() - timedelta(days=HISTORY_DAYS)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=HISTORY_DAYS)).isoformat()
     type_filter = _action_to_restart_type(action_type)
 
     rows = conn.execute("""
@@ -369,7 +369,7 @@ def get_fleet_confidence_summary() -> dict:
             "partials": r["partials"],
             "total": total
         })
-    return {"miners": summary, "generated_at": datetime.now().isoformat()}
+    return {"miners": summary, "generated_at": datetime.now(timezone.utc).isoformat()}
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import os
 import json
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, List
 from pathlib import Path
 from dotenv import load_dotenv
@@ -245,7 +245,7 @@ class LLMAnalyzer:
                     INSERT INTO llm_analysis
                     (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (0, datetime.now().isoformat(), "deep_analysis", "all",
+                """, (0, datetime.now(timezone.utc).isoformat(), "deep_analysis", "all",
                       prompt[:2000], response, model_used, duration))
             conn.commit()
         finally:
@@ -306,7 +306,7 @@ class LLMAnalyzer:
                     INSERT INTO llm_analysis
                     (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (scan_id, datetime.now().isoformat(), "fleet", "all",
+                """, (scan_id, datetime.now(timezone.utc).isoformat(), "fleet", "all",
                       prompt, response, self.model, duration))
             conn.commit()
         finally:
@@ -364,7 +364,7 @@ class LLMAnalyzer:
                     INSERT INTO llm_analysis
                     (scan_id, analyzed_at, miner_id, ip, prompt, response, model_used, duration_ms)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (scan_id, datetime.now().isoformat(), miner_id, ip,
+                """, (scan_id, datetime.now(timezone.utc).isoformat(), miner_id, ip,
                       prompt[:5000], response, self.model, duration))
             conn.commit()
         finally:

@@ -12,7 +12,7 @@ Estimates time-to-failure for miners based on:
 import os
 import sqlite3
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ def calculate_miner_eta(miner_id: str, current_score: float) -> Dict[str, Any]:
         conn.close()
     
     # Calculate restart acceleration
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     restarts_24h = 0
     restarts_7d = 0
     restarts_30d = len(restarts)
@@ -171,7 +171,7 @@ def _age_hours(timestamp_str: str) -> float:
     """Calculate age in hours from timestamp string."""
     try:
         ts = datetime.fromisoformat(timestamp_str.replace("Z", "").split("+")[0])
-        return (datetime.now() - ts).total_seconds() / 3600
+        return (datetime.now(timezone.utc) - ts).total_seconds() / 3600
     except:
         return 9999
 

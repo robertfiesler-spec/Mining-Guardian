@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -48,7 +48,7 @@ def get_proposals(knowledge):
         if last_updated and not insight.get("operator_approved"):
             try:
                 dt = datetime.fromisoformat(last_updated.replace("Z", ""))
-                if (datetime.now() - dt).total_seconds() / 3600 <= 24:
+                if (datetime.now(timezone.utc) - dt).total_seconds() / 3600 <= 24:
                     proposals.append({
                         "type": "REFINED_INSIGHT",
                         "id": key,
@@ -126,7 +126,7 @@ def main():
         return
 
     pending["pending"] = proposals
-    pending["last_generated"] = datetime.now().isoformat()
+    pending["last_generated"] = datetime.now(timezone.utc).isoformat()
     save_pending(pending)
 
     msg = format_message(proposals)

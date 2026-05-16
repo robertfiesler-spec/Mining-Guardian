@@ -44,7 +44,7 @@ import sys
 import json
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -289,7 +289,7 @@ def _check_power_down(
         "reasons":    reasons,
         "data_used":  ["temp_chip", "max_temp_chip", "temp_board", "hvac_supply",
                        "miner_state_readings"],
-        "created_at": datetime.now().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -326,7 +326,7 @@ def _check_power_up(
                        f"HVAC supply {hvac_supply:.1f}°F acceptable",
                        f"delta-T {hvac_delta_t:.1f}°F (good heat transfer)"],
         "data_used":  ["temp_chip", "hvac_supply_temp", "hvac_delta_t", "current_profile"],
-        "created_at": datetime.now().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -363,7 +363,7 @@ def _check_eco_mode(
         "confidence": confidence,
         "reasons":    reasons,
         "data_used":  ["hvac_supply_temp", "hvac_delta_t", "cwp_vfd_pct"],
-        "created_at": datetime.now().isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -428,7 +428,7 @@ def _check_pool_failover(
         "reasons":      [f"sustained rejection rate {rej_rt*100:.2f}% over {REJ_SUSTAINED_SCANS} scans",
                          f"{ams_drops} AMS hashrate drop alerts in 24h"],
         "data_used":    ["pool_readings", "ams_notifications", "config.backup_pool_url"],
-        "created_at":   datetime.now().isoformat()
+        "created_at":   datetime.now(timezone.utc).isoformat()
     }
 
 

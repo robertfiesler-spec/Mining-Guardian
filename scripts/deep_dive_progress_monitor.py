@@ -3,7 +3,7 @@
 Deep Dive Progress Monitor - Posts to Slack every 15 min while deep dive runs
 """
 import os, sys, time, glob, subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 from slack_sdk import WebClient
@@ -20,7 +20,7 @@ WIP_BASE = Path('/root/Mining-Guardian/daily_deep_dive_wip')
 def get_status():
     result = subprocess.run(['pgrep', '-f', 'daily_deep_dive.py'], capture_output=True, text=True)
     is_running = result.returncode == 0
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     wip_dir = WIP_BASE / today
     completed = len(list(wip_dir.glob('miner_*.json'))) if wip_dir.exists() else 0
     has_synth = (wip_dir / 'fleet_synthesis.json').exists() if wip_dir.exists() else False
@@ -45,7 +45,7 @@ def post_slack(msg):
     return resp.get('ok', False)
 
 def main():
-    print(f'Progress monitor started at {datetime.now()}')
+    print(f'Progress monitor started at {datetime.now(timezone.utc)}')
     print(f'Token loaded: {bool(SLACK_TOKEN)}')
     
     # Post first update immediately

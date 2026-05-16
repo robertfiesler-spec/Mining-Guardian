@@ -25,7 +25,7 @@ import logging
 import psycopg2
 from psycopg2.extras import DictCursor
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -164,7 +164,7 @@ def is_overnight_window() -> bool:
 
     if WINDOW_END_HOUR >= 24:
         return True  # full-day mode
-    hour = datetime.now().hour
+    hour = datetime.now(timezone.utc).hour
     if WINDOW_START_HOUR > WINDOW_END_HOUR:
         # Spans midnight: e.g. 22 → 6
         return hour >= WINDOW_START_HOUR or hour < WINDOW_END_HOUR
@@ -190,7 +190,7 @@ def get_pending_actions() -> list:
 
 def get_restart_count_tonight(miner_id: str) -> int:
     """How many times has this miner been auto-restarted since the window opened."""
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     if now.hour < WINDOW_END_HOUR:
         window_start = now.replace(hour=WINDOW_START_HOUR, minute=0,
                                    second=0) - timedelta(days=1)
@@ -239,7 +239,7 @@ def has_recent_failure(miner_id: str, hours: int = 6) -> bool:
         return True
 
     # Secondary check: recent failure within the time window
-    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     recent = conn.execute("""
         SELECT COUNT(*) as cnt FROM miner_restarts
         WHERE miner_id=%s AND outcome='FAILURE' AND restarted_at >= %s
@@ -321,7 +321,7 @@ def execute_auto_action(action: dict) -> dict:
 
         # Only log to audit trail if the action actually executed
         if success:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
             # Record in miner_restarts so the escalation counter works —
             # without this, get_failed_restart_count() never sees overnight
@@ -365,7 +365,7 @@ def log_skip(action: dict, reason: str) -> None:
 
     # Bug fix: only insert if we haven't already logged a HELD_OVERNIGHT row
     # for this miner+action in the current overnight window
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     if now.hour < WINDOW_END_HOUR:
         window_start = now.replace(hour=WINDOW_START_HOUR, minute=0,
                                    second=0) - timedelta(days=1)

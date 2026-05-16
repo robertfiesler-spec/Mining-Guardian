@@ -9,7 +9,7 @@ Provides time-series data for trend visualization:
 - Profitability trends over time
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 
 
@@ -24,7 +24,7 @@ def get_fleet_trends(conn, hours: int = 24) -> Dict[str, Any]:
     - Online/offline miner counts
     - Temperature averages
     """
-    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     
     # Get aggregated chain readings per scan timestamp
     rows = conn.execute("""
@@ -75,7 +75,7 @@ def get_miner_trend(conn, miner_id: str, hours: int = 24) -> Dict[str, Any]:
     - Temperatures
     - Board health indicators
     """
-    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     
     rows = conn.execute("""
         SELECT 
@@ -136,8 +136,8 @@ def get_degradation_ranking(conn, days: int = 7) -> List[Dict[str, Any]]:
     Compares recent performance vs baseline to identify
     miners showing decline in hashrate or efficiency.
     """
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-    recent_cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    recent_cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     
     # Get baseline (first half of period) vs recent (last 24h)
     rows = conn.execute("""
@@ -201,7 +201,7 @@ def get_profitability_trend(conn, electricity_rate: float, hours: int = 168) -> 
     """
     import requests
     
-    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     
     # Get BTC price
     try:
@@ -262,7 +262,7 @@ def get_temperature_trends(conn, hours: int = 24) -> Dict[str, Any]:
     - HVAC supply/return temps
     - Correlation indicators
     """
-    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
     
     # Chip temps from chain_readings
     chip_rows = conn.execute("""
