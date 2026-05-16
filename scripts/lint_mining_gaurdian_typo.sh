@@ -81,6 +81,8 @@ read -r -d '' ALLOWED_PATTERNS <<'EOF' || true
 ^\./docs/S15_APPLIED\.txt$
 ^\./docs/SESSION_2026-04-13_S21_TEST_AND_FIXES\.md$
 ^\./docs/STATE_OF_THE_SYSTEM_2026-05-02\.md$
+^\./docs/EXECUTION_PLAN_STATUS\.md$
+^\./docs/HANDOFF_2026-05-14_EVENING\.md$
 ^\./docs/handoffs/HANDOFF_2026-05-02\.md$
 ^\./docs/handoffs/
 ^\./docs/archive/
