@@ -452,6 +452,8 @@ the Mac Mini runbook), so it no longer needs an allow-list entry.
 | `docs/archive/2026-04/DB_STATE_2026-04-23.md` | 7 |
 | `docs/S15_APPLIED.txt` | 1 |
 | `docs/STATE_OF_THE_SYSTEM_2026-05-02.md` (D-16 cutover doc — historical narrative on the pre-2026-04-26 typo path) | 1 |
+| `docs/EXECUTION_PLAN_STATUS.md` (W33 row cites the real preserved VPS path `/root/snapshots/2026-04-08-1410/Mining-Gaurdian/guardian.db` — the directory name genuinely contains the pre-rename typo; correcting it would make the path wrong) | 1 |
+| `docs/HANDOFF_2026-05-14_EVENING.md` (E4.3 cites the same real typo'd VPS snapshot path; frozen historical handoff per the D-15 convention. Added 2026-05-16 — B-6 had been red on `main` since this file merged via PR #223 on 2026-05-14, undetected) | 1 |
 | `docs/handoffs/HANDOFF_2026-05-02.md` (D-15 handoff protocol — historical narrative) | 1 |
 | `docs/handoffs/**` (catch-all per D-15 — every dated handoff is a frozen historical record) | n/a |
 | `docs/archive/**` (catch-all for all archived handoffs / session logs) | n/a |
