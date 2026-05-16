@@ -31,10 +31,20 @@
 | 4:00 AM | Knowledge Backup | backup_knowledge.py | Backup knowledge.json |
 | 7:00 AM | Morning Briefing | morning_briefing.py | Daily summary to Slack |
 | 8:00 AM | Operator Review | daily_operator_review.py | Generate operator review report |
-| 12:45 PM | AMS Cleanup | cleanup_ams_logs.py | Clear AMS logs before collection |
-| 1:00 PM | Log Collection | direct_collect_logs.py | Collect logs directly from miners |
-| 4:00 PM | Deep Dive (Pass 1) | daily_deep_dive.py | Qwen analyzes each miner |
-| 4:15 PM | Log Failure Report | daily_log_failure_report.py | Report failed log collections |
+| 8:00 AM | Log Collection | direct_collect_logs.py | Collect logs directly from miners |
+| 9:00 AM | Deep Dive (Pass 1) | daily_deep_dive.py | Qwen analyzes each miner |
+
+> **SCHEDULE CORRECTION 2026-05-16 (W36).** Log Collection and Deep Dive were
+> moved from 1:00 PM / 4:00 PM to **8:00 AM / 9:00 AM** ~3 weeks prior (operator
+> decision, made on the VPS when the fleet grew ~36 → ~90+ miners). At ~5–6 min
+> per-miner deep-dive, a 90-miner Pass 1 is an ~8–12 h run; starting at 09:00
+> ensures it finishes with margin so the 1:00 AM refinement Passes 3+4 are not
+> missed. This change lived on the VPS but never propagated to the repo /
+> installer plists, so the 2026-05-09 Mini build shipped the stale 1PM/4PM
+> schedule; corrected here + in the two scheduled-job plists. AMS Cleanup and
+> Log Failure Report are obsolete since direct-from-miner log collection
+> superseded the AMS path (operator, 2026-05-16) — decommission tracked
+> separately, NOT folded into W36 (Failure Mode 9).
 | Hourly | Benchmark | run_benchmark.py | Performance tracking |
 
 ---
@@ -43,7 +53,7 @@
 
 | Pass | Time | Engine | Script | Description |
 |------|------|--------|--------|-------------|
-| 1 | 4:00 PM | Qwen (GPU) | daily_deep_dive.py | Per-miner analysis with logs |
+| 1 | 9:00 AM | Qwen (GPU) | daily_deep_dive.py | Per-miner analysis with logs |
 | 2 | Midnight | Claude API | weekly_train.py | Cohort pattern analysis |
 | 3 | 1:00 AM | Qwen (GPU) | refinement_chain.py | Reflection pass |
 | 4 | 1:00 AM | Claude API | refinement_chain.py | Final knowledge merge |
