@@ -141,6 +141,14 @@ def _scan_for_pattern_2() -> list[str]:
                 continue
             if "/.venv" in rel:
                 continue
+            # Exclude anything under tests/ — test fixtures and helpers
+            # legitimately set GUARDIAN_PG_HOST/PORT to point a temporary
+            # connection at a scratch instance. This matches the documented
+            # contract above and makes the guard correct even if `tests`
+            # is later added to SCAN_ROOTS (today it is not, so this is
+            # belt-and-suspenders rather than currently load-bearing).
+            if rel == "tests" or rel.startswith("tests/") or "/tests/" in rel:
+                continue
             try:
                 text = py.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
@@ -238,3 +246,84 @@ def test_db_targets_module_is_reachable() -> None:
             "resolvers are exported from this module — "
             "see docs/strategy/AMENDMENTS_2026-05-12.md §A01.\n"
         )
+
+
+def test_scan_for_pattern_2_excludes_tests_dir(tmp_path, monkeypatch) -> None:
+    """Guard-of-the-guard: _scan_for_pattern_2() must skip tests/.
+
+    The docstring of _scan_for_pattern_2() promises "anything under
+    tests/" is excluded (test fixtures legitimately set
+    GUARDIAN_PG_HOST/PORT to aim a throwaway connection at a scratch
+    instance). For most of this guard's life that promise was only
+    *implicitly* kept by `tests` not appearing in SCAN_ROOTS — the
+    exclusion was documented but never coded, so adding `tests` to
+    SCAN_ROOTS later would have silently false-flagged every fixture.
+
+    This test pins the now-explicit behaviour: even when a tests/ path
+    is forced into the walk, a Pattern-2 token inside it is NOT
+    reported. If someone removes the explicit `tests/` skip, this fails
+    and explains why — closing the W14a cohort-guard gap permanently.
+    """
+    import sys
+    mod = sys.modules[__name__]
+
+    # Create a fake tests/ file under a sandbox repo root that DOES
+    # contain the forbidden pattern, then point the scanner's root +
+    # scan roots at the sandbox with `tests` explicitly included.
+    sandbox = tmp_path
+    tdir = sandbox / "tests"
+    tdir.mkdir()
+    offending = tdir / "test_fixture_sets_pg_env.py"
+    offending.write_text(
+        'import os\n'
+        'os.environ["GUARDIAN_PG_HOST"] = "127.0.0.1"\n'
+        'os.environ["GUARDIAN_PG_PORT"] = "5499"\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(mod, "REPO_ROOT", sandbox)
+    monkeypatch.setattr(mod, "SCAN_ROOTS", ("tests",))
+
+    offenders = mod._scan_for_pattern_2()
+    assert offenders == [], (
+        "_scan_for_pattern_2() reported a tests/ path as an offender:\n  "
+        + "\n  ".join(offenders)
+        + "\n\nThe W14a guard must exclude tests/ (fixtures legitimately "
+        "set GUARDIAN_PG_HOST/PORT). The explicit `tests/` skip in "
+        "_scan_for_pattern_2() was removed or broken — restore it. "
+        "See the docstring's documented exclusion contract."
+    )
+
+
+def test_scan_for_pattern_2_still_flags_non_test_offenders(tmp_path, monkeypatch) -> None:
+    """Counterpart: the tests/ skip must NOT neuter the guard for real code.
+
+    A Pattern-2 token in a non-tests source file under a scanned root
+    must still be reported. This proves the exclusion added to close the
+    W14a gap is narrowly scoped to tests/ and did not accidentally make
+    the whole guard permissive.
+    """
+    import sys
+    mod = sys.modules[__name__]
+
+    sandbox = tmp_path
+    cdir = sandbox / "core"
+    cdir.mkdir()
+    bad = cdir / "rogue_connector.py"
+    bad.write_text(
+        'import os, psycopg2\n'
+        'h = os.environ.get("GUARDIAN_PG_HOST", "127.0.0.1")\n'
+        'conn = psycopg2.connect(host=h)\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(mod, "REPO_ROOT", sandbox)
+    monkeypatch.setattr(mod, "SCAN_ROOTS", ("core",))
+    monkeypatch.setattr(mod, "ALLOWED_BYPASSES", frozenset())
+
+    offenders = mod._scan_for_pattern_2()
+    assert offenders == ["core/rogue_connector.py"], (
+        "Expected the rogue non-test connector to be flagged, got: "
+        f"{offenders}. The tests/ exclusion must not make the guard "
+        "permissive for real source files."
+    )
