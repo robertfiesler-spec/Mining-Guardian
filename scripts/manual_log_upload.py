@@ -54,7 +54,7 @@ import sqlite3
 import sys
 import zipfile
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -377,7 +377,7 @@ def save_logs_to_db(miner_id: str, model: str, label: str, files: Dict[str, str]
 
     Returns the number of rows inserted (excluding dedup skips).
     """
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     saved = 0
     with sqlite3.connect(db_path, timeout=30) as conn:
         for filename, content in files.items():

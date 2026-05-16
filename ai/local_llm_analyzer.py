@@ -25,7 +25,7 @@ from psycopg2.extras import DictCursor
 from core.db_targets import operational_target
 import time
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, List
 
@@ -452,7 +452,7 @@ class LocalLLMAnalyzer:
             for p in prev:
                 if isinstance(p, dict):
                     # `p` is from knowledge.json `llm_scan_analyses` (JSON
-                    # strings today via datetime.now().isoformat() in
+                    # strings today via datetime.now(timezone.utc).isoformat() in
                     # _store_analysis below). Using fmt_dt for defensive
                     # consistency with the P-038 cohort and to satisfy the
                     # `[:N]`-on-timestamp-keys cohort guard test. Behavior
@@ -698,7 +698,7 @@ Keep it to one clear, specific rule."""
                 llm_analyses = knowledge.get("llm_scan_analyses", [])
                 llm_analyses.insert(0, {
                     "scan_id": scan_id,
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "analysis": analysis[:2000],
                     "source": "local_llm",
                     "model": self.model,

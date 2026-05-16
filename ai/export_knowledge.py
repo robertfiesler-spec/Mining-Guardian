@@ -21,7 +21,7 @@ import sqlite3
 import json
 import os
 import argparse
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from collections import defaultdict
 
 from pathlib import Path
@@ -109,7 +109,7 @@ def export_knowledge(output_path: str = "knowledge.json") -> dict:
     conn.close()
 
     knowledge = {
-        "exported_at":    datetime.now().isoformat(),
+        "exported_at":    datetime.now(timezone.utc).isoformat(),
         "export_version": "1.0",
         "db_path":        DB_PATH,
         "model_statistics": [dict(r) for r in model_stats],

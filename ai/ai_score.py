@@ -23,7 +23,7 @@ Every operator interaction adds to Actions Taken.
 import os
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -273,7 +273,7 @@ def calculate_score(conn=None, knowledge=None) -> dict:
             "autonomy_growth": {"score": autonomy_score, "detail": autonomy_detail},
         },
         "total_data_points": sum(data_counts.values()),
-        "calculated_at": datetime.now().isoformat(),
+        "calculated_at": datetime.now(timezone.utc).isoformat(),
     }
 
     if close_conn:

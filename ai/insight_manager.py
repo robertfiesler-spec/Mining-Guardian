@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -150,7 +150,7 @@ def merge_insight(existing: Dict, new: Dict) -> Dict:
     - Preserves first_seen
     - Updates last_updated
     """
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
     # Build history entry for the old state
     history_entry = {
@@ -206,7 +206,7 @@ def process_refined_insights(claude_response: str, site_id: str = 'R&D Home') ->
     # Load current knowledge
     knowledge = load_knowledge()
     existing = knowledge.get('refined_insights', {})
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = datetime.now(timezone.utc).strftime('%Y-%m-%d')
     
     for key, insight in new_insights.items():
         try:

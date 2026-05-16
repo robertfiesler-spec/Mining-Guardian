@@ -1143,7 +1143,7 @@ def fleet_latest(request: Request):
 def fleet_history(request: Request, days: int = 7):
     days = min(max(days, 1), 90)
     """Scan history over the last N days."""
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = get_db()
     try:
         rows = conn.execute(
@@ -1203,7 +1203,7 @@ def miners_most_flagged(limit: int = 20):
 def miner_history(miner_id: str, days: int = 7):
     days = min(max(days, 1), 90)
     """Full telemetry history for a specific miner."""
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -1260,7 +1260,7 @@ def temps_hot_miners():
 def temps_history(request: Request, days: int = 7):
     days = min(max(days, 1), 90)
     """Average chip temp across fleet over time."""
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = get_db()
     try:
         rows = conn.execute("""
@@ -1285,7 +1285,7 @@ def temps_history(request: Request, days: int = 7):
 def weather_history(days: int = 7):
     days = min(max(days, 1), 90)
     """Ambient temp and humidity history."""
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = get_db()
     try:
         rows = conn.execute(
@@ -1354,7 +1354,7 @@ def environment_history(days: int = 5):
     Downsampled to 4 points per day (every 6 hours) for readability.
     Returns at most 20 data points over 5 days.
     """
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = get_db()
     try:
 
@@ -1483,7 +1483,7 @@ def audit_log(request: Request, days: int = None, miner_id: str = None, limit: i
     params = []
     if days:
         from datetime import timedelta
-        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
         query += " AND date >= %s"
         params.append(cutoff)
     if miner_id:
@@ -2920,7 +2920,7 @@ def ai_recent_analyses(hours: int = 6):
         hours: How many hours back to include (default 6, max 24)
     """
     hours = min(hours, 24)
-    cutoff = datetime.now() - timedelta(hours=hours)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     cutoff_str = cutoff.isoformat()
     
     try:
@@ -3011,7 +3011,7 @@ def ai_recent_analyses(hours: int = 6):
             "time_window_hours": hours
         },
         "analyses": analyses,
-        "generated_at": datetime.now().isoformat()
+        "generated_at": datetime.now(timezone.utc).isoformat()
     }
 
 # ============================================================

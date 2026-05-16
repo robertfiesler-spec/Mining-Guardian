@@ -62,7 +62,7 @@ import psycopg2
 from psycopg2.extras import DictCursor
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -435,7 +435,7 @@ def build_cohort_prompt(summary: Dict, env_context: str,
         lines.append('')
         lines.append(f'--- Local LLM analyses for this cohort (most recent {len(local_llm_analyses)}) ---')
         for a in local_llm_analyses:
-            # Source is knowledge.json (JSON strings via datetime.now().isoformat())
+            # Source is knowledge.json (JSON strings via datetime.now(timezone.utc).isoformat())
             # — fmt_dt for cohort-guard consistency, no behavior change today.
             ts = fmt_dt(a.get('timestamp'))
             text = (a.get('analysis') or '')[:400]
@@ -1110,7 +1110,7 @@ def run_cohort_training():
             if not isinstance(knowledge.get('cross_miner_analysis'), list):
                 knowledge['cross_miner_analysis'] = []
             knowledge['cross_miner_analysis'].insert(0, {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': datetime.now(timezone.utc).isoformat(),
                 'analysis': fleet_response,
                 'cohort_count': len(cohort_results),
                 'outlier_count': len(outlier_results),

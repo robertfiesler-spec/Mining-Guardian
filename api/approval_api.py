@@ -18,7 +18,7 @@ import hashlib
 import hmac
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -191,7 +191,7 @@ async def approve_actions(request: Request):
         if not pending:
             return {"status": "no_pending", "message": "No pending approvals for this thread"}
 
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         results = []
 
         for row in pending:
@@ -259,7 +259,7 @@ async def deny_actions(request: Request):
         return {"error": "thread_ts required"}
 
     with _PgConnWrapper(DB_PATH) as conn:
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         pending = conn.execute(
             "SELECT * FROM pending_approvals WHERE thread_ts = %s AND status = 'PENDING'",
@@ -330,7 +330,7 @@ async def approve_selected_actions(request: Request):
             (thread_ts,)
         ).fetchall()
 
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         approved, denied = [], []
 
         for row in all_pending:
@@ -662,7 +662,7 @@ async def gui_approve(request: Request):
         if not pending:
             return {"status": "no_pending", "message": "No pending approvals for that miner"}
 
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         results = []
         for row in pending:
             action = dict(row)
@@ -729,7 +729,7 @@ async def gui_deny(request: Request):
         return JSONResponse(status_code=400, content={"error": "miner_id or thread_ts required"})
 
     with _PgConnWrapper(DB_PATH) as conn:
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         pending = _gui_find_pending(conn, miner_id, thread_ts)
         denied = 0
         for row in pending:

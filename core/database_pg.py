@@ -58,7 +58,7 @@ Non-goals:
     doesn't apply — all tables live in the public schema)
 """
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 import os
 from pathlib import Path
@@ -359,7 +359,7 @@ class GuardianPGDB:
     # ── save_scan (Bug 4 in the SQLite audit) ──────────────────────────
     def save_scan(self, miners: List[Dict], issues: List[Dict]) -> int:
         """Write scan summary and all miner readings. Returns scan_id."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         online = sum(1 for m in miners if m.get("status") == "online")
         offline = len(miners) - online
 
@@ -458,7 +458,7 @@ class GuardianPGDB:
         """Store log snapshots for a miner. Looks up IP from miner_readings."""
         if not log_files:
             return
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Look up the most recent IP for this miner_id
         with self._connect() as conn:
@@ -491,7 +491,7 @@ class GuardianPGDB:
     # ── expire_old_pending_approvals (Bug 2) ───────────────────────────
     def expire_old_pending_approvals(self, max_age_minutes: int = 30) -> int:
         """Auto-deny pending approvals older than max_age_minutes."""
-        cutoff = (datetime.now() - timedelta(minutes=max_age_minutes)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
 
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -506,15 +506,15 @@ class GuardianPGDB:
                     cur.execute(
                         "UPDATE pending_approvals SET status='DENIED', responded_at=%s "
                         "WHERE status='PENDING' AND created_at < %s",
-                        (datetime.now().isoformat(), cutoff),
+                        (datetime.now(timezone.utc).isoformat(), cutoff),
                     )
 
             # Postgres supports cross-table writes in one transaction, so the
             # SQLite split-DB dance isn't needed here.
             if expired:
                 audit_rows = [
-                    (datetime.now().isoformat(),
-                     datetime.now().strftime("%Y-%m-%d"),
+                    (datetime.now(timezone.utc).isoformat(),
+                     datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                      row["miner_id"], row["ip"], "", "",
                      row["action_type"], "DENIED",
                      "Mining Guardian (Auto-Expired)",
@@ -555,7 +555,7 @@ class GuardianPGDB:
     # ── count_outcome_failures (Bug 6) ─────────────────────────────────
     def count_outcome_failures(self, miner_id: str, since_days: int = 7) -> int:
         """Count FAILURE outcomes for a miner in the last N days."""
-        since = (datetime.now() - timedelta(days=since_days)).isoformat()
+        since = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -573,7 +573,7 @@ class GuardianPGDB:
         Signature matches core.database.GuardianDB._count_pdu_cycles exactly
         (days: int = 1) so callers work on either backend.
         """
-        since = (datetime.now() - timedelta(days=days)).isoformat()
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -590,7 +590,7 @@ class GuardianPGDB:
         """Save actionable issues as pending approvals linked to a Slack thread."""
         if not issues:
             return
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         rows = []
         for i in issues:
             problem = " | ".join(i.get("issues", [])) if i.get("issues") else None
@@ -637,7 +637,7 @@ class GuardianPGDB:
 
     def mark_ticket_created(self, miner_id: str, ticket_id: str = None) -> None:
         """Record that an AMS ticket has been created for this dead board miner."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         value = ticket_id or now
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -652,7 +652,7 @@ class GuardianPGDB:
         """Mark tickets as noticed in Slack — won't appear in future reports."""
         if not miner_ids:
             return
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 for miner_id in miner_ids:
@@ -682,7 +682,7 @@ class GuardianPGDB:
 
     def is_elevated_monitoring(self, miner_id: str) -> bool:
         """Return True if this miner is within its post-restart elevated monitoring window."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -698,7 +698,7 @@ class GuardianPGDB:
         """Count restarts in the last N days. Matches SQLite semantics — this is a
         total-restart counter, not filtered by outcome (despite the name).
         """
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -746,7 +746,7 @@ class GuardianPGDB:
         if not notifications:
             return
         import json
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         rows = []
         for n in notifications:
             params = n.get("params", {})
@@ -773,7 +773,7 @@ class GuardianPGDB:
 
     def save_weather(self, weather: dict) -> None:
         """Store a weather reading alongside scan data."""
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -801,7 +801,7 @@ class GuardianPGDB:
         """
         if hvac is None:
             return
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         # Fall back to 'warehouse' if caller forgot to set system_id
         sys_id = getattr(hvac, "system_id", None) or "warehouse"
         with self._connect() as conn:
@@ -996,7 +996,7 @@ class GuardianPGDB:
                        normalized_name: str, device_name: str) -> None:
         """Insert or update a discovery_log entry."""
         import json
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         raw_json = json.dumps(miner_data, default=str)
         chains = miner_data.get("chains") or []
         board_count = len(chains)
@@ -1055,7 +1055,7 @@ class GuardianPGDB:
                    approved_by: str = None, slack_user_id: str = None,
                    scan_id: int = None, notes: str = None) -> None:
         """Log every approval or denial to the permanent action audit log."""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -1073,7 +1073,7 @@ class GuardianPGDB:
 
     def purge_old_logs(self, days: int = 7) -> int:
         """Delete miner log entries older than N days. Returns count deleted."""
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -1095,7 +1095,7 @@ class GuardianPGDB:
         hashrate_before captures the miner's hashrate_pct at time of restart so the
         outcome checker can compare 'before' and 'after' without a separate lookup.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         elevated_until = (now + timedelta(hours=elevated_hours)).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -1119,7 +1119,7 @@ class GuardianPGDB:
         Note: DictCursor returns dicts, not tuples — use existing["id"]
         not existing[0] (different from the SQLite Row version).
         """
-        now = datetime.now().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(

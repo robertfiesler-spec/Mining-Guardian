@@ -6,7 +6,7 @@ import sys, os, json, tarfile, io, logging, time, requests, re
 import psycopg2
 from psycopg2.extras import DictCursor
 from requests.auth import HTTPDigestAuth
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, List, Tuple
 
@@ -172,11 +172,11 @@ def extract_and_store_log(miner_id: str, ip: str, log_bytes: bytes, target_date:
 
         if existing:
             cur.execute('UPDATE miner_logs SET content = %s, collected_at = %s WHERE id = %s',
-                        (miner_log, datetime.now().isoformat(), existing[0]))
+                        (miner_log, datetime.now(timezone.utc).isoformat(), existing[0]))
         else:
             cur.execute('''INSERT INTO miner_logs (collected_at, miner_id, model, health_status, log_file, content)
                            VALUES (%s, %s, %s, %s, %s, %s)''',
-                        (datetime.now().isoformat(), miner_id, 'direct', 'daily_baseline', log_file or 'miner.log', miner_log))
+                        (datetime.now(timezone.utc).isoformat(), miner_id, 'direct', 'daily_baseline', log_file or 'miner.log', miner_log))
         
         conn.commit()
         conn.close()

@@ -27,7 +27,7 @@ import json
 import logging
 import psycopg2
 from psycopg2.extras import DictCursor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -261,7 +261,7 @@ def check_fleet_correlation(scan_id: int) -> Optional[Dict[str, Any]]:
 
     event = {
         "scan_id":       scan_id,
-        "detected_at":   datetime.now().isoformat(),
+        "detected_at":   datetime.now(timezone.utc).isoformat(),
         "stress_level":  stress_level,
         "reasons":       reasons,
         "miners_flagged":flagged,
@@ -298,7 +298,7 @@ def get_hvac_correlation_patterns(lookback_days: int = 30) -> Dict[str, Any]:
     Used by weekly training to add HVAC correlation patterns to knowledge.
     """
     conn = get_db()
-    cutoff = (datetime.now() - timedelta(days=lookback_days)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
 
     # Join scans with HVAC readings and flagged miner counts
     rows = conn.execute("""
@@ -361,7 +361,7 @@ def get_hvac_correlation_patterns(lookback_days: int = 30) -> Dict[str, Any]:
         "supply_temp_flag_correlation": round(correlation, 3),
         "total_scans_analyzed": len(rows),
         "lookback_days": lookback_days,
-        "generated_at": datetime.now().isoformat()
+        "generated_at": datetime.now(timezone.utc).isoformat()
     }
 
 

@@ -40,7 +40,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -91,7 +91,7 @@ def save_knowledge(k):
 def save_pass_wip(pass_name, payload):
     """Immediately persist a completed pass to disk so it survives later failures."""
     WIP_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     path = WIP_DIR / f"{pass_name}_{ts}.json"
     with open(path, "w") as f:
         json.dump(payload, f, indent=2)
@@ -292,7 +292,7 @@ def fire_pass_3_qwen_reflection(pass_1, pass_2, config, smoke_test=False):
     reflection = resp.get("response", "").strip()
     logger.info("Pass 3: complete (%.1fs, %d chars)", elapsed, len(reflection))
     result = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "source": "qwen_learning_reflection",
         "model": payload["model"],
         "elapsed_s": round(elapsed, 1),
@@ -358,7 +358,7 @@ def fire_pass_4_claude_merged(pass_2, pass_3, smoke_test=False):
         response.usage.input_tokens, response.usage.output_tokens,
     )
     result = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "source": "claude_refined_merged_v1",
         "model": "claude-sonnet-4-20250514",
         "elapsed_s": round(elapsed, 1),
@@ -375,8 +375,8 @@ def write_final_state(pass_1, pass_2, pass_3, pass_4):
     """Re-read knowledge (minimize clobber window), write chain + overwrite cma[0]."""
     k = load_knowledge()
     chain_entry = {
-        "chain_date": datetime.now().strftime("%Y-%m-%d"),
-        "chain_timestamp": datetime.now().isoformat(),
+        "chain_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "chain_timestamp": datetime.now(timezone.utc).isoformat(),
         "pass_1_deep_dive_ref": {
             "date": pass_1.get("date"),
             "fleet_synthesis_chars": len(pass_1.get("fleet_synthesis", "")),
@@ -400,7 +400,7 @@ def write_final_state(pass_1, pass_2, pass_3, pass_4):
         "timestamp": pass_4["timestamp"],
         "analysis": pass_4["analysis"],
         "source": "claude_refined_merged_v1",
-        "refinement_chain_date": datetime.now().strftime("%Y-%m-%d"),
+        "refinement_chain_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
     })
     k["cross_miner_analysis"] = k["cross_miner_analysis"][:10]
     save_knowledge(k)

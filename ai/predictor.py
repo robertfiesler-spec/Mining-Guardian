@@ -28,7 +28,7 @@ from psycopg2.extras import DictCursor
 
 from core.db_targets import operational_target
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -234,7 +234,7 @@ def _predict_miner(miner_id: str, ip: str, model: str,
         """, (miner_id,)).fetchone()
 
         # AMS alerts in last 24h
-        ams_cutoff = (datetime.now() - timedelta(hours=AMS_ALERT_WINDOW_H)).isoformat()
+        ams_cutoff = (datetime.now(timezone.utc) - timedelta(hours=AMS_ALERT_WINDOW_H)).isoformat()
         ams = conn.execute("""
             SELECT key, COUNT(*) as cnt FROM ams_notifications
             WHERE miner_ip=%s AND recorded_at>=%s GROUP BY key
@@ -381,7 +381,7 @@ def _predict_miner(miner_id: str, ip: str, model: str,
         "current_hr":   current_hr,
         "current_chip_temp":  current_chip_temp,
         "current_board_temp": current_board_temp,
-        "predicted_at": datetime.now().isoformat()
+        "predicted_at": datetime.now(timezone.utc).isoformat()
     }
 
 
@@ -541,7 +541,7 @@ def _check_chain_events(miner_id: str, ip: str) -> Tuple[float, Optional[str]]:
     """
     conn = get_db()
     try:
-        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         rows = conn.execute("""
             SELECT text_value as event, board_index, COUNT(*) as cnt
             FROM log_metrics
@@ -868,7 +868,7 @@ def _check_high_offline_frequency(miner_id: str, ip: str) -> Tuple[float, Option
 
     # Parse timestamps
     from datetime import datetime, timedelta
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     
     restarts_7d = 0
     restarts_24h = 0

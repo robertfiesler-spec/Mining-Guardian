@@ -20,7 +20,7 @@ from psycopg2.extras import DictCursor
 import requests
 import threading
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from slack_sdk import WebClient
 from dotenv import load_dotenv
@@ -160,7 +160,7 @@ def build_miner_context(miner_ids: list) -> str:
 def cleanup_stale_pending():
     """Mark old PENDING approvals (>24h) as EXPIRED so we stop polling them."""
     try:
-        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         conn = get_db()
         try:
             cur  = conn.execute(
@@ -356,11 +356,11 @@ class ApprovalListener:
             prompt_ts = prompt_resp["ts"]
 
             # Poll the thread for a reply from the same user for up to 5 minutes
-            deadline = datetime.now().timestamp() + 300  # 5 minutes
+            deadline = datetime.now(timezone.utc).timestamp() + 300  # 5 minutes
             seen_ts  = set()
             reason   = None
 
-            while datetime.now().timestamp() < deadline:
+            while datetime.now(timezone.utc).timestamp() < deadline:
                 time.sleep(15)
                 try:
                     replies = self.client.conversations_replies(

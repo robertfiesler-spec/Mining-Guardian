@@ -67,7 +67,7 @@ import time
 import traceback
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -971,7 +971,7 @@ def build_fleet_synthesis_prompt(
 def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_override: Optional[int] = None) -> int:
     """Main entry point. Returns exit code (0 = success, nonzero = failure)."""
     start_time = time.time()
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     logger.info("=" * 70)
     logger.info("DAILY DEEP DIVE starting — date=%s manual=%s dry_run=%s",
                 today, manual, dry_run)
@@ -1118,7 +1118,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_ove
                 "miner_id": mid,
                 "ip": miner.get("ip"),
                 "model": miner.get("model"),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "prompt_chars": len(prompt),
                 "skipped": True,
                 "skip_reason": f"prompt too large: {len(prompt)} chars",
@@ -1139,7 +1139,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_ove
             "miner_id": mid,
             "ip": miner.get("ip"),
             "model": miner.get("model"),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "prompt_chars": len(prompt),
             "analysis": analysis,
         }, indent=2))
@@ -1193,7 +1193,7 @@ def run_daily_deep_dive(dry_run: bool = False, manual: bool = False, scan_id_ove
     fleet_file = wip_dir / "fleet_synthesis.json"
     fleet_file.write_text(json.dumps({
         "date": today,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "prompt_chars": len(fleet_prompt),
         "synthesis": fleet_synthesis,
         "miners_analyzed": len(per_miner_analyses),
@@ -1233,7 +1233,7 @@ def _save_to_knowledge(date: str, per_miner: Dict[str, str], fleet_synth: str,
 
     entry = {
         "date": date,
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "wall_time_seconds": int(time.time() - start_time),
         "miners_online": miners_online,
         "miners_analyzed": len(per_miner),
@@ -1255,7 +1255,7 @@ def _save_to_knowledge(date: str, per_miner: Dict[str, str], fleet_synth: str,
 
         # Keep last 30 days of deep dives
         knowledge["daily_deep_analyses"] = [entry] + knowledge["daily_deep_analyses"][:29]
-        knowledge["last_updated"] = datetime.now().isoformat()
+        knowledge["last_updated"] = datetime.now(timezone.utc).isoformat()
 
     logger.info("Saved deep dive to knowledge.json under daily_deep_analyses[0]")
 

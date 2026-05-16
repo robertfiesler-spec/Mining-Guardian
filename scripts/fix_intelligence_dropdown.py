@@ -248,7 +248,7 @@ def main() -> int:
     dash = d["dashboard"]
 
     # Backup
-    ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    ts = dt.datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     backup_path = f"/tmp/{DASHBOARD_UID}-BACKUP-{ts}.json"
     with open(backup_path, "w") as f:
         json.dump(d, f, indent=2)

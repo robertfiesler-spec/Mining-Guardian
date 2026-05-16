@@ -2322,10 +2322,10 @@ class MiningGuardian:
         except Exception:
             logger.exception("Auto-ticket creation failed (non-fatal)")
 
-        self.db.save_chain_readings(scan_id, datetime.now().isoformat(), miners)
-        self.db.save_pool_readings(scan_id, datetime.now().isoformat(), miners)
-        self.db.save_miner_state_readings(scan_id, datetime.now().isoformat(), miners)
-        self.db.save_ams_extended(scan_id, datetime.now().isoformat(), miners)
+        self.db.save_chain_readings(scan_id, datetime.now(timezone.utc).isoformat(), miners)
+        self.db.save_pool_readings(scan_id, datetime.now(timezone.utc).isoformat(), miners)
+        self.db.save_miner_state_readings(scan_id, datetime.now(timezone.utc).isoformat(), miners)
+        self.db.save_ams_extended(scan_id, datetime.now(timezone.utc).isoformat(), miners)
         self.db.purge_old_logs(days=30)
         self.collect_logs(miners, issues)
 

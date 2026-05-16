@@ -29,7 +29,7 @@ import psycopg2
 from psycopg2.extras import DictCursor
 import requests
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from slack_sdk import WebClient
 from dotenv import load_dotenv
@@ -589,7 +589,7 @@ class CommandHandler:
         """Summary of what happened overnight — auto actions, recoveries, failures."""
         conn = self._get_db()
         from datetime import timedelta
-        since = (datetime.now() - timedelta(hours=10)).isoformat()
+        since = (datetime.now(timezone.utc) - timedelta(hours=10)).isoformat()
         actions = conn.execute("""
             SELECT miner_id, ip, model, action_taken, decision, approved_by, timestamp
             FROM action_audit_log WHERE timestamp >= %s ORDER BY timestamp

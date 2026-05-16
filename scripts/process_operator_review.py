@@ -2,7 +2,7 @@
 import json
 import sys
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -49,7 +49,7 @@ def process_response(text, user_id):
     item = pending["pending"][num - 1]
     
     record = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": action,
         "item_type": item["type"],
         "item_id": item["id"],
